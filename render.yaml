@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: controller
+    env: python
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: python controller.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.4
+      - key: DISPLAY
+        value: ":99"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+    plan: free
