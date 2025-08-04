@@ -2092,5 +2092,6 @@ if __name__ == "__main__":
     # For deployment on services like Render or Railway, they will use a production WSGI server.
     # The host '0.0.0.0' makes the server accessible externally.
     # IMPORTANT: debug=False is critical for security in a live environment.
-    print("Starting Flask web server on port 8080...")
-    app.run(host="0.0.0.0", port=8080, debug=False)
+    port = int(os.environ.get("PORT", 8080))
+    print(f"Starting Flask web server on port {port}...")
+    app.run(host="0.0.0.0", port=port, debug=False)
