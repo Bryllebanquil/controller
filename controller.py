@@ -441,6 +441,20 @@ DASHBOARD_HTML = '''
                             <div id="live-keyboard-input" tabindex="0" class="neural-input" style="height: 100px; overflow-y: auto;" placeholder="Click here and start typing..."></div>
                         </div>
                     </div>
+                     <div class="control-group">
+                        <div class="control-header">Live Mouse Control</div>
+                        <div class="input-group">
+                            <label class="input-label">Control the agent's mouse here</label>
+                            <div id="live-mouse-area" style="width: 300px; height: 200px; border: 1px solid #ccc; position: relative; background: #222;"></div>
+                        </div>
+                        <div class="input-group">
+                            <label class="input-label">Mouse Button</label>
+                            <select id="mouse-button" class="neural-input">
+                                <option value="left">Left</option>
+                                <option value="right">Right</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -639,6 +653,7 @@ DASHBOARD_HTML = '''
 
         // --- Live Keyboard Event Listeners ---
         const liveKeyboardInput = document.getElementById('live-keyboard-input');
+        const liveMouseArea = document.getElementById('live-mouse-area');
 
         liveKeyboardInput.addEventListener('keydown', (event) => {
             if (!selectedAgentId) return;
@@ -665,6 +680,45 @@ DASHBOARD_HTML = '''
                 code: event.code
             });
         });
+        liveMouseArea.addEventListener('mousemove', (event) => {
+            if (!selectedAgentId) return;
+
+            // Get the coordinates relative to the mouse area
+            const rect = liveMouseArea.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            socket.emit('live_mouse_move', {
+                agent_id: selectedAgentId,
+                x: x,
+                y: y
+            });
+        });
+
+        liveMouseArea.addEventListener('mousedown', (event) => {
+            if (!selectedAgentId) return;
+
+            const button = document.getElementById('mouse-button').value;
+
+            socket.emit('live_mouse_click', {
+                agent_id: selectedAgentId,
+                event_type: 'down',
+                button: button
+            });
+        });
+
+        liveMouseArea.addEventListener('mouseup', (event) => {
+            if (!selectedAgentId) return;
+
+            const button = document.getElementById('mouse-button').value;
+
+            socket.emit('live_mouse_click', {
+                agent_id: selectedAgentId,
+                event_type: 'up',
+                button: button
+            });
+        });
+
 
     </script>
 </body>
@@ -814,7 +868,7 @@ def handle_live_key_press(data):
     agent_id = data.get('agent_id')
     agent_sid = AGENTS_DATA.get(agent_id, {}).get('sid')
     if agent_sid:
-        emit('key_press', data, room=agent_sid)
+        emit('key_press', data, room=agent_sid, include_self=False)
 
 if __name__ == "__main__":
     print("Starting controller with Socket.IO support...")
