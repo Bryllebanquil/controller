@@ -10,6 +10,8 @@ websockets
 psutil
 pillow
 flask_socketio
+python-socketio
+eventlet
 # Platform-specific dependencies
 pywin32; sys_platform=="win32"
 WMI; sys_platform=="win32"
@@ -31,3 +33,4 @@ sounddevice; sys_platform!="win32"
 # System monitoring
 
 py-cpuinfo
+
