@@ -1,3 +1,6 @@
+import eventlet
+eventlet.monkey_patch()
+
 from flask import Flask, request, jsonify, redirect, url_for, Response, send_file
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from collections import defaultdict
@@ -5,10 +8,6 @@ import datetime
 import time
 import os
 import base64
-import eventlet
-
-# Use eventlet for long-polling and WebSocket transport
-eventlet.monkey_patch()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key_here'  # Change this to a random secret key
