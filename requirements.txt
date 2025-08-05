@@ -9,6 +9,8 @@ speechrecognition
 websockets
 psutil
 pillow
+pyautogui
+keyboard
 flask_socketio
 python-socketio
 eventlet
@@ -33,4 +35,5 @@ sounddevice; sys_platform!="win32"
 # System monitoring
 
 py-cpuinfo
+
 
