@@ -1,16 +1,7 @@
 services:
   - type: web
-    name: controller
+    name: agent-controller
     env: python
-    buildCommand: |
-      pip install --upgrade pip
-      pip install -r requirements.txt
-    startCommand: python controller.py
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.13.4
-      - key: DISPLAY
-        value: ":99"
-      - key: PYTHONUNBUFFERED
-        value: "1"
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -k eventlet -w 1 controller:app --bind 0.0.0.0:$PORT
     plan: free
