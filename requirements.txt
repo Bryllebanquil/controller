@@ -16,7 +16,6 @@ pygame
 dxcam >= 0.0.5; sys_platform == "win32"
 
 # Audio handling
-pyaudio
 speechrecognition
 sounddevice; sys_platform != "win32"
 
@@ -48,3 +47,4 @@ setuptools >= 65.0.0
 
 # Security
 cryptography
+
