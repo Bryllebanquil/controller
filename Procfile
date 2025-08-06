@@ -1,1 +1,1 @@
-web: python controller.py
+web: gunicorn -k eventlet -w 1 controller:app --bind 0.0.0.0:$PORT
