@@ -1,3 +1,7 @@
+# Install system dependencies before Python packages
+preBuild:
+  - apt-get update
+  - apt-get install -y portaudio19-dev
 services:
   - type: web
     name: agent-controller
