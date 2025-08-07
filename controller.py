@@ -1,7 +1,7 @@
 import eventlet
 eventlet.monkey_patch()
 
-from flask import Flask, request, jsonify, redirect, url_for, Response, send_file, session, flash
+from flask import Flask, request, jsonify, redirect, url_for, Response, send_file, session, flash, render_template_string
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from collections import defaultdict
 import datetime
@@ -179,7 +179,7 @@ def login():
     if is_ip_blocked(client_ip):
         remaining_time = Config.LOGIN_TIMEOUT - (datetime.datetime.now() - LOGIN_ATTEMPTS[client_ip][1]).total_seconds()
         flash(f'Too many failed login attempts. Please try again in {int(remaining_time)} seconds.', 'error')
-        return '''
+        return render_template_string('''
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -285,7 +285,7 @@ def login():
         </div>
     </body>
     </html>
-    '''
+    ''')
     
     if request.method == 'POST':
         password = request.form.get('password', '')
@@ -309,7 +309,7 @@ def login():
             else:
                 flash(f'Too many failed attempts. Please wait {Config.LOGIN_TIMEOUT} seconds.', 'error')
     
-    return '''
+    return render_template_string('''
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -459,7 +459,7 @@ def login():
         </div>
     </body>
     </html>
-    '''
+    ''')
 
 # Logout route
 @app.route('/logout')
