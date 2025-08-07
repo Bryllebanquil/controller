@@ -1711,6 +1711,16 @@ DASHBOARD_HTML = r'''
 AGENTS_DATA = defaultdict(lambda: {"sid": None, "last_seen": None})
 DOWNLOAD_BUFFERS = defaultdict(lambda: {"chunks": [], "total_size": 0, "local_path": None})
 
+AGENT_SHARED_SECRET = os.environ.get("AGENT_SHARED_SECRET", "sphinx_agent_secret")
+
+def require_agent_secret(f):
+    def decorated(*args, **kwargs):
+        if request.headers.get("X-AGENT-SECRET") != AGENT_SHARED_SECRET:
+            return "Forbidden", 403
+        return f(*args, **kwargs)
+    decorated.__name__ = f.__name__
+    return decorated
+
 # --- Operator-facing endpoints ---
 
 @app.route("/")
@@ -1731,7 +1741,7 @@ CAMERA_FRAMES = defaultdict(lambda: None)
 AUDIO_CHUNKS = defaultdict(lambda: queue.Queue())
 
 @app.route('/stream/<agent_id>', methods=['POST'])
-@require_auth
+@require_agent_secret
 def stream_in(agent_id):
     VIDEO_FRAMES[agent_id] = request.data
     return "OK", 200
@@ -1751,7 +1761,7 @@ def video_feed(agent_id):
     return Response(generate_video_frames(agent_id), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/camera/<agent_id>', methods=['POST'])
-@require_auth
+@require_agent_secret
 def camera_in(agent_id):
     CAMERA_FRAMES[agent_id] = request.data
     return "OK", 200
@@ -1771,7 +1781,7 @@ def camera_feed(agent_id):
     return Response(generate_camera_frames(agent_id), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/audio/<agent_id>', methods=['POST'])
-@require_auth
+@require_agent_secret
 def audio_in(agent_id):
     AUDIO_CHUNKS[agent_id].put(request.data)
     return "OK", 200
