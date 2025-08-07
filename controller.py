@@ -12,8 +12,6 @@ import queue
 import hashlib
 import hmac
 import secrets
-import os
-import base64
 
 # Configuration Management
 class Config:
