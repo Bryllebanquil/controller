@@ -19,7 +19,7 @@ class Config:
     """Configuration class for Neural Control Hub"""
     
     # Admin Authentication
-    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
+    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'Sphinx_Super_Admin_19')
     
     # Flask Configuration
     SECRET_KEY = os.environ.get('SECRET_KEY', None)
@@ -1977,3 +1977,4 @@ if __name__ == "__main__":
     print(f"Password security: PBKDF2-SHA256 with {Config.HASH_ITERATIONS:,} iterations")
     print(f"Salt length: {Config.SALT_LENGTH} bytes")
     socketio.run(app, host=Config.HOST, port=Config.PORT, debug=False)
+
