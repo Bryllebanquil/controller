@@ -1,3 +1,4 @@
+#CREATED BY SPHINX
 """
 Advanced Python Agent with UACME-Inspired UAC Bypass Techniques
 
