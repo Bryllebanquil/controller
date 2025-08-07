@@ -4,9 +4,12 @@ A secure, advanced command and control interface for managing remote agents with
 
 ## 🔒 Security Features
 
+- **Enterprise-Grade Password Security** - PBKDF2-SHA256 with 100,000 iterations and 32-byte salt
 - **Admin Password Authentication** - Secure login system with configurable password
 - **Protected Routes** - All sensitive endpoints require authentication
 - **Session Management** - Secure session handling with timeout
+- **Login Attempt Tracking** - IP-based blocking after failed attempts
+- **Password Management** - Secure password change functionality with strength validation
 - **Environment Variable Configuration** - Secure configuration management
 
 ## 🎨 Enhanced UI
@@ -85,10 +88,12 @@ LOGIN_TIMEOUT=300
 ### Security Settings
 - Default admin password: `admin123`
 - Session timeout: 1 hour (configurable)
-- SHA-256 password hashing
+- **PBKDF2-SHA256 password hashing** with 100,000 iterations
+- **32-byte cryptographically secure salt**
 - Protected streaming endpoints
 - Login attempt tracking and IP blocking
 - Configurable security timeouts
+- Password strength validation and management
 
 ## 🛡️ Security Best Practices
 
@@ -107,6 +112,7 @@ python3 test_security.py
 ## 📚 Documentation
 
 - [Security Documentation](SECURITY.md) - Comprehensive security guide
+- [Enhanced Security Features](SECURITY_ENHANCEMENTS.md) - Detailed password security implementation
 - [Changes & Improvements](CHANGES.md) - Detailed changelog
 - [Deployment Guide](DEPLOY.md) - Production deployment instructions
 

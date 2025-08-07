@@ -12,6 +12,7 @@ import queue
 import hashlib
 import secrets
 import os
+import base64
 
 # Configuration Management
 class Config:
@@ -31,14 +32,85 @@ class Config:
     SESSION_TIMEOUT = int(os.environ.get('SESSION_TIMEOUT', 3600))  # 1 hour in seconds
     MAX_LOGIN_ATTEMPTS = int(os.environ.get('MAX_LOGIN_ATTEMPTS', 5))
     LOGIN_TIMEOUT = int(os.environ.get('LOGIN_TIMEOUT', 300))  # 5 minutes lockout
+    
+    # Password Security Settings
+    SALT_LENGTH = 32  # Length of salt in bytes
+    HASH_ITERATIONS = 100000  # Number of iterations for PBKDF2
 
 # Initialize Flask app with configuration
 app = Flask(__name__)
 app.config['SECRET_KEY'] = Config.SECRET_KEY or secrets.token_hex(32)  # Use config or generate secure random key
 socketio = SocketIO(app, async_mode='eventlet')
 
-# Security Configuration
-ADMIN_PASSWORD_HASH = hashlib.sha256(Config.ADMIN_PASSWORD.encode()).hexdigest()
+# Security Configuration and Password Management
+def generate_salt():
+    """Generate a cryptographically secure salt"""
+    return secrets.token_bytes(Config.SALT_LENGTH)
+
+def hash_password(password, salt=None):
+    """
+    Hash a password using PBKDF2 with SHA-256
+    
+    Args:
+        password (str): The password to hash
+        salt (bytes, optional): Salt to use. If None, generates a new salt
+    
+    Returns:
+        tuple: (hashed_password, salt) where both are base64 encoded strings
+    """
+    if salt is None:
+        salt = generate_salt()
+    elif isinstance(salt, str):
+        salt = base64.b64decode(salt)
+    
+    # Use PBKDF2 with SHA-256 for secure password hashing
+    import hashlib
+    import hmac
+    
+    # Create the hash using PBKDF2
+    hash_obj = hashlib.pbkdf2_hmac(
+        'sha256',
+        password.encode('utf-8'),
+        salt,
+        Config.HASH_ITERATIONS
+    )
+    
+    # Return base64 encoded hash and salt
+    return base64.b64encode(hash_obj).decode('utf-8'), base64.b64encode(salt).decode('utf-8')
+
+def verify_password(password, stored_hash, stored_salt):
+    """
+    Verify a password against a stored hash and salt
+    
+    Args:
+        password (str): The password to verify
+        stored_hash (str): The stored hash (base64 encoded)
+        stored_salt (str): The stored salt (base64 encoded)
+    
+    Returns:
+        bool: True if password matches, False otherwise
+    """
+    try:
+        # Hash the provided password with the stored salt
+        hash_obj, _ = hash_password(password, stored_salt)
+        return hmac.compare_digest(hash_obj, stored_hash)
+    except Exception:
+        return False
+
+def create_secure_password_hash(password):
+    """
+    Create a secure hash for a password
+    
+    Args:
+        password (str): The password to hash
+    
+    Returns:
+        tuple: (hash, salt) both base64 encoded
+    """
+    return hash_password(password)
+
+# Generate secure hash for admin password
+ADMIN_PASSWORD_HASH, ADMIN_PASSWORD_SALT = create_secure_password_hash(Config.ADMIN_PASSWORD)
 
 # Session management and security tracking
 LOGIN_ATTEMPTS = {}  # Track failed login attempts by IP
@@ -217,9 +289,9 @@ def login():
     
     if request.method == 'POST':
         password = request.form.get('password', '')
-        password_hash = hashlib.sha256(password.encode()).hexdigest()
         
-        if password_hash == ADMIN_PASSWORD_HASH:
+        # Verify password using secure hash comparison
+        if verify_password(password, ADMIN_PASSWORD_HASH, ADMIN_PASSWORD_SALT):
             # Successful login
             clear_login_attempts(client_ip)
             session['authenticated'] = True
@@ -410,8 +482,44 @@ def config_status():
         'max_login_attempts': Config.MAX_LOGIN_ATTEMPTS,
         'login_timeout': Config.LOGIN_TIMEOUT,
         'current_login_attempts': len(LOGIN_ATTEMPTS),
-        'blocked_ips': [ip for ip, (attempts, _) in LOGIN_ATTEMPTS.items() if attempts >= Config.MAX_LOGIN_ATTEMPTS]
+        'blocked_ips': [ip for ip, (attempts, _) in LOGIN_ATTEMPTS.items() if attempts >= Config.MAX_LOGIN_ATTEMPTS],
+        'password_hash_algorithm': 'PBKDF2-SHA256',
+        'hash_iterations': Config.HASH_ITERATIONS,
+        'salt_length': Config.SALT_LENGTH
     })
+
+# Password change endpoint
+@app.route('/change-password', methods=['POST'])
+@require_auth
+def change_password():
+    """Change the admin password"""
+    global ADMIN_PASSWORD_HASH, ADMIN_PASSWORD_SALT
+    
+    try:
+        data = request.get_json()
+        current_password = data.get('current_password', '')
+        new_password = data.get('new_password', '')
+        
+        # Verify current password
+        if not verify_password(current_password, ADMIN_PASSWORD_HASH, ADMIN_PASSWORD_SALT):
+            return jsonify({'success': False, 'message': 'Current password is incorrect'}), 400
+        
+        # Validate new password
+        if len(new_password) < 8:
+            return jsonify({'success': False, 'message': 'New password must be at least 8 characters long'}), 400
+        
+        # Generate new hash for the new password
+        new_hash, new_salt = create_secure_password_hash(new_password)
+        ADMIN_PASSWORD_HASH = new_hash
+        ADMIN_PASSWORD_SALT = new_salt
+        
+        # Update the config (this will persist for the current session)
+        Config.ADMIN_PASSWORD = new_password
+        
+        return jsonify({'success': True, 'message': 'Password changed successfully'}), 200
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error changing password: {str(e)}'}), 500
 
 # --- Web Dashboard HTML (with Socket.IO) ---
 DASHBOARD_HTML = r'''
@@ -804,6 +912,37 @@ DASHBOARD_HTML = r'''
             font-size: 0.9rem;
         }
 
+        .password-management {
+            display: grid;
+            gap: 16px;
+        }
+
+        .password-strength {
+            margin-top: 8px;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .password-weak {
+            background: rgba(255, 71, 87, 0.2);
+            color: var(--accent-red);
+            border: 1px solid var(--accent-red);
+        }
+
+        .password-medium {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+            border: 1px solid #ffc107;
+        }
+
+        .password-strong {
+            background: rgba(0, 255, 136, 0.2);
+            color: var(--accent-green);
+            border: 1px solid var(--accent-green);
+        }
+
         .no-agents {
             text-align: center;
             padding: 40px 20px;
@@ -988,6 +1127,10 @@ DASHBOARD_HTML = r'''
                     <span class="config-value" id="admin-password-status">Checking...</span>
                 </div>
                 <div class="config-item">
+                    <span class="config-label">Hash Algorithm:</span>
+                    <span class="config-value" id="hash-algorithm">Checking...</span>
+                </div>
+                <div class="config-item">
                     <span class="config-label">Session Timeout:</span>
                     <span class="config-value" id="session-timeout">Checking...</span>
                 </div>
@@ -1000,6 +1143,33 @@ DASHBOARD_HTML = r'''
                     <span class="config-value" id="blocked-ips">Checking...</span>
                 </div>
                 <button class="btn" onclick="refreshConfigStatus()">Refresh Status</button>
+            </div>
+        </div>
+
+        <!-- Password Management -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-icon">🔐</div>
+                <div class="panel-title">Password Management</div>
+            </div>
+            <div class="password-management">
+                <div class="control-group">
+                    <div class="control-header">Change Admin Password</div>
+                    <div class="input-group">
+                        <label class="input-label">Current Password</label>
+                        <input type="password" class="neural-input" id="current-password" placeholder="Enter current password">
+                    </div>
+                    <div class="input-group">
+                        <label class="input-label">New Password</label>
+                        <input type="password" class="neural-input" id="new-password" placeholder="Enter new password (min 8 chars)">
+                    </div>
+                    <div class="input-group">
+                        <label class="input-label">Confirm New Password</label>
+                        <input type="password" class="neural-input" id="confirm-password" placeholder="Confirm new password">
+                    </div>
+                    <button class="btn" onclick="changePassword()">Change Password</button>
+                    <div id="password-change-status" class="status-indicator"></div>
+                </div>
             </div>
         </div>
 
@@ -1193,6 +1363,8 @@ DASHBOARD_HTML = r'''
                 .then(data => {
                     document.getElementById('admin-password-status').textContent = 
                         data.admin_password_set ? `Set (${data.admin_password_length} chars)` : 'Not set';
+                    document.getElementById('hash-algorithm').textContent = 
+                        `${data.password_hash_algorithm} (${data.hash_iterations} iterations)`;
                     document.getElementById('session-timeout').textContent = 
                         `${data.session_timeout} seconds`;
                     document.getElementById('max-login-attempts').textContent = 
@@ -1203,6 +1375,7 @@ DASHBOARD_HTML = r'''
                 .catch(error => {
                     console.error('Error fetching config status:', error);
                     document.getElementById('admin-password-status').textContent = 'Error';
+                    document.getElementById('hash-algorithm').textContent = 'Error';
                     document.getElementById('session-timeout').textContent = 'Error';
                     document.getElementById('max-login-attempts').textContent = 'Error';
                     document.getElementById('blocked-ips').textContent = 'Error';
@@ -1212,6 +1385,99 @@ DASHBOARD_HTML = r'''
         // Load config status on page load
         document.addEventListener('DOMContentLoaded', function() {
             refreshConfigStatus();
+        });
+
+        // Password management functions
+        function changePassword() {
+            const currentPassword = document.getElementById('current-password').value;
+            const newPassword = document.getElementById('new-password').value;
+            const confirmPassword = document.getElementById('confirm-password').value;
+            const statusDiv = document.getElementById('password-change-status');
+
+            // Validation
+            if (!currentPassword || !newPassword || !confirmPassword) {
+                showPasswordStatus('Please fill in all password fields.', 'error');
+                return;
+            }
+
+            if (newPassword.length < 8) {
+                showPasswordStatus('New password must be at least 8 characters long.', 'error');
+                return;
+            }
+
+            if (newPassword !== confirmPassword) {
+                showPasswordStatus('New passwords do not match.', 'error');
+                return;
+            }
+
+            // Send password change request
+            fetch('/change-password', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    current_password: currentPassword,
+                    new_password: newPassword
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showPasswordStatus('Password changed successfully!', 'success');
+                    // Clear form
+                    document.getElementById('current-password').value = '';
+                    document.getElementById('new-password').value = '';
+                    document.getElementById('confirm-password').value = '';
+                    // Refresh config status
+                    refreshConfigStatus();
+                } else {
+                    showPasswordStatus(data.message, 'error');
+                }
+            })
+            .catch(error => {
+                showPasswordStatus('Error changing password: ' + error.message, 'error');
+            });
+        }
+
+        function showPasswordStatus(message, type) {
+            const statusDiv = document.getElementById('password-change-status');
+            statusDiv.style.display = 'block';
+            statusDiv.className = `status-indicator status-${type}`;
+            statusDiv.textContent = message;
+            setTimeout(() => { statusDiv.style.display = 'none'; }, 5000);
+        }
+
+        // Password strength indicator
+        function checkPasswordStrength(password) {
+            let strength = 0;
+            if (password.length >= 8) strength++;
+            if (/[a-z]/.test(password)) strength++;
+            if (/[A-Z]/.test(password)) strength++;
+            if (/[0-9]/.test(password)) strength++;
+            if (/[^A-Za-z0-9]/.test(password)) strength++;
+            
+            if (strength < 3) return 'weak';
+            if (strength < 5) return 'medium';
+            return 'strong';
+        }
+
+        // Add password strength indicator
+        document.getElementById('new-password').addEventListener('input', function() {
+            const password = this.value;
+            const strength = checkPasswordStrength(password);
+            const strengthDiv = this.parentNode.querySelector('.password-strength');
+            
+            if (strengthDiv) {
+                strengthDiv.remove();
+            }
+            
+            if (password.length > 0) {
+                const div = document.createElement('div');
+                div.className = `password-strength password-${strength}`;
+                div.textContent = `Password strength: ${strength.charAt(0).toUpperCase() + strength.slice(1)}`;
+                this.parentNode.appendChild(div);
+            }
         });
 
         // --- Live Keyboard Event Listeners ---
@@ -1708,4 +1974,6 @@ if __name__ == "__main__":
     print(f"Server will be available at: http://{Config.HOST}:{Config.PORT}")
     print(f"Session timeout: {Config.SESSION_TIMEOUT} seconds")
     print(f"Max login attempts: {Config.MAX_LOGIN_ATTEMPTS}")
+    print(f"Password security: PBKDF2-SHA256 with {Config.HASH_ITERATIONS:,} iterations")
+    print(f"Salt length: {Config.SALT_LENGTH} bytes")
     socketio.run(app, host=Config.HOST, port=Config.PORT, debug=False)
