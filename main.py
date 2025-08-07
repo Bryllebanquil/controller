@@ -3369,38 +3369,83 @@ def on_file_chunk_from_operator(data):
     offset = data.get('offset', 0)
     total_size = data.get('total_size', 0)
     destination_path = data.get('destination_path') or filename
+    
+    print(f"Debug - filename: {filename}, destination_path: {destination_path}, total_size: {total_size}")
+    
     if not filename or not chunk_b64:
         print("Invalid file chunk received.")
         return
+    
     # Use a temp buffer in memory or on disk
     if not hasattr(on_file_chunk_from_operator, 'buffers'):
         on_file_chunk_from_operator.buffers = {}
     buffers = on_file_chunk_from_operator.buffers
+    
     if destination_path not in buffers:
-        buffers[destination_path] = {'chunks': [], 'total_size': total_size}
+        buffers[destination_path] = {'chunks': [], 'total_size': total_size, 'filename': filename}
+    
     # Remove data: prefix if present
     if ',' in chunk_b64:
         chunk_b64 = chunk_b64.split(',', 1)[1]
-    chunk = base64.b64decode(chunk_b64)
-    buffers[destination_path]['chunks'].append((offset, chunk))
-    # Check if file is complete
-    received_size = sum(len(c[1]) for c in buffers[destination_path]['chunks'])
-    print(f"File {filename}: received {received_size}/{total_size} bytes")
-    if total_size and received_size >= total_size:
-        # Sort by offset and write to disk
-        buffers[destination_path]['chunks'].sort()
-        os.makedirs(os.path.dirname(destination_path), exist_ok=True)
+    
+    try:
+        chunk = base64.b64decode(chunk_b64)
+        buffers[destination_path]['chunks'].append((offset, chunk))
+        
+        # Check if file is complete
+        received_size = sum(len(c[1]) for c in buffers[destination_path]['chunks'])
+        print(f"File {filename}: received {received_size}/{total_size} bytes")
+        
+        # If we have received all chunks or this is the last chunk (total_size might be 0)
+        if total_size > 0 and received_size >= total_size:
+            print(f"File complete: received {received_size}/{total_size} bytes")
+            _save_completed_file(destination_path, buffers[destination_path])
+        elif total_size == 0 and len(buffers[destination_path]['chunks']) > 0:
+            # If total_size is 0, assume this is the only chunk and save immediately
+            print(f"Total size is 0, saving single chunk file immediately")
+            _save_completed_file(destination_path, buffers[destination_path])
+            
+    except Exception as e:
+        print(f"Error processing chunk: {e}")
+
+def _save_completed_file(destination_path, buffer_data):
+    """Save the completed file to disk."""
+    try:
+        # Sort chunks by offset
+        buffer_data['chunks'].sort()
+        
+        # Ensure directory exists
+        dir_path = os.path.dirname(destination_path)
+        if dir_path:
+            os.makedirs(dir_path, exist_ok=True)
+        
+        # Write file
         with open(destination_path, 'wb') as f:
-            for _, c in buffers[destination_path]['chunks']:
-                f.write(c)
-        print(f"File downloaded successfully to {destination_path}")
-        del buffers[destination_path]
+            for _, chunk in buffer_data['chunks']:
+                f.write(chunk)
+        
+        file_size = sum(len(c[1]) for c in buffer_data['chunks'])
+        print(f"File saved successfully to {destination_path} ({file_size} bytes)")
+        
+        # Clean up buffer
+        if hasattr(on_file_chunk_from_operator, 'buffers'):
+            if destination_path in on_file_chunk_from_operator.buffers:
+                del on_file_chunk_from_operator.buffers[destination_path]
+                
+    except Exception as e:
+        print(f"Error saving file {destination_path}: {e}")
 
 @sio.on('file_upload_complete_from_operator')
 def on_file_upload_complete_from_operator(data):
     filename = data.get('filename')
     destination_path = data.get('destination_path') or filename
     print(f"Upload of {filename} to {destination_path} complete.")
+    
+    # Force save any remaining buffered file
+    if hasattr(on_file_chunk_from_operator, 'buffers'):
+        if destination_path in on_file_chunk_from_operator.buffers:
+            print(f"Force saving file {destination_path} from completion event")
+            _save_completed_file(destination_path, on_file_chunk_from_operator.buffers[destination_path])
 
 @sio.on('request_file_chunk_from_agent')
 def on_request_file_chunk_from_agent(data):
