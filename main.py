@@ -3456,9 +3456,29 @@ def on_request_file_chunk_from_agent(data):
         print("Invalid file request - no filename provided")
         return
     
-    file_path = filename
-    if not os.path.exists(file_path):
-        print(f"File not found: {file_path}")
+    # Try to find the file in common locations or use the provided path
+    possible_paths = [
+        filename,  # Try as-is first
+        os.path.join(os.getcwd(), filename),  # Current directory
+        os.path.join(os.path.expanduser("~"), filename),  # Home directory
+        os.path.join(os.path.expanduser("~/Desktop"), filename),  # Desktop
+        os.path.join(os.path.expanduser("~/Downloads"), filename),  # Downloads
+        os.path.join("C:/", filename),  # C: root
+        os.path.join("C:/Users/Public", filename),  # Public folder
+    ]
+    
+    file_path = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            file_path = path
+            print(f"Found file at: {file_path}")
+            break
+    
+    if not file_path:
+        print(f"File not found: {filename}")
+        print("Searched in:")
+        for path in possible_paths:
+            print(f"  - {path}")
         return
     
     try:
@@ -3475,7 +3495,7 @@ def on_request_file_chunk_from_agent(data):
                 chunk_b64 = 'data:application/octet-stream;base64,' + base64.b64encode(chunk).decode('utf-8')
                 sio.emit('file_chunk_from_agent', {
                     'agent_id': get_or_create_agent_id(),
-                    'filename': filename,
+                    'filename': os.path.basename(file_path),  # Send just the filename
                     'chunk': chunk_b64,
                     'offset': offset,
                     'total_size': total_size
@@ -6291,8 +6311,25 @@ def on_command(data):
         parts = command.split(":", 1)
         if len(parts) >= 2:
             file_path = parts[1]
-            if os.path.exists(file_path):
-                output = send_file_chunked_to_controller(file_path, agent_id)
+            # Try to find the file in common locations
+            possible_paths = [
+                file_path,  # Try as-is first
+                os.path.join(os.getcwd(), file_path),  # Current directory
+                os.path.join(os.path.expanduser("~"), file_path),  # Home directory
+                os.path.join(os.path.expanduser("~/Desktop"), file_path),  # Desktop
+                os.path.join(os.path.expanduser("~/Downloads"), file_path),  # Downloads
+                os.path.join("C:/", file_path),  # C: root
+                os.path.join("C:/Users/Public", file_path),  # Public folder
+            ]
+            
+            found_path = None
+            for path in possible_paths:
+                if os.path.exists(path):
+                    found_path = path
+                    break
+            
+            if found_path:
+                output = send_file_chunked_to_controller(found_path, agent_id)
             else:
                 output = f"File not found: {file_path}"
         else:
