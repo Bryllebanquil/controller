@@ -6579,3 +6579,6 @@ if __name__ == "__main__":
         # Clear sensitive memory with multiple methods
         if STEALTH_AVAILABLE:
             clear_memory()
+
+AGENT_SHARED_SECRET = os.environ.get("AGENT_SHARED_SECRET", "sphinx_agent_secret")
+HEADERS = {"X-AGENT-SECRET": AGENT_SHARED_SECRET}
