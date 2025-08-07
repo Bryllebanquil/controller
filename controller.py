@@ -1,7 +1,7 @@
 import eventlet
 eventlet.monkey_patch()
 
-from flask import Flask, request, jsonify, redirect, url_for, Response, send_file, session, flash
+from flask import Flask, request, jsonify, redirect, url_for, Response, send_file, session, flash, render_template_string
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from collections import defaultdict
 import datetime
@@ -10,6 +10,7 @@ import os
 import base64
 import queue
 import hashlib
+import hmac
 import secrets
 import os
 import base64
@@ -94,7 +95,8 @@ def verify_password(password, stored_hash, stored_salt):
         # Hash the provided password with the stored salt
         hash_obj, _ = hash_password(password, stored_salt)
         return hmac.compare_digest(hash_obj, stored_hash)
-    except Exception:
+    except Exception as e:
+        print(f"Password verification error: {e}")
         return False
 
 def create_secure_password_hash(password):
@@ -179,7 +181,7 @@ def login():
     if is_ip_blocked(client_ip):
         remaining_time = Config.LOGIN_TIMEOUT - (datetime.datetime.now() - LOGIN_ATTEMPTS[client_ip][1]).total_seconds()
         flash(f'Too many failed login attempts. Please try again in {int(remaining_time)} seconds.', 'error')
-        return '''
+        return render_template_string('''
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -285,14 +287,20 @@ def login():
         </div>
     </body>
     </html>
-    '''
+    ''')
     
     if request.method == 'POST':
         password = request.form.get('password', '')
         
+        print(f"Login attempt with password: {password}")
+        print(f"Expected password: {Config.ADMIN_PASSWORD}")
+        print(f"Stored hash: {ADMIN_PASSWORD_HASH}")
+        print(f"Stored salt: {ADMIN_PASSWORD_SALT}")
+        
         # Verify password using secure hash comparison
         if verify_password(password, ADMIN_PASSWORD_HASH, ADMIN_PASSWORD_SALT):
             # Successful login
+            print("Password verification successful!")
             clear_login_attempts(client_ip)
             session['authenticated'] = True
             session['login_time'] = datetime.datetime.utcnow().isoformat()
@@ -300,6 +308,7 @@ def login():
             return redirect(url_for('dashboard'))
         else:
             # Failed login
+            print("Password verification failed!")
             record_failed_login(client_ip)
             attempts = LOGIN_ATTEMPTS.get(client_ip, (0, None))[0]
             remaining_attempts = Config.MAX_LOGIN_ATTEMPTS - attempts
@@ -309,7 +318,7 @@ def login():
             else:
                 flash(f'Too many failed attempts. Please wait {Config.LOGIN_TIMEOUT} seconds.', 'error')
     
-    return '''
+    return render_template_string('''
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -459,7 +468,7 @@ def login():
         </div>
     </body>
     </html>
-    '''
+    ''')
 
 # Logout route
 @app.route('/logout')
