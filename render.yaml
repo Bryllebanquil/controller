@@ -11,8 +11,24 @@ preBuild:
 
 services:
   - type: web
-    name: agent-controller
+    name: neural-control-hub
     env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn -k eventlet -w 1 controller:app --bind 0.0.0.0:$PORT
+    buildCommand: pip install -r requirements-controller.txt
+    startCommand: python start-render.py
     plan: free
+    envVars:
+      - key: ADMIN_PASSWORD
+        value: "your_secure_password_here"
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: SESSION_TIMEOUT
+        value: "3600"
+      - key: MAX_LOGIN_ATTEMPTS
+        value: "5"
+      - key: LOGIN_TIMEOUT
+        value: "300"
+      - key: HASH_ITERATIONS
+        value: "100000"
+      - key: SALT_LENGTH
+        value: "32"

