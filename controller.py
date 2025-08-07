@@ -19,7 +19,7 @@ class Config:
     """Configuration class for Neural Control Hub"""
     
     # Admin Authentication
-    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'Sphinx_Super_Admin_19')
+    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
     
     # Flask Configuration
     SECRET_KEY = os.environ.get('SECRET_KEY', None)
@@ -309,7 +309,16 @@ def login():
             else:
                 flash(f'Too many failed attempts. Please wait {Config.LOGIN_TIMEOUT} seconds.', 'error')
     
-    return '''
+    # Get flash messages to display
+    from flask import get_flashed_messages
+    messages = get_flashed_messages(with_categories=True)
+    
+    # Build error message HTML
+    error_html = ""
+    for category, message in messages:
+        error_html += f'<div class="error-message">{message}</div>'
+    
+    return f'''
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -318,7 +327,7 @@ def login():
         <title>Neural Control Hub - Login</title>
         <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
         <style>
-            :root {
+            :root {{
                 --primary-bg: #0a0a0f;
                 --secondary-bg: #1a1a2e;
                 --accent-blue: #00d4ff;
@@ -327,15 +336,15 @@ def login():
                 --text-secondary: #a0a0a0;
                 --glass-bg: rgba(255, 255, 255, 0.05);
                 --glass-border: rgba(255, 255, 255, 0.1);
-            }
+            }}
             
-            * {
+            * {{
                 margin: 0;
                 padding: 0;
                 box-sizing: border-box;
-            }
+            }}
             
-            body {
+            body {{
                 font-family: 'Inter', sans-serif;
                 background: linear-gradient(135deg, var(--primary-bg) 0%, var(--secondary-bg) 100%);
                 color: var(--text-primary);
@@ -343,9 +352,9 @@ def login():
                 display: flex;
                 align-items: center;
                 justify-content: center;
-            }
+            }}
             
-            .login-container {
+            .login-container {{
                 background: var(--glass-bg);
                 backdrop-filter: blur(20px);
                 border: 1px solid var(--glass-border);
@@ -354,14 +363,14 @@ def login():
                 width: 100%;
                 max-width: 400px;
                 box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            }
+            }}
             
-            .login-header {
+            .login-header {{
                 text-align: center;
                 margin-bottom: 30px;
-            }
+            }}
             
-            .login-header h1 {
+            .login-header h1 {{
                 font-family: 'Orbitron', monospace;
                 font-size: 2rem;
                 font-weight: 900;
@@ -370,25 +379,25 @@ def login():
                 -webkit-text-fill-color: transparent;
                 background-clip: text;
                 margin-bottom: 10px;
-            }
+            }}
             
-            .login-header p {
+            .login-header p {{
                 color: var(--text-secondary);
                 font-size: 0.9rem;
-            }
+            }}
             
-            .form-group {
+            .form-group {{
                 margin-bottom: 20px;
-            }
+            }}
             
-            .form-group label {
+            .form-group label {{
                 display: block;
                 margin-bottom: 8px;
                 color: var(--text-secondary);
                 font-weight: 500;
-            }
+            }}
             
-            .form-group input {
+            .form-group input {{
                 width: 100%;
                 background: var(--secondary-bg);
                 border: 1px solid var(--glass-border);
@@ -397,15 +406,15 @@ def login():
                 color: var(--text-primary);
                 font-size: 1rem;
                 transition: all 0.3s ease;
-            }
+            }}
             
-            .form-group input:focus {
+            .form-group input:focus {{
                 outline: none;
                 border-color: var(--accent-blue);
                 box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
-            }
+            }}
             
-            .login-btn {
+            .login-btn {{
                 width: 100%;
                 background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
                 border: none;
@@ -416,14 +425,14 @@ def login():
                 font-size: 1rem;
                 cursor: pointer;
                 transition: all 0.3s ease;
-            }
+            }}
             
-            .login-btn:hover {
+            .login-btn:hover {{
                 transform: translateY(-2px);
                 box-shadow: 0 8px 25px rgba(0, 212, 255, 0.3);
-            }
+            }}
             
-            .error-message {
+            .error-message {{
                 background: rgba(255, 71, 87, 0.2);
                 color: #ff4757;
                 border: 1px solid #ff4757;
@@ -431,7 +440,7 @@ def login():
                 padding: 12px;
                 margin-bottom: 20px;
                 text-align: center;
-            }
+            }}
         </style>
     </head>
     <body>
@@ -441,13 +450,7 @@ def login():
                 <p>Admin Authentication Required</p>
             </div>
             
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                        <div class="error-message">{{ message }}</div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
+            {error_html}
             
             <form method="POST">
                 <div class="form-group">
