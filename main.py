@@ -2401,319 +2401,238 @@ def stream_screen(agent_id):
 
 def _stream_screen_fallback(agent_id):
     """
-    Fallback screen streaming with basic optimizations
+    Fallback screen streaming with basic optimizations and retry logic
     """
     global STREAMING_ENABLED
-    
+    import time
+    retry_delay = 5  # seconds
     # Check if required dependencies are available
-    if not MSS_AVAILABLE:
-        print("Error: mss not available for screen capture")
+    if not MSS_AVAILABLE or not NUMPY_AVAILABLE or not CV2_AVAILABLE:
+        print("Error: Required dependencies not available for screen capture")
         return
-    
-    if not NUMPY_AVAILABLE:
-        print("Error: numpy not available for screen capture")
-        return
-    
-    if not CV2_AVAILABLE:
-        print("Error: opencv-python not available for screen capture")
-        return
-    
     url = f"{SERVER_URL}/stream/{agent_id}"
     headers = {'Content-Type': 'image/jpeg'}
-
-    try:
-        with mss.mss() as sct:
-            # Get available monitors
-            monitors = sct.monitors
-            if len(monitors) < 2:
-                print(f"Warning: Only {len(monitors)} monitor(s) available, using primary")
-                monitor_index = 1  # Primary monitor
-            else:
-                monitor_index = 1  # Primary monitor (index 1)
-            
-            print(f"Using monitor {monitor_index}: {monitors[monitor_index]}")
-            
-            # Optimize for higher FPS than original
-            target_fps = 30  # Reduced from 45 for better stability
-            frame_time = 1.0 / target_fps
-            last_frame_hash = None
-            frame_skip_count = 0
-            
-            while STREAMING_ENABLED:
-                try:
+    while STREAMING_ENABLED:
+        try:
+            with mss.mss() as sct:
+                monitors = sct.monitors
+                monitor_index = 1
+                print(f"Using monitor {monitor_index}: {monitors[monitor_index]}")
+                target_fps = 30
+                frame_time = 1.0 / target_fps
+                last_frame_hash = None
+                frame_skip_count = 0
+                while STREAMING_ENABLED:
                     current_time = time.time()
-                    
-                    # Get raw pixels from the screen
                     sct_img = sct.grab(monitors[monitor_index])
-                    
-                    # Create an OpenCV image
                     img = np.array(sct_img)
-                    
-                    # Basic delta compression - skip identical frames
                     import hashlib
                     frame_hash = hashlib.md5(img.tobytes()).hexdigest()
                     if frame_hash == last_frame_hash:
                         frame_skip_count += 1
-                        if frame_skip_count < 3:  # Reduced from 5 for better responsiveness
+                        if frame_skip_count < 3:
                             time.sleep(frame_time * 0.5)
                             continue
-                    
                     last_frame_hash = frame_hash
                     frame_skip_count = 0
-                    
-                    # Resize for better performance if screen is too large
                     height, width = img.shape[:2]
-                    if width > 1280:  # Reduced from 1920 for better performance
+                    if width > 1280:
                         scale = 1280 / width
                         new_width = int(width * scale)
                         new_height = int(height * scale)
                         img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
-                    
-                    # Encode with better compression settings
                     is_success, buffer = cv2.imencode(".jpg", img, [
-                        cv2.IMWRITE_JPEG_QUALITY, 80,  # Reduced from 90 for better performance
+                        cv2.IMWRITE_JPEG_QUALITY, 80,
                         cv2.IMWRITE_JPEG_OPTIMIZE, 1,
                         cv2.IMWRITE_JPEG_PROGRESSIVE, 1
                     ])
                     if not is_success:
                         continue
-
-                    # Send the frame asynchronously with shorter timeout
                     try:
                         response = requests.post(url, data=buffer.tobytes(), headers=headers, timeout=0.1)
                         if response.status_code != 200:
                             print(f"Warning: Server returned status {response.status_code}")
                     except requests.exceptions.Timeout:
-                        pass  # Skip frame if timeout
+                        pass
                     except requests.exceptions.RequestException as e:
-                        print(f"Request error: {e}")
-                        break  # Break on connection errors
-                    
-                    # Maintain target FPS with better timing
+                        print(f"Request error: {e}. Retrying in {retry_delay}s...")
+                        time.sleep(retry_delay)
+                        break  # Break inner loop to retry outer
                     elapsed = time.time() - current_time
                     sleep_time = max(0, frame_time - elapsed)
                     if sleep_time > 0:
                         time.sleep(sleep_time)
-                        
-                except Exception as e:
-                    print(f"Stream error: {e}")
-                    time.sleep(0.5)  # Shorter wait before retrying
-    except Exception as e:
-        print(f"Screen capture initialization error: {e}")
+        except Exception as e:
+            print(f"Screen capture initialization error: {e}. Retrying in {retry_delay}s...")
+            time.sleep(retry_delay)
 
 def stream_camera(agent_id):
     """
-    Captures the webcam and streams it to the controller at high FPS.
-    This function runs in a separate thread.
+    Captures the webcam and streams it to the controller at high FPS. Retry logic added.
     """
     global CAMERA_STREAMING_ENABLED
-    
-    # Check if required dependencies are available
+    import time
+    retry_delay = 5
     if not CV2_AVAILABLE:
         print("Error: opencv-python not available for camera capture")
         return
-    
     url = f"{SERVER_URL}/camera/{agent_id}"
     headers = {'Content-Type': 'image/jpeg'}
-
-    try:
-        # Try different camera backends
-        cap = None
-        backends = []
-        
-        if WINDOWS_AVAILABLE:
-            backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
-        else:
-            backends = [cv2.CAP_V4L2, cv2.CAP_ANY]
-        
-        for backend in backends:
-            try:
-                cap = cv2.VideoCapture(0, backend)
-                if cap.isOpened():
-                    print(f"Camera opened successfully with backend {backend}")
-                    break
-                else:
-                    cap.release()
-            except Exception as e:
-                print(f"Failed to open camera with backend {backend}: {e}")
-                if cap:
-                    cap.release()
-        
-        if not cap or not cap.isOpened():
-            print("Error: Could not open camera with any backend")
-            return
-        
-        # Set camera properties for better performance
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        cap.set(cv2.CAP_PROP_FPS, 30)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer for lower latency
-        
-        # Verify camera settings
-        actual_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-        actual_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-        actual_fps = cap.get(cv2.CAP_PROP_FPS)
-        print(f"Camera initialized: {actual_width}x{actual_height} @ {actual_fps}fps")
-        
-        frame_count = 0
-        start_time = time.time()
-        
-        while CAMERA_STREAMING_ENABLED:
-            try:
-                ret, frame = cap.read()
-                if not ret:
-                    print("Error: Could not read frame from camera")
-                    time.sleep(0.1)
-                    continue
-                
-                frame_count += 1
-                
-                # Resize frame for better performance
-                frame = cv2.resize(frame, (640, 480))
-                
-                # Encode frame
-                is_success, buffer = cv2.imencode(".jpg", frame, [
-                    cv2.IMWRITE_JPEG_QUALITY, 85,
-                    cv2.IMWRITE_JPEG_OPTIMIZE, 1
-                ])
-                
-                if not is_success:
-                    continue
-                
-                # Send frame
+    while CAMERA_STREAMING_ENABLED:
+        try:
+            cap = None
+            backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY] if WINDOWS_AVAILABLE else [cv2.CAP_V4L2, cv2.CAP_ANY]
+            for backend in backends:
                 try:
-                    response = requests.post(url, data=buffer.tobytes(), headers=headers, timeout=0.5)
-                    if response.status_code != 200:
-                        print(f"Warning: Camera stream server returned status {response.status_code}")
-                except requests.exceptions.Timeout:
-                    pass  # Skip frame if timeout
-                except requests.exceptions.RequestException as e:
-                    print(f"Camera stream request error: {e}")
-                    break
-                
-                # Log FPS every 30 frames
-                if frame_count % 30 == 0:
-                    elapsed = time.time() - start_time
-                    fps = frame_count / elapsed
-                    print(f"Camera streaming at {fps:.1f} FPS")
-                
-                # Maintain FPS
-                time.sleep(1/30)  # 30 FPS
-                
-            except Exception as e:
-                print(f"Camera stream error: {e}")
-                time.sleep(0.5)
-        
-        # Cleanup
-        cap.release()
-        print("Camera streaming stopped")
-        
-    except Exception as e:
-        print(f"Camera initialization error: {e}")
+                    cap = cv2.VideoCapture(0, backend)
+                    if cap.isOpened():
+                        print(f"Camera opened successfully with backend {backend}")
+                        break
+                    else:
+                        cap.release()
+                except Exception as e:
+                    print(f"Failed to open camera with backend {backend}: {e}")
+                    if cap:
+                        cap.release()
+            if not cap or not cap.isOpened():
+                print("Error: Could not open camera with any backend. Retrying in {retry_delay}s...")
+                time.sleep(retry_delay)
+                continue
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            cap.set(cv2.CAP_PROP_FPS, 30)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            actual_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+            actual_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+            actual_fps = cap.get(cv2.CAP_PROP_FPS)
+            print(f"Camera initialized: {actual_width}x{actual_height} @ {actual_fps}fps")
+            frame_count = 0
+            start_time = time.time()
+            while CAMERA_STREAMING_ENABLED:
+                try:
+                    ret, frame = cap.read()
+                    if not ret:
+                        print("Error: Could not read frame from camera")
+                        time.sleep(0.1)
+                        continue
+                    frame_count += 1
+                    frame = cv2.resize(frame, (640, 480))
+                    is_success, buffer = cv2.imencode(".jpg", frame, [
+                        cv2.IMWRITE_JPEG_QUALITY, 85,
+                        cv2.IMWRITE_JPEG_OPTIMIZE, 1
+                    ])
+                    if not is_success:
+                        continue
+                    try:
+                        response = requests.post(url, data=buffer.tobytes(), headers=headers, timeout=0.5)
+                        if response.status_code != 200:
+                            print(f"Warning: Camera stream server returned status {response.status_code}")
+                    except requests.exceptions.Timeout:
+                        pass
+                    except requests.exceptions.RequestException as e:
+                        print(f"Camera stream request error: {e}. Retrying in {retry_delay}s...")
+                        time.sleep(retry_delay)
+                        break
+                    if frame_count % 30 == 0:
+                        elapsed = time.time() - start_time
+                        fps = frame_count / elapsed
+                        print(f"Camera streaming at {fps:.1f} FPS")
+                    time.sleep(1/30)
+                except Exception as e:
+                    print(f"Camera stream error: {e}")
+                    time.sleep(0.5)
+            cap.release()
+            print("Camera streaming stopped")
+        except Exception as e:
+            print(f"Camera initialization error: {e}. Retrying in {retry_delay}s...")
+            time.sleep(retry_delay)
 
 def stream_audio(agent_id):
     """
-    Captures microphone audio and streams it to the controller.
-    This function runs in a separate thread.
+    Captures microphone audio and streams it to the controller. Retry logic added.
     """
     global AUDIO_STREAMING_ENABLED
-    
-    # Check if required dependencies are available
-    if not PYAUDIO_AVAILABLE:
+    import time
+    retry_delay = 5
+    if not PYAUDIO_AVAILABLE or FORMAT is None:
         print("Error: PyAudio not available for audio capture")
         return
-    
     url = f"{SERVER_URL}/audio/{agent_id}"
-    
-    try:
-        p = pyaudio.PyAudio()
-        
-        # Get available input devices
-        input_devices = []
-        for i in range(p.get_device_count()):
-            try:
-                device_info = p.get_device_info_by_index(i)
-                if device_info['maxInputChannels'] > 0:
-                    input_devices.append((i, device_info['name']))
-            except Exception:
-                continue
-        
-        print(f"Available input devices: {len(input_devices)}")
-        for idx, name in input_devices:
-            print(f"  Device {idx}: {name}")
-        
-        # Get default input device info
-        input_device_index = None
+    while AUDIO_STREAMING_ENABLED:
         try:
-            default_device_info = p.get_default_input_device_info()
-            print(f"Default audio device: {default_device_info['name']}")
-            input_device_index = default_device_info['index']
-        except Exception as e:
-            print(f"Could not get default audio device: {e}")
-            # Try to use first available device
-            if input_devices:
-                input_device_index = input_devices[0][0]
-                print(f"Using first available device: {input_devices[0][1]}")
-        
-        if input_device_index is None:
-            print("Error: No audio input devices available")
-            p.terminate()
-            return
-        
-        # Open audio stream
-        try:
-            stream = p.open(
-                format=FORMAT, 
-                channels=CHANNELS, 
-                rate=RATE, 
-                input=True, 
-                frames_per_buffer=CHUNK, 
-                input_device_index=input_device_index
-            )
-            print(f"Audio stream opened successfully with device {input_device_index}")
-        except Exception as e:
-            print(f"Failed to open audio stream: {e}")
-            p.terminate()
-            return
-        
-        frame_count = 0
-        start_time = time.time()
-        
-        while AUDIO_STREAMING_ENABLED:
-            try:
-                data = stream.read(CHUNK, exception_on_overflow=False)
-                frame_count += 1
-                
-                # Send audio data
+            p = pyaudio.PyAudio()
+            input_devices = []
+            for i in range(p.get_device_count()):
                 try:
-                    response = requests.post(url, data=data, timeout=1)
-                    if response.status_code != 200:
-                        print(f"Warning: Audio stream server returned status {response.status_code}")
-                except requests.exceptions.Timeout:
-                    pass  # Skip frame if timeout
-                except requests.exceptions.RequestException as e:
-                    print(f"Audio stream request error: {e}")
-                    break
-                
-                # Log FPS every 100 frames
-                if frame_count % 100 == 0:
-                    elapsed = time.time() - start_time
-                    fps = frame_count / elapsed
-                    print(f"Audio streaming at {fps:.1f} FPS")
-                
+                    device_info = p.get_device_info_by_index(i)
+                    if device_info['maxInputChannels'] > 0:
+                        input_devices.append((i, device_info['name']))
+                except Exception:
+                    continue
+            print(f"Available input devices: {len(input_devices)}")
+            for idx, name in input_devices:
+                print(f"  Device {idx}: {name}")
+            input_device_index = None
+            try:
+                default_device_info = p.get_default_input_device_info()
+                print(f"Default audio device: {default_device_info['name']}")
+                input_device_index = default_device_info['index']
             except Exception as e:
-                print(f"Audio stream error: {e}")
-                break
-        
-        # Cleanup
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
-        print("Audio streaming stopped")
-        
-    except Exception as e:
-        print(f"Audio initialization error: {e}")
-        AUDIO_STREAMING_ENABLED = False
+                print(f"Could not get default audio device: {e}")
+                if input_devices:
+                    input_device_index = input_devices[0][0]
+                    print(f"Using first available device: {input_devices[0][1]}")
+            if input_device_index is None:
+                print("Error: No audio input devices available. Retrying in {retry_delay}s...")
+                p.terminate()
+                time.sleep(retry_delay)
+                continue
+            try:
+                stream = p.open(
+                    format=FORMAT,
+                    channels=CHANNELS,
+                    rate=RATE,
+                    input=True,
+                    frames_per_buffer=CHUNK,
+                    input_device_index=input_device_index
+                )
+                print(f"Audio stream opened successfully with device {input_device_index}")
+            except Exception as e:
+                print(f"Failed to open audio stream: {e}. Retrying in {retry_delay}s...")
+                p.terminate()
+                time.sleep(retry_delay)
+                continue
+            frame_count = 0
+            start_time = time.time()
+            while AUDIO_STREAMING_ENABLED:
+                try:
+                    data = stream.read(CHUNK, exception_on_overflow=False)
+                    frame_count += 1
+                    try:
+                        response = requests.post(url, data=data, timeout=1)
+                        if response.status_code != 200:
+                            print(f"Warning: Audio stream server returned status {response.status_code}")
+                    except requests.exceptions.Timeout:
+                        pass
+                    except requests.exceptions.RequestException as e:
+                        print(f"Audio stream request error: {e}. Retrying in {retry_delay}s...")
+                        time.sleep(retry_delay)
+                        break
+                    if frame_count % 100 == 0:
+                        elapsed = time.time() - start_time
+                        fps = frame_count / elapsed
+                        print(f"Audio streaming at {fps:.1f} FPS")
+                except Exception as e:
+                    print(f"Audio stream error: {e}")
+                    break
+            stream.stop_stream()
+            stream.close()
+            p.terminate()
+            print("Audio streaming stopped")
+        except Exception as e:
+            print(f"Audio initialization error: {e}. Retrying in {retry_delay}s...")
+            AUDIO_STREAMING_ENABLED = False
+            time.sleep(retry_delay)
 
 def start_streaming(agent_id):
     global STREAMING_ENABLED, STREAM_THREAD
@@ -2729,6 +2648,7 @@ def stop_streaming():
     if STREAMING_ENABLED:
         STREAMING_ENABLED = False
         if STREAM_THREAD:
+            # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
             STREAM_THREAD.join(timeout=2)
         STREAM_THREAD = None
         print("Stopped video stream.")
@@ -2747,6 +2667,7 @@ def stop_audio_streaming():
     if AUDIO_STREAMING_ENABLED:
         AUDIO_STREAMING_ENABLED = False
         if AUDIO_STREAM_THREAD:
+            # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
             AUDIO_STREAM_THREAD.join(timeout=2)
         AUDIO_STREAM_THREAD = None
         print("Stopped audio stream.")
@@ -2765,6 +2686,7 @@ def stop_camera_streaming():
     if CAMERA_STREAMING_ENABLED:
         CAMERA_STREAMING_ENABLED = False
         if CAMERA_STREAM_THREAD:
+            # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
             CAMERA_STREAM_THREAD.join(timeout=2)
         CAMERA_STREAM_THREAD = None
         print("Stopped camera stream.")
