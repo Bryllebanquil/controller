@@ -14,8 +14,7 @@ mss
 opencv-python
 pygame
 dxcam >= 0.0.5; sys_platform == "win32"
-dxcam
-pywin32
+
 
 # Audio handling
 speechrecognition
@@ -49,6 +48,7 @@ setuptools >= 65.0.0
 
 # Security
 cryptography
+
 
 
 
