@@ -1,7 +1,7 @@
 import eventlet
 eventlet.monkey_patch()
 
-from flask import Flask, request, jsonify, redirect, url_for, Response, send_file, session, flash
+from flask import Flask, request, jsonify, redirect, url_for, Response, send_file, session, flash, render_template_string, render_template
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from collections import defaultdict
 import datetime
@@ -10,6 +10,7 @@ import os
 import base64
 import queue
 import hashlib
+import hmac
 import secrets
 import os
 import base64
@@ -94,7 +95,8 @@ def verify_password(password, stored_hash, stored_salt):
         # Hash the provided password with the stored salt
         hash_obj, _ = hash_password(password, stored_salt)
         return hmac.compare_digest(hash_obj, stored_hash)
-    except Exception:
+    except Exception as e:
+        print(f"Password verification error: {e}")
         return False
 
 def create_secure_password_hash(password):
@@ -179,7 +181,7 @@ def login():
     if is_ip_blocked(client_ip):
         remaining_time = Config.LOGIN_TIMEOUT - (datetime.datetime.now() - LOGIN_ATTEMPTS[client_ip][1]).total_seconds()
         flash(f'Too many failed login attempts. Please try again in {int(remaining_time)} seconds.', 'error')
-        return '''
+        return render_template_string('''
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -285,14 +287,20 @@ def login():
         </div>
     </body>
     </html>
-    '''
+    ''')
     
     if request.method == 'POST':
         password = request.form.get('password', '')
         
+        print(f"Login attempt with password: {password}")
+        print(f"Expected password: {Config.ADMIN_PASSWORD}")
+        print(f"Stored hash: {ADMIN_PASSWORD_HASH}")
+        print(f"Stored salt: {ADMIN_PASSWORD_SALT}")
+        
         # Verify password using secure hash comparison
         if verify_password(password, ADMIN_PASSWORD_HASH, ADMIN_PASSWORD_SALT):
             # Successful login
+            print("Password verification successful!")
             clear_login_attempts(client_ip)
             session['authenticated'] = True
             session['login_time'] = datetime.datetime.utcnow().isoformat()
@@ -300,6 +308,7 @@ def login():
             return redirect(url_for('dashboard'))
         else:
             # Failed login
+            print("Password verification failed!")
             record_failed_login(client_ip)
             attempts = LOGIN_ATTEMPTS.get(client_ip, (0, None))[0]
             remaining_attempts = Config.MAX_LOGIN_ATTEMPTS - attempts
@@ -309,157 +318,7 @@ def login():
             else:
                 flash(f'Too many failed attempts. Please wait {Config.LOGIN_TIMEOUT} seconds.', 'error')
     
-    return '''
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Neural Control Hub - Login</title>
-        <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
-        <style>
-            :root {
-                --primary-bg: #0a0a0f;
-                --secondary-bg: #1a1a2e;
-                --accent-blue: #00d4ff;
-                --accent-purple: #6c5ce7;
-                --text-primary: #ffffff;
-                --text-secondary: #a0a0a0;
-                --glass-bg: rgba(255, 255, 255, 0.05);
-                --glass-border: rgba(255, 255, 255, 0.1);
-            }
-            
-            * {
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }
-            
-            body {
-                font-family: 'Inter', sans-serif;
-                background: linear-gradient(135deg, var(--primary-bg) 0%, var(--secondary-bg) 100%);
-                color: var(--text-primary);
-                min-height: 100vh;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            
-            .login-container {
-                background: var(--glass-bg);
-                backdrop-filter: blur(20px);
-                border: 1px solid var(--glass-border);
-                border-radius: 20px;
-                padding: 40px;
-                width: 100%;
-                max-width: 400px;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            }
-            
-            .login-header {
-                text-align: center;
-                margin-bottom: 30px;
-            }
-            
-            .login-header h1 {
-                font-family: 'Orbitron', monospace;
-                font-size: 2rem;
-                font-weight: 900;
-                background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                background-clip: text;
-                margin-bottom: 10px;
-            }
-            
-            .login-header p {
-                color: var(--text-secondary);
-                font-size: 0.9rem;
-            }
-            
-            .form-group {
-                margin-bottom: 20px;
-            }
-            
-            .form-group label {
-                display: block;
-                margin-bottom: 8px;
-                color: var(--text-secondary);
-                font-weight: 500;
-            }
-            
-            .form-group input {
-                width: 100%;
-                background: var(--secondary-bg);
-                border: 1px solid var(--glass-border);
-                border-radius: 8px;
-                padding: 12px 16px;
-                color: var(--text-primary);
-                font-size: 1rem;
-                transition: all 0.3s ease;
-            }
-            
-            .form-group input:focus {
-                outline: none;
-                border-color: var(--accent-blue);
-                box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
-            }
-            
-            .login-btn {
-                width: 100%;
-                background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
-                border: none;
-                border-radius: 8px;
-                padding: 12px;
-                color: white;
-                font-weight: 600;
-                font-size: 1rem;
-                cursor: pointer;
-                transition: all 0.3s ease;
-            }
-            
-            .login-btn:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 8px 25px rgba(0, 212, 255, 0.3);
-            }
-            
-            .error-message {
-                background: rgba(255, 71, 87, 0.2);
-                color: #ff4757;
-                border: 1px solid #ff4757;
-                border-radius: 8px;
-                padding: 12px;
-                margin-bottom: 20px;
-                text-align: center;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="login-container">
-            <div class="login-header">
-                <h1>NEURAL CONTROL HUB</h1>
-                <p>Admin Authentication Required</p>
-            </div>
-            
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                        <div class="error-message">{{ message }}</div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
-            
-            <form method="POST">
-                <div class="form-group">
-                    <label for="password">Admin Password</label>
-                    <input type="password" id="password" name="password" required>
-                </div>
-                <button type="submit" class="login-btn">Access Dashboard</button>
-            </form>
-        </div>
-    </body>
-    </html>
-    '''
+    return render_template('login.html')
 
 # Logout route
 @app.route('/logout')
@@ -1977,4 +1836,3 @@ if __name__ == "__main__":
     print(f"Password security: PBKDF2-SHA256 with {Config.HASH_ITERATIONS:,} iterations")
     print(f"Salt length: {Config.SALT_LENGTH} bytes")
     socketio.run(app, host=Config.HOST, port=Config.PORT, debug=False)
-
