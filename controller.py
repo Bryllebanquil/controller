@@ -11,20 +11,86 @@ import base64
 import queue
 import hashlib
 import secrets
-from config import ADMIN_PASSWORD, SECRET_KEY, HOST, PORT
+import os
 
+# Configuration Management
+class Config:
+    """Configuration class for Neural Control Hub"""
+    
+    # Admin Authentication
+    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
+    
+    # Flask Configuration
+    SECRET_KEY = os.environ.get('SECRET_KEY', None)
+    
+    # Server Configuration
+    HOST = os.environ.get('HOST', '0.0.0.0')
+    PORT = int(os.environ.get('PORT', 8080))
+    
+    # Security Settings
+    SESSION_TIMEOUT = int(os.environ.get('SESSION_TIMEOUT', 3600))  # 1 hour in seconds
+    MAX_LOGIN_ATTEMPTS = int(os.environ.get('MAX_LOGIN_ATTEMPTS', 5))
+    LOGIN_TIMEOUT = int(os.environ.get('LOGIN_TIMEOUT', 300))  # 5 minutes lockout
+
+# Initialize Flask app with configuration
 app = Flask(__name__)
-app.config['SECRET_KEY'] = SECRET_KEY or secrets.token_hex(32)  # Use config or generate secure random key
+app.config['SECRET_KEY'] = Config.SECRET_KEY or secrets.token_hex(32)  # Use config or generate secure random key
 socketio = SocketIO(app, async_mode='eventlet')
 
 # Security Configuration
-ADMIN_PASSWORD_HASH = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
+ADMIN_PASSWORD_HASH = hashlib.sha256(Config.ADMIN_PASSWORD.encode()).hexdigest()
 
-# Session management
+# Session management and security tracking
+LOGIN_ATTEMPTS = {}  # Track failed login attempts by IP
+
 def is_authenticated():
-    return session.get('authenticated', False)
+    """Check if user is authenticated and session is valid"""
+    if not session.get('authenticated', False):
+        return False
+    
+    # Check session timeout
+    login_time = session.get('login_time')
+    if login_time:
+        try:
+            login_datetime = datetime.datetime.fromisoformat(login_time.replace('Z', '+00:00'))
+            current_time = datetime.datetime.now(datetime.timezone.utc)
+            if (current_time - login_datetime).total_seconds() > Config.SESSION_TIMEOUT:
+                session.clear()
+                return False
+        except:
+            session.clear()
+            return False
+    
+    return True
+
+def is_ip_blocked(ip):
+    """Check if IP is blocked due to too many failed login attempts"""
+    if ip in LOGIN_ATTEMPTS:
+        attempts, last_attempt = LOGIN_ATTEMPTS[ip]
+        if attempts >= Config.MAX_LOGIN_ATTEMPTS:
+            # Check if lockout period has passed
+            if (datetime.datetime.now() - last_attempt).total_seconds() < Config.LOGIN_TIMEOUT:
+                return True
+            else:
+                # Reset attempts after timeout
+                del LOGIN_ATTEMPTS[ip]
+    return False
+
+def record_failed_login(ip):
+    """Record a failed login attempt for an IP"""
+    if ip in LOGIN_ATTEMPTS:
+        attempts, _ = LOGIN_ATTEMPTS[ip]
+        LOGIN_ATTEMPTS[ip] = (attempts + 1, datetime.datetime.now())
+    else:
+        LOGIN_ATTEMPTS[ip] = (1, datetime.datetime.now())
+
+def clear_login_attempts(ip):
+    """Clear failed login attempts for an IP after successful login"""
+    if ip in LOGIN_ATTEMPTS:
+        del LOGIN_ATTEMPTS[ip]
 
 def require_auth(f):
+    """Decorator to require authentication for routes"""
     def decorated_function(*args, **kwargs):
         if not is_authenticated():
             return redirect(url_for('login'))
@@ -35,16 +101,141 @@ def require_auth(f):
 # Login route
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    client_ip = request.remote_addr
+    
+    # Check if IP is blocked
+    if is_ip_blocked(client_ip):
+        remaining_time = Config.LOGIN_TIMEOUT - (datetime.datetime.now() - LOGIN_ATTEMPTS[client_ip][1]).total_seconds()
+        flash(f'Too many failed login attempts. Please try again in {int(remaining_time)} seconds.', 'error')
+        return '''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Neural Control Hub - Login Blocked</title>
+        <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+        <style>
+            :root {
+                --primary-bg: #0a0a0f;
+                --secondary-bg: #1a1a2e;
+                --accent-blue: #00d4ff;
+                --accent-purple: #6c5ce7;
+                --accent-red: #ff4757;
+                --text-primary: #ffffff;
+                --text-secondary: #a0a0a0;
+                --glass-bg: rgba(255, 255, 255, 0.05);
+                --glass-border: rgba(255, 255, 255, 0.1);
+            }
+            
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
+            body {
+                font-family: 'Inter', sans-serif;
+                background: linear-gradient(135deg, var(--primary-bg) 0%, var(--secondary-bg) 100%);
+                color: var(--text-primary);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            
+            .login-container {
+                background: var(--glass-bg);
+                backdrop-filter: blur(20px);
+                border: 1px solid var(--glass-border);
+                border-radius: 20px;
+                padding: 40px;
+                width: 100%;
+                max-width: 400px;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+                text-align: center;
+            }
+            
+            .login-header h1 {
+                font-family: 'Orbitron', monospace;
+                font-size: 2rem;
+                font-weight: 900;
+                background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+                margin-bottom: 20px;
+            }
+            
+            .error-message {
+                background: rgba(255, 71, 87, 0.2);
+                color: var(--accent-red);
+                border: 1px solid var(--accent-red);
+                border-radius: 8px;
+                padding: 20px;
+                margin-bottom: 20px;
+                font-weight: 500;
+            }
+            
+            .retry-btn {
+                background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
+                border: none;
+                border-radius: 8px;
+                padding: 12px 24px;
+                color: white;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                text-decoration: none;
+                display: inline-block;
+                margin-top: 20px;
+            }
+            
+            .retry-btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 25px rgba(0, 212, 255, 0.3);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="login-container">
+            <div class="login-header">
+                <h1>NEURAL CONTROL HUB</h1>
+            </div>
+            
+            <div class="error-message">
+                <h3>🔒 Access Temporarily Blocked</h3>
+                <p>Too many failed login attempts detected.</p>
+                <p>Please wait before trying again.</p>
+            </div>
+            
+            <a href="/login" class="retry-btn">Try Again</a>
+        </div>
+    </body>
+    </html>
+    '''
+    
     if request.method == 'POST':
         password = request.form.get('password', '')
         password_hash = hashlib.sha256(password.encode()).hexdigest()
         
         if password_hash == ADMIN_PASSWORD_HASH:
+            # Successful login
+            clear_login_attempts(client_ip)
             session['authenticated'] = True
             session['login_time'] = datetime.datetime.utcnow().isoformat()
+            session['login_ip'] = client_ip
             return redirect(url_for('dashboard'))
         else:
-            flash('Invalid password. Please try again.', 'error')
+            # Failed login
+            record_failed_login(client_ip)
+            attempts = LOGIN_ATTEMPTS.get(client_ip, (0, None))[0]
+            remaining_attempts = Config.MAX_LOGIN_ATTEMPTS - attempts
+            
+            if remaining_attempts > 0:
+                flash(f'Invalid password. {remaining_attempts} attempts remaining.', 'error')
+            else:
+                flash(f'Too many failed attempts. Please wait {Config.LOGIN_TIMEOUT} seconds.', 'error')
     
     return '''
     <!DOCTYPE html>
@@ -203,6 +394,24 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for('login'))
+
+# Configuration status endpoint (for debugging)
+@app.route('/config-status')
+@require_auth
+def config_status():
+    """Display current configuration status (for debugging)"""
+    return jsonify({
+        'admin_password_set': bool(Config.ADMIN_PASSWORD),
+        'admin_password_length': len(Config.ADMIN_PASSWORD),
+        'secret_key_set': bool(Config.SECRET_KEY),
+        'host': Config.HOST,
+        'port': Config.PORT,
+        'session_timeout': Config.SESSION_TIMEOUT,
+        'max_login_attempts': Config.MAX_LOGIN_ATTEMPTS,
+        'login_timeout': Config.LOGIN_TIMEOUT,
+        'current_login_attempts': len(LOGIN_ATTEMPTS),
+        'blocked_ips': [ip for ip, (attempts, _) in LOGIN_ATTEMPTS.items() if attempts >= Config.MAX_LOGIN_ATTEMPTS]
+    })
 
 # --- Web Dashboard HTML (with Socket.IO) ---
 DASHBOARD_HTML = r'''
@@ -567,6 +776,34 @@ DASHBOARD_HTML = r'''
             border: 1px solid var(--accent-red);
         }
 
+        .config-status {
+            display: grid;
+            gap: 12px;
+        }
+
+        .config-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .config-item:last-child {
+            border-bottom: none;
+        }
+
+        .config-label {
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .config-value {
+            font-family: 'Orbitron', monospace;
+            color: var(--accent-blue);
+            font-size: 0.9rem;
+        }
+
         .no-agents {
             text-align: center;
             padding: 40px 20px;
@@ -737,6 +974,33 @@ DASHBOARD_HTML = r'''
                 <div class="panel-title">Neural Terminal</div>
             </div>
             <div class="output-terminal" id="output-display">System ready. Awaiting commands...</div>
+        </div>
+
+        <!-- Configuration Status -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-icon">⚙️</div>
+                <div class="panel-title">System Configuration</div>
+            </div>
+            <div class="config-status" id="config-status">
+                <div class="config-item">
+                    <span class="config-label">Admin Password:</span>
+                    <span class="config-value" id="admin-password-status">Checking...</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Session Timeout:</span>
+                    <span class="config-value" id="session-timeout">Checking...</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Max Login Attempts:</span>
+                    <span class="config-value" id="max-login-attempts">Checking...</span>
+                </div>
+                <div class="config-item">
+                    <span class="config-label">Blocked IPs:</span>
+                    <span class="config-value" id="blocked-ips">Checking...</span>
+                </div>
+                <button class="btn" onclick="refreshConfigStatus()">Refresh Status</button>
+            </div>
         </div>
 
         <!-- Hidden audio player for streams -->
@@ -920,6 +1184,34 @@ DASHBOARD_HTML = r'''
             if (event.key === 'Enter') {
                 issueCommand();
             }
+        });
+
+        // Configuration status management
+        function refreshConfigStatus() {
+            fetch('/config-status')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('admin-password-status').textContent = 
+                        data.admin_password_set ? `Set (${data.admin_password_length} chars)` : 'Not set';
+                    document.getElementById('session-timeout').textContent = 
+                        `${data.session_timeout} seconds`;
+                    document.getElementById('max-login-attempts').textContent = 
+                        data.max_login_attempts.toString();
+                    document.getElementById('blocked-ips').textContent = 
+                        data.blocked_ips.length > 0 ? data.blocked_ips.join(', ') : 'None';
+                })
+                .catch(error => {
+                    console.error('Error fetching config status:', error);
+                    document.getElementById('admin-password-status').textContent = 'Error';
+                    document.getElementById('session-timeout').textContent = 'Error';
+                    document.getElementById('max-login-attempts').textContent = 'Error';
+                    document.getElementById('blocked-ips').textContent = 'Error';
+                });
+        }
+
+        // Load config status on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshConfigStatus();
         });
 
         // --- Live Keyboard Event Listeners ---
@@ -1412,6 +1704,8 @@ def handle_file_chunk_from_agent(data):
 
 if __name__ == "__main__":
     print("Starting Neural Control Hub with Socket.IO support...")
-    print(f"Admin password: {ADMIN_PASSWORD}")
-    print(f"Server will be available at: http://{HOST}:{PORT}")
-    socketio.run(app, host=HOST, port=PORT, debug=False)
+    print(f"Admin password: {Config.ADMIN_PASSWORD}")
+    print(f"Server will be available at: http://{Config.HOST}:{Config.PORT}")
+    print(f"Session timeout: {Config.SESSION_TIMEOUT} seconds")
+    print(f"Max login attempts: {Config.MAX_LOGIN_ATTEMPTS}")
+    socketio.run(app, host=Config.HOST, port=Config.PORT, debug=False)

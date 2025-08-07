@@ -22,9 +22,10 @@ All sensitive endpoints now require authentication:
 - `/audio_feed/<agent_id>` - Audio feed endpoints
 
 ### 3. Configuration Management
-- **New File**: `config.py` - Centralized configuration
-- **Environment Variables**: Support for ADMIN_PASSWORD, SECRET_KEY, HOST, PORT
+- **Integrated Configuration**: Configuration class within `controller.py`
+- **Environment Variables**: Support for ADMIN_PASSWORD, SECRET_KEY, HOST, PORT, SESSION_TIMEOUT, MAX_LOGIN_ATTEMPTS, LOGIN_TIMEOUT
 - **Security**: Sensitive data can be stored in environment variables
+- **Enhanced Security**: Session timeout, login attempt tracking, IP blocking
 
 ### 4. Session Security
 - **Secure Secret Key**: Auto-generated or configurable via environment
@@ -50,20 +51,27 @@ All sensitive endpoints now require authentication:
 
 ## New Files Created
 
-### 1. `config.py`
+### 1. Integrated Configuration
+The configuration is now integrated directly into `controller.py` using a `Config` class:
+
 ```python
-# Configuration file for Neural Control Hub
-import os
-
-# Admin Authentication
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
-
-# Flask Configuration
-SECRET_KEY = os.environ.get('SECRET_KEY', None)
-
-# Server Configuration
-HOST = os.environ.get('HOST', '0.0.0.0')
-PORT = int(os.environ.get('PORT', 8080))
+class Config:
+    """Configuration class for Neural Control Hub"""
+    
+    # Admin Authentication
+    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'admin123')
+    
+    # Flask Configuration
+    SECRET_KEY = os.environ.get('SECRET_KEY', None)
+    
+    # Server Configuration
+    HOST = os.environ.get('HOST', '0.0.0.0')
+    PORT = int(os.environ.get('PORT', 8080))
+    
+    # Security Settings
+    SESSION_TIMEOUT = int(os.environ.get('SESSION_TIMEOUT', 3600))  # 1 hour
+    MAX_LOGIN_ATTEMPTS = int(os.environ.get('MAX_LOGIN_ATTEMPTS', 5))
+    LOGIN_TIMEOUT = int(os.environ.get('LOGIN_TIMEOUT', 300))  # 5 minutes
 ```
 
 ### 2. `SECURITY.md`
@@ -97,9 +105,11 @@ Automated startup script that:
 - Enhanced visual hierarchy
 
 **Configuration Changes:**
-- Integrated with config.py
-- Environment variable support
-- Better error handling
+- Integrated configuration class within controller.py
+- Enhanced environment variable support
+- Session timeout and login attempt tracking
+- IP blocking for failed login attempts
+- Configuration status dashboard panel
 
 ## Usage Instructions
 

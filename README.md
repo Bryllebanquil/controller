@@ -60,8 +60,7 @@ export ADMIN_PASSWORD="your_secure_password"
 ## 📁 Project Structure
 
 ```
-├── controller.py          # Main application with security and UI improvements
-├── config.py             # Configuration management
+├── controller.py          # Main application with integrated configuration
 ├── start.sh              # Automated startup script
 ├── test_security.py      # Security testing script
 ├── SECURITY.md           # Comprehensive security documentation
@@ -78,13 +77,18 @@ ADMIN_PASSWORD=your_secure_password
 SECRET_KEY=your_secret_key
 HOST=0.0.0.0
 PORT=8080
+SESSION_TIMEOUT=3600
+MAX_LOGIN_ATTEMPTS=5
+LOGIN_TIMEOUT=300
 ```
 
 ### Security Settings
 - Default admin password: `admin123`
-- Session timeout: 1 hour
+- Session timeout: 1 hour (configurable)
 - SHA-256 password hashing
 - Protected streaming endpoints
+- Login attempt tracking and IP blocking
+- Configurable security timeouts
 
 ## 🛡️ Security Best Practices
 
