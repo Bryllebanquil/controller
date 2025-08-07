@@ -1738,11 +1738,12 @@ def stream_in(agent_id):
 
 def generate_video_frames(agent_id):
     while True:
-        time.sleep(0.05)
         frame = VIDEO_FRAMES.get(agent_id)
         if frame:
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        else:
+            time.sleep(0.05)
 
 @app.route('/video_feed/<agent_id>')
 @require_auth
@@ -1757,13 +1758,12 @@ def camera_in(agent_id):
 
 def generate_camera_frames(agent_id):
     while True:
-        time.sleep(0.05)
         frame = CAMERA_FRAMES.get(agent_id)
         if frame:
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
         else:
-            break
+            time.sleep(0.05)
 
 @app.route('/camera_feed/<agent_id>')
 @require_auth
@@ -1777,12 +1777,13 @@ def audio_in(agent_id):
     return "OK", 200
 
 def generate_audio_stream(agent_id):
-    header = bytearray()
-    # ... (WAV header generation remains the same)
-    yield header
     q = AUDIO_CHUNKS[agent_id]
     while True:
-        yield q.get()
+        try:
+            chunk = q.get(timeout=1)
+            yield chunk
+        except queue.Empty:
+            continue
 
 @app.route('/audio_feed/<agent_id>')
 @require_auth
