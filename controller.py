@@ -119,22 +119,37 @@ LOGIN_ATTEMPTS = {}  # Track failed login attempts by IP
 
 def is_authenticated():
     """Check if user is authenticated and session is valid"""
+    print(f"Session check - authenticated: {session.get('authenticated', False)}")
+    print(f"Session contents: {dict(session)}")
+    
     if not session.get('authenticated', False):
+        print("Not authenticated - returning False")
         return False
     
     # Check session timeout
     login_time = session.get('login_time')
     if login_time:
         try:
-            login_datetime = datetime.datetime.fromisoformat(login_time.replace('Z', '+00:00'))
+            # Handle both formats: with and without 'Z'
+            if login_time.endswith('Z'):
+                login_datetime = datetime.datetime.fromisoformat(login_time.replace('Z', '+00:00'))
+            else:
+                login_datetime = datetime.datetime.fromisoformat(login_time)
+                # Assume UTC if no timezone info
+                if login_datetime.tzinfo is None:
+                    login_datetime = login_datetime.replace(tzinfo=datetime.timezone.utc)
+            
             current_time = datetime.datetime.now(datetime.timezone.utc)
             if (current_time - login_datetime).total_seconds() > Config.SESSION_TIMEOUT:
+                print("Session timeout - clearing session")
                 session.clear()
                 return False
-        except:
+        except Exception as e:
+            print(f"Session authentication error: {e}")
             session.clear()
             return False
     
+    print("Authentication successful - returning True")
     return True
 
 def is_ip_blocked(ip):
@@ -297,7 +312,7 @@ def login():
             # Successful login
             clear_login_attempts(client_ip)
             session['authenticated'] = True
-            session['login_time'] = datetime.datetime.utcnow().isoformat()
+            session['login_time'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
             session['login_ip'] = client_ip
             return redirect(url_for('dashboard'))
         else:
