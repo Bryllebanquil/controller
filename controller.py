@@ -1738,11 +1738,12 @@ def stream_in(agent_id):
 
 def generate_video_frames(agent_id):
     while True:
-        time.sleep(0.05)
         frame = VIDEO_FRAMES.get(agent_id)
         if frame:
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        else:
+            time.sleep(0.05)
 
 @app.route('/video_feed/<agent_id>')
 @require_auth
@@ -1757,13 +1758,12 @@ def camera_in(agent_id):
 
 def generate_camera_frames(agent_id):
     while True:
-        time.sleep(0.05)
         frame = CAMERA_FRAMES.get(agent_id)
         if frame:
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
         else:
-            break
+            time.sleep(0.05)
 
 @app.route('/camera_feed/<agent_id>')
 @require_auth
@@ -1777,12 +1777,24 @@ def audio_in(agent_id):
     return "OK", 200
 
 def generate_audio_stream(agent_id):
-    header = bytearray()
-    # ... (WAV header generation remains the same)
-    yield header
     q = AUDIO_CHUNKS[agent_id]
+    # WAV header for PCM 16-bit mono 44100Hz
+    import struct
+    sample_rate = 44100
+    bits_per_sample = 16
+    num_channels = 1
+    byte_rate = sample_rate * num_channels * bits_per_sample // 8
+    block_align = num_channels * bits_per_sample // 8
+    # Set a large data size for streaming (e.g., 0x7FFFFFFF)
+    data_size = 0x7FFFFFFF
+    wav_header = b'RIFF' + struct.pack('<I', 36 + data_size) + b'WAVEfmt ' + struct.pack('<I', 16) + struct.pack('<H', 1) + struct.pack('<H', num_channels) + struct.pack('<I', sample_rate) + struct.pack('<I', byte_rate) + struct.pack('<H', block_align) + struct.pack('<H', bits_per_sample) + b'data' + struct.pack('<I', data_size)
+    yield wav_header
     while True:
-        yield q.get()
+        try:
+            chunk = q.get(timeout=1)
+            yield chunk
+        except queue.Empty:
+            continue
 
 @app.route('/audio_feed/<agent_id>')
 @require_auth
