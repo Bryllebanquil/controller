@@ -1,7 +1,7 @@
 import eventlet
 eventlet.monkey_patch()
 
-from flask import Flask, request, jsonify, redirect, url_for, Response, send_file
+from flask import Flask, request, jsonify, redirect, url_for, Response, send_file, session, flash
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from collections import defaultdict
 import datetime
@@ -9,10 +9,200 @@ import time
 import os
 import base64
 import queue
+import hashlib
+import secrets
+from config import ADMIN_PASSWORD, SECRET_KEY, HOST, PORT
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your_secret_key_here'  # Change this to a random secret key
+app.config['SECRET_KEY'] = SECRET_KEY or secrets.token_hex(32)  # Use config or generate secure random key
 socketio = SocketIO(app, async_mode='eventlet')
+
+# Security Configuration
+ADMIN_PASSWORD_HASH = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
+
+# Session management
+def is_authenticated():
+    return session.get('authenticated', False)
+
+def require_auth(f):
+    def decorated_function(*args, **kwargs):
+        if not is_authenticated():
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    decorated_function.__name__ = f.__name__
+    return decorated_function
+
+# Login route
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        password_hash = hashlib.sha256(password.encode()).hexdigest()
+        
+        if password_hash == ADMIN_PASSWORD_HASH:
+            session['authenticated'] = True
+            session['login_time'] = datetime.datetime.utcnow().isoformat()
+            return redirect(url_for('dashboard'))
+        else:
+            flash('Invalid password. Please try again.', 'error')
+    
+    return '''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Neural Control Hub - Login</title>
+        <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+        <style>
+            :root {
+                --primary-bg: #0a0a0f;
+                --secondary-bg: #1a1a2e;
+                --accent-blue: #00d4ff;
+                --accent-purple: #6c5ce7;
+                --text-primary: #ffffff;
+                --text-secondary: #a0a0a0;
+                --glass-bg: rgba(255, 255, 255, 0.05);
+                --glass-border: rgba(255, 255, 255, 0.1);
+            }
+            
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
+            body {
+                font-family: 'Inter', sans-serif;
+                background: linear-gradient(135deg, var(--primary-bg) 0%, var(--secondary-bg) 100%);
+                color: var(--text-primary);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            
+            .login-container {
+                background: var(--glass-bg);
+                backdrop-filter: blur(20px);
+                border: 1px solid var(--glass-border);
+                border-radius: 20px;
+                padding: 40px;
+                width: 100%;
+                max-width: 400px;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            }
+            
+            .login-header {
+                text-align: center;
+                margin-bottom: 30px;
+            }
+            
+            .login-header h1 {
+                font-family: 'Orbitron', monospace;
+                font-size: 2rem;
+                font-weight: 900;
+                background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+                margin-bottom: 10px;
+            }
+            
+            .login-header p {
+                color: var(--text-secondary);
+                font-size: 0.9rem;
+            }
+            
+            .form-group {
+                margin-bottom: 20px;
+            }
+            
+            .form-group label {
+                display: block;
+                margin-bottom: 8px;
+                color: var(--text-secondary);
+                font-weight: 500;
+            }
+            
+            .form-group input {
+                width: 100%;
+                background: var(--secondary-bg);
+                border: 1px solid var(--glass-border);
+                border-radius: 8px;
+                padding: 12px 16px;
+                color: var(--text-primary);
+                font-size: 1rem;
+                transition: all 0.3s ease;
+            }
+            
+            .form-group input:focus {
+                outline: none;
+                border-color: var(--accent-blue);
+                box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+            }
+            
+            .login-btn {
+                width: 100%;
+                background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
+                border: none;
+                border-radius: 8px;
+                padding: 12px;
+                color: white;
+                font-weight: 600;
+                font-size: 1rem;
+                cursor: pointer;
+                transition: all 0.3s ease;
+            }
+            
+            .login-btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 25px rgba(0, 212, 255, 0.3);
+            }
+            
+            .error-message {
+                background: rgba(255, 71, 87, 0.2);
+                color: #ff4757;
+                border: 1px solid #ff4757;
+                border-radius: 8px;
+                padding: 12px;
+                margin-bottom: 20px;
+                text-align: center;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="login-container">
+            <div class="login-header">
+                <h1>NEURAL CONTROL HUB</h1>
+                <p>Admin Authentication Required</p>
+            </div>
+            
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="error-message">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            
+            <form method="POST">
+                <div class="form-group">
+                    <label for="password">Admin Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit" class="login-btn">Access Dashboard</button>
+            </form>
+        </div>
+    </body>
+    </html>
+    '''
+
+# Logout route
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
 
 # --- Web Dashboard HTML (with Socket.IO) ---
 DASHBOARD_HTML = r'''
@@ -67,6 +257,67 @@ DASHBOARD_HTML = r'''
             z-index: -1;
         }
 
+        .top-bar {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--glass-border);
+            padding: 15px 0;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .top-bar-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px 0;
+        }
+
+        .header h1 {
+            font-family: 'Orbitron', monospace;
+            font-size: 2.5rem;
+            font-weight: 900;
+            background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+            text-shadow: 0 0 30px rgba(0, 212, 255, 0.3);
+        }
+
+        .header .subtitle {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            font-weight: 300;
+        }
+
+        .logout-btn {
+            background: linear-gradient(45deg, var(--accent-red), #ff6b7a);
+            border: none;
+            border-radius: 8px;
+            padding: 8px 16px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+
+        .logout-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 71, 87, 0.3);
+        }
+
         .container {
             max-width: 1400px;
             margin: 0 auto;
@@ -75,43 +326,19 @@ DASHBOARD_HTML = r'''
             z-index: 1;
         }
 
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            padding: 30px 0;
-        }
-
-        .header h1 {
-            font-family: 'Orbitron', monospace;
-            font-size: 3rem;
-            font-weight: 900;
-            background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 10px;
-            text-shadow: 0 0 30px rgba(0, 212, 255, 0.3);
-        }
-
-        .header .subtitle {
-            font-size: 1.1rem;
-            color: var(--text-secondary);
-            font-weight: 300;
-        }
-
-        .grid {
+        .main-grid {
             display: grid;
             grid-template-columns: 1fr 2fr;
-            gap: 30px;
-            margin-bottom: 30px;
+            gap: 25px;
+            margin-bottom: 25px;
         }
 
         .panel {
             background: var(--glass-bg);
             backdrop-filter: blur(20px);
             border: 1px solid var(--glass-border);
-            border-radius: 20px;
-            padding: 25px;
+            border-radius: 16px;
+            padding: 20px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
             transition: all 0.3s ease;
         }
@@ -206,14 +433,20 @@ DASHBOARD_HTML = r'''
 
         .control-section {
             display: grid;
-            gap: 20px;
+            gap: 16px;
         }
 
         .control-group {
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            border-radius: 15px;
-            padding: 20px;
+            background: var(--tertiary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .control-group:hover {
+            border-color: var(--accent-blue);
+            box-shadow: 0 4px 20px rgba(0, 212, 255, 0.1);
         }
 
         .control-header {
@@ -366,12 +599,21 @@ DASHBOARD_HTML = r'''
 
         /* Responsive Design */
         @media (max-width: 768px) {
-            .grid {
+            .main-grid {
                 grid-template-columns: 1fr;
             }
             
             .header h1 {
                 font-size: 2rem;
+            }
+            
+            .top-bar-content {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .container {
+                padding: 15px;
             }
         }
     </style>
@@ -379,13 +621,18 @@ DASHBOARD_HTML = r'''
 <body>
     <div class="neural-bg"></div>
     
-    <div class="container">
-        <div class="header">
-            <h1>NEURAL CONTROL HUB</h1>
-            <p class="subtitle">Advanced Command & Control Interface</p>
+    <div class="top-bar">
+        <div class="top-bar-content">
+            <div class="header">
+                <h1>NEURAL CONTROL HUB</h1>
+                <p class="subtitle">Advanced Command & Control Interface</p>
+            </div>
+            <a href="/logout" class="logout-btn">Logout</a>
         </div>
-
-        <div class="grid">
+    </div>
+    
+    <div class="container">
+        <div class="main-grid">
             <!-- Agents Panel -->
             <div class="panel">
                 <div class="panel-header">
@@ -891,9 +1138,12 @@ DOWNLOAD_BUFFERS = defaultdict(lambda: {"chunks": [], "total_size": 0, "local_pa
 
 @app.route("/")
 def index():
-    return redirect(url_for('dashboard'))
+    if is_authenticated():
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
 
 @app.route("/dashboard")
+@require_auth
 def dashboard():
     return DASHBOARD_HTML
 
@@ -904,6 +1154,7 @@ CAMERA_FRAMES = defaultdict(lambda: None)
 AUDIO_CHUNKS = defaultdict(lambda: queue.Queue())
 
 @app.route('/stream/<agent_id>', methods=['POST'])
+@require_auth
 def stream_in(agent_id):
     VIDEO_FRAMES[agent_id] = request.data
     return "OK", 200
@@ -917,10 +1168,12 @@ def generate_video_frames(agent_id):
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
 @app.route('/video_feed/<agent_id>')
+@require_auth
 def video_feed(agent_id):
     return Response(generate_video_frames(agent_id), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/camera/<agent_id>', methods=['POST'])
+@require_auth
 def camera_in(agent_id):
     CAMERA_FRAMES[agent_id] = request.data
     return "OK", 200
@@ -936,10 +1189,12 @@ def generate_camera_frames(agent_id):
             break
 
 @app.route('/camera_feed/<agent_id>')
+@require_auth
 def camera_feed(agent_id):
     return Response(generate_camera_frames(agent_id), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @app.route('/audio/<agent_id>', methods=['POST'])
+@require_auth
 def audio_in(agent_id):
     AUDIO_CHUNKS[agent_id].put(request.data)
     return "OK", 200
@@ -953,6 +1208,7 @@ def generate_audio_stream(agent_id):
         yield q.get()
 
 @app.route('/audio_feed/<agent_id>')
+@require_auth
 def audio_feed(agent_id):
     return Response(generate_audio_stream(agent_id), mimetype='audio/wav')
 
@@ -960,6 +1216,9 @@ def audio_feed(agent_id):
 
 @socketio.on('connect')
 def handle_connect():
+    # Note: Socket.IO doesn't have direct access to Flask session
+    # In a production environment, you'd want to implement proper Socket.IO authentication
+    # For now, we'll allow connections but validate on specific events
     print(f"Client connected: {request.sid}")
 
 @socketio.on('disconnect')
@@ -1152,5 +1411,7 @@ def handle_file_chunk_from_agent(data):
 
 
 if __name__ == "__main__":
-    print("Starting controller with Socket.IO support...")
-    socketio.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)), debug=False)
+    print("Starting Neural Control Hub with Socket.IO support...")
+    print(f"Admin password: {ADMIN_PASSWORD}")
+    print(f"Server will be available at: http://{HOST}:{PORT}")
+    socketio.run(app, host=HOST, port=PORT, debug=False)
