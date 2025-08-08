@@ -1,0 +1,303 @@
+===============================================================================
+                   REGISTRY MODIFICATIONS BY MAIN.PY
+                        Complete Documentation
+===============================================================================
+
+This document lists ALL registry keys and values created, modified, or accessed
+by the main.py application, categorized by purpose and function.
+
+===============================================================================
+                           1. PERSISTENCE MECHANISMS
+===============================================================================
+
+1.1 STARTUP PERSISTENCE (Auto-Run)
+-----------------------------------
+Key: HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
+Values:
+  - Name: "WindowsSecurityUpdate" | Type: REG_SZ | Data: <executable_path>
+  - Name: "svchost32" | Type: REG_SZ | Data: <stealth_executable_path>
+
+Key: HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\RunOnce  
+Values:
+  - Name: "WindowsSecurityUpdate" | Type: REG_SZ | Data: <executable_path>
+  - Name: "svchost32" | Type: REG_SZ | Data: <stealth_executable_path>
+
+Purpose: Ensures automatic execution at user login
+Location: Multiple functions (deploy_executable_with_persistence, self_deploy_powershell, add_to_startup, etc.)
+
+===============================================================================
+                          2. UAC BYPASS MECHANISMS
+===============================================================================
+
+2.1 MS-SETTINGS PROTOCOL HIJACKING (fodhelper/computerdefaults)
+---------------------------------------------------------------
+Key: HKEY_CURRENT_USER\Software\Classes\ms-settings\Shell\Open\command
+Values:
+  - Name: "" (Default) | Type: REG_SZ | Data: <current_executable>
+  - Name: "DelegateExecute" | Type: REG_SZ | Data: "" (empty)
+
+Purpose: Hijacks ms-settings protocol to bypass UAC
+Functions: bypass_uac_fodhelper_protocol(), bypass_uac_computerdefaults()
+Cleanup: Temporary - keys are deleted after use
+
+2.2 REGISTRY HIJACKING FOR EVENTVWR.EXE
+----------------------------------------
+Key: HKEY_CURRENT_USER\Software\Classes\mscfile\shell\open\command
+Values:
+  - Name: "" (Default) | Type: REG_SZ | Data: <current_executable>
+
+Purpose: Hijacks mscfile association to bypass UAC via eventvwr.exe
+Function: bypass_uac_eventvwr()
+Cleanup: Original value restored after use
+
+2.3 SLUI.EXE BYPASS
+-------------------
+Key: HKEY_CURRENT_USER\Software\Classes\exefile\shell\open\command
+Values:
+  - Name: "" (Default) | Type: REG_SZ | Data: <current_executable>
+
+Purpose: Hijacks exefile association for slui.exe UAC bypass
+Function: bypass_uac_slui()
+Cleanup: Original value restored after use
+
+2.4 SDCLT.EXE BYPASS
+--------------------
+Key: HKEY_CURRENT_USER\Software\Classes\Folder\shell\open\command
+Values:
+  - Name: "" (Default) | Type: REG_SZ | Data: <current_executable>
+
+Purpose: Hijacks Folder shell command for sdclt.exe UAC bypass
+Function: bypass_uac_sdclt()
+Cleanup: Temporary - key deleted after use
+
+2.5 WSRESET.EXE BYPASS
+----------------------
+Key: HKEY_CURRENT_USER\Software\Classes\AppX82a6gwre4fdg3bt635tn5ctqjf8msdd2\Shell\open\command
+Values:
+  - Name: "" (Default) | Type: REG_SZ | Data: <current_executable>
+  - Name: "DelegateExecute" | Type: REG_SZ | Data: "" (empty)
+
+Purpose: Hijacks AppX association for WSReset.exe UAC bypass
+Function: bypass_uac_wsreset()
+Cleanup: Temporary - key deleted after use
+
+2.6 ENVIRONMENT VARIABLE MANIPULATION
+--------------------------------------
+Key: HKEY_CURRENT_USER\Environment
+Values:
+  - Name: "windir" | Type: REG_EXPAND_SZ | Data: <directory_containing_executable>
+
+Purpose: Manipulates windir environment variable for UAC bypass
+Function: bypass_uac_environment_variables()
+Cleanup: Original value restored after use
+
+2.7 WINSAT.EXE BYPASS
+---------------------
+Key: HKEY_CURRENT_USER\Software\Classes\mscfile\shell\open\command
+Values:
+  - Name: "" (Default) | Type: REG_SZ | Data: <current_executable>
+  - Name: "DelegateExecute" | Type: REG_SZ | Data: "" (empty)
+
+Purpose: Hijacks mscfile for winsat.exe UAC bypass
+Function: bypass_uac_winsat()
+Cleanup: Original value restored after use
+
+===============================================================================
+                          3. COM OBJECT HIJACKING
+===============================================================================
+
+3.1 COM HANDLERS BYPASS
+------------------------
+Key: HKEY_CURRENT_USER\Software\Classes\CLSID\{<random_clsid>}\Shell\Open\Command
+Values:
+  - Name: "" (Default) | Type: REG_SZ | Data: <current_executable>
+
+Purpose: Creates malicious COM handler for UAC bypass
+Function: bypass_uac_com_handlers()
+Cleanup: Temporary - key deleted after use
+
+3.2 MMC SNAPIN COM OBJECTS
+---------------------------
+Key: HKEY_CURRENT_USER\Software\Classes\CLSID\{<clsid>}\InProcServer32
+Values:
+  - Name: "" (Default) | Type: REG_SZ | Data: <current_executable>
+  - Name: "ThreadingModel" | Type: REG_SZ | Data: "Apartment"
+
+Purpose: Registers malicious InProc COM server for MMC snapin hijacking
+Function: bypass_uac_mmc_snapin()
+Cleanup: Temporary - key deleted after use
+
+3.3 COM ELEVATION OBJECTS
+--------------------------
+Key: HKEY_CURRENT_USER\Software\Classes\CLSID\{<various_clsids>}\InProcServer32
+Values:
+  - Name: "" (Default) | Type: REG_SZ | Data: <current_executable>  
+  - Name: "ThreadingModel" | Type: REG_SZ | Data: "Apartment"
+
+Purpose: Hijacks COM elevation objects for privilege escalation
+Function: hijack_com_elevation_objects()
+CLSIDs Used:
+  - {3E5FC7F9-9A51-4367-9063-A120244FBEC7} (ICMLuaUtil)
+  - {D2E7041B-2927-42FB-8E9F-7CE93B6DC937} (IColorDataProxy)
+  - {6EDD6D74-C007-4E75-B76A-E5740995E24C} (IPackageDebugSettings)
+
+===============================================================================
+                        4. SYSTEM POLICY MODIFICATIONS
+===============================================================================
+
+4.1 REMOVAL TOOLS CONFIGURATION (KEEP ENABLED)
+-----------------------------------------------
+Key: HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Policies\System
+Values:
+  - Name: "DisableTaskMgr" | Type: REG_DWORD | Data: 0 (ENABLED)
+  - Name: "DisableRegistryTools" | Type: REG_DWORD | Data: 0 (ENABLED)
+
+Key: HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\System
+Values:
+  - Name: "DisableCMD" | Type: REG_DWORD | Data: 0 (ENABLED)
+
+Key: HKEY_CURRENT_USER\Software\Microsoft\PowerShell\1\ShellIds\Microsoft.PowerShell
+Values:
+  - Name: "ExecutionPolicy" | Type: REG_SZ | Data: "Unrestricted"
+
+Purpose: Configures registry entries but keeps all administrative tools enabled
+Function: disable_removal_tools()
+Note: Modified to set values to 0/Unrestricted instead of disabling tools
+
+4.2 UAC SYSTEM DISABLE (REQUIRES ADMIN)
+----------------------------------------
+Key: HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+Values:
+  - Name: "EnableLUA" | Type: REG_DWORD | Data: 0
+  - Name: "ConsentPromptBehaviorAdmin" | Type: REG_DWORD | Data: 0
+  - Name: "PromptOnSecureDesktop" | Type: REG_DWORD | Data: 0
+
+Purpose: Completely disables UAC system-wide (requires admin privileges)
+Function: disable_uac_completely()
+
+===============================================================================
+                      5. WINDOWS DEFENDER BYPASS
+===============================================================================
+
+5.1 DEFENDER REGISTRY DISABLE
+------------------------------
+Key: HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows Defender
+Values:
+  - Name: "DisableAntiSpyware" | Type: REG_DWORD | Data: 1
+  - Name: "DisableAntiVirus" | Type: REG_DWORD | Data: 1
+  - Name: "DisableRealtimeMonitoring" | Type: REG_DWORD | Data: 1
+
+Key: HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection
+Values:
+  - Name: "DisableRealtimeMonitoring" | Type: REG_DWORD | Data: 1
+  - Name: "DisableBehaviorMonitoring" | Type: REG_DWORD | Data: 1
+  - Name: "DisableOnAccessProtection" | Type: REG_DWORD | Data: 1
+  - Name: "DisableScanOnRealtimeEnable" | Type: REG_DWORD | Data: 1
+
+Purpose: Disables Windows Defender via registry (requires admin privileges)
+Function: disable_defender_registry()
+
+5.2 DEFENDER GROUP POLICY DISABLE
+----------------------------------
+Key: HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows Defender
+Values:
+  - Name: "DisableAntiSpyware" | Type: REG_DWORD | Data: 1
+
+Key: HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection
+Values:
+  - Name: "DisableRealtimeMonitoring" | Type: REG_DWORD | Data: 1
+
+Purpose: Disables Defender via Group Policy registry settings
+Function: disable_defender_group_policy()
+
+===============================================================================
+                            6. COLOR CALIBRATION
+===============================================================================
+
+6.1 ICOLORDATA PROXY BYPASS
+----------------------------
+Key: HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ICM\Calibration
+Values:
+  - Name: "DisplayCalibrator" | Type: REG_SZ | Data: <current_executable>
+
+Purpose: Hijacks color calibration for COM-based UAC bypass
+Function: bypass_uac_colordata_proxy()
+Access: Via COM elevation (ICMLuaUtil)
+
+===============================================================================
+                           7. TEMPORARY/CLEANUP KEYS
+===============================================================================
+
+The following registry keys are created temporarily and then deleted:
+
+7.1 UAC BYPASS CLEANUP
+-----------------------
+- All ms-settings protocol hijacking keys
+- mscfile association hijacks  
+- exefile association hijacks
+- Folder shell command hijacks
+- AppX association hijacks
+- COM handler registry entries
+- Environment variable modifications
+
+7.2 VERIFICATION KEYS
+---------------------
+Various registry keys are queried for verification:
+- Checking existing persistence entries
+- Validating deployment status
+- Confirming UAC bypass success
+
+===============================================================================
+                           8. REGISTRY OPERATION SUMMARY
+===============================================================================
+
+PERSISTENT MODIFICATIONS (Remain After Execution):
+- Startup persistence entries (Run/RunOnce)
+- System policy configurations (tools kept enabled)
+- Windows Defender disable entries (if admin)
+- UAC system disable (if admin)
+
+TEMPORARY MODIFICATIONS (Cleaned Up):
+- UAC bypass protocol hijacks
+- COM object registrations
+- File association hijacks
+- Environment variable changes
+
+VERIFICATION OPERATIONS (Read-Only):
+- Checking existing registry values
+- Validating persistence installation
+- Confirming configuration status
+
+===============================================================================
+                              9. SECURITY NOTES
+===============================================================================
+
+IMPORTANT SECURITY CONSIDERATIONS:
+
+1. PERSISTENCE IMPACT:
+   - Multiple startup entries ensure execution persistence
+   - Registry entries survive system reboots
+   - Difficult to remove without admin privileges
+
+2. UAC BYPASS METHODS:
+   - All UAC bypasses are temporary and cleaned up
+   - Methods target Windows auto-elevation features
+   - Require specific Windows versions/configurations
+
+3. SYSTEM MODIFICATIONS:
+   - Defender disable requires admin privileges
+   - UAC disable affects entire system
+   - Policy changes may impact system security
+
+4. CLEANUP BEHAVIOR:
+   - Most UAC bypass entries are temporary
+   - Persistence entries remain intentionally
+   - Some cleanup may fail due to timing/permissions
+
+===============================================================================
+                                END OF DOCUMENT
+===============================================================================
+
+Generated from main.py analysis
+Last Updated: December 2024
+Total Registry Operations: 80+ distinct operations across 15+ functions
