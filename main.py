@@ -7095,3 +7095,107 @@ if __name__ == "__main__":
             pass
 
 # Agent authentication removed - direct access enabled
+
+# Modern non-blocking streaming pipeline for screen streaming
+STREAMING_ENABLED = False
+STREAM_THREADS = []
+capture_queue = None
+encode_queue = None
+
+TARGET_FPS = 15
+CAPTURE_QUEUE_SIZE = 5
+ENCODE_QUEUE_SIZE = 5
+
+
+def screen_capture_worker(agent_id):
+    import time
+    global STREAMING_ENABLED, capture_queue
+    import mss
+    import numpy as np
+    with mss.mss() as sct:
+        monitors = sct.monitors
+        monitor_index = 1
+        width = monitors[monitor_index][2] - monitors[monitor_index][0]
+        height = monitors[monitor_index][3] - monitors[monitor_index][1]
+        if width > 1280:
+            scale = 1280 / width
+            width = int(width * scale)
+            height = int(height * scale)
+        frame_time = 1.0 / TARGET_FPS
+        while STREAMING_ENABLED:
+            start = time.time()
+            sct_img = sct.grab(monitors[monitor_index])
+            img = np.array(sct_img)
+            if img.shape[1] != width or img.shape[0] != height:
+                img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
+            if img.shape[2] == 4:
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+            # Non-blocking put, drop oldest if full
+            try:
+                if capture_queue.full():
+                    capture_queue.get_nowait()
+                capture_queue.put_nowait(img)
+            except queue.Full:
+                pass
+            elapsed = time.time() - start
+            sleep_time = max(0, frame_time - elapsed)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+
+def screen_encode_worker(agent_id):
+    global STREAMING_ENABLED, capture_queue, encode_queue
+    while STREAMING_ENABLED:
+        try:
+            img = capture_queue.get(timeout=0.5)
+        except queue.Empty:
+            continue
+        # H.264 encode (for now, JPEG fallback)
+        is_success, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        if is_success:
+            try:
+                if encode_queue.full():
+                    encode_queue.get_nowait()
+                encode_queue.put_nowait(encoded.tobytes())
+            except queue.Full:
+                pass
+
+def screen_send_worker(agent_id):
+    global STREAMING_ENABLED, encode_queue, sio
+    while STREAMING_ENABLED:
+        try:
+            frame = encode_queue.get(timeout=0.5)
+        except queue.Empty:
+            continue
+        try:
+            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame}, binary=True)
+        except Exception as e:
+            log_message(f"SocketIO send error: {e}", "error")
+
+
+def start_streaming(agent_id):
+    global STREAMING_ENABLED, STREAM_THREADS, capture_queue, encode_queue
+    if not STREAMING_ENABLED:
+        STREAMING_ENABLED = True
+        capture_queue = queue.Queue(maxsize=CAPTURE_QUEUE_SIZE)
+        encode_queue = queue.Queue(maxsize=ENCODE_QUEUE_SIZE)
+        STREAM_THREADS = [
+            threading.Thread(target=screen_capture_worker, args=(agent_id,), daemon=True),
+            threading.Thread(target=screen_encode_worker, args=(agent_id,), daemon=True),
+            threading.Thread(target=screen_send_worker, args=(agent_id,), daemon=True),
+        ]
+        for t in STREAM_THREADS:
+            t.start()
+        log_message(f"Started modern non-blocking video stream at {TARGET_FPS} FPS.")
+
+def stop_streaming():
+    global STREAMING_ENABLED, STREAM_THREADS, capture_queue, encode_queue
+    if STREAMING_ENABLED:
+        STREAMING_ENABLED = False
+        for t in STREAM_THREADS:
+            t.join(timeout=2)
+        STREAM_THREADS = []
+        capture_queue = None
+        encode_queue = None
+        log_message("Stopped video stream.")
+
+# Documented: Modern streaming pipeline uses three threads and two queues for capture, encode, and send. Each stage is non-blocking and drops oldest frames if overloaded. FPS and buffer sizes are configurable.
