@@ -15,6 +15,8 @@ import hmac
 import secrets
 import os
 import base64
+from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, MediaStreamTrack
+import asyncio
 
 # Configuration Management
 class Config:
@@ -2104,6 +2106,57 @@ def handle_request_video_frame(data):
         frame = VIDEO_FRAMES_H264[agent_id]
         # Send as base64 for browser demo; in production, use ArrayBuffer/binary
         emit('video_frame', {'frame': base64.b64encode(frame).decode('utf-8')})
+
+# Add new buffers for H.264 camera frames and Opus/PCM audio frames
+CAMERA_FRAMES_H264 = defaultdict(lambda: None)
+AUDIO_FRAMES_OPUS = defaultdict(lambda: None)
+
+@socketio.on('camera_frame')
+def handle_camera_frame(data):
+    agent_id = data.get('agent_id')
+    frame = data.get('frame')
+    if agent_id and frame:
+        CAMERA_FRAMES_H264[agent_id] = frame
+
+@socketio.on('audio_frame')
+def handle_audio_frame(data):
+    agent_id = data.get('agent_id')
+    frame = data.get('frame')
+    if agent_id and frame:
+        AUDIO_FRAMES_OPUS[agent_id] = frame
+
+WEBRTC_PEERS = {}
+
+@socketio.on('webrtc_offer')
+def handle_webrtc_offer(data):
+    agent_id = data.get('agent_id')
+    offer = data.get('offer')
+    if not agent_id or not offer:
+        return
+    # Relay offer to the agent or create a peer connection
+    emit('webrtc_offer', {'agent_id': agent_id, 'offer': offer}, room=AGENTS_DATA[agent_id]["sid"])
+
+@socketio.on('webrtc_answer')
+def handle_webrtc_answer(data):
+    agent_id = data.get('agent_id')
+    answer = data.get('answer')
+    if not agent_id or not answer:
+        return
+    # Relay answer to the web client
+    emit('webrtc_answer', {'agent_id': agent_id, 'answer': answer}, room='operators')
+
+@socketio.on('webrtc_ice_candidate')
+def handle_webrtc_ice_candidate(data):
+    agent_id = data.get('agent_id')
+    candidate = data.get('candidate')
+    target = data.get('target')
+    if not agent_id or not candidate or not target:
+        return
+    # Relay ICE candidate to the correct peer
+    if target == 'agent':
+        emit('webrtc_ice_candidate', {'agent_id': agent_id, 'candidate': candidate}, room=AGENTS_DATA[agent_id]["sid"])
+    elif target == 'operator':
+        emit('webrtc_ice_candidate', {'agent_id': agent_id, 'candidate': candidate}, room='operators')
 
 if __name__ == "__main__":
     print("Starting Neural Control Hub with Socket.IO support...")
