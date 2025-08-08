@@ -34,6 +34,49 @@ Additional Advanced Features:
 
 Author: Advanced Red Team Toolkit
 Version: 2.0 (UACME Enhanced)
+
+ADDITIONAL VULNERABLE PROCESSES FOR UAC BYPASS:
+#	Process Name	Location	Exploit Method	UAC Requirement	Notes
+1	SystemPropertiesAdvanced.exe	%SystemRoot%\System32\	mscfile registry hijack (HKCU\Software\Classes\mscfile\shell\open\command)	Consent prompt only	Launches elevated System Properties
+2	SystemPropertiesProtection.exe	%SystemRoot%\System32\	Same mscfile hijack as above	Consent prompt only	Opens System Restore settings
+3	sysdm.cpl	%SystemRoot%\System32\	App Paths hijack (HKCU\Software\Microsoft\Windows\CurrentVersion\App Paths\sysdm.cpl)	Consent prompt only	Old-style system settings CPL
+4	iscsicpl.exe	%SystemRoot%\System32\	App Paths hijack	Consent prompt only	iSCSI Initiator Control Panel
+5	ie4uinit.exe	%SystemRoot%\System32\	Special arguments /show or /cleariconcache + registry hijack	Consent prompt only	Can execute payload silently
+6	wusa.exe	%SystemRoot%\System32\	Malicious .msu package with custom commands	Consent prompt only	Works on older builds
+7	cliconfg.exe	%SystemRoot%\System32\	App Paths or DLL hijack	Consent prompt only	SQL Server config tool
+8	lpksetup.exe	%SystemRoot%\System32\	Malicious .cab package	Consent prompt only	Legacy Language Pack Installer
+9	pcwrun.exe	%SystemRoot%\System32\	COM hijack or App Paths	Consent prompt only	Program Compatibility Wizard
+10	shell:AppsFolder	Shell protocol	Registry hijack (HKCU\Software\Classes\Folder\shell\open\command)	Consent prompt only	Opens Windows Apps folder elevated
+11	ms-contact-support:	Protocol handler	Registry hijack under HKCU\Software\Classes\ms-contact-support	Consent prompt only	Contact Support app (Win 10)
+12	ms-get-started:	Protocol handler	Registry hijack	Consent prompt only	Get Started app launcher
+13	cleanmgr.exe	%SystemRoot%\System32\	Scheduled task abuse with /autoclean or /verylowdisk	Consent prompt only	Disk Cleanup auto-elevates
+14	hdwwiz.exe	%SystemRoot%\System32\	App Paths hijack	Consent prompt only	Hardware Wizard auto-elevates
+15	WerFault.exe	%SystemRoot%\System32\	Trigger crash in elevated binary → hijack debugger	Consent prompt only	Windows Error Reporting
+16	taskschd.msc	%SystemRoot%\System32\	mscfile registry hijack	Consent prompt only	Task Scheduler snap-in
+17	TiWorker.exe	%SystemRoot%\WinSxS\	DLL planting in servicing stack dirs	Works with credential prompt if service misconfig exists	TrustedInstaller context
+
+PRIVILEGE ESCALATION METHODS (BYPASS CREDENTIAL PROMPT):
+#	Method Name	Target Component	Exploit Type	Works on Standard User?	Notes
+1	TiWorker.exe DLL Planting	TrustedInstaller (Windows Modules Installer)	DLL hijack in servicing stack folders	✅	SYSTEM-level, survives UAC settings, requires writable path in WinSxS temp dirs
+2	Unquoted Service Path	Misconfigured Windows Service	Binary replacement	✅	If service path has spaces and is unquoted, drop payload in earlier path segment
+3	Weak Service Binary Permissions	SYSTEM service executable	Binary replacement	✅	If service binary is writable by user, replace it with payload
+4	Weak Service Registry Permissions	Service configuration registry key	Command replacement	✅	Change service ImagePath or parameters to run payload
+5	DLL Search Order Hijacking (SYSTEM Services)	Any auto-start SYSTEM service	DLL planting	✅	Drop malicious DLL in folder searched before the real one
+6	Scheduled Task Binary Replacement	SYSTEM-level scheduled task	Binary replacement	✅	Replace executable path of an existing SYSTEM task
+7	Token Impersonation (SYSTEM Process)	SeImpersonatePrivilege / SeAssignPrimaryTokenPrivilege	Token theft	✅	Steal SYSTEM token via named pipe or thread hijack
+8	Named Pipe Impersonation	SYSTEM service pipe	Token impersonation	✅	Trick service into connecting and impersonate SYSTEM
+9	Print Spooler Service Abuse	Spoolsv.exe	Remote/local SYSTEM code execution	✅	Similar to PrintNightmare; patch-dependent
+10	COM Service Hijacking (SYSTEM Context)	Auto-start COM objects	Registry hijack	✅	Change CLSID to point to malicious binary
+11	Image File Execution Options (IFEO) for SYSTEM processes	Debugger key in registry	Binary hijack	✅	Force SYSTEM process to start debugger payload
+12	Windows Installer Service Abuse	msiexec.exe	Custom MSI with SYSTEM execution	✅	If installer policy allows
+13	WMI Event Subscription (SYSTEM Context)	WMI permanent event consumer	Code injection	✅	Persist and escalate on trigger event
+14	Vulnerable Driver Exploits	Third-party drivers	Kernel exploit	✅	Use signed driver to read/write kernel memory
+15	User-mode to Kernel-mode Exploits	Windows kernel (ntoskrnl.exe)	Memory corruption / race condition	✅	Requires CVE or 0-day
+16	Shadow Copy Mounting	Volume Shadow Service	NTFS trick	✅	Mount shadow copy and replace protected files
+17	SAM / SECURITY Hive Access (LSA Secrets)	Registry hives	Credential theft	✅	Requires volume shadow trick or backup privilege
+18	BITS Job Hijacking	Background Intelligent Transfer Service	Command injection	✅	Replace BITS job payload
+19	AppXSVC/AppX Deployment DLL Hijack	AppX Deployment Service	DLL planting	✅	Runs as SYSTEM
+20	DiagTrack Service Abuse	Connected User Experiences and Telemetry	DLL planting	✅	SYSTEM-level telemetry service
 """
 
 # Fix eventlet issue by patching before any other imports
