@@ -1,52 +1,47 @@
-# Core web & socket dependencies
-flask
-flask_socketio
 eventlet
-gunicorn
-python-socketio
-websockets
-
-# HTTP & networking
 requests
-
-# Screen capturing & media
+urllib3
 mss
-opencv-python
-pygame
-dxcam >= 0.0.5; sys_platform == "win32"
-
-
-# Audio handling
-speechrecognition
-sounddevice; sys_platform != "win32"
-
-# Input control
-pynput
-keyboard
-pyautogui
-
-# System utilities
-psutil
-py-cpuinfo
-pywin32; sys_platform == "win32"
-WMI; sys_platform == "win32"
-
-# Image processing
-pillow
-PyTurboJPEG >= 1.7.0
-
-# Performance / async / compression
 numpy
-aiofiles >= 23.0.0
-msgpack >= 1.0.0
-lz4 >= 4.0.0
-zstandard >= 0.21.0
-xxhash >= 3.2.0
-uvloop >= 0.17.0; sys_platform != "win32"
-Cython >= 3.0.0
-setuptools >= 65.0.0
-
-# Security
+opencv-python
+pyaudio
+pynput
+pygame
+websockets
+speechrecognition
+psutil
+pillow
+pyautogui
+python-socketio
+socketio
+win32api
+win32con
+win32clipboard
+win32security
+win32process
+win32event
+ctypes
+wintypes
+winreg
+win32com.client
+pythoncom
+flask
+flask-socketio
+shutil
+gc
+traceback
+hashlib
+ssl
+datetime
+collections
+wmi
+win32gui
+dxcam
+turbojpeg
+lz4
+xxhash
+msgpack
+uvloop
 cryptography
 
 
