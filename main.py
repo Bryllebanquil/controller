@@ -7199,3 +7199,9 @@ def stop_streaming():
         log_message("Stopped video stream.")
 
 # Documented: Modern streaming pipeline uses three threads and two queues for capture, encode, and send. Each stage is non-blocking and drops oldest frames if overloaded. FPS and buffer sizes are configurable.
+
+import os
+import subprocess
+import time
+
+def write_and_import_
