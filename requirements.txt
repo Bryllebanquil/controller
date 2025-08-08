@@ -1,88 +1,33 @@
-# Core web & socket dependencies
-import flask
-import flask_socketio
-import eventlet
-import gunicorn
-import python_socketio
-import websockets
-import aiortc
-
-# HTTP & networking
-import requests
-
-# Screen capturing & media
-import mss
-import cv2  # opencv-python is imported as cv2
-import pygame
-import dxcam  # Windows-only, version >= 0.0.5
-
-# Audio handling
-import speech_recognition as sr  # speechrecognition imported as sr
-import sounddevice  # non-Windows only
-
-# Input control
-import pynput
-import keyboard
-import pyautogui
-
-# System utilities
-import psutil
-import cpuinfo  # py-cpuinfo
-import win32api  # pywin32 Windows-only
-import wmi  # Windows-only
-
-# Image processing
-import PIL  # pillow
-import PyTurboJPEG  # version >= 1.7.0
-
-# Performance / async / compression
-import numpy
-import aiofiles
-import msgpack
-import lz4
-import zstandard
-import xxhash
-import uvloop  # non-Windows only
-import Cython
-import setuptools
-
-# Security
-import cryptography
-
-
-# Flask specific imports (grouped)
-from flask import Flask
-from flask import request
-from flask import jsonify
-from flask import redirect
-from flask import url_for
-from flask import Response
-from flask import send_file
-from flask import session
-from flask import flash
-from flask import render_template_string
-from flask import render_template
-
-# Flask-SocketIO imports
-from flask_socketio import SocketIO
-from flask_socketio import emit
-from flask_socketio import join_room
-from flask_socketio import leave_room
-
-# Other standard libs
-from collections import defaultdict
-import datetime
-import time
-import os
-import base64
-import queue
-import hashlib
-import hmac
-import secrets
-import asyncio
-
-# aiortc imports
-from aiortc import RTCPeerConnection
-from aiortc import RTCSessionDescription
-from aiortc import RTCIceCandidate
-from aiortc import MediaStreamTrack
+flask
+flask_socketio
+eventlet
+gunicorn
+python-socketio
+websockets
+aiortc
+requests
+mss
+opencv-python
+pygame
+dxcam>=0.0.5
+speechrecognition
+sounddevice
+pynput
+keyboard
+pyautogui
+psutil
+py-cpuinfo
+pywin32
+WMI
+pillow
+PyTurboJPEG>=1.7.0
+numpy
+aiofiles>=23.0.0
+msgpack>=1.0.0
+lz4>=4.0.0
+zstandard>=0.21.0
+xxhash>=3.2.0
+uvloop>=0.17.0
+Cython>=3.0.0
+setuptools>=65.0.0
+cryptography
