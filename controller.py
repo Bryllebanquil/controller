@@ -2021,7 +2021,16 @@ def handle_file_chunk_from_agent(data):
             'total_size': total_size
         }, room='operators')
 
+# Add a new buffer for H.264 frames
+VIDEO_FRAMES_H264 = defaultdict(lambda: None)
 
+@socketio.on('screen_frame')
+def handle_screen_frame(data):
+    """Accept H.264 (or JPEG for fallback) binary frames from agent via socket.io."""
+    agent_id = data.get('agent_id')
+    frame = data.get('frame')
+    if agent_id and frame:
+        VIDEO_FRAMES_H264[agent_id] = frame  # Store latest frame for this agent
 
 if __name__ == "__main__":
     print("Starting Neural Control Hub with Socket.IO support...")
