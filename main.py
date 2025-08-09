@@ -3418,265 +3418,179 @@ def get_or_create_agent_id():
 
 def stream_screen(agent_id):
     """
-    High-performance screen streaming with 60+ FPS capability.
-    Uses optimized capture backend and compression.
+    High-performance H.264 screen streaming with 10+ FPS capability.
+    Uses modern socket.io binary streaming.
     """
-    global STREAMING_ENABLED
-    
-    # Check if required dependencies are available
-    if not MSS_AVAILABLE:
-        log_message("Error: mss not available for screen capture", "error")
-        return
-    
-    if not NUMPY_AVAILABLE:
-        log_message("Error: numpy not available for screen capture", "error")
-        return
-    
-    if not CV2_AVAILABLE:
-        log_message("Error: opencv-python not available for screen capture", "error")
-        return
-    
-    # Use the working fallback implementation directly
-    log_message("Starting screen streaming...")
-    _stream_screen_fallback(agent_id)
+    log_message("Starting H.264 screen streaming...")
+    stream_screen_h264_socketio(agent_id)
 
-def _stream_screen_fallback(agent_id):
-    """
-    Fallback screen streaming with basic optimizations and retry logic
-    """
-    global STREAMING_ENABLED
-    import time
-    retry_delay = 5  # seconds
-    # Check if required dependencies are available
-    if not MSS_AVAILABLE or not NUMPY_AVAILABLE or not CV2_AVAILABLE:
-        log_message("Error: Required dependencies not available for screen capture", "error")
-        return
-    url = f"{SERVER_URL}/stream/{agent_id}"
-    headers = {'Content-Type': 'image/jpeg'}
-    while STREAMING_ENABLED:
-        try:
-            with mss.mss() as sct:
-                monitors = sct.monitors
-                monitor_index = 1
-                log_message(f"Using monitor {monitor_index}: {monitors[monitor_index]}")
-                # Optimized for real-time monitoring: 2 FPS (0.5-second intervals)
-                target_fps = 2
-                frame_time = 1.0 / target_fps
-                last_frame_hash = None
-                frame_skip_count = 0
-                while STREAMING_ENABLED:
-                    current_time = time.time()
-                    sct_img = sct.grab(monitors[monitor_index])
-                    img = np.array(sct_img)
-                    import hashlib
-                    frame_hash = hashlib.md5(img.tobytes()).hexdigest()
-                    if frame_hash == last_frame_hash:
-                        frame_skip_count += 1
-                        if frame_skip_count < 3:
-                            time.sleep(frame_time * 0.5)
-                            continue
-                    last_frame_hash = frame_hash
-                    frame_skip_count = 0
-                    height, width = img.shape[:2]
-                    if width > 1280:
-                        scale = 1280 / width
-                        new_width = int(width * scale)
-                        new_height = int(height * scale)
-                        img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
-                    is_success, buffer = cv2.imencode(".jpg", img, [
-                        cv2.IMWRITE_JPEG_QUALITY, 80,
-                        cv2.IMWRITE_JPEG_OPTIMIZE, 1,
-                        cv2.IMWRITE_JPEG_PROGRESSIVE, 1
-                    ])
-                    if not is_success:
-                        continue
-                    try:
-                        response = requests.post(url, data=buffer.tobytes(), headers=headers, timeout=0.5)
-                        if response.status_code != 200:
-                            log_message(f"Warning: Server returned status {response.status_code}")
-                    except requests.exceptions.Timeout:
-                        pass
-                    except requests.exceptions.RequestException as e:
-                        log_message(f"Request error: {e}. Retrying in {retry_delay}s...")
-                        time.sleep(retry_delay)
-                        break  # Break inner loop to retry outer
-                    elapsed = time.time() - current_time
-                    sleep_time = max(0, frame_time - elapsed)
-                    if sleep_time > 0:
-                        time.sleep(sleep_time)
-        except Exception as e:
-            log_message(f"Screen capture initialization error: {e}. Retrying in {retry_delay}s...")
-            time.sleep(retry_delay)
+# JPEG fallback screen streaming removed - now using H.264 socket.io binary streaming
 
-def stream_camera(agent_id):
-    """
-    Captures the webcam and streams it to the controller optimized for 0.5-second intervals (2 FPS) for real-time monitoring.
-    """
-    global CAMERA_STREAMING_ENABLED
-    import time
-    retry_delay = 5
-    if not CV2_AVAILABLE:
-        log_message("Error: opencv-python not available for camera capture", "error")
-        return
-    url = f"{SERVER_URL}/camera/{agent_id}"
-    headers = {'Content-Type': 'image/jpeg'}
-    while CAMERA_STREAMING_ENABLED:
-        try:
-            cap = None
-            backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY] if WINDOWS_AVAILABLE else [cv2.CAP_V4L2, cv2.CAP_ANY]
-            for backend in backends:
-                try:
-                    cap = cv2.VideoCapture(0, backend)
-                    if cap.isOpened():
-                        log_message(f"Camera opened successfully with backend {backend}")
-                        break
-                    else:
-                        cap.release()
-                except Exception as e:
-                    log_message(f"Failed to open camera with backend {backend}: {e}")
-                    if cap:
-                        cap.release()
-            if not cap or not cap.isOpened():
-                log_message("Error: Could not open camera with any backend. Retrying in {retry_delay}s...", "error")
-                time.sleep(retry_delay)
-                continue
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            # Optimized for real-time monitoring: 2 FPS (0.5-second intervals)
-            cap.set(cv2.CAP_PROP_FPS, 2)
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            actual_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-            actual_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-            actual_fps = cap.get(cv2.CAP_PROP_FPS)
-            log_message(f"Camera initialized: {actual_width}x{actual_height} @ {actual_fps}fps")
-            frame_count = 0
-            start_time = time.time()
-            while CAMERA_STREAMING_ENABLED:
-                try:
-                    ret, frame = cap.read()
-                    if not ret:
-                        log_message("Error: Could not read frame from camera", "error")
-                        time.sleep(0.1)
-                        continue
-                    frame_count += 1
-                    frame = cv2.resize(frame, (640, 480))
-                    is_success, buffer = cv2.imencode(".jpg", frame, [
-                        cv2.IMWRITE_JPEG_QUALITY, 85,
-                        cv2.IMWRITE_JPEG_OPTIMIZE, 1
-                    ])
-                    if not is_success:
-                        continue
-                    try:
-                        response = requests.post(url, data=buffer.tobytes(), headers=headers, timeout=0.5)
-                        if response.status_code != 200:
-                            log_message(f"Warning: Camera stream server returned status {response.status_code}")
-                    except requests.exceptions.Timeout:
-                        pass
-                    except requests.exceptions.RequestException as e:
-                        log_message(f"Camera stream request error: {e}. Retrying in {retry_delay}s...")
-                        time.sleep(retry_delay)
-                        break
-                    if frame_count % 10 == 0:
-                        elapsed = time.time() - start_time
-                        fps = frame_count / elapsed
-                        log_message(f"Camera streaming at {fps:.1f} FPS")
-                    # Sleep for 0.5 seconds for 2 FPS real-time monitoring
-                    time.sleep(0.5)
-                except Exception as e:
-                    log_message(f"Camera stream error: {e}")
-                    time.sleep(0.5)
-            cap.release()
-            log_message("Camera streaming stopped")
-        except Exception as e:
-            log_message(f"Camera initialization error: {e}. Retrying in {retry_delay}s...")
-            time.sleep(retry_delay)
+# Legacy JPEG camera streaming removed - now using H.264 socket.io binary streaming
 
-def stream_audio(agent_id):
-    """
-    Captures microphone audio and streams it to the controller. Retry logic added.
-    """
-    global AUDIO_STREAMING_ENABLED
+# Legacy HTTP POST audio streaming removed - now using Opus socket.io binary streaming
+
+# Modern Opus audio streaming pipeline variables
+AUDIO_STREAMING_ENABLED = False
+AUDIO_STREAM_THREADS = []
+audio_capture_queue = None
+audio_encode_queue = None
+
+TARGET_AUDIO_FPS = 50  # 50 audio frames per second (20ms chunks)
+AUDIO_CAPTURE_QUEUE_SIZE = 10
+AUDIO_ENCODE_QUEUE_SIZE = 10
+
+def audio_capture_worker(agent_id):
+    """Capture audio frames from microphone and put in capture queue."""
+    global AUDIO_STREAMING_ENABLED, audio_capture_queue
     import time
-    retry_delay = 5
+    import pyaudio
+    
     if not PYAUDIO_AVAILABLE or FORMAT is None:
         log_message("Error: PyAudio not available for audio capture", "error")
         return
-    url = f"{SERVER_URL}/audio/{agent_id}"
+    
+    try:
+        p = pyaudio.PyAudio()
+        
+        # Find default input device
+        input_device_index = None
+        try:
+            default_device_info = p.get_default_input_device_info()
+            input_device_index = default_device_info['index']
+            log_message(f"Using audio device: {default_device_info['name']}")
+        except Exception as e:
+            log_message(f"Could not get default audio device: {e}")
+            p.terminate()
+            return
+        
+        # Open audio stream
+        stream = p.open(
+            format=FORMAT,
+            channels=CHANNELS,
+            rate=RATE,
+            input=True,
+            frames_per_buffer=CHUNK,
+            input_device_index=input_device_index
+        )
+        
+        log_message("Audio capture started")
+        
+        while AUDIO_STREAMING_ENABLED:
+            try:
+                # Capture audio chunk
+                data = stream.read(CHUNK, exception_on_overflow=False)
+                
+                # Put in queue, drop oldest if full
+                try:
+                    audio_capture_queue.put_nowait(data)
+                except queue.Full:
+                    try:
+                        audio_capture_queue.get_nowait()  # Remove oldest
+                        audio_capture_queue.put_nowait(data)  # Add new
+                    except queue.Empty:
+                        pass
+                
+                time.sleep(0.02)  # 20ms for 50 FPS
+            except Exception as e:
+                log_message(f"Audio capture error: {e}")
+                break
+        
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+        log_message("Audio capture stopped")
+        
+    except Exception as e:
+        log_message(f"Audio capture initialization error: {e}")
+
+def audio_encode_worker(agent_id):
+    """Encode audio frames from capture queue to Opus and put in encode queue."""
+    global AUDIO_STREAMING_ENABLED, audio_capture_queue, audio_encode_queue
+    import time
+    
+    try:
+        import opuslib
+        # Create Opus encoder (48kHz, mono, 20ms frame size)
+        encoder = opuslib.Encoder(48000, 1, opuslib.APPLICATION_AUDIO)
+        encoder.bitrate = 64000  # 64 kbps for good quality
+        log_message("Opus encoder initialized")
+    except ImportError:
+        log_message("Warning: opuslib not available, using PCM", "warning")
+        encoder = None
+    except Exception as e:
+        log_message(f"Error initializing Opus encoder: {e}")
+        encoder = None
+    
     while AUDIO_STREAMING_ENABLED:
         try:
-            p = pyaudio.PyAudio()
-            input_devices = []
-            for i in range(p.get_device_count()):
-                try:
-                    device_info = p.get_device_info_by_index(i)
-                    if device_info['maxInputChannels'] > 0:
-                        input_devices.append((i, device_info['name']))
-                except Exception:
-                    continue
-            log_message(f"Available input devices: {len(input_devices)}")
-            for idx, name in input_devices:
-                log_message(f"  Device {idx}: {name}")
-            input_device_index = None
+            # Get audio data from capture queue
             try:
-                default_device_info = p.get_default_input_device_info()
-                log_message(f"Default audio device: {default_device_info['name']}")
-                input_device_index = default_device_info['index']
-            except Exception as e:
-                log_message(f"Could not get default audio device: {e}")
-                if input_devices:
-                    input_device_index = input_devices[0][0]
-                    log_message(f"Using first available device: {input_devices[0][1]}")
-            if input_device_index is None:
-                log_message("Error: No audio input devices available. Retrying in {retry_delay}s...", "error")
-                p.terminate()
-                time.sleep(retry_delay)
+                pcm_data = audio_capture_queue.get(timeout=0.1)
+            except queue.Empty:
                 continue
-            try:
-                stream = p.open(
-                    format=FORMAT,
-                    channels=CHANNELS,
-                    rate=RATE,
-                    input=True,
-                    frames_per_buffer=CHUNK,
-                    input_device_index=input_device_index
-                )
-                log_message(f"Audio stream opened successfully with device {input_device_index}")
-            except Exception as e:
-                log_message(f"Failed to open audio stream: {e}. Retrying in {retry_delay}s...")
-                p.terminate()
-                time.sleep(retry_delay)
-                continue
-            frame_count = 0
-            start_time = time.time()
-            while AUDIO_STREAMING_ENABLED:
+            
+            # Encode with Opus if available, otherwise use PCM
+            if encoder:
                 try:
-                    data = stream.read(CHUNK, exception_on_overflow=False)
-                    frame_count += 1
-                    try:
-                        response = requests.post(url, data=data, timeout=0.5)
-                        if response.status_code != 200:
-                            log_message(f"Warning: Audio stream server returned status {response.status_code}")
-                    except requests.exceptions.Timeout:
-                        pass
-                    except requests.exceptions.RequestException as e:
-                        log_message(f"Audio stream request error: {e}. Retrying in {retry_delay}s...")
-                        time.sleep(retry_delay)
-                        break
-                    if frame_count % 100 == 0:
-                        elapsed = time.time() - start_time
-                        fps = frame_count / elapsed
-                        log_message(f"Audio streaming at {fps:.1f} FPS")
+                    # Convert PCM to Opus
+                    import numpy as np
+                    pcm_array = np.frombuffer(pcm_data, dtype=np.int16)
+                    encoded_data = encoder.encode(pcm_array.tobytes(), CHUNK)
                 except Exception as e:
-                    log_message(f"Audio stream error: {e}")
-                    break
-            stream.stop_stream()
-            stream.close()
-            p.terminate()
-            log_message("Audio streaming stopped")
+                    log_message(f"Opus encoding error: {e}")
+                    encoded_data = pcm_data  # Fallback to PCM
+            else:
+                encoded_data = pcm_data  # Use PCM
+            
+            # Put in encode queue, drop oldest if full
+            try:
+                audio_encode_queue.put_nowait(encoded_data)
+            except queue.Full:
+                try:
+                    audio_encode_queue.get_nowait()  # Remove oldest
+                    audio_encode_queue.put_nowait(encoded_data)  # Add new
+                except queue.Empty:
+                    pass
+                    
         except Exception as e:
-            log_message(f"Audio initialization error: {e}. Retrying in {retry_delay}s...")
-            AUDIO_STREAMING_ENABLED = False
-            time.sleep(retry_delay)
+            log_message(f"Audio encoding error: {e}")
+            time.sleep(0.01)
+    
+    log_message("Audio encoding stopped")
+
+def audio_send_worker(agent_id):
+    """Send encoded audio frames from encode queue via socket.io."""
+    global AUDIO_STREAMING_ENABLED, audio_encode_queue
+    import time
+    
+    if sio is None:
+        log_message("Error: socket.io not available for audio sending", "error")
+        return
+    
+    while AUDIO_STREAMING_ENABLED:
+        try:
+            # Get encoded data from encode queue
+            try:
+                encoded_data = audio_encode_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            
+            # Send via socket.io binary
+            try:
+                sio.emit('audio_frame', {
+                    'agent_id': agent_id,
+                    'frame': encoded_data
+                }, binary=True)
+            except Exception as e:
+                log_message(f"Audio send error: {e}")
+                time.sleep(0.01)
+                
+        except Exception as e:
+            log_message(f"Audio sending error: {e}")
+            time.sleep(0.01)
+    
+    log_message("Audio sending stopped")
 
 def start_streaming(agent_id):
     global STREAMING_ENABLED, STREAM_THREAD
@@ -3697,22 +3611,46 @@ def stop_streaming():
         log_message("Stopped video stream.")
 
 def start_audio_streaming(agent_id):
-    global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREAD
+    """Start modern Opus audio streaming with multi-threaded pipeline."""
+    global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREADS, audio_capture_queue, audio_encode_queue
+    import queue
+    import threading
+    
     if not AUDIO_STREAMING_ENABLED:
         AUDIO_STREAMING_ENABLED = True
-        AUDIO_STREAM_THREAD = threading.Thread(target=stream_audio, args=(agent_id,))
-        AUDIO_STREAM_THREAD.daemon = True
-        AUDIO_STREAM_THREAD.start()
-        log_message("Started audio stream.")
+        
+        # Initialize queues
+        audio_capture_queue = queue.Queue(maxsize=AUDIO_CAPTURE_QUEUE_SIZE)
+        audio_encode_queue = queue.Queue(maxsize=AUDIO_ENCODE_QUEUE_SIZE)
+        
+        # Start worker threads
+        threads = [
+            threading.Thread(target=audio_capture_worker, args=(agent_id,), daemon=True),
+            threading.Thread(target=audio_encode_worker, args=(agent_id,), daemon=True),
+            threading.Thread(target=audio_send_worker, args=(agent_id,), daemon=True)
+        ]
+        
+        for thread in threads:
+            thread.start()
+        
+        AUDIO_STREAM_THREADS = threads
+        log_message("Started Opus audio streaming pipeline.")
 
 def stop_audio_streaming():
-    global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREAD
+    """Stop modern Opus audio streaming pipeline."""
+    global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREADS, audio_capture_queue, audio_encode_queue
+    
     if AUDIO_STREAMING_ENABLED:
         AUDIO_STREAMING_ENABLED = False
-        if AUDIO_STREAM_THREAD:
-            AUDIO_STREAM_THREAD.join(timeout=2)
-        AUDIO_STREAM_THREAD = None
-        log_message("Stopped audio stream.")
+        
+        # Wait for all threads to stop
+        for thread in AUDIO_STREAM_THREADS:
+            thread.join(timeout=2)
+        
+        AUDIO_STREAM_THREADS = []
+        audio_capture_queue = None
+        audio_encode_queue = None
+        log_message("Stopped Opus audio streaming pipeline.")
 
 def start_camera_streaming(agent_id):
     global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREAD

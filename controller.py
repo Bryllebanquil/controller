@@ -15,8 +15,7 @@ import hmac
 import secrets
 import os
 import base64
-from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate, MediaStreamTrack
-import asyncio
+# aiortc WebRTC imports removed - not currently active
 
 # Configuration Management
 class Config:
@@ -1819,78 +1818,11 @@ AUDIO_CHUNKS = defaultdict(lambda: queue.Queue())
 # Frame timing for real-time monitoring
 FRAME_INTERVAL = 0.5  # 0.5-second intervals for 2 FPS
 
-@app.route('/stream/<agent_id>', methods=['POST'])
-# No authentication required for agent ingestion
-def stream_in(agent_id):
-    VIDEO_FRAMES[agent_id] = request.data
-    return "OK", 200
+# Legacy HTTP POST endpoints removed - now using socket.io binary streaming
 
-def generate_video_frames(agent_id):
-    while True:
-        frame = VIDEO_FRAMES.get(agent_id)
-        if frame:
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-        else:
-            # Optimized for 0.5 second intervals (2 FPS) for real-time monitoring
-            time.sleep(FRAME_INTERVAL)
+# Legacy camera HTTP POST endpoints removed - now using socket.io binary streaming
 
-@app.route('/video_feed/<agent_id>')
-@require_auth
-def video_feed(agent_id):
-    return Response(generate_video_frames(agent_id), mimetype='multipart/x-mixed-replace; boundary=frame')
-
-@app.route('/camera/<agent_id>', methods=['POST'])
-# No authentication required for agent ingestion
-def camera_in(agent_id):
-    CAMERA_FRAMES[agent_id] = request.data
-    return "OK", 200
-
-def generate_camera_frames(agent_id):
-    while True:
-        frame = CAMERA_FRAMES.get(agent_id)
-        if frame:
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-        else:
-            # Optimized for 0.5 second intervals (2 FPS) for real-time monitoring
-            time.sleep(FRAME_INTERVAL)
-
-@app.route('/camera_feed/<agent_id>')
-@require_auth
-def camera_feed(agent_id):
-    return Response(generate_camera_frames(agent_id), mimetype='multipart/x-mixed-replace; boundary=frame')
-
-@app.route('/audio/<agent_id>', methods=['POST'])
-# No authentication required for agent ingestion
-def audio_in(agent_id):
-    AUDIO_CHUNKS[agent_id].put(request.data)
-    return "OK", 200
-
-def generate_audio_stream(agent_id):
-    q = AUDIO_CHUNKS[agent_id]
-    # WAV header for PCM 16-bit mono 44100Hz
-    import struct
-    sample_rate = 44100
-    bits_per_sample = 16
-    num_channels = 1
-    byte_rate = sample_rate * num_channels * bits_per_sample // 8
-    block_align = num_channels * bits_per_sample // 8
-    # Set a large data size for streaming (e.g., 0x7FFFFFFF)
-    data_size = 0x7FFFFFFF
-    wav_header = b'RIFF' + struct.pack('<I', 36 + data_size) + b'WAVEfmt ' + struct.pack('<I', 16) + struct.pack('<H', 1) + struct.pack('<H', num_channels) + struct.pack('<I', sample_rate) + struct.pack('<I', byte_rate) + struct.pack('<H', block_align) + struct.pack('<H', bits_per_sample) + b'data' + struct.pack('<I', data_size)
-    yield wav_header
-    while True:
-        try:
-            chunk = q.get(timeout=1)
-            yield chunk
-        except queue.Empty:
-            continue
-
-@app.route('/audio_feed/<agent_id>')
-@require_auth
-def audio_feed(agent_id):
-    return Response(generate_audio_stream(agent_id), mimetype='audio/wav')
+# Legacy audio HTTP POST endpoints removed - now using socket.io binary streaming
 
 # --- Socket.IO Event Handlers ---
 
@@ -2107,6 +2039,22 @@ def handle_request_video_frame(data):
         # Send as base64 for browser demo; in production, use ArrayBuffer/binary
         emit('video_frame', {'frame': base64.b64encode(frame).decode('utf-8')})
 
+@socketio.on('request_audio_frame')
+def handle_request_audio_frame(data):
+    agent_id = data.get('agent_id')
+    if agent_id and agent_id in AUDIO_FRAMES_OPUS:
+        frame = AUDIO_FRAMES_OPUS[agent_id]
+        # Send as base64 for browser demo; in production, use ArrayBuffer/binary
+        emit('audio_frame', {'frame': base64.b64encode(frame).decode('utf-8')})
+
+@socketio.on('request_camera_frame')
+def handle_request_camera_frame(data):
+    agent_id = data.get('agent_id')
+    if agent_id and agent_id in CAMERA_FRAMES_H264:
+        frame = CAMERA_FRAMES_H264[agent_id]
+        # Send as base64 for browser demo; in production, use ArrayBuffer/binary
+        emit('camera_frame', {'frame': base64.b64encode(frame).decode('utf-8')})
+
 # Add new buffers for H.264 camera frames and Opus/PCM audio frames
 CAMERA_FRAMES_H264 = defaultdict(lambda: None)
 AUDIO_FRAMES_OPUS = defaultdict(lambda: None)
@@ -2125,38 +2073,7 @@ def handle_audio_frame(data):
     if agent_id and frame:
         AUDIO_FRAMES_OPUS[agent_id] = frame
 
-WEBRTC_PEERS = {}
-
-@socketio.on('webrtc_offer')
-def handle_webrtc_offer(data):
-    agent_id = data.get('agent_id')
-    offer = data.get('offer')
-    if not agent_id or not offer:
-        return
-    # Relay offer to the agent or create a peer connection
-    emit('webrtc_offer', {'agent_id': agent_id, 'offer': offer}, room=AGENTS_DATA[agent_id]["sid"])
-
-@socketio.on('webrtc_answer')
-def handle_webrtc_answer(data):
-    agent_id = data.get('agent_id')
-    answer = data.get('answer')
-    if not agent_id or not answer:
-        return
-    # Relay answer to the web client
-    emit('webrtc_answer', {'agent_id': agent_id, 'answer': answer}, room='operators')
-
-@socketio.on('webrtc_ice_candidate')
-def handle_webrtc_ice_candidate(data):
-    agent_id = data.get('agent_id')
-    candidate = data.get('candidate')
-    target = data.get('target')
-    if not agent_id or not candidate or not target:
-        return
-    # Relay ICE candidate to the correct peer
-    if target == 'agent':
-        emit('webrtc_ice_candidate', {'agent_id': agent_id, 'candidate': candidate}, room=AGENTS_DATA[agent_id]["sid"])
-    elif target == 'operator':
-        emit('webrtc_ice_candidate', {'agent_id': agent_id, 'candidate': candidate}, room='operators')
+# WebRTC scaffolding code removed - not currently active
 
 if __name__ == "__main__":
     print("Starting Neural Control Hub with Socket.IO support...")
