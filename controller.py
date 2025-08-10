@@ -13,6 +13,7 @@ import queue
 import hashlib
 import hmac
 import secrets
+import threading
 import os
 import base64
 
@@ -253,7 +254,13 @@ def close_webrtc_connection(agent_id):
     if agent_id in WEBRTC_PEER_CONNECTIONS:
         try:
             pc = WEBRTC_PEER_CONNECTIONS[agent_id]
-            asyncio.create_task(pc.close())
+            # Use run_coroutine_threadsafe for synchronous context
+            try:
+                loop = asyncio.get_event_loop()
+                asyncio.run_coroutine_threadsafe(pc.close(), loop)
+            except RuntimeError:
+                # No event loop running, use asyncio.run
+                asyncio.run(pc.close())
             del WEBRTC_PEER_CONNECTIONS[agent_id]
         except Exception as e:
             print(f"Error closing WebRTC connection for {agent_id}: {e}")
@@ -290,7 +297,13 @@ def estimate_bandwidth(agent_id):
     try:
         pc = WEBRTC_PEER_CONNECTIONS[agent_id]
         # Get RTCStatsReport for bandwidth estimation
-        stats_report = asyncio.run(pc.getStats())
+        try:
+            loop = asyncio.get_event_loop()
+            future = asyncio.run_coroutine_threadsafe(pc.getStats(), loop)
+            stats_report = future.result(timeout=5)  # 5 second timeout
+        except RuntimeError:
+            # No event loop, run synchronously
+            stats_report = asyncio.run(pc.getStats())
         
         bandwidth_stats = {
             'available_bandwidth': 0,
@@ -481,7 +494,11 @@ def automatic_reconnection_logic(agent_id):
                 print(f"WebRTC connection failed for {agent_id}, attempting reconnection...")
                 
                 # Close failed connection
-                asyncio.create_task(pc.close())
+                try:
+                    loop = asyncio.get_event_loop()
+                    asyncio.run_coroutine_threadsafe(pc.close(), loop)
+                except RuntimeError:
+                    asyncio.run(pc.close())
                 del WEBRTC_PEER_CONNECTIONS[agent_id]
                 
                 # Wait before reconnection attempt
@@ -3025,11 +3042,27 @@ def handle_webrtc_offer(data):
         
         # Set remote description (offer)
         offer = RTCSessionDescription(sdp=offer_sdp, type='offer')
-        asyncio.create_task(pc.setRemoteDescription(offer))
         
-        # Create answer
-        answer = asyncio.create_task(pc.createAnswer())
-        answer.add_done_callback(lambda future: handle_answer_created(future, agent_id, request.sid))
+        # Use proper async handling for WebRTC operations
+        def handle_webrtc_offer_async():
+            try:
+                loop = asyncio.get_event_loop()
+                # Set remote description
+                asyncio.run_coroutine_threadsafe(pc.setRemoteDescription(offer), loop)
+                # Create answer
+                future = asyncio.run_coroutine_threadsafe(pc.createAnswer(), loop)
+                future.add_done_callback(lambda f: handle_answer_created(f, agent_id, request.sid))
+            except RuntimeError:
+                # No event loop, run synchronously
+                async def async_operations():
+                    await pc.setRemoteDescription(offer)
+                    answer = await pc.createAnswer()
+                    handle_answer_created_sync(answer, agent_id, request.sid)
+                asyncio.run(async_operations())
+        
+        # Run in thread to avoid blocking
+        import threading
+        threading.Thread(target=handle_webrtc_offer_async, daemon=True).start()
         
         print(f"WebRTC offer received from {agent_id}")
         
@@ -3041,7 +3074,16 @@ def handle_answer_created(future, agent_id, sid):
     """Handle WebRTC answer creation"""
     try:
         answer = future.result()
-        asyncio.create_task(WEBRTC_PEER_CONNECTIONS[agent_id].setLocalDescription(answer))
+        
+        # Use proper async handling for setLocalDescription
+        try:
+            loop = asyncio.get_event_loop()
+            asyncio.run_coroutine_threadsafe(WEBRTC_PEER_CONNECTIONS[agent_id].setLocalDescription(answer), loop)
+        except RuntimeError:
+            # No event loop, run synchronously
+            async def set_local_desc():
+                await WEBRTC_PEER_CONNECTIONS[agent_id].setLocalDescription(answer)
+            asyncio.run(set_local_desc())
         
         # Send answer back to agent
         socketio.emit('webrtc_answer', {
@@ -3055,6 +3097,21 @@ def handle_answer_created(future, agent_id, sid):
         print(f"Error creating WebRTC answer for {agent_id}: {e}")
         socketio.emit('webrtc_error', {'message': f'Error creating answer: {str(e)}'}, room=sid)
 
+def handle_answer_created_sync(answer, agent_id, sid):
+    """Handle WebRTC answer creation for synchronous context"""
+    try:
+        # Send answer back to agent
+        socketio.emit('webrtc_answer', {
+            'answer': answer.sdp,
+            'type': answer.type
+        }, room=sid)
+        
+        print(f"WebRTC answer sent to {agent_id}")
+        
+    except Exception as e:
+        print(f"Error sending WebRTC answer for {agent_id}: {e}")
+        socketio.emit('webrtc_error', {'message': f'Error sending answer: {str(e)}'}, room=sid)
+
 @socketio.on('webrtc_ice_candidate')
 def handle_webrtc_ice_candidate(data):
     """Handle ICE candidate from agent"""
@@ -3066,7 +3123,17 @@ def handle_webrtc_ice_candidate(data):
     
     try:
         pc = WEBRTC_PEER_CONNECTIONS[agent_id]
-        asyncio.create_task(pc.addIceCandidate(candidate))
+        
+        # Use proper async handling for addIceCandidate
+        try:
+            loop = asyncio.get_event_loop()
+            asyncio.run_coroutine_threadsafe(pc.addIceCandidate(candidate), loop)
+        except RuntimeError:
+            # No event loop, run synchronously
+            async def add_ice_candidate():
+                await pc.addIceCandidate(candidate)
+            asyncio.run(add_ice_candidate())
+            
         print(f"ICE candidate added for {agent_id}")
         
     except Exception as e:
@@ -3218,8 +3285,20 @@ def handle_webrtc_viewer_connect(data):
                 }, room=viewer_id)
         
         # Create offer for viewer
-        offer = asyncio.create_task(viewer_pc.createOffer())
-        offer.add_done_callback(lambda future: handle_viewer_offer_created(future, viewer_id))
+        def create_viewer_offer():
+            try:
+                loop = asyncio.get_event_loop()
+                future = asyncio.run_coroutine_threadsafe(viewer_pc.createOffer(), loop)
+                future.add_done_callback(lambda f: handle_viewer_offer_created(f, viewer_id))
+            except RuntimeError:
+                # No event loop, run synchronously
+                async def create_offer():
+                    offer = await viewer_pc.createOffer()
+                    handle_viewer_offer_created_sync(offer, viewer_id)
+                asyncio.run(create_offer())
+        
+        # Run in thread to avoid blocking
+        threading.Thread(target=create_viewer_offer, daemon=True).start()
         
         print(f"WebRTC viewer {viewer_id} connected to agent {agent_id}")
         
@@ -3231,7 +3310,16 @@ def handle_viewer_offer_created(future, viewer_id):
     """Handle viewer offer creation"""
     try:
         offer = future.result()
-        asyncio.create_task(WEBRTC_VIEWERS[viewer_id]['pc'].setLocalDescription(offer))
+        
+        # Use proper async handling for setLocalDescription
+        try:
+            loop = asyncio.get_event_loop()
+            asyncio.run_coroutine_threadsafe(WEBRTC_VIEWERS[viewer_id]['pc'].setLocalDescription(offer), loop)
+        except RuntimeError:
+            # No event loop, run synchronously
+            async def set_local_desc():
+                await WEBRTC_VIEWERS[viewer_id]['pc'].setLocalDescription(offer)
+            asyncio.run(set_local_desc())
         
         # Send offer to viewer
         socketio.emit('webrtc_viewer_offer', {
@@ -3245,6 +3333,21 @@ def handle_viewer_offer_created(future, viewer_id):
         print(f"Error creating WebRTC viewer offer for {viewer_id}: {e}")
         socketio.emit('webrtc_error', {'message': f'Error creating viewer offer: {str(e)}'}, room=viewer_id)
 
+def handle_viewer_offer_created_sync(offer, viewer_id):
+    """Handle viewer offer creation for synchronous context"""
+    try:
+        # Send offer to viewer
+        socketio.emit('webrtc_viewer_offer', {
+            'offer': offer.sdp,
+            'type': offer.type
+        }, room=viewer_id)
+        
+        print(f"WebRTC viewer offer sent to {viewer_id}")
+        
+    except Exception as e:
+        print(f"Error sending WebRTC viewer offer for {viewer_id}: {e}")
+        socketio.emit('webrtc_error', {'message': f'Error sending viewer offer: {str(e)}'}, room=viewer_id)
+
 @socketio.on('webrtc_viewer_answer')
 def handle_webrtc_viewer_answer(data):
     """Handle viewer answer"""
@@ -3257,7 +3360,17 @@ def handle_webrtc_viewer_answer(data):
     try:
         viewer_pc = WEBRTC_VIEWERS[viewer_id]['pc']
         answer = RTCSessionDescription(sdp=answer_sdp, type='answer')
-        asyncio.create_task(viewer_pc.setRemoteDescription(answer))
+        
+        # Use proper async handling for setRemoteDescription
+        try:
+            loop = asyncio.get_event_loop()
+            asyncio.run_coroutine_threadsafe(viewer_pc.setRemoteDescription(answer), loop)
+        except RuntimeError:
+            # No event loop, run synchronously
+            async def set_remote_desc():
+                await viewer_pc.setRemoteDescription(answer)
+            asyncio.run(set_remote_desc())
+            
         print(f"WebRTC viewer answer received from {viewer_id}")
         
     except Exception as e:
@@ -3271,7 +3384,17 @@ def handle_webrtc_viewer_disconnect():
     if viewer_id in WEBRTC_VIEWERS:
         try:
             viewer_pc = WEBRTC_VIEWERS[viewer_id]['pc']
-            asyncio.create_task(viewer_pc.close())
+            
+            # Use proper async handling for close
+            try:
+                loop = asyncio.get_event_loop()
+                asyncio.run_coroutine_threadsafe(viewer_pc.close(), loop)
+            except RuntimeError:
+                # No event loop, run synchronously
+                async def close_viewer():
+                    await viewer_pc.close()
+                asyncio.run(close_viewer())
+                
             del WEBRTC_VIEWERS[viewer_id]
             print(f"WebRTC viewer {viewer_id} disconnected")
         except Exception as e:
