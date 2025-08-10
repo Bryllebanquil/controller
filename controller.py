@@ -1182,26 +1182,23 @@ DASHBOARD_HTML = r'''
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <style>
         :root {
-            --primary-bg: #f5f7fa;
+            --primary-bg: #f8fafc;
             --secondary-bg: #ffffff;
-            --tertiary-bg: #f8fafc;
-            --accent-blue: #1e40af;
-            --accent-indigo: #3730a3;
-            --accent-purple: #5b21b6;
+            --tertiary-bg: #f1f5f9;
+            --accent-blue: #2563eb;
+            --accent-blue-dark: #1d4ed8;
             --accent-green: #059669;
             --accent-red: #dc2626;
             --accent-orange: #ea580c;
+            --accent-yellow: #ca8a04;
             --text-primary: #0f172a;
-            --text-secondary: #334155;
+            --text-secondary: #475569;
             --text-muted: #64748b;
-            --border-color: #cbd5e1;
-            --border-light: #e2e8f0;
-            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --border-color: #e2e8f0;
+            --border-light: #f1f5f9;
+            --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
             --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
             --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-            --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-            --glass-bg: rgba(255, 255, 255, 0.9);
-            --glass-border: rgba(30, 64, 175, 0.1);
         }
 
         * {
@@ -1214,60 +1211,321 @@ DASHBOARD_HTML = r'''
             font-family: 'Inter', sans-serif;
             background: var(--primary-bg);
             color: var(--text-primary);
-            min-height: 100vh;
-            overflow-x: hidden;
-            line-height: 1.6;
+            height: 100vh;
+            overflow: hidden;
+            line-height: 1.5;
         }
 
-        .dashboard-bg {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: 
-                linear-gradient(135deg, rgba(30, 64, 175, 0.02) 0%, transparent 50%),
-                linear-gradient(45deg, rgba(15, 23, 42, 0.01) 0%, transparent 50%);
-            z-index: -1;
+        .dashboard-container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
         }
 
         .top-bar {
             background: var(--secondary-bg);
             border-bottom: 1px solid var(--border-color);
-            padding: 16px 0;
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            box-shadow: var(--shadow-sm);
-        }
-
-        .top-bar-content {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 0 24px;
+            padding: 12px 24px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-        }
-
-        .header {
-            text-align: center;
-            margin-bottom: 0;
-            padding: 0;
+            box-shadow: var(--shadow-sm);
+            flex-shrink: 0;
         }
 
         .header h1 {
-            font-family: 'Inter', sans-serif;
-            font-size: 1.875rem;
-            font-weight: 700;
+            font-size: 1.5rem;
+            font-weight: 600;
             color: var(--text-primary);
-            margin-bottom: 4px;
         }
 
         .header .subtitle {
             font-size: 0.875rem;
             color: var(--text-secondary);
-            font-weight: 400;
+            margin-top: 2px;
+        }
+
+        .user-controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .main-content {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 300px 1fr 300px;
+            grid-template-rows: 1fr;
+            gap: 16px;
+            padding: 16px;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            background: var(--secondary-bg);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .center-panel {
+            background: var(--secondary-bg);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-header {
+            background: var(--tertiary-bg);
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 600;
+            font-size: 0.875rem;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .panel-content {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+        }
+
+        .agent-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .agent-item {
+            padding: 12px;
+            background: var(--tertiary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.875rem;
+        }
+
+        .agent-item:hover {
+            background: var(--border-light);
+            border-color: var(--accent-blue);
+        }
+
+        .agent-item.selected {
+            background: var(--accent-blue);
+            color: white;
+            border-color: var(--accent-blue);
+        }
+
+        .agent-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+        }
+
+        .status-indicator.offline {
+            background: var(--accent-red);
+        }
+
+        .control-group {
+            margin-bottom: 16px;
+        }
+
+        .control-header {
+            font-weight: 600;
+            font-size: 0.875rem;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        .btn {
+            background: var(--accent-blue);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+
+        .btn:hover {
+            background: var(--accent-blue-dark);
+            transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background: var(--accent-red);
+        }
+
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+
+        .btn-success {
+            background: var(--accent-green);
+        }
+
+        .btn-success:hover {
+            background: #047857;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .neural-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 0.875rem;
+            background: var(--secondary-bg);
+        }
+
+        .neural-input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .video-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            height: 100%;
+        }
+
+        .video-panel {
+            background: var(--tertiary-bg);
+            border-radius: 6px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .video-panel video {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            background: #000;
+        }
+
+        .video-controls {
+            padding: 12px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .webrtc-panel {
+            background: var(--tertiary-bg);
+            border-radius: 6px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .webrtc-video {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            background: #000;
+        }
+
+        .webrtc-controls {
+            padding: 12px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .status-display {
+            padding: 8px 12px;
+            background: var(--tertiary-bg);
+            border-radius: 6px;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-top: 8px;
+        }
+
+        .terminal {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 12px;
+            border-radius: 6px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.875rem;
+            height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .metric-card {
+            background: var(--tertiary-bg);
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+        }
+
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--accent-blue);
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .logout-btn {
+            background: var(--accent-red);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .logout-btn:hover {
+            background: #b91c1c;
         }
 
         .logout-btn {
@@ -1849,214 +2107,157 @@ DASHBOARD_HTML = r'''
     </style>
 </head>
 <body>
-    <div class="dashboard-bg"></div>
-    
-    <div class="top-bar">
-        <div class="top-bar-content">
+    <div class="dashboard-container">
+        <div class="top-bar">
             <div class="header">
-                <h1>NEURAL CONTROL HUB</h1>
-                <p class="subtitle">Advanced Command & Control Interface</p>
+                <h1>Neural Control Hub</h1>
+                <div class="subtitle">Advanced Command & Control Interface</div>
             </div>
-            <a href="/logout" class="logout-btn">Logout</a>
+            <div class="user-controls">
+                <a href="/logout" class="logout-btn">Logout</a>
+            </div>
         </div>
-    </div>
-    
-    <div class="container">
-        <div class="main-grid">
-            <!-- Agents Panel -->
-            <div class="panel">
+        
+        <div class="main-content">
+            <!-- Left Sidebar - Agents & Controls -->
+            <div class="sidebar">
                 <div class="panel-header">
-                    <div class="panel-icon">🔗</div>
-                    <div class="panel-title">Active Agents</div>
+                    <span>🔗</span>
+                    Active Agents
                 </div>
-                <div class="agent-grid" id="agent-list">
-                    <div class="no-agents">
-                        <div class="no-agents-icon">🤖</div>
-                        <div>No agents connected</div>
-                        <div style="font-size: 0.8rem; margin-top: 5px;">Waiting for neural links...</div>
+                <div class="panel-content">
+                    <div class="agent-list" id="agent-list">
+                        <div class="agent-item">
+                            <div class="agent-status">
+                                <div class="status-indicator offline"></div>
+                                <span>No agents connected</span>
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </div>
-
-            <!-- Control Panel -->
-            <div class="panel">
-                <div class="panel-header">
-                    <div class="panel-icon">⚡</div>
-                    <div class="panel-title">Command Interface</div>
-                </div>
-                
-                <div class="control-section">
+                    
                     <div class="control-group">
                         <div class="control-header">Target Selection</div>
-                        <div class="input-group">
-                            <label class="input-label">Selected Agent</label>
-                            <input type="text" class="neural-input" id="agent-id" readonly placeholder="Select an agent from the left panel">
-                        </div>
+                        <input type="text" class="neural-input" id="agent-id" readonly placeholder="Select an agent">
                     </div>
-
+                    
                     <div class="control-group">
                         <div class="control-header">Command Execution</div>
-                        <div class="input-group">
-                            <label class="input-label">Command</label>
-                            <input type="text" class="neural-input" id="command" placeholder="Enter command to execute...">
-                        </div>
-                        <button class="btn" onclick="issueCommand()">Execute Command</button>
-                        <div id="command-status" class="status-indicator"></div>
+                        <input type="text" class="neural-input" id="command" placeholder="Enter command...">
+                        <button class="btn" onclick="issueCommand()">Execute</button>
                     </div>
-
+                    
                     <div class="control-group">
                         <div class="control-header">Quick Actions</div>
-                        <button class="btn" onclick="listProcesses()">List Processes</button>
-                        <button class="btn" onclick="startScreenStream()">Screen Stream</button>
-                        <button class="btn" onclick="startCameraStream()">Camera Stream</button>
-                        <button class="btn btn-danger" onclick="stopAllStreams()">Stop All Streams</button>
+                        <button class="btn" onclick="listProcesses()">Processes</button>
+                        <button class="btn" onclick="startScreenStream()">Screen</button>
+                        <button class="btn" onclick="startCameraStream()">Camera</button>
+                        <button class="btn btn-danger" onclick="stopAllStreams()">Stop All</button>
                     </div>
-
-
-
+                    
                     <div class="control-group">
-                        <div class="control-header">Live Keyboard</div>
-                        <div class="input-group">
-                            <label class="input-label">Press keys here to control the agent directly</label>
-                            <div id="live-keyboard-input" tabindex="0" class="neural-input" style="height: 100px; overflow-y: auto;" placeholder="Click here and start typing..."></div>
-                        </div>
+                        <div class="control-header">Live Control</div>
+                        <div id="live-keyboard-input" tabindex="0" class="neural-input" style="height: 60px; resize: none;" placeholder="Live keyboard..."></div>
+                        <div id="live-mouse-area" style="width: 100%; height: 80px; border: 1px solid var(--border-color); background: var(--tertiary-bg); margin-top: 8px; border-radius: 6px;"></div>
                     </div>
-                     <div class="control-group">
-                        <div class="control-header">Live Mouse Control</div>
-                        <div class="input-group">
-                            <label class="input-label">Control the agent's mouse here</label>
-                            <div id="live-mouse-area" style="width: 300px; height: 200px; border: 1px solid #ccc; position: relative; background: #222;"></div>
-                        </div>
-                        <div class="input-group">
-                            <label class="input-label">Mouse Button</label>
-                            <select id="mouse-button" class="neural-input">
-                                <option value="left">Left</option>
-                                <option value="right">Right</option>
-                            </select>
-                        </div>
-                    </div>
-
+                    
                     <div class="control-group">
                         <div class="control-header">File Transfer</div>
-                        <div class="input-group">
-                            <label class="input-label">Upload File to Agent</label>
-                            <input type="file" id="upload-file" class="neural-input">
-                        </div>
-                        <div class="input-group">
-                            <label class="input-label">Agent Destination Path (e.g., C:\Users\Public\file.txt)</label>
-                            <input type="text" id="agent-upload-path" class="neural-input" placeholder="Enter full path on agent...">
-                        </div>
-                        <button class="btn" onclick="uploadFile()">Upload</button>
-                        <div class="input-group" style="margin-top: 15px;">
-                            <label class="input-label">Download File from Agent</label>
-                            <input type="text" id="download-filename" class="neural-input" placeholder="Enter filename on agent...">
-                        </div>
-                        <div class="input-group">
-                            <label class="input-label">Save to Local Path (e.g., C:\Users\YourName\Downloads\file.txt)</label>
-                            <input type="text" id="local-download-path" class="neural-input" placeholder="Enter local path to save (e.g., C:\\Users\\YourName\\Downloads\\file.txt)">
-                        </div>
+                        <input type="file" id="file-upload" style="display: none;">
+                        <button class="btn" onclick="document.getElementById('file-upload').click()">Upload File</button>
+                        <input type="text" class="neural-input" id="download-path" placeholder="File path to download">
                         <button class="btn" onclick="downloadFile()">Download</button>
-                        <div id="file-transfer-status" class="status-indicator"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Center Panel - Video Streams & WebRTC -->
+            <div class="center-panel">
+                <div class="panel-header">
+                    <span>📹</span>
+                    Live Streams
+                </div>
+                <div class="panel-content">
+                    <div class="video-container">
+                        <div class="video-panel">
+                            <video id="screen-video" autoplay muted></video>
+                            <div class="video-controls">
+                                <button class="btn btn-success" onclick="startScreenStream()">Start Screen</button>
+                                <button class="btn btn-danger" onclick="stopScreenStream()">Stop</button>
+                            </div>
+                        </div>
+                        
+                        <div class="video-panel">
+                            <video id="camera-video" autoplay muted></video>
+                            <div class="video-controls">
+                                <button class="btn btn-success" onclick="startCameraStream()">Start Camera</button>
+                                <button class="btn btn-danger" onclick="stopCameraStream()">Stop</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="webrtc-panel" style="margin-top: 16px;">
+                        <video id="webrtc-video" class="webrtc-video" autoplay muted></video>
+                        <div class="webrtc-controls">
+                            <button class="btn btn-success" onclick="startWebRTCStream()">Start WebRTC</button>
+                            <button class="btn btn-danger" onclick="stopWebRTCStream()">Stop WebRTC</button>
+                            <button class="btn" onclick="getWebRTCStats()">Get Stats</button>
+                            <button class="btn" onclick="setWebRTCQuality()">Set Quality</button>
+                        </div>
+                        <div id="webrtc-status" class="status-display" style="display:none;"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Sidebar - Terminal & Metrics -->
+            <div class="sidebar">
+                <div class="panel-header">
+                    <span>📊</span>
+                    System Status
+                </div>
+                <div class="panel-content">
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-value" id="active-agents">0</div>
+                            <div class="metric-label">Active Agents</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" id="total-commands">0</div>
+                            <div class="metric-label">Commands Executed</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" id="streams-active">0</div>
+                            <div class="metric-label">Active Streams</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" id="system-status">OK</div>
+                            <div class="metric-label">System Status</div>
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <div class="control-header">Output Terminal</div>
+                        <div class="terminal" id="output-terminal">System ready...</div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <div class="control-header">Configuration</div>
+                        <div id="config-status" class="status-display">Checking configuration...</div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <div class="control-header">Password Management</div>
+                        <input type="password" class="neural-input" id="new-password" placeholder="New password">
+                        <button class="btn" onclick="changePassword()">Change Password</button>
                     </div>
                 </div>
             </div>
         </div>
+    </div>
 
-        <div class="dashboard-grid">
-            <!-- Video Stream Panel -->
-            <div class="panel video-panel">
-                <div class="panel-header">
-                    <div class="panel-icon">🎥</div>
-                    <div class="panel-title">Live Video Stream (H.264)</div>
-                </div>
-                <video id="h264-video" width="640" height="360" controls autoplay muted style="background:#000; width:100%; max-width:100%; border-radius:10px;"></video>
-                <div id="video-status" class="status-display" style="display:none;"></div>
-            </div>
 
-            <!-- WebRTC Stream Panel -->
-            <div class="panel video-panel">
-                <div class="panel-header">
-                    <div class="panel-icon">🌐</div>
-                    <div class="panel-title">WebRTC Stream (Low Latency)</div>
-                </div>
-                <div class="webrtc-controls">
-                    <button class="btn btn-success" onclick="startWebRTCStream()">Start WebRTC</button>
-                    <button class="btn btn-danger" onclick="stopWebRTCStream()">Stop WebRTC</button>
-                    <button class="btn" onclick="getWebRTCStats()">Get Stats</button>
-                    <button class="btn" onclick="setWebRTCQuality()">Set Quality</button>
-                </div>
-                <video id="webrtc-video" width="640" height="360" controls autoplay muted style="background:#000; width:100%; max-width:100%; border-radius:10px; margin-top:10px;"></video>
-                <div id="webrtc-status" class="status-display" style="display:none;"></div>
-                <div id="webrtc-stats" class="status-display" style="display:none;"></div>
-            </div>
-
-            <!-- Output Terminal -->
-            <div class="panel">
-                <div class="panel-header">
-                    <div class="panel-icon">💻</div>
-                    <div class="panel-title">Neural Terminal</div>
-                </div>
-                <div class="output-terminal" id="output-display">System ready. Awaiting commands...</div>
-            </div>
-
-            <!-- Configuration Status -->
-            <div class="panel">
-                <div class="panel-header">
-                    <div class="panel-icon">⚙️</div>
-                    <div class="panel-title">System Configuration</div>
-                </div>
-                <div class="config-status" id="config-status">
-                    <div class="config-item">
-                        <span class="config-label">Admin Password:</span>
-                        <span class="config-value" id="admin-password-status">Checking...</span>
-                    </div>
-                    <div class="config-item">
-                        <span class="config-label">Hash Algorithm:</span>
-                        <span class="config-value" id="hash-algorithm">Checking...</span>
-                    </div>
-                    <div class="config-item">
-                        <span class="config-label">Session Timeout:</span>
-                        <span class="config-value" id="session-timeout">Checking...</span>
-                    </div>
-                    <div class="config-item">
-                        <span class="config-label">Max Login Attempts:</span>
-                        <span class="config-value" id="max-login-attempts">Checking...</span>
-                    </div>
-                    <div class="config-item">
-                        <span class="config-label">Blocked IPs:</span>
-                        <span class="config-value" id="blocked-ips">Checking...</span>
-                    </div>
-                    <button class="btn" onclick="refreshConfigStatus()">Refresh Status</button>
-                </div>
-            </div>
-
-            <!-- Password Management -->
-            <div class="panel">
-                <div class="panel-header">
-                    <div class="panel-icon">🔐</div>
-                    <div class="panel-title">Password Management</div>
-                </div>
-                <div class="password-management">
                     <div class="control-group">
                         <div class="control-header">Change Admin Password</div>
-                        <div class="input-group">
-                            <label class="input-label">Current Password</label>
-                            <input type="password" class="neural-input" id="current-password" placeholder="Enter current password">
-                        </div>
-                        <div class="input-group">
-                            <label class="input-label">New Password</label>
-                            <input type="password" class="neural-input" id="new-password" placeholder="Enter new password (min 8 chars)">
-                        </div>
-                        <div class="input-group">
-                            <label class="input-label">Confirm New Password</label>
-                            <input type="password" class="neural-input" id="confirm-password" placeholder="Confirm new password">
-                        </div>
-                        <button class="btn" onclick="changePassword()">Change Password</button>
-                        <div id="password-change-status" class="status-indicator"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
+
 
         <!-- Hidden audio player for streams -->
         <audio id="audio-player" controls style="display:none; width: 100%; margin-top: 10px;"></audio>
@@ -2079,11 +2280,10 @@ DASHBOARD_HTML = r'''
             }
 
             selectedAgentId = agentId;
-            document.querySelectorAll('.agent-card').forEach(item => item.classList.remove('selected'));
+            document.querySelectorAll('.agent-item').forEach(item => item.classList.remove('selected'));
             element.classList.add('selected');
             document.getElementById('agent-id').value = agentId;
-            document.getElementById('output-display').textContent = `Agent ${agentId.substring(0,8)}... selected. Ready for commands.`;
-            document.getElementById('command-status').style.display = 'none';
+            document.getElementById('output-terminal').textContent = `Agent ${agentId.substring(0,8)}... selected. Ready for commands.`;
         }
 
         function updateAgentList(agents) {
@@ -2092,10 +2292,11 @@ DASHBOARD_HTML = r'''
 
             if (Object.keys(agents).length === 0) {
                 agentList.innerHTML = `
-                    <div class="no-agents">
-                        <div class="no-agents-icon">🤖</div>
-                        <div>No agents connected</div>
-                        <div style="font-size: 0.8rem; margin-top: 5px;">Waiting for neural links...</div>
+                    <div class="agent-item">
+                        <div class="agent-status">
+                            <div class="status-indicator offline"></div>
+                            <span>No agents connected</span>
+                        </div>
                     </div>
                 `;
                 return;
@@ -2103,22 +2304,24 @@ DASHBOARD_HTML = r'''
 
             for (const agentId in agents) {
                 const agent = agents[agentId];
-                const agentCard = document.createElement('div');
-                agentCard.className = 'agent-card';
-                agentCard.onclick = () => selectAgent(agentCard, agentId);
+                const agentItem = document.createElement('div');
+                agentItem.className = 'agent-item';
+                agentItem.onclick = () => selectAgent(agentItem, agentId);
                 
                 const lastSeen = new Date(agent.last_seen).toLocaleString();
-                agentCard.innerHTML = `
-                    <div class="agent-status"></div>
-                    <div class="agent-id">${agentId.substring(0, 8)}...</div>
-                    <div class="agent-info">Last seen: ${lastSeen}</div>
+                agentItem.innerHTML = `
+                    <div class="agent-status">
+                        <div class="status-indicator"></div>
+                        <span>${agentId.substring(0, 8)}...</span>
+                    </div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">Last seen: ${lastSeen}</div>
                 `;
                 
                 if (agentId === selectedAgentId) {
-                    agentCard.classList.add('selected');
+                    agentItem.classList.add('selected');
                 }
                 
-                agentList.appendChild(agentCard);
+                agentList.appendChild(agentItem);
             }
         }
 
@@ -2135,7 +2338,7 @@ DASHBOARD_HTML = r'''
             }
 
             socket.emit('execute_command', { agent_id: selectedAgentId, command: command });
-            document.getElementById('output-display').textContent = `> ${command}\nExecuting...`;
+            document.getElementById('output-terminal').textContent = `> ${command}\nExecuting...`;
             document.getElementById('command').value = '';
         }
 
@@ -2154,9 +2357,9 @@ DASHBOARD_HTML = r'''
             issueCommandInternal(selectedAgentId, 'start-stream');
             issueCommandInternal(selectedAgentId, 'start-audio');
 
-            if (videoWindow && !videoWindow.closed) videoWindow.close();
-            videoWindow = window.open(`/video_feed/${selectedAgentId}`, `LiveStream_${selectedAgentId}`, 'width=800,height=600');
-
+            const screenVideo = document.getElementById('screen-video');
+            screenVideo.src = `/video_feed/${selectedAgentId}`;
+            
             audioPlayer = document.getElementById('audio-player');
             audioPlayer.src = `/audio_feed/${selectedAgentId}`;
             audioPlayer.style.display = 'block';
@@ -2172,9 +2375,33 @@ DASHBOARD_HTML = r'''
             }
 
             issueCommandInternal(selectedAgentId, 'start-camera');
-            if (cameraWindow && !cameraWindow.closed) cameraWindow.close();
-            cameraWindow = window.open(`/camera_feed/${selectedAgentId}`, `CameraStream_${selectedAgentId}`, 'width=640,height=480');
+            const cameraVideo = document.getElementById('camera-video');
+            cameraVideo.src = `/camera_feed/${selectedAgentId}`;
             showStatus('Camera stream started', 'success');
+        }
+
+        function stopScreenStream() {
+            if (!selectedAgentId) { 
+                showStatus('Please select an agent first.', 'error');
+                return; 
+            }
+            
+            issueCommandInternal(selectedAgentId, 'stop-stream');
+            const screenVideo = document.getElementById('screen-video');
+            screenVideo.src = '';
+            showStatus('Screen stream stopped', 'success');
+        }
+
+        function stopCameraStream() {
+            if (!selectedAgentId) { 
+                showStatus('Please select an agent first.', 'error');
+                return; 
+            }
+            
+            issueCommandInternal(selectedAgentId, 'stop-camera');
+            const cameraVideo = document.getElementById('camera-video');
+            cameraVideo.src = '';
+            showStatus('Camera stream stopped', 'success');
         }
 
         function stopAllStreams() {
@@ -2200,11 +2427,31 @@ DASHBOARD_HTML = r'''
         }
 
         function showStatus(message, type) {
-            const statusDiv = document.getElementById('command-status');
-            statusDiv.style.display = 'block';
-            statusDiv.className = `status-indicator status-${type}`;
+            // Create a temporary status display
+            const statusDiv = document.createElement('div');
+            statusDiv.className = `status-display status-${type}`;
             statusDiv.textContent = message;
-            setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
+            statusDiv.style.position = 'fixed';
+            statusDiv.style.top = '20px';
+            statusDiv.style.right = '20px';
+            statusDiv.style.zIndex = '1000';
+            statusDiv.style.padding = '12px 16px';
+            statusDiv.style.borderRadius = '6px';
+            statusDiv.style.color = 'white';
+            statusDiv.style.fontWeight = '500';
+            
+            if (type === 'error') {
+                statusDiv.style.background = 'var(--accent-red)';
+            } else if (type === 'success') {
+                statusDiv.style.background = 'var(--accent-green)';
+            } else {
+                statusDiv.style.background = 'var(--accent-blue)';
+            }
+            
+            document.body.appendChild(statusDiv);
+            setTimeout(() => { 
+                statusDiv.remove(); 
+            }, 3000);
         }
 
         // --- Socket.IO Event Handlers ---
@@ -2223,10 +2470,10 @@ DASHBOARD_HTML = r'''
 
         socket.on('command_output', (data) => {
             if (data.agent_id === selectedAgentId) {
-                const outputDisplay = document.getElementById('output-display');
+                const outputTerminal = document.getElementById('output-terminal');
                 // Append new output, keeping previous content
-                outputDisplay.textContent += `\n${data.output}`;
-                outputDisplay.scrollTop = outputDisplay.scrollHeight; // Scroll to bottom
+                outputTerminal.textContent += `\n${data.output}`;
+                outputTerminal.scrollTop = outputTerminal.scrollHeight; // Scroll to bottom
             }
         });
 
@@ -2489,6 +2736,46 @@ DASHBOARD_HTML = r'''
                 }
             };
             readSlice(0);
+        }
+
+        function uploadFile() {
+            const fileInput = document.getElementById('file-upload');
+            const file = fileInput.files[0];
+            if (!file) {
+                showStatus('Please select a file to upload.', 'error');
+                return;
+            }
+            if (!selectedAgentId) {
+                showStatus('Please select an agent first.', 'error');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const chunkSize = 1024 * 1024; // 1MB chunks
+                const fileData = e.target.result;
+                const totalChunks = Math.ceil(fileData.byteLength / chunkSize);
+                
+                for (let i = 0; i < totalChunks; i++) {
+                    const chunk = fileData.slice(i * chunkSize, (i + 1) * chunkSize);
+                    socket.emit('upload_file_chunk', {
+                        agent_id: selectedAgentId,
+                        filename: file.name,
+                        chunk: Array.from(new Uint8Array(chunk)),
+                        chunk_index: i,
+                        total_chunks: totalChunks
+                    });
+                }
+                
+                socket.emit('upload_file_end', {
+                    agent_id: selectedAgentId,
+                    filename: file.name,
+                    total_size: fileData.byteLength
+                });
+                
+                showStatus('File upload started', 'success');
+            };
+            reader.readAsArrayBuffer(file);
         }
 
         function downloadFile() {
