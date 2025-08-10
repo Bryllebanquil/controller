@@ -1177,23 +1177,31 @@ DASHBOARD_HTML = r'''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neural Control Hub</title>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <title>Neural Control Hub - Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <style>
         :root {
-            --primary-bg: #0a0a0f;
-            --secondary-bg: #1a1a2e;
-            --tertiary-bg: #16213e;
-            --accent-blue: #00d4ff;
-            --accent-purple: #6c5ce7;
-            --accent-green: #00ff88;
-            --accent-red: #ff4757;
-            --text-primary: #ffffff;
-            --text-secondary: #a0a0a0;
-            --border-color: #2d3748;
-            --glass-bg: rgba(255, 255, 255, 0.05);
-            --glass-border: rgba(255, 255, 255, 0.1);
+            --primary-bg: #f8fafc;
+            --secondary-bg: #ffffff;
+            --tertiary-bg: #f1f5f9;
+            --accent-blue: #3b82f6;
+            --accent-indigo: #6366f1;
+            --accent-purple: #8b5cf6;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --accent-orange: #f59e0b;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+            --border-color: #e2e8f0;
+            --border-light: #f1f5f9;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+            --glass-bg: rgba(255, 255, 255, 0.8);
+            --glass-border: rgba(255, 255, 255, 0.2);
         }
 
         * {
@@ -1204,39 +1212,40 @@ DASHBOARD_HTML = r'''
 
         body {
             font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, var(--primary-bg) 0%, var(--secondary-bg) 100%);
+            background: var(--primary-bg);
             color: var(--text-primary);
             min-height: 100vh;
             overflow-x: hidden;
+            line-height: 1.6;
         }
 
-        .neural-bg {
+        .dashboard-bg {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
             background: 
-                radial-gradient(circle at 20% 80%, rgba(0, 212, 255, 0.1) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(108, 92, 231, 0.1) 0%, transparent 50%),
-                radial-gradient(circle at 40% 40%, rgba(0, 255, 136, 0.05) 0%, transparent 50%);
+                radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(99, 102, 241, 0.03) 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, rgba(139, 92, 246, 0.02) 0%, transparent 50%);
             z-index: -1;
         }
 
         .top-bar {
-            background: var(--glass-bg);
-            backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--glass-border);
-            padding: 15px 0;
+            background: var(--secondary-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 16px 0;
             position: sticky;
             top: 0;
             z-index: 100;
+            box-shadow: var(--shadow-sm);
         }
 
         .top-bar-content {
             max-width: 1400px;
             margin: 0 auto;
-            padding: 0 20px;
+            padding: 0 24px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -1244,50 +1253,47 @@ DASHBOARD_HTML = r'''
 
         .header {
             text-align: center;
-            margin-bottom: 30px;
-            padding: 20px 0;
+            margin-bottom: 0;
+            padding: 0;
         }
 
         .header h1 {
-            font-family: 'Orbitron', monospace;
-            font-size: 2.5rem;
-            font-weight: 900;
-            background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 8px;
-            text-shadow: 0 0 30px rgba(0, 212, 255, 0.3);
+            font-family: 'Inter', sans-serif;
+            font-size: 1.875rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 4px;
         }
 
         .header .subtitle {
-            font-size: 1rem;
+            font-size: 0.875rem;
             color: var(--text-secondary);
-            font-weight: 300;
+            font-weight: 400;
         }
 
         .logout-btn {
-            background: linear-gradient(45deg, var(--accent-red), #ff6b7a);
+            background: var(--accent-red);
             border: none;
-            border-radius: 8px;
+            border-radius: 6px;
             padding: 8px 16px;
             color: white;
-            font-weight: 600;
+            font-weight: 500;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.2s ease;
             text-decoration: none;
-            font-size: 0.9rem;
+            font-size: 0.875rem;
+            box-shadow: var(--shadow-sm);
         }
 
         .logout-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(255, 71, 87, 0.3);
+            background: #dc2626;
+            box-shadow: var(--shadow-md);
         }
 
         .container {
             max-width: 1400px;
             margin: 0 auto;
-            padding: 20px;
+            padding: 24px;
             position: relative;
             z-index: 1;
         }
@@ -1295,48 +1301,74 @@ DASHBOARD_HTML = r'''
         .main-grid {
             display: grid;
             grid-template-columns: 1fr 2fr;
-            gap: 25px;
-            margin-bottom: 25px;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 24px;
+            margin-top: 24px;
         }
 
         .panel {
-            background: var(--glass-bg);
-            backdrop-filter: blur(20px);
-            border: 1px solid var(--glass-border);
-            border-radius: 16px;
-            padding: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            transition: all 0.3s ease;
+            background: var(--secondary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: var(--shadow-sm);
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
         }
 
         .panel:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
+            box-shadow: var(--shadow-md);
+            border-color: var(--accent-blue);
+        }
+
+        .panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .panel:hover::before {
+            opacity: 1;
         }
 
         .panel-header {
             display: flex;
             align-items: center;
             margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-light);
         }
 
         .panel-icon {
-            width: 24px;
-            height: 24px;
+            width: 32px;
+            height: 32px;
             margin-right: 12px;
-            background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
-            border-radius: 50%;
+            background: var(--accent-blue);
+            border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
+            color: white;
+            font-size: 16px;
         }
 
         .panel-title {
-            font-family: 'Orbitron', monospace;
-            font-size: 1.2rem;
-            font-weight: 700;
+            font-family: 'Inter', sans-serif;
+            font-size: 1.125rem;
+            font-weight: 600;
             color: var(--text-primary);
         }
 
@@ -1348,135 +1380,146 @@ DASHBOARD_HTML = r'''
         }
 
         .agent-card {
-            background: var(--tertiary-bg);
+            background: var(--secondary-bg);
             border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 15px;
+            border-radius: 8px;
+            padding: 16px;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.2s ease;
             position: relative;
+            border-left: 4px solid transparent;
         }
 
         .agent-card:hover {
             border-color: var(--accent-blue);
-            box-shadow: 0 4px 20px rgba(0, 212, 255, 0.2);
+            border-left-color: var(--accent-blue);
+            box-shadow: var(--shadow-md);
+            transform: translateY(-1px);
         }
 
         .agent-card.selected {
-            border-color: var(--accent-green);
-            background: rgba(0, 255, 136, 0.1);
-            box-shadow: 0 4px 20px rgba(0, 255, 136, 0.3);
+            border-color: var(--accent-blue);
+            border-left-color: var(--accent-blue);
+            background: rgba(59, 130, 246, 0.05);
+            box-shadow: var(--shadow-md);
         }
 
         .agent-status {
             position: absolute;
-            top: 10px;
-            right: 10px;
-            width: 10px;
-            height: 10px;
+            top: 12px;
+            right: 12px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
             background: var(--accent-green);
-            box-shadow: 0 0 10px var(--accent-green);
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
         }
 
         .agent-id {
-            font-family: 'Orbitron', monospace;
+            font-family: 'Inter', sans-serif;
             font-weight: 600;
-            color: var(--accent-blue);
-            margin-bottom: 5px;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+            font-size: 0.875rem;
         }
 
         .agent-info {
-            font-size: 0.9rem;
-            color: var(--text-secondary);
+            font-size: 0.75rem;
+            color: var(--text-muted);
         }
 
         .control-section {
             display: grid;
-            gap: 16px;
+            gap: 20px;
         }
 
         .control-group {
-            background: var(--tertiary-bg);
+            background: var(--secondary-bg);
             border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 16px;
-            transition: all 0.3s ease;
+            border-radius: 8px;
+            padding: 20px;
+            transition: all 0.2s ease;
+            position: relative;
         }
 
         .control-group:hover {
             border-color: var(--accent-blue);
-            box-shadow: 0 4px 20px rgba(0, 212, 255, 0.1);
+            box-shadow: var(--shadow-sm);
+            background: var(--tertiary-bg);
+        }
+
+        .control-group::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 20px;
+            right: 20px;
+            height: 1px;
+            background: var(--border-light);
         }
 
         .control-header {
-            font-family: 'Orbitron', monospace;
-            font-size: 1rem;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.875rem;
             font-weight: 600;
-            color: var(--accent-blue);
-            margin-bottom: 15px;
+            color: var(--text-primary);
+            margin-bottom: 16px;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.5px;
         }
 
         .input-group {
-            margin-bottom: 15px;
+            margin-bottom: 16px;
         }
 
         .input-label {
             display: block;
-            font-size: 0.9rem;
+            font-size: 0.875rem;
             color: var(--text-secondary);
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             font-weight: 500;
         }
 
         .neural-input {
             width: 100%;
-            background: var(--tertiary-bg);
+            background: var(--secondary-bg);
             border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 12px 16px;
+            border-radius: 6px;
+            padding: 10px 12px;
             color: var(--text-primary);
-            font-size: 0.95rem;
-            transition: all 0.3s ease;
+            font-size: 0.875rem;
+            transition: all 0.2s ease;
         }
 
         .neural-input:focus {
             outline: none;
             border-color: var(--accent-blue);
-            box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
         }
 
         .neural-input[readonly] {
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--text-secondary);
+            background: var(--tertiary-bg);
+            color: var(--text-muted);
         }
 
         .btn {
-            background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
+            background: var(--accent-blue);
             border: none;
-            border-radius: 8px;
-            padding: 12px 24px;
+            border-radius: 6px;
+            padding: 10px 16px;
             color: white;
-            font-weight: 600;
+            font-weight: 500;
             cursor: pointer;
-            transition: all 0.3s ease;
-            margin-right: 10px;
-            margin-bottom: 10px;
-            position: relative;
-            overflow: hidden;
+            transition: all 0.2s ease;
+            margin-right: 8px;
+            margin-bottom: 8px;
+            font-size: 0.875rem;
+            box-shadow: var(--shadow-sm);
         }
 
         .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0, 212, 255, 0.3);
+            background: #2563eb;
+            box-shadow: var(--shadow-md);
         }
 
         .btn:active {
@@ -1484,20 +1527,28 @@ DASHBOARD_HTML = r'''
         }
 
         .btn-danger {
-            background: linear-gradient(45deg, var(--accent-red), #ff6b7a);
+            background: var(--accent-red);
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
         }
 
         .btn-success {
-            background: linear-gradient(45deg, var(--accent-green), #2ed573);
+            background: var(--accent-green);
+        }
+
+        .btn-success:hover {
+            background: #059669;
         }
 
         .output-terminal {
-            background: #000;
+            background: #1e293b;
             border: 1px solid var(--border-color);
-            border-radius: 10px;
+            border-radius: 8px;
             padding: 20px;
             font-family: 'Courier New', monospace;
-            color: var(--accent-green);
+            color: #10b981;
             min-height: 200px;
             max-height: 400px;
             overflow-y: auto;
@@ -1513,24 +1564,24 @@ DASHBOARD_HTML = r'''
         }
 
         .status-indicator {
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            margin-top: 10px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-top: 12px;
             display: none;
         }
 
         .status-success {
-            background: rgba(0, 255, 136, 0.2);
+            background: rgba(16, 185, 129, 0.1);
             color: var(--accent-green);
-            border: 1px solid var(--accent-green);
+            border: 1px solid rgba(16, 185, 129, 0.2);
         }
 
         .status-error {
-            background: rgba(255, 71, 87, 0.2);
+            background: rgba(239, 68, 68, 0.1);
             color: var(--accent-red);
-            border: 1px solid var(--accent-red);
+            border: 1px solid rgba(239, 68, 68, 0.2);
         }
 
         .config-status {
@@ -1542,8 +1593,8 @@ DASHBOARD_HTML = r'''
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 8px 0;
-            border-bottom: 1px solid var(--border-color);
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-light);
         }
 
         .config-item:last-child {
@@ -1556,9 +1607,9 @@ DASHBOARD_HTML = r'''
         }
 
         .config-value {
-            font-family: 'Orbitron', monospace;
+            font-family: 'Inter', sans-serif;
             color: var(--accent-blue);
-            font-size: 0.9rem;
+            font-size: 0.875rem;
         }
 
         .password-management {
@@ -1622,6 +1673,161 @@ DASHBOARD_HTML = r'''
             background: var(--accent-purple);
         }
 
+        /* Video Panel Enhancements */
+        .video-panel {
+            background: var(--secondary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: var(--shadow-sm);
+            transition: all 0.2s ease;
+        }
+
+        .video-panel video {
+            border-radius: 8px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .webrtc-controls {
+            margin-bottom: 16px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        /* Status Enhancements */
+        .status-display {
+            background: var(--tertiary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+        }
+
+        /* Enhanced Panel Styling */
+        .panel-header {
+            position: relative;
+        }
+
+        .panel-header::after {
+            content: '';
+            position: absolute;
+            bottom: -16px;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, var(--accent-blue), transparent);
+            opacity: 0.3;
+        }
+
+        /* Enhanced Button Styling */
+        .btn {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .btn:hover::before {
+            left: 100%;
+        }
+
+        /* Enhanced Input Styling */
+        .neural-input:focus {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+        }
+
+        /* Dashboard Grid Enhancements */
+        .dashboard-grid {
+            animation: fadeInUp 0.6s ease-out;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Enhanced Visual Elements */
+        .panel-icon {
+            position: relative;
+        }
+
+        .panel-icon::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 100%;
+            height: 100%;
+            background: var(--accent-blue);
+            border-radius: 8px;
+            opacity: 0.1;
+            transform: translate(-50%, -50%) scale(1.5);
+            z-index: -1;
+        }
+
+        /* Enhanced Control Groups */
+        .control-group {
+            position: relative;
+        }
+
+        .control-group::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 3px;
+            height: 100%;
+            background: var(--accent-blue);
+            border-radius: 0 2px 2px 0;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .control-group:hover::before {
+            opacity: 1;
+        }
+
+        /* Enhanced Status Indicators */
+        .status-indicator {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .status-indicator::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
         /* Responsive Design */
         @media (max-width: 768px) {
             .main-grid {
@@ -1644,7 +1850,7 @@ DASHBOARD_HTML = r'''
     </style>
 </head>
 <body>
-    <div class="neural-bg"></div>
+    <div class="dashboard-bg"></div>
     
     <div class="top-bar">
         <div class="top-bar-content">
@@ -1763,94 +1969,97 @@ DASHBOARD_HTML = r'''
             </div>
         </div>
 
-        <!-- Video Stream Panel -->
-        <div class="panel">
-            <div class="panel-header">
-                <div class="panel-icon">🎥</div>
-                <div class="panel-title">Live Video Stream (H.264)</div>
+        <div class="dashboard-grid">
+            <!-- Video Stream Panel -->
+            <div class="panel video-panel">
+                <div class="panel-header">
+                    <div class="panel-icon">🎥</div>
+                    <div class="panel-title">Live Video Stream (H.264)</div>
+                </div>
+                <video id="h264-video" width="640" height="360" controls autoplay muted style="background:#000; width:100%; max-width:100%; border-radius:10px;"></video>
+                <div id="video-status" class="status-display" style="display:none;"></div>
             </div>
-            <video id="h264-video" width="640" height="360" controls autoplay muted style="background:#000; width:100%; max-width:100%; border-radius:10px;"></video>
-            <div id="video-status" style="color:#00d4ff; margin-top:10px;"></div>
-        </div>
 
-        <!-- WebRTC Stream Panel -->
-        <div class="panel">
-            <div class="panel-header">
-                <div class="panel-icon">🌐</div>
-                <div class="panel-title">WebRTC Stream (Low Latency)</div>
+            <!-- WebRTC Stream Panel -->
+            <div class="panel video-panel">
+                <div class="panel-header">
+                    <div class="panel-icon">🌐</div>
+                    <div class="panel-title">WebRTC Stream (Low Latency)</div>
+                </div>
+                <div class="webrtc-controls">
+                    <button class="btn btn-success" onclick="startWebRTCStream()">Start WebRTC</button>
+                    <button class="btn btn-danger" onclick="stopWebRTCStream()">Stop WebRTC</button>
+                    <button class="btn" onclick="getWebRTCStats()">Get Stats</button>
+                </div>
+                <video id="webrtc-video" width="640" height="360" controls autoplay muted style="background:#000; width:100%; max-width:100%; border-radius:10px; margin-top:10px;"></video>
+                <div id="webrtc-status" class="status-display" style="display:none;"></div>
+                <div id="webrtc-stats" class="status-display" style="display:none;"></div>
             </div>
-            <div class="webrtc-controls">
-                <button class="btn btn-success" onclick="startWebRTCStream()">Start WebRTC</button>
-                <button class="btn btn-danger" onclick="stopWebRTCStream()">Stop WebRTC</button>
-                <button class="btn" onclick="getWebRTCStats()">Get Stats</button>
-            </div>
-            <video id="webrtc-video" width="640" height="360" controls autoplay muted style="background:#000; width:100%; max-width:100%; border-radius:10px; margin-top:10px;"></video>
-            <div id="webrtc-status" style="color:#00d4ff; margin-top:10px;"></div>
-            <div id="webrtc-stats" style="color:#a0a0a0; margin-top:10px; font-size:0.9rem;"></div>
-        </div>
-        <!-- Output Terminal -->
-        <div class="panel">
-            <div class="panel-header">
-                <div class="panel-icon">💻</div>
-                <div class="panel-title">Neural Terminal</div>
-            </div>
-            <div class="output-terminal" id="output-display">System ready. Awaiting commands...</div>
-        </div>
 
-        <!-- Configuration Status -->
-        <div class="panel">
-            <div class="panel-header">
-                <div class="panel-icon">⚙️</div>
-                <div class="panel-title">System Configuration</div>
+            <!-- Output Terminal -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-icon">💻</div>
+                    <div class="panel-title">Neural Terminal</div>
+                </div>
+                <div class="output-terminal" id="output-display">System ready. Awaiting commands...</div>
             </div>
-            <div class="config-status" id="config-status">
-                <div class="config-item">
-                    <span class="config-label">Admin Password:</span>
-                    <span class="config-value" id="admin-password-status">Checking...</span>
-                </div>
-                <div class="config-item">
-                    <span class="config-label">Hash Algorithm:</span>
-                    <span class="config-value" id="hash-algorithm">Checking...</span>
-                </div>
-                <div class="config-item">
-                    <span class="config-label">Session Timeout:</span>
-                    <span class="config-value" id="session-timeout">Checking...</span>
-                </div>
-                <div class="config-item">
-                    <span class="config-label">Max Login Attempts:</span>
-                    <span class="config-value" id="max-login-attempts">Checking...</span>
-                </div>
-                <div class="config-item">
-                    <span class="config-label">Blocked IPs:</span>
-                    <span class="config-value" id="blocked-ips">Checking...</span>
-                </div>
-                <button class="btn" onclick="refreshConfigStatus()">Refresh Status</button>
-            </div>
-        </div>
 
-        <!-- Password Management -->
-        <div class="panel">
-            <div class="panel-header">
-                <div class="panel-icon">🔐</div>
-                <div class="panel-title">Password Management</div>
+            <!-- Configuration Status -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-icon">⚙️</div>
+                    <div class="panel-title">System Configuration</div>
+                </div>
+                <div class="config-status" id="config-status">
+                    <div class="config-item">
+                        <span class="config-label">Admin Password:</span>
+                        <span class="config-value" id="admin-password-status">Checking...</span>
+                    </div>
+                    <div class="config-item">
+                        <span class="config-label">Hash Algorithm:</span>
+                        <span class="config-value" id="hash-algorithm">Checking...</span>
+                    </div>
+                    <div class="config-item">
+                        <span class="config-label">Session Timeout:</span>
+                        <span class="config-value" id="session-timeout">Checking...</span>
+                    </div>
+                    <div class="config-item">
+                        <span class="config-label">Max Login Attempts:</span>
+                        <span class="config-value" id="max-login-attempts">Checking...</span>
+                    </div>
+                    <div class="config-item">
+                        <span class="config-label">Blocked IPs:</span>
+                        <span class="config-value" id="blocked-ips">Checking...</span>
+                    </div>
+                    <button class="btn" onclick="refreshConfigStatus()">Refresh Status</button>
+                </div>
             </div>
-            <div class="password-management">
-                <div class="control-group">
-                    <div class="control-header">Change Admin Password</div>
-                    <div class="input-group">
-                        <label class="input-label">Current Password</label>
-                        <input type="password" class="neural-input" id="current-password" placeholder="Enter current password">
+
+            <!-- Password Management -->
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-icon">🔐</div>
+                    <div class="panel-title">Password Management</div>
+                </div>
+                <div class="password-management">
+                    <div class="control-group">
+                        <div class="control-header">Change Admin Password</div>
+                        <div class="input-group">
+                            <label class="input-label">Current Password</label>
+                            <input type="password" class="neural-input" id="current-password" placeholder="Enter current password">
+                        </div>
+                        <div class="input-group">
+                            <label class="input-label">New Password</label>
+                            <input type="password" class="neural-input" id="new-password" placeholder="Enter new password (min 8 chars)">
+                        </div>
+                        <div class="input-group">
+                            <label class="input-label">Confirm New Password</label>
+                            <input type="password" class="neural-input" id="confirm-password" placeholder="Confirm new password">
+                        </div>
+                        <button class="btn" onclick="changePassword()">Change Password</button>
+                        <div id="password-change-status" class="status-indicator"></div>
                     </div>
-                    <div class="input-group">
-                        <label class="input-label">New Password</label>
-                        <input type="password" class="neural-input" id="new-password" placeholder="Enter new password (min 8 chars)">
-                    </div>
-                    <div class="input-group">
-                        <label class="input-label">Confirm New Password</label>
-                        <input type="password" class="neural-input" id="confirm-password" placeholder="Confirm new password">
-                    </div>
-                    <button class="btn" onclick="changePassword()">Change Password</button>
-                    <div id="password-change-status" class="status-indicator"></div>
                 </div>
             </div>
         </div>
