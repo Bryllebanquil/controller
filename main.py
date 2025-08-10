@@ -406,7 +406,7 @@ WEBRTC_ICE_SERVERS = [
     {"urls": ["stun:stun1.l.google.com:19302"]}
 ]
 WEBRTC_CONFIG = {
-    'enabled': WEBRTC_AVAILABLE,
+    'enabled': AIORTC_AVAILABLE,
     'ice_servers': [
         {'urls': 'stun:stun.l.google.com:19302'},
         {'urls': 'stun:stun1.l.google.com:19302'},
