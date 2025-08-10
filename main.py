@@ -5782,10 +5782,49 @@ def handle_file_download(command_parts, agent_id):
     """Handle file download request from controller (deprecated, now uses chunked)."""
     return "File download via HTTP POST is deprecated. Use chunked Socket.IO download."
 
+# --- Socket.IO Event Handler Registration ---
+def register_socketio_handlers():
+    """Register all Socket.IO event handlers if Socket.IO is available."""
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, skipping event handler registration", "warning")
+        return
+    
+    # Register file transfer handlers
+    sio.on('file_chunk_from_operator')(on_file_chunk_from_operator)
+    sio.on('file_upload_complete_from_operator')(on_file_upload_complete_from_operator)
+    sio.on('request_file_chunk_from_agent')(on_request_file_chunk_from_agent)
+    
+    # Register other handlers
+    sio.on('command')(on_command)
+    sio.on('mouse_move')(on_mouse_move)
+    sio.on('mouse_click')(on_mouse_click)
+    sio.on('key_press')(on_remote_key_press)
+    sio.on('file_upload')(on_file_upload)
+    sio.on('webrtc_offer')(on_webrtc_offer)
+    sio.on('webrtc_answer')(on_webrtc_answer)
+    sio.on('webrtc_ice_candidate')(on_webrtc_ice_candidate)
+    sio.on('webrtc_start_streaming')(on_webrtc_start_streaming)
+    sio.on('webrtc_stop_streaming')(on_webrtc_stop_streaming)
+    sio.on('webrtc_get_stats')(on_webrtc_get_stats)
+    sio.on('webrtc_set_quality')(on_webrtc_set_quality)
+    sio.on('webrtc_quality_change')(on_webrtc_quality_change)
+    sio.on('webrtc_frame_dropping')(on_webrtc_frame_dropping)
+    sio.on('webrtc_get_enhanced_stats')(on_webrtc_get_enhanced_stats)
+    sio.on('webrtc_get_production_readiness')(on_webrtc_get_production_readiness)
+    sio.on('webrtc_get_migration_plan')(on_webrtc_get_migration_plan)
+    sio.on('webrtc_get_monitoring_data')(on_webrtc_get_monitoring_data)
+    sio.on('webrtc_adaptive_bitrate_control')(on_webrtc_adaptive_bitrate_control)
+    sio.on('webrtc_implement_frame_dropping')(on_webrtc_implement_frame_dropping)
+    
+    log_message("Socket.IO event handlers registered successfully", "info")
+
 # --- Socket.IO File Transfer Handlers ---
 
-@sio.on('file_chunk_from_operator')
 def on_file_chunk_from_operator(data):
+    """Receive a file chunk from the operator and write to disk."""
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle file chunk", "warning")
+        return
     """Receive a file chunk from the operator and write to disk."""
     log_message(f"Received file chunk: {data.get('filename', 'unknown')} at offset {data.get('offset', 0)}")
     filename = data.get('filename')
@@ -5859,8 +5898,10 @@ def _save_completed_file(destination_path, buffer_data):
     except Exception as e:
         log_message(f"Error saving file {destination_path}: {e}")
 
-@sio.on('file_upload_complete_from_operator')
 def on_file_upload_complete_from_operator(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle file upload completion", "warning")
+        return
     filename = data.get('filename')
     destination_path = data.get('destination_path') or filename
     log_message(f"Upload of {filename} to {destination_path} complete.")
@@ -5871,8 +5912,11 @@ def on_file_upload_complete_from_operator(data):
             log_message(f"Force saving file {destination_path} from completion event")
             _save_completed_file(destination_path, on_file_chunk_from_operator.buffers[destination_path])
 
-@sio.on('request_file_chunk_from_agent')
 def on_request_file_chunk_from_agent(data):
+    """Handle file download request from controller - send file in chunks."""
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle file chunk request", "warning")
+        return
     """Handle file download request from controller - send file in chunks."""
     log_message(f"File download request received: {data}")
     filename = data.get('filename')
@@ -8356,8 +8400,10 @@ def main_unified():
 # SOCKETIO EVENT HANDLERS FOR AGENT
 # ========================================================================================
 
-@sio.event
 def connect():
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle connect event", "warning")
+        return
     """Handle connection to server."""
     agent_id = get_or_create_agent_id()
     
@@ -8376,13 +8422,17 @@ def connect():
         except Exception as e:
             log_message(f"Failed to emit WebRTC status on connect: {e}", "warning")
 
-@sio.event
 def disconnect():
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle disconnect event", "warning")
+        return
     """Handle disconnection from server."""
     log_message("Disconnected from server")
 
-@sio.on('command')
 def on_command(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle command", "warning")
+        return
     """Handle command execution requests."""
     agent_id = get_or_create_agent_id()
     command = data.get("command")
@@ -8454,8 +8504,10 @@ def on_command(data):
     if output:
         sio.emit('command_result', {'agent_id': agent_id, 'output': output})
 
-@sio.on('mouse_move')
 def on_mouse_move(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle mouse move", "warning")
+        return
     """Handle simulated mouse movements."""
     x = data.get('x')
     y = data.get('y')
@@ -8470,8 +8522,10 @@ def on_mouse_move(data):
     except Exception as e:
         log_message(f"Error simulating mouse move: {e}")
 
-@sio.on('mouse_click')
 def on_mouse_click(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle mouse click", "warning")
+        return
     """Handle simulated mouse clicks."""
     button = data.get('button')
     event_type = data.get('event_type')
@@ -8491,8 +8545,10 @@ def on_mouse_click(data):
     except Exception as e:
         log_message(f"Error simulating mouse click: {e}")
 
-@sio.on('key_press')
 def on_remote_key_press(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle key press", "warning")
+        return
     """Handle simulated key presses from remote controller."""
     key = data.get('key')
     event_type = data.get('event_type')
@@ -8519,8 +8575,10 @@ def on_remote_key_press(data):
     except Exception as e:
         log_message(f"Error simulating key press: {e}")
 
-@sio.on('file_upload')
 def on_file_upload(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle file upload", "warning")
+        return
     """Handle file upload via Socket.IO."""
     try:
         if not data or not isinstance(data, dict):
@@ -8549,8 +8607,10 @@ def on_file_upload(data):
 # WEBRTC SIGNALING EVENT HANDLERS FOR LOW-LATENCY STREAMING
 # ========================================================================================
 
-@sio.on('webrtc_offer')
 def on_webrtc_offer(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle WebRTC offer", "warning")
+        return
     """Handle WebRTC offer from controller to start streaming."""
     try:
         agent_id = get_or_create_agent_id()
@@ -8580,8 +8640,10 @@ def on_webrtc_offer(data):
         log_message(error_msg, "error")
         sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
-@sio.on('webrtc_answer')
 def on_webrtc_answer(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle WebRTC answer", "warning")
+        return
     """Handle WebRTC answer from controller."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
@@ -8605,8 +8667,10 @@ def on_webrtc_answer(data):
         log_message(error_msg, "error")
         sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
-@sio.on('webrtc_ice_candidate')
 def on_webrtc_ice_candidate(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle WebRTC ICE candidate", "warning")
+        return
     """Handle ICE candidate from controller."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
@@ -8629,8 +8693,10 @@ def on_webrtc_ice_candidate(data):
         log_message(error_msg, "error")
         sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
-@sio.on('webrtc_start_streaming')
 def on_webrtc_start_streaming(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle WebRTC start streaming", "warning")
+        return
     """Handle request to start WebRTC streaming."""
     try:
         agent_id = get_or_create_agent_id()
@@ -8654,8 +8720,10 @@ def on_webrtc_start_streaming(data):
         log_message(error_msg, "error")
         sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
-@sio.on('webrtc_stop_streaming')
 def on_webrtc_stop_streaming(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle WebRTC stop streaming", "warning")
+        return
     """Handle request to stop WebRTC streaming."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
@@ -8675,8 +8743,10 @@ def on_webrtc_stop_streaming(data):
         log_message(error_msg, "error")
         sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
-@sio.on('webrtc_get_stats')
 def on_webrtc_get_stats(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle WebRTC get stats", "warning")
+        return
     """Handle request for WebRTC streaming statistics."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
@@ -8700,8 +8770,10 @@ def on_webrtc_get_stats(data):
         log_message(error_msg, "error")
         sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
-@sio.on('webrtc_set_quality')
 def on_webrtc_set_quality(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle WebRTC set quality", "warning")
+        return
     """Handle request to adjust WebRTC streaming quality."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
@@ -8727,8 +8799,10 @@ def on_webrtc_set_quality(data):
         log_message(error_msg, "error")
         sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
-@sio.on('webrtc_quality_change')
 def on_webrtc_quality_change(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle WebRTC quality change", "warning")
+        return
     """Handle request to change WebRTC quality level."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
@@ -8752,8 +8826,10 @@ def on_webrtc_quality_change(data):
         log_message(error_msg, "error")
         sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
-@sio.on('webrtc_frame_dropping')
 def on_webrtc_frame_dropping(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle WebRTC frame dropping", "warning")
+        return
     """Handle request to implement frame dropping."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
@@ -8777,8 +8853,10 @@ def on_webrtc_frame_dropping(data):
         log_message(error_msg, "error")
         sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
-@sio.on('webrtc_get_enhanced_stats')
 def on_webrtc_get_enhanced_stats(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle WebRTC get enhanced stats", "warning")
+        return
     """Handle request for enhanced WebRTC statistics."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
@@ -8800,8 +8878,10 @@ def on_webrtc_get_enhanced_stats(data):
         log_message(error_msg, "error")
         sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
-@sio.on('webrtc_get_production_readiness')
 def on_webrtc_get_production_readiness(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle WebRTC get production readiness", "warning")
+        return
     """Handle request for production readiness assessment."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
@@ -8820,8 +8900,10 @@ def on_webrtc_get_production_readiness(data):
         log_message(error_msg, "error")
         sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
-@sio.on('webrtc_get_migration_plan')
 def on_webrtc_get_migration_plan(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle WebRTC get migration plan", "warning")
+        return
     """Handle request for mediasoup migration plan."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
@@ -8840,8 +8922,10 @@ def on_webrtc_get_migration_plan(data):
         log_message(error_msg, "error")
         sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
-@sio.on('webrtc_get_monitoring_data')
 def on_webrtc_get_monitoring_data(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle WebRTC get monitoring data", "warning")
+        return
     """Handle request for comprehensive monitoring data."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
@@ -8863,8 +8947,10 @@ def on_webrtc_get_monitoring_data(data):
         log_message(error_msg, "error")
         sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
-@sio.on('webrtc_adaptive_bitrate_control')
 def on_webrtc_adaptive_bitrate_control(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle WebRTC adaptive bitrate control", "warning")
+        return
     """Handle request to manually trigger adaptive bitrate control."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
@@ -8888,8 +8974,10 @@ def on_webrtc_adaptive_bitrate_control(data):
         log_message(error_msg, "error")
         sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
-@sio.on('webrtc_implement_frame_dropping')
 def on_webrtc_implement_frame_dropping(data):
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle WebRTC implement frame dropping", "warning")
+        return
     """Handle request to manually implement frame dropping."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
@@ -9259,6 +9347,14 @@ def agent_main():
                     
                 sio.connect(SERVER_URL)
                 log_message("[OK] Connected to server successfully!")
+                
+                # Register Socket.IO event handlers after successful connection
+                try:
+                    register_socketio_handlers()
+                    log_message("[OK] Socket.IO event handlers registered successfully")
+                except Exception as handler_error:
+                    log_message(f"[WARN] Failed to register Socket.IO handlers: {handler_error}")
+                
                 sio.wait()
             except socketio.exceptions.ConnectionError:
                 log_message(f"[WARN] Connection failed (attempt {connection_attempts}). Retrying in 10 seconds...")
