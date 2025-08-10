@@ -1283,7 +1283,13 @@ DASHBOARD_HTML = r'''
   .agent-list{display:flex;flex-direction:column;gap:10px}
   .agent-item{
     display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:10px;background:rgba(255,255,255,0.01);
-    border:1px solid rgba(255,255,255,0.02); cursor:pointer;
+    border:1px solid rgba(255,255,255,0.02); cursor:pointer; transition:all 0.2s ease;
+  }
+  .agent-item:hover{
+    background:rgba(255,255,255,0.03); border-color:rgba(255,255,255,0.05);
+  }
+  .agent-item.selected{
+    background:rgba(0,212,255,0.08); border-color:rgba(0,212,255,0.3); box-shadow:0 0 12px rgba(0,212,255,0.15);
   }
   .agent-item .meta{display:flex;gap:10px;align-items:center}
   .agent-bullet{width:12px;height:12px;border-radius:50%}
@@ -1325,8 +1331,20 @@ DASHBOARD_HTML = r'''
 
   /* Videos row inside center */
   .videos{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
-  .video-card{height:180px;border-radius:10px;background:#000;display:flex;flex-direction:column;overflow:hidden}
+  .video-card{height:180px;border-radius:10px;background:#000;display:flex;flex-direction:column;overflow:hidden;position:relative}
   .video-card video{width:100%;height:100%;object-fit:cover}
+  .video-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(180deg,rgba(0,0,0,0.7) 0%,transparent 30%,transparent 70%,rgba(0,0,0,0.7) 100%);pointer-events:none}
+  .video-status{position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.8);color:#fff;padding:4px 8px;border-radius:6px;font-size:0.75rem;font-weight:600}
+  
+  /* WebRTC Controls */
+  .quality-select{padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:0.85rem}
+  .webrtc-status{display:flex;flex-direction:column;gap:6px;padding:8px;background:rgba(255,255,255,0.02);border-radius:8px;border:1px solid rgba(255,255,255,0.03)}
+  .status-item{display:flex;justify-content:space-between;align-items:center;font-size:0.85rem}
+  .status-label{color:var(--muted)}
+  .status-value{color:#fff;font-weight:600}
+  .status-value.connected{color:#0ee6a6}
+  .status-value.disconnected{color:#ff5c7c}
+  .status-value.warning{color:#ffb84d}
 
   /* Small helpers */
   .muted{color:var(--muted)}
@@ -1392,6 +1410,7 @@ DASHBOARD_HTML = r'''
       </div>
 
       <div class="controls">
+        <input type="hidden" id="agent-id" value="">
         <button class="control-btn primary" onclick="startScreenStream()">Start Screen</button>
         <button class="control-btn" onclick="startCameraStream()">Start Camera</button>
         <button class="control-btn" onclick="listProcesses()">List Processes</button>
@@ -1448,30 +1467,79 @@ DASHBOARD_HTML = r'''
         </div>
       </div>
 
-      <!-- Videos -->
+      <!-- Videos and WebRTC -->
       <div style="display:flex;gap:12px">
         <div class="card" style="flex:1">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <div style="font-weight:700">Live Screen</div>
-            <div class="muted small">Agent stream</div>
+            <div style="font-weight:700">Live Streams</div>
+            <div class="muted small">Agent streams</div>
           </div>
           <div class="videos">
-            <div class="video-card"><video id="screen-video" autoplay muted playsinline></video></div>
-            <div class="video-card"><video id="camera-video" autoplay muted playsinline></video></div>
+            <div class="video-card">
+              <video id="screen-video" autoplay muted playsinline></video>
+              <div class="video-overlay">
+                <div class="video-status" id="screen-status">Screen Stream</div>
+              </div>
+            </div>
+            <div class="video-card">
+              <video id="camera-video" autoplay muted playsinline></video>
+              <div class="video-overlay">
+                <div class="video-status" id="camera-status">Camera Stream</div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- WebRTC Stream Display -->
+          <div style="margin-top:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div style="font-weight:700">WebRTC Stream</div>
+              <div class="muted small">Low-latency</div>
+            </div>
+            <div class="video-card" style="height:140px">
+              <video id="webrtc-video" autoplay muted playsinline></video>
+              <div class="video-overlay">
+                <div class="video-status" id="webrtc-status">WebRTC Stream</div>
+              </div>
+            </div>
           </div>
         </div>
 
         <div class="card" style="width:340px">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <div style="font-weight:700">Quick Metrics</div>
-            <div class="muted small">Real-time</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="font-weight:700">WebRTC Controls</div>
+            <div class="muted small">Low-latency</div>
+          </div>
+          
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+            <button class="control-btn primary" onclick="startWebRTCStream()">Start WebRTC</button>
+            <button class="control-btn" onclick="stopWebRTCStream()">Stop WebRTC</button>
+            <button class="control-btn" onclick="getWebRTCStats()">Get Stats</button>
+            
+            <div style="display:flex;gap:8px;align-items:center">
+              <label class="small muted">Quality:</label>
+              <select id="webrtc-quality" class="quality-select" onchange="setWebRTCQuality()">
+                <option value="auto">Auto</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
           </div>
 
-          <div class="metric-grid" style="margin-top:12px">
-            <div class="metric-pill"><div class="v" id="m1">12</div><div class="small muted">Active Agents</div></div>
-            <div class="metric-pill"><div class="v" id="m2">3</div><div class="small muted">Active Streams</div></div>
-            <div class="metric-pill"><div class="v" id="m3">95%</div><div class="small muted">Stream Health</div></div>
-            <div class="metric-pill"><div class="v" id="m4">120ms</div><div class="small muted">Avg Latency</div></div>
+          <div style="font-weight:700;margin-bottom:8px">WebRTC Status</div>
+          <div class="webrtc-status" id="webrtc-status">
+            <div class="status-item">
+              <span class="status-label">Connection:</span>
+              <span class="status-value" id="webrtc-connection">Disconnected</span>
+            </div>
+            <div class="status-item">
+              <span class="status-label">Latency:</span>
+              <span class="status-value" id="webrtc-latency">--</span>
+            </div>
+            <div class="status-item">
+              <span class="status-label">Quality:</span>
+              <span class="status-value" id="webrtc-quality-status">--</span>
+            </div>
           </div>
 
           <div style="margin-top:12px;font-weight:700">Output</div>
@@ -1482,6 +1550,19 @@ DASHBOARD_HTML = r'''
 
     <!-- RIGHT -->
     <div class="rightcol">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-weight:700">Quick Metrics</div>
+          <div class="muted small">Real-time</div>
+        </div>
+        <div class="metric-grid" style="margin-top:12px">
+          <div class="metric-pill"><div class="v" id="m1">12</div><div class="small muted">Active Agents</div></div>
+          <div class="metric-pill"><div class="v" id="m2">3</div><div class="small muted">Active Streams</div></div>
+          <div class="metric-pill"><div class="v" id="m3">95%</div><div class="small muted">Stream Health</div></div>
+          <div class="metric-pill"><div class="v" id="m4">120ms</div><div class="small muted">Avg Latency</div></div>
+        </div>
+      </div>
+
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <div style="font-weight:700">Config Status</div>
@@ -1531,6 +1612,55 @@ DASHBOARD_HTML = r'''
     document.getElementById('cfg3').innerText = data.session_timeout + 's';
     document.getElementById('cfg4').innerText = data.blocked_ips.length;
   });
+  
+  // WebRTC event handlers
+  socket.on('webrtc_started', data => {
+    appendLog('WebRTC streaming started for agent: ' + data.agent_id);
+    updateWebRTCStatus('Connected', 'connected');
+    updateMetric('m2', parseInt(document.getElementById('m2').innerText || '0') + 1);
+    
+    // Update WebRTC video status
+    const webrtcStatusEl = document.getElementById('webrtc-status');
+    if(webrtcStatusEl){
+      webrtcStatusEl.textContent = 'Connected';
+      webrtcStatusEl.style.color = '#0ee6a6';
+    }
+  });
+  
+  socket.on('webrtc_stopped', data => {
+    appendLog('WebRTC streaming stopped for agent: ' + data.agent_id);
+    updateWebRTCStatus('Disconnected', 'disconnected');
+    updateMetric('m2', Math.max(0, parseInt(document.getElementById('m2').innerText || '0') - 1));
+    
+    // Update WebRTC video status
+    const webrtcStatusEl = document.getElementById('webrtc-status');
+    if(webrtcStatusEl){
+      webrtcStatusEl.textContent = 'Disconnected';
+      webrtcStatusEl.style.color = '#ff5c7c';
+    }
+  });
+  
+  socket.on('webrtc_stats', data => {
+    appendLog('WebRTC stats received: ' + JSON.stringify(data.stats));
+    if(data.stats.latency) {
+      document.getElementById('webrtc-latency').innerText = data.stats.latency + 'ms';
+    }
+    if(data.stats.quality) {
+      document.getElementById('webrtc-quality-status').innerText = data.stats.quality;
+    }
+  });
+  
+  socket.on('webrtc_error', data => {
+    appendLog('WebRTC error: ' + data.message);
+    updateWebRTCStatus('Error', 'disconnected');
+    
+    // Update WebRTC video status
+    const webrtcStatusEl = document.getElementById('webrtc-status');
+    if(webrtcStatusEl){
+      webrtcStatusEl.textContent = 'Error';
+      webrtcStatusEl.style.color = '#ff5c7c';
+    }
+  });
 
   /* --------- Render helpers --------- */
   function appendLog(msg){
@@ -1552,7 +1682,20 @@ DASHBOARD_HTML = r'''
       container.appendChild(item);
     });
   }
-  function selectAgent(id){ document.getElementById('agent-id')?.setAttribute('value', id); appendLog('Selected agent '+id); }
+  function selectAgent(id){ 
+    // Remove previous selection
+    document.querySelectorAll('.agent-item').forEach(item => item.classList.remove('selected'));
+    
+    // Add selection to clicked item
+    const selectedItem = document.querySelector(`.agent-item:has(.agent-sub:contains('${id}'))`);
+    if(selectedItem) {
+      selectedItem.classList.add('selected');
+    }
+    
+    // Update agent ID for commands
+    document.getElementById('agent-id')?.setAttribute('value', id); 
+    appendLog('Selected agent '+id); 
+  }
 
   /* --------- Chart.js: doughnuts + trend --------- */
   const doughnutOpts = {responsive:true, maintainAspectRatio:false, cutout:'70%', plugins:{legend:{display:false}}};
@@ -1612,6 +1755,70 @@ DASHBOARD_HTML = r'''
   function startCameraStream(){ socket.emit('start_camera_stream'); appendLog('Start camera stream request'); }
   function stopAllStreams(){ socket.emit('stop_all_streams'); appendLog('Stop all streams request'); }
   function stopScreenStream(){ socket.emit('stop_screen_stream'); appendLog('Stop screen stream request'); }
+  
+  /* --------- WebRTC Functions --------- */
+  function startWebRTCStream(){
+    const selectedAgent = getSelectedAgent();
+    if(!selectedAgent){
+      appendLog('No agent selected for WebRTC streaming');
+      return;
+    }
+    socket.emit('webrtc_start_streaming', {agent_id: selectedAgent, stream_type: 'screen'});
+    appendLog('Starting WebRTC streaming for agent: ' + selectedAgent);
+    updateWebRTCStatus('Connecting...', 'warning');
+  }
+  
+  function stopWebRTCStream(){
+    const selectedAgent = getSelectedAgent();
+    if(!selectedAgent){
+      appendLog('No agent selected for WebRTC streaming');
+      return;
+    }
+    socket.emit('webrtc_stop_streaming', {agent_id: selectedAgent});
+    appendLog('Stopping WebRTC streaming for agent: ' + selectedAgent);
+    updateWebRTCStatus('Disconnected', 'disconnected');
+  }
+  
+  function getWebRTCStats(){
+    const selectedAgent = getSelectedAgent();
+    if(!selectedAgent){
+      appendLog('No agent selected for WebRTC stats');
+      return;
+    }
+    socket.emit('webrtc_get_stats', {agent_id: selectedAgent});
+    appendLog('Requesting WebRTC stats for agent: ' + selectedAgent);
+  }
+  
+  function setWebRTCQuality(){
+    const quality = document.getElementById('webrtc-quality').value;
+    const selectedAgent = getSelectedAgent();
+    if(!selectedAgent){
+      appendLog('No agent selected for quality change');
+      return;
+    }
+    socket.emit('webrtc_set_quality', {agent_id: selectedAgent, quality: quality});
+    appendLog('Setting WebRTC quality to: ' + quality + ' for agent: ' + selectedAgent);
+    updateWebRTCStatus('Quality: ' + quality, 'connected');
+  }
+  
+  function updateWebRTCStatus(message, type = 'info'){
+    const statusEl = document.getElementById('webrtc-connection');
+    if(statusEl){
+      statusEl.textContent = message;
+      statusEl.className = 'status-value ' + type;
+    }
+  }
+  
+  function getSelectedAgent(){
+    // Get the currently selected agent ID from the agent list
+    const selectedItem = document.querySelector('.agent-item.selected');
+    if(selectedItem){
+      const agentIdEl = selectedItem.querySelector('.agent-sub');
+      return agentIdEl ? agentIdEl.textContent : null;
+    }
+    return null;
+  }
+  
   function changePassword(){
     const p = document.getElementById('new-pass').value;
     if(!p || p.length<8){ alert('Choose password >= 8 chars'); return; }
