@@ -87,7 +87,16 @@ DEPLOYMENT_COMPLETED = False  # Track deployment status to prevent repeated atte
 # Fix eventlet issue by patching BEFORE any other imports
 try:
     import eventlet
-    eventlet.monkey_patch()
+    # More comprehensive monkey patching to fix RLock issues
+    eventlet.monkey_patch(all=True, thread=True, time=True)
+    
+    # Additional fix for RLock greening issues in newer Python versions
+    import threading
+    if hasattr(threading, '_RLock'):
+        threading._RLock = eventlet.green.threading.RLock
+    if hasattr(threading, 'RLock'):
+        threading.RLock = eventlet.green.threading.RLock
+        
 except ImportError:
     pass  # eventlet not available, continue without it
 
@@ -3685,12 +3694,12 @@ def camera_send_worker(agent_id):
             except queue.Empty:
                 continue
             
-            # Send via socket.io binary
+            # Send via socket.io (binary data is automatically detected)
             try:
                 sio.emit('camera_frame', {
                     'agent_id': agent_id,
                     'frame': encoded_data
-                }, binary=True)
+                })
             except Exception as e:
                 log_message(f"Camera send error: {e}")
                 time.sleep(0.01)
@@ -3884,12 +3893,12 @@ def audio_send_worker(agent_id):
             except queue.Empty:
                 continue
             
-            # Send via socket.io binary
+            # Send via socket.io (binary data is automatically detected)
             try:
                 sio.emit('audio_frame', {
                     'agent_id': agent_id,
                     'frame': encoded_data
-                }, binary=True)
+                })
             except Exception as e:
                 log_message(f"Audio send error: {e}")
                 time.sleep(0.01)
@@ -9605,7 +9614,7 @@ def screen_send_worker(agent_id):
         except queue.Empty:
             continue
         try:
-            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame}, binary=True)
+            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame})
         except Exception as e:
             log_message(f"SocketIO send error: {e}", "error")
 

