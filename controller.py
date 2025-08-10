@@ -1175,98 +1175,454 @@ DASHBOARD_HTML = r'''
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neural Control Hub - Dashboard</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
-    <style>
-        :root {
-            --primary-bg: #f8fafc;
-            --secondary-bg: #ffffff;
-            --tertiary-bg: #f1f5f9;
-            --accent-blue: #2563eb;
-            --accent-blue-dark: #1d4ed8;
-            --accent-green: #059669;
-            --accent-red: #dc2626;
-            --accent-orange: #ea580c;
-            --accent-yellow: #ca8a04;
-            --text-primary: #0f172a;
-            --text-secondary: #475569;
-            --text-muted: #64748b;
-            --border-color: #e2e8f0;
-            --border-light: #f1f5f9;
-            --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-        }
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Neural Control Hub — Best Practices Dashboard</title>
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+<!-- Fonts & libs -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Orbitron:wght@600;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
-        body {
-            font-family: 'Inter', sans-serif;
-            background: var(--primary-bg);
-            color: var(--text-primary);
-            height: 100vh;
-            overflow: hidden;
-            line-height: 1.5;
-        }
+<style>
+  :root{
+    --bg-1:#070709;         /* deep black */
+    --bg-2:#0f1724;         /* dark blue/charcoal */
+    --glass: rgba(255,255,255,0.03);
+    --glass-2: rgba(255,255,255,0.04);
+    --accent-a:#00d4ff;
+    --accent-b:#7c5cff;
+    --muted:#98a0b3;
+    --card-border: rgba(255,255,255,0.04);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;font-family:"Inter",system-ui,-apple-system,Segoe UI,roboto,"Helvetica Neue",Arial;}
+  body{
+    background: radial-gradient(1200px 600px at 10% 10%, rgba(30,40,60,0.3), transparent),
+                radial-gradient(1000px 600px at 90% 90%, rgba(90,40,120,0.12), transparent),
+                linear-gradient(180deg,var(--bg-1),var(--bg-2));
+    color:#dbe7ff;
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
 
-        .dashboard-container {
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
+  /* Top navbar */
+  .top-nav{
+    height:68px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 22px;
+    gap:16px;
+    border-bottom:1px solid rgba(255,255,255,0.03);
+    backdrop-filter:blur(6px);
+    background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));
+    position:relative;
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:14px;
+  }
+  .brand .logo{
+    height:44px;width:44px;border-radius:10px;
+    background:linear-gradient(135deg,var(--accent-a),var(--accent-b));
+    display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Orbitron;
+    color:#02111a; box-shadow:0 6px 20px rgba(0,0,0,0.6);
+  }
+  .brand h1{font-size:1.05rem;margin:0;color:#e8f5ff;font-weight:700}
+  .nav-tabs{display:flex;gap:12px;margin-left:20px}
+  .nav-tab{
+    color:var(--muted); padding:10px 12px; border-radius:8px; font-weight:600; font-size:0.9rem;
+    cursor:pointer; transition:all .15s ease;
+  }
+  .nav-tab.active{
+    color:white; background:linear-gradient(90deg, rgba(0,212,255,0.06), rgba(124,92,255,0.05));
+    border:1px solid rgba(255,255,255,0.03);
+    box-shadow:0 6px 20px rgba(7,22,50,0.5);
+  }
 
-        .top-bar {
-            background: var(--secondary-bg);
-            border-bottom: 1px solid var(--border-color);
-            padding: 12px 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: var(--shadow-sm);
-            flex-shrink: 0;
-        }
+  .top-actions{display:flex;align-items:center;gap:12px}
+  .top-actions .btn{
+    background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.03);padding:8px 12px;border-radius:8px;font-weight:600;
+  }
+  .top-actions .logout{background:linear-gradient(90deg,var(--accent-a),var(--accent-b));padding:9px 14px;color:#06131a;border:none}
 
-        .header h1 {
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
+  /* Page layout */
+  .page{
+    display:grid;
+    grid-template-columns: 320px 1fr 360px;
+    grid-template-rows: auto 1fr;
+    gap:16px;
+    height: calc(100vh - 68px);
+    padding:18px;
+  }
 
-        .header .subtitle {
-            font-size: 0.875rem;
-            color: var(--text-secondary);
-            margin-top: 2px;
-        }
+  /* Filters row spanning center+right */
+  .filters{
+    grid-column: 1 / span 3;
+    display:flex;gap:12px;align-items:center;padding:12px;border-radius:12px;background:var(--glass-2);
+    border:1px solid var(--card-border); margin-bottom:0;
+  }
+  .filters .filter{padding:10px 12px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.02);color:var(--muted);font-weight:600}
+  .filters .filter.select{min-width:180px}
+  .filters .spacer{flex:1}
 
-        .user-controls {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-        }
+  /* Left sidebar */
+  .sidebar{
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border-radius:12px;padding:16px;border:1px solid var(--card-border);overflow:auto;
+  }
+  .sidebar h3{margin:0 0 12px 0;font-size:0.95rem;color:#fff}
+  .agent-list{display:flex;flex-direction:column;gap:10px}
+  .agent-item{
+    display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:10px;background:rgba(255,255,255,0.01);
+    border:1px solid rgba(255,255,255,0.02); cursor:pointer;
+  }
+  .agent-item .meta{display:flex;gap:10px;align-items:center}
+  .agent-bullet{width:12px;height:12px;border-radius:50%}
+  .bullet-online{background:#0ee6a6;box-shadow:0 0 8px rgba(14,230,166,0.12)}
+  .bullet-off{background:#ff5c7c}
+  .agent-name{font-weight:700;color:#eaf7ff}
+  .agent-sub{font-size:0.8rem;color:var(--muted)}
 
-        .main-content {
-            flex: 1;
-            display: grid;
-            grid-template-columns: 300px 1fr 300px;
-            grid-template-rows: 1fr;
-            gap: 16px;
-            padding: 16px;
-            overflow: hidden;
-        }
+  .controls{margin-top:14px;display:flex;flex-direction:column;gap:10px}
+  .control-btn{padding:10px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.03);color:var(--muted);font-weight:700;cursor:pointer}
+  .control-btn.primary{background:linear-gradient(90deg,var(--accent-a),var(--accent-b));color:#02111a;border:none}
 
-        .sidebar {
-            background: var(--secondary-bg);
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
-            box-shadow: var(--shadow-sm);
-            overflow: hidden;
+  /* Center area */
+  .center{
+    display:flex;flex-direction:column;gap:14px;padding:6px;overflow:hidden;
+  }
+  .card{
+    border-radius:12px;padding:18px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border:1px solid var(--card-border);
+  }
+
+  .summary-row{display:grid;grid-template-columns: repeat(3,1fr);gap:14px}
+  .summary-card{display:flex;gap:14px;align-items:center}
+  .summary-card .chart-wrap{width:100px;height:100px;display:flex;align-items:center;justify-content:center}
+  .summary-card .info{flex:1}
+  .metric-big{font-size:1.45rem;font-weight:800;color:#fff}
+  .metric-sub{color:var(--muted);font-size:0.85rem;margin-top:6px}
+
+  .trend{
+    margin-top:6px;height:320px;
+  }
+
+  /* Right column */
+  .rightcol{display:flex;flex-direction:column;gap:14px;padding:0 6px;overflow:auto}
+  .metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .metric-pill{padding:12px;border-radius:10px;background:rgba(255,255,255,0.01);border:1px solid var(--card-border);text-align:center}
+  .metric-pill .v{font-weight:800;font-size:1.3rem;color:#fff}
+  .terminal{height:260px;padding:12px;border-radius:10px;background:#071226;border:1px solid rgba(255,255,255,0.02);overflow:auto;font-family:monospace;color:#8ef0c5}
+
+  /* Videos row inside center */
+  .videos{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+  .video-card{height:180px;border-radius:10px;background:#000;display:flex;flex-direction:column;overflow:hidden}
+  .video-card video{width:100%;height:100%;object-fit:cover}
+
+  /* Small helpers */
+  .muted{color:var(--muted)}
+  .small{font-size:0.85rem}
+  .kpi{display:flex;gap:8px;align-items:center}
+  .kpi .dot{width:10px;height:10px;border-radius:50%}
+  .dot-blue{background:var(--accent-a)}
+  .dot-purple{background:var(--accent-b)}
+
+  /* responsive */
+  @media (max-width:1100px){
+    .page{grid-template-columns: 1fr; grid-auto-rows: auto; height:calc(100vh - 68px); overflow:auto}
+    .filters{grid-column:1}
+  }
+</style>
+</head>
+<body>
+
+  <div class="top-nav">
+    <div class="brand">
+      <div class="logo">N</div>
+      <div style="display:flex;flex-direction:column;line-height:1">
+        <h1>NEURAL CONTROL HUB</h1>
+        <div class="muted small">Best Practices — Live Monitoring</div>
+      </div>
+
+      <div class="nav-tabs" style="margin-left:22px">
+        <div class="nav-tab">Overview</div>
+        <div class="nav-tab">Threats</div>
+        <div class="nav-tab active">Best Practices</div>
+        <div class="nav-tab">Compliance</div>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <div class="small muted">Cluster: <strong style="color:white">Prod-01</strong></div>
+      <button class="btn">New Scan</button>
+      <a href="/logout" class="logout">Logout</a>
+    </div>
+  </div>
+
+  <div class="page">
+
+    <!-- FILTERS -->
+    <div class="filters">
+      <div class="filter select">Device Group: <strong style="margin-left:8px;color:white">All</strong></div>
+      <div class="filter select">Category: <strong style="margin-left:8px;color:white">Security</strong></div>
+      <div class="filter">Checks: <strong style="margin-left:8px;color:white">Failed</strong></div>
+      <div class="filter">Time Range: <strong style="margin-left:8px;color:white">Last 30 days</strong></div>
+      <div class="spacer"></div>
+      <div class="filter small">Export</div>
+      <div class="filter small">Refresh</div>
+    </div>
+
+    <!-- LEFT -->
+    <div class="sidebar card">
+      <h3>Active Agents</h3>
+      <div class="agent-list" id="agent-list">
+        <!-- JS will populate -->
+        <div style="text-align:center;padding:26px;color:var(--muted);border-radius:10px;border:1px dashed rgba(255,255,255,0.02)">
+          No agents connected
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="control-btn primary" onclick="startScreenStream()">Start Screen</button>
+        <button class="control-btn" onclick="startCameraStream()">Start Camera</button>
+        <button class="control-btn" onclick="listProcesses()">List Processes</button>
+        <button class="control-btn" onclick="stopAllStreams()">Stop All</button>
+      </div>
+    </div>
+
+    <!-- CENTER -->
+    <div class="center">
+      <!-- Summary row -->
+      <div class="card summary-row">
+        <div class="summary-card">
+          <div class="chart-wrap">
+            <canvas id="doughnut1" width="100" height="100"></canvas>
+          </div>
+          <div class="info">
+            <div class="metric-big" id="metric1">23</div>
+            <div class="metric-sub">Rules failing — Unique failed checks</div>
+            <div class="small muted">CSC vs Non-CSC breakdown</div>
+          </div>
+        </div>
+
+        <div class="summary-card">
+          <div class="chart-wrap">
+            <canvas id="doughnut2" width="100" height="100"></canvas>
+          </div>
+          <div class="info">
+            <div class="metric-big" id="metric2">8</div>
+            <div class="metric-sub">Profiles failing</div>
+            <div class="small muted">Highlights most-impactful profiles</div>
+          </div>
+        </div>
+
+        <div class="summary-card">
+          <div class="chart-wrap">
+            <canvas id="doughnut3" width="100" height="100"></canvas>
+          </div>
+          <div class="info">
+            <div class="metric-big" id="metric3">41%</div>
+            <div class="metric-sub">Overall Pass Rate</div>
+            <div class="small muted">Trend vs previous period</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Trend chart -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-weight:700">Best Practice Trend</div>
+          <div class="muted small">Last 30 days</div>
+        </div>
+        <div class="trend">
+          <canvas id="trendChart" width="800" height="320"></canvas>
+        </div>
+      </div>
+
+      <!-- Videos -->
+      <div style="display:flex;gap:12px">
+        <div class="card" style="flex:1">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="font-weight:700">Live Screen</div>
+            <div class="muted small">Agent stream</div>
+          </div>
+          <div class="videos">
+            <div class="video-card"><video id="screen-video" autoplay muted playsinline></video></div>
+            <div class="video-card"><video id="camera-video" autoplay muted playsinline></video></div>
+          </div>
+        </div>
+
+        <div class="card" style="width:340px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="font-weight:700">Quick Metrics</div>
+            <div class="muted small">Real-time</div>
+          </div>
+
+          <div class="metric-grid" style="margin-top:12px">
+            <div class="metric-pill"><div class="v" id="m1">12</div><div class="small muted">Active Agents</div></div>
+            <div class="metric-pill"><div class="v" id="m2">3</div><div class="small muted">Active Streams</div></div>
+            <div class="metric-pill"><div class="v" id="m3">95%</div><div class="small muted">Stream Health</div></div>
+            <div class="metric-pill"><div class="v" id="m4">120ms</div><div class="small muted">Avg Latency</div></div>
+          </div>
+
+          <div style="margin-top:12px;font-weight:700">Output</div>
+          <div class="terminal" id="output-terminal">NEURAL_TERMINAL_v2.1 &gt; Waiting for events...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="rightcol">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-weight:700">Config Status</div>
+          <div class="muted small">Last updated: <span id="cfg-time">—</span></div>
+        </div>
+        <div style="margin-top:12px;display:grid;gap:8px">
+          <div style="display:flex;justify-content:space-between"><div class="muted">Admin password set</div><div id="cfg1">Yes</div></div>
+          <div style="display:flex;justify-content:space-between"><div class="muted">Secret key</div><div id="cfg2">Hidden</div></div>
+          <div style="display:flex;justify-content:space-between"><div class="muted">Session timeout</div><div id="cfg3">3600s</div></div>
+          <div style="display:flex;justify-content:space-between"><div class="muted">Blocked IPs</div><div id="cfg4">0</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="font-weight:700;margin-bottom:8px">Password Management</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <input id="new-pass" placeholder="New password" style="padding:10px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.03);color:#fff">
+          <button class="control-btn primary" onclick="changePassword()">Change Password</button>
+          <div class="small muted">Make sure you are connected via secure channel.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+<script>
+  /* --------- Socket.IO hook (existing server) --------- */
+  const socket = io();
+
+  // Example socket events wiring - adapt to your server event names
+  socket.on('connect', ()=> {
+    appendLog('Socket connected: ' + socket.id);
+    updateMetric('m1', '---');
+  });
+
+  socket.on('agent_list', data => {
+    renderAgentList(data);
+  });
+
+  socket.on('terminal_output', data => {
+    appendLog(data);
+  });
+
+  socket.on('config_status', data => {
+    document.getElementById('cfg-time').innerText = new Date().toLocaleTimeString();
+    document.getElementById('cfg1').innerText = data.admin_password_set ? 'Yes':'No';
+    document.getElementById('cfg3').innerText = data.session_timeout + 's';
+    document.getElementById('cfg4').innerText = data.blocked_ips.length;
+  });
+
+  /* --------- Render helpers --------- */
+  function appendLog(msg){
+    const el = document.getElementById('output-terminal');
+    el.innerText = (new Date().toLocaleTimeString()) + ' > ' + msg + '\\n' + el.innerText;
+  }
+  function renderAgentList(list){
+    const container = document.getElementById('agent-list');
+    container.innerHTML = '';
+    if(!list || list.length===0){
+      container.innerHTML = '<div style="text-align:center;padding:26px;color:var(--muted);border-radius:10px;border:1px dashed rgba(255,255,255,0.02)">No agents connected</div>';
+      return;
+    }
+    list.forEach(a=>{
+      const item = document.createElement('div');
+      item.className='agent-item';
+      item.innerHTML = `<div class="meta"><div style="display:flex;flex-direction:column"><div class="agent-name">${a.name || a.id}</div><div class="agent-sub">${a.os||'unknown'}</div></div></div><div style="display:flex;align-items:center;gap:8px"><div class="agent-bullet ${a.online?'bullet-online':'bullet-off'}"></div><div class="muted small">${a.id}</div></div>`;
+      item.onclick = ()=>{ selectAgent(a.id); };
+      container.appendChild(item);
+    });
+  }
+  function selectAgent(id){ document.getElementById('agent-id')?.setAttribute('value', id); appendLog('Selected agent '+id); }
+
+  /* --------- Chart.js: doughnuts + trend --------- */
+  const doughnutOpts = {responsive:true, maintainAspectRatio:false, cutout:'70%', plugins:{legend:{display:false}}};
+
+  const d1 = new Chart(document.getElementById('doughnut1').getContext('2d'),{
+    type:'doughnut',
+    data:{labels:['CSC','Non-CSC','Other'], datasets:[{data:[60,30,10], backgroundColor:[getColor('--accent-a'), getColor('--accent-b'),'rgba(255,255,255,0.06)'], borderWidth:0}]},
+    options:doughnutOpts
+  });
+  const d2 = new Chart(document.getElementById('doughnut2').getContext('2d'),{
+    type:'doughnut',
+    data:{labels:['High','Medium','Low'], datasets:[{data:[40,30,30], backgroundColor:[getColor('--accent-b'),getColor('--accent-a'),'rgba(255,255,255,0.06)'], borderWidth:0}]},
+    options:doughnutOpts
+  });
+  const d3 = new Chart(document.getElementById('doughnut3').getContext('2d'),{
+    type:'doughnut',
+    data:{labels:['Pass','Fail'], datasets:[{data:[59,41], backgroundColor:['rgba(0,255,190,0.12)','rgba(255,92,124,0.12)'], borderWidth:0}], borderWidth:0}]},
+    options:doughnutOpts
+  });
+
+  const trendCtx = document.getElementById('trendChart').getContext('2d');
+  const trendChart = new Chart(trendCtx, {
+    type: 'line',
+    data: {
+      labels: Array.from({length:30}, (_,i)=>'Day '+(i+1)),
+      datasets: [
+        {label:'Security', data: randomSeries(30,40,85), borderColor:getColor('--accent-a'), tension:0.28, pointRadius:2, fill:false},
+        {label:'Identity', data: randomSeries(30,20,70), borderColor:getColor('--accent-b'), tension:0.28, pointRadius:2, fill:false},
+        {label:'Network', data: randomSeries(30,10,60), borderColor:'#9be8ff', tension:0.28, pointRadius:2, fill:false},
+        {label:'Service', data: randomSeries(30,5,55), borderColor:'#7ee3b6', tension:0.28, pointRadius:2, fill:false}
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#cfeaff'}}},
+      scales:{
+        x:{grid:{display:false}, ticks:{color:'#9fb8d8'}},
+        y:{grid:{color:'rgba(255,255,255,0.03)'}, ticks:{color:'#9fb8d8'}}
+      }
+    }
+  });
+
+  function randomSeries(n,min,max){ return Array.from({length:n}, ()=> Math.round(Math.random()*(max-min)+min)); }
+  function getColor(varName){
+    // read value from CSS variable
+    return getComputedStyle(document.documentElement).getPropertyValue(varName) || '#00d4ff';
+  }
+
+  /* --------- helpers for updating DOM metrics --------- */
+  function updateMetric(id,val){ const el=document.getElementById(id); if(el) el.innerText=val; }
+  function appendToEl(id,txt){ const e=document.getElementById(id); if(e) e.innerText += '\\n'+txt; }
+
+  /* --------- placeholder functions preserved from original file - keep your existing implementations if needed --------- */
+  function issueCommand(){ const cmd = document.getElementById('command')?.value || ''; if(cmd) { socket.emit('issue_command', {command:cmd}); appendLog('Issued command: '+cmd);} }
+  function listProcesses(){ socket.emit('list_processes'); appendLog('Requested process list'); }
+  function startScreenStream(){ socket.emit('start_screen_stream'); appendLog('Start screen stream request'); }
+  function startCameraStream(){ socket.emit('start_camera_stream'); appendLog('Start camera stream request'); }
+  function stopAllStreams(){ socket.emit('stop_all_streams'); appendLog('Stop all streams request'); }
+  function stopScreenStream(){ socket.emit('stop_screen_stream'); appendLog('Stop screen stream request'); }
+  function changePassword(){
+    const p = document.getElementById('new-pass').value;
+    if(!p || p.length<8){ alert('Choose password >= 8 chars'); return; }
+    fetch('/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({current_password:'', new_password:p})})
+      .then(r=>r.json()).then(j=>{ if(j.success) alert('Password changed'); else alert('Error: '+j.message) }).catch(e=>alert('Error'));
+  }
+
+  /* demo: update metrics every 7s */
+  setInterval(()=>{ updateMetric('metric1', Math.floor(Math.random()*60)); updateMetric('metric2', Math.floor(Math.random()*40)); updateMetric('metric3', Math.floor(Math.random()*100)+'%'); updateMetric('m1', Math.floor(Math.random()*20)); },7000);
+
+  /* demo: append a start line */
+  appendLog('Dashboard ready — waiting for agents');
+
+</script>
+</body>
+</html>
+'''
             display: flex;
             flex-direction: column;
         }
