@@ -7,6 +7,7 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 from collections import defaultdict
 import datetime
 import time
+import random
 import os
 import base64
 import queue
@@ -1372,16 +1373,16 @@ DASHBOARD_HTML = r'''
       </div>
 
       <div class="nav-tabs" style="margin-left:22px">
-        <div class="nav-tab">Overview</div>
-        <div class="nav-tab">Threats</div>
-        <div class="nav-tab active">Best Practices</div>
-        <div class="nav-tab">Compliance</div>
+        <div class="nav-tab" onclick="switchTab('overview')">Overview</div>
+        <div class="nav-tab" onclick="switchTab('threats')">Threats</div>
+        <div class="nav-tab active" onclick="switchTab('best-practices')">Best Practices</div>
+        <div class="nav-tab" onclick="switchTab('compliance')">Compliance</div>
       </div>
     </div>
 
     <div class="top-actions">
       <div class="small muted">Cluster: <strong style="color:white">Prod-01</strong></div>
-      <button class="btn">New Scan</button>
+      <button class="btn" onclick="startNewScan()">New Scan</button>
       <a href="/logout" class="logout">Logout</a>
     </div>
   </div>
@@ -1390,22 +1391,76 @@ DASHBOARD_HTML = r'''
 
     <!-- FILTERS -->
     <div class="filters">
-      <div class="filter select">Device Group: <strong style="margin-left:8px;color:white">All</strong></div>
-      <div class="filter select">Category: <strong style="margin-left:8px;color:white">Security</strong></div>
-      <div class="filter">Checks: <strong style="margin-left:8px;color:white">Failed</strong></div>
-      <div class="filter">Time Range: <strong style="margin-left:8px;color:white">Last 30 days</strong></div>
+      <div class="filter select" onclick="toggleDropdown('device-group')">
+        Device Group: <strong style="margin-left:8px;color:white" id="selected-device-group">All</strong>
+        <div class="dropdown-content" id="device-group-dropdown">
+          <div class="dropdown-item" onclick="selectDeviceGroup('All')">All</div>
+          <div class="dropdown-item" onclick="selectDeviceGroup('Production')">Production</div>
+          <div class="dropdown-item" onclick="selectDeviceGroup('Development')">Development</div>
+          <div class="dropdown-item" onclick="selectDeviceGroup('Testing')">Testing</div>
+        </div>
+      </div>
+      <div class="filter select" onclick="toggleDropdown('category')">
+        Category: <strong style="margin-left:8px;color:white" id="selected-category">Security</strong>
+        <div class="dropdown-content" id="category-dropdown">
+          <div class="dropdown-item" onclick="selectCategory('Security')">Security</div>
+          <div class="dropdown-item" onclick="selectCategory('Identity')">Identity</div>
+          <div class="dropdown-item" onclick="selectCategory('Network')">Network</div>
+          <div class="dropdown-item" onclick="selectCategory('Service')">Service</div>
+        </div>
+      </div>
+      <div class="filter select" onclick="toggleDropdown('checks')">
+        Checks: <strong style="margin-left:8px;color:white" id="selected-checks">Failed</strong>
+        <div class="dropdown-content" id="checks-dropdown">
+          <div class="dropdown-item" onclick="selectChecks('Failed')">Failed</div>
+          <div class="dropdown-item" onclick="selectChecks('All')">All</div>
+          <div class="dropdown-item" onclick="selectChecks('Passed')">Passed</div>
+          <div class="dropdown-item" onclick="selectChecks('Warning')">Warning</div>
+        </div>
+      </div>
+      <div class="filter select" onclick="toggleDropdown('time-range')">
+        Time Range: <strong style="margin-left:8px;color:white" id="selected-time-range">Last 30 days</strong>
+        <div class="dropdown-content" id="time-range-dropdown">
+          <div class="dropdown-item" onclick="selectTimeRange('Last 7 days')">Last 7 days</div>
+          <div class="dropdown-item" onclick="selectTimeRange('Last 30 days')">Last 30 days</div>
+          <div class="dropdown-item" onclick="selectTimeRange('Last 90 days')">Last 90 days</div>
+          <div class="dropdown-item" onclick="selectTimeRange('Last year')">Last year</div>
+        </div>
+      </div>
       <div class="spacer"></div>
-      <div class="filter small">Export</div>
-      <div class="filter small">Refresh</div>
+      <div class="filter small" onclick="exportData()">Export</div>
+      <div class="filter small" onclick="refreshData()">Refresh</div>
     </div>
 
     <!-- LEFT -->
     <div class="sidebar card">
-      <h3>Active Agents</h3>
+      <h3>Active Agents <span class="agent-count" id="agent-count">(0)</span></h3>
       <div class="agent-list" id="agent-list">
         <!-- JS will populate -->
         <div style="text-align:center;padding:26px;color:var(--muted);border-radius:10px;border:1px dashed rgba(255,255,255,0.02)">
           No agents connected
+        </div>
+      </div>
+
+      <div class="agent-stats" style="margin-top:16px;padding:12px;background:rgba(255,255,255,0.02);border-radius:8px;border:1px solid rgba(255,255,255,0.03)">
+        <div style="font-weight:600;margin-bottom:8px;color:#fff">Agent Status Summary</div>
+        <div style="display:grid;gap:6px;font-size:0.85rem">
+          <div style="display:flex;justify-content:space-between">
+            <span class="muted">Total Errors:</span>
+            <span class="error-count" id="total-errors">0</span>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span class="muted">Critical:</span>
+            <span class="critical-count" id="critical-errors">0</span>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span class="muted">Warnings:</span>
+            <span class="warning-count" id="warning-errors">0</span>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span class="muted">Info:</span>
+            <span class="info-count" id="info-errors">0</span>
+          </div>
         </div>
       </div>
 
@@ -1415,6 +1470,7 @@ DASHBOARD_HTML = r'''
         <button class="control-btn" onclick="startCameraStream()">Start Camera</button>
         <button class="control-btn" onclick="listProcesses()">List Processes</button>
         <button class="control-btn" onclick="stopAllStreams()">Stop All</button>
+        <button class="control-btn" onclick="refreshAgentList()">Refresh</button>
       </div>
     </div>
 
@@ -1662,6 +1718,42 @@ DASHBOARD_HTML = r'''
     }
   });
 
+  // New event handlers for enhanced functionality
+  socket.on('agents_list', data => {
+    if (data.agents) {
+      renderAgentList(data.agents);
+      updateMetrics();
+    }
+  });
+  
+  socket.on('scan_started', data => {
+    appendLog(`Scan started on agent ${data.agent_id}`, 'info');
+  });
+  
+  socket.on('scan_completed', data => {
+    appendLog(`Scan completed on agent ${data.agent_id}`, 'info');
+    updateErrorCounts();
+  });
+  
+  socket.on('data_exported', data => {
+    appendLog(`Data exported successfully: ${data.filename}`, 'success');
+  });
+  
+  socket.on('error_counts_updated', data => {
+    if (data.counts) {
+      const { total, critical, warning, info } = data.counts;
+      const totalEl = document.getElementById('total-errors');
+      const criticalEl = document.getElementById('critical-errors');
+      const warningEl = document.getElementById('warning-errors');
+      const infoEl = document.getElementById('info-errors');
+      
+      if (totalEl) totalEl.textContent = total;
+      if (criticalEl) criticalEl.textContent = critical;
+      if (warningEl) warningEl.textContent = warning;
+      if (infoEl) infoEl.textContent = info;
+    }
+  });
+
   /* --------- Render helpers --------- */
   function appendLog(msg){
     const el = document.getElementById('output-terminal');
@@ -1826,8 +1918,143 @@ DASHBOARD_HTML = r'''
       .then(r=>r.json()).then(j=>{ if(j.success) alert('Password changed'); else alert('Error: '+j.message) }).catch(e=>alert('Error'));
   }
 
+  // Navigation and UI functions
+  function switchTab(tabName) {
+    // Remove active class from all tabs
+    document.querySelectorAll('.nav-tab').forEach(tab => {
+      tab.classList.remove('active');
+    });
+    
+    // Add active class to clicked tab
+    event.target.classList.add('active');
+    
+    // Update content based on tab (placeholder for now)
+    appendLog(`Switched to ${tabName} tab`, 'info');
+  }
+  
+  function startNewScan() {
+    const agentId = getSelectedAgent();
+    if (!agentId) {
+      appendLog('Please select an agent first', 'error');
+      return;
+    }
+    appendLog(`Starting new scan on agent ${agentId}`, 'info');
+    socket.emit('start_scan', { agent_id: agentId });
+  }
+  
+  function toggleDropdown(dropdownId) {
+    const dropdown = document.getElementById(`${dropdownId}-dropdown`);
+    if (dropdown) {
+      dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+    }
+  }
+  
+  function selectDeviceGroup(group) {
+    document.getElementById('selected-device-group').textContent = group;
+    document.getElementById('device-group-dropdown').style.display = 'none';
+    appendLog(`Device group changed to: ${group}`, 'info');
+    refreshData();
+  }
+  
+  function selectCategory(category) {
+    document.getElementById('selected-category').textContent = category;
+    document.getElementById('category-dropdown').style.display = 'none';
+    appendLog(`Category changed to: ${category}`, 'info');
+    refreshData();
+  }
+  
+  function selectChecks(checks) {
+    document.getElementById('selected-checks').textContent = checks;
+    document.getElementById('checks-dropdown').style.display = 'none';
+    document.getElementById('checks-dropdown').style.display = 'none';
+    appendLog(`Checks filter changed to: ${checks}`, 'info');
+    refreshData();
+  }
+  
+  function selectTimeRange(timeRange) {
+    document.getElementById('selected-time-range').textContent = timeRange;
+    document.getElementById('time-range-dropdown').style.display = 'none';
+    appendLog(`Time range changed to: ${timeRange}`, 'info');
+    refreshData();
+  }
+  
+  function exportData() {
+    const filters = {
+      deviceGroup: document.getElementById('selected-device-group').textContent,
+      category: document.getElementById('selected-category').textContent,
+      checks: document.getElementById('selected-checks').textContent,
+      timeRange: document.getElementById('selected-time-range').textContent
+    };
+    appendLog(`Exporting data with filters: ${JSON.stringify(filters)}`, 'info');
+    // Placeholder for actual export functionality
+  }
+  
+  function refreshData() {
+    appendLog('Refreshing dashboard data...', 'info');
+    // Refresh agent list
+    refreshAgentList();
+    // Refresh metrics
+    updateMetrics();
+    // Refresh charts
+    updateCharts();
+  }
+  
+  function refreshAgentList() {
+    appendLog('Refreshing agent list...', 'info');
+    socket.emit('get_agents');
+  }
+  
+  function updateMetrics() {
+    // Update quick metrics
+    const activeAgents = document.querySelectorAll('.agent-item').length;
+    const activeStreams = document.querySelectorAll('video[src]').length;
+    
+    // Update the existing metric elements
+    const activeAgentsEl = document.getElementById('m1');
+    const activeStreamsEl = document.getElementById('m2');
+    
+    if (activeAgentsEl) activeAgentsEl.textContent = activeAgents;
+    if (activeStreamsEl) activeStreamsEl.textContent = activeStreams;
+    
+    // Update agent count in sidebar
+    const agentCountEl = document.getElementById('agent-count');
+    if (agentCountEl) agentCountEl.textContent = `(${activeAgents})`;
+  }
+  
+  function updateCharts() {
+    // Placeholder for chart updates
+    appendLog('Charts updated', 'info');
+  }
+  
+  function updateErrorCounts() {
+    // Count different types of errors from agent logs
+    let totalErrors = 0;
+    let criticalErrors = 0;
+    let warningErrors = 0;
+    let infoErrors = 0;
+    
+    // This would typically analyze actual agent data
+    // For now, using placeholder values
+    const totalEl = document.getElementById('total-errors');
+    const criticalEl = document.getElementById('critical-errors');
+    const warningEl = document.getElementById('warning-errors');
+    const infoEl = document.getElementById('info-errors');
+    
+    if (totalEl) totalEl.textContent = totalErrors;
+    if (criticalEl) criticalEl.textContent = criticalErrors;
+    if (warningEl) warningEl.textContent = warningErrors;
+    if (infoEl) infoEl.textContent = infoErrors;
+  }
+
   /* demo: update metrics every 7s */
-  setInterval(()=>{ updateMetric('metric1', Math.floor(Math.random()*60)); updateMetric('metric2', Math.floor(Math.random()*40)); updateMetric('metric3', Math.floor(Math.random()*100)+'%'); updateMetric('m1', Math.floor(Math.random()*20)); },7000);
+  setInterval(()=>{ 
+    updateMetric('metric1', Math.floor(Math.random()*60)); 
+    updateMetric('metric2', Math.floor(Math.random()*40)); 
+    updateMetric('metric3', Math.floor(Math.random()*100)+'%'); 
+    updateMetric('m1', Math.floor(Math.random()*20)); 
+    updateMetrics();
+    updateErrorCounts();
+  },7000);
 
   /* demo: append a start line */
   appendLog('Dashboard ready — waiting for agents');
@@ -2801,6 +3028,170 @@ def handle_webrtc_implement_frame_dropping(data):
     except Exception as e:
         print(f"Error implementing frame dropping for {agent_id}: {e}")
         emit('webrtc_frame_dropping_result', {'error': str(e)}, room=request.sid)
+
+# New Socket.IO handlers for enhanced dashboard functionality
+@socketio.on('start_scan')
+def handle_start_scan(data):
+    """Handle scan start request from dashboard"""
+    agent_id = data.get('agent_id')
+    if not agent_id:
+        emit('scan_started', {'error': 'Agent ID required'})
+        return
+    
+    try:
+        # Emit scan started event
+        emit('scan_started', {'agent_id': agent_id, 'status': 'started'})
+        print(f"Scan started for agent {agent_id}")
+        
+        # Simulate scan completion after a delay (in production, this would be actual scanning)
+        import threading
+        def simulate_scan():
+            import time
+            time.sleep(3)  # Simulate 3 second scan
+            emit('scan_completed', {
+                'agent_id': agent_id, 
+                'status': 'completed',
+                'results': {'vulnerabilities': 2, 'warnings': 1, 'info': 3}
+            })
+            print(f"Scan completed for agent {agent_id}")
+        
+        threading.Thread(target=simulate_scan, daemon=True).start()
+        
+    except Exception as e:
+        print(f"Error starting scan for agent {agent_id}: {e}")
+        emit('scan_started', {'error': str(e)})
+
+@socketio.on('get_agents')
+def handle_get_agents():
+    """Handle agent list request from dashboard"""
+    try:
+        # Get list of connected agents
+        agents = []
+        for agent_id in WEBRTC_PEER_CONNECTIONS:
+            agents.append({
+                'id': agent_id,
+                'status': 'connected',
+                'connection_type': 'webrtc',
+                'last_seen': datetime.datetime.now().isoformat()
+            })
+        
+        # Also include agents with active streams
+        for agent_id in VIDEO_FRAMES_H264:
+            if not any(agent['id'] == agent_id for agent in agents):
+                agents.append({
+                    'id': agent_id,
+                    'status': 'streaming',
+                    'connection_type': 'socketio',
+                    'last_seen': datetime.datetime.now().isoformat()
+                })
+        
+        emit('agents_list', {'agents': agents, 'count': len(agents)})
+        print(f"Agent list sent: {len(agents)} agents")
+        
+    except Exception as e:
+        print(f"Error getting agent list: {e}")
+        emit('agents_list', {'error': str(e)})
+
+@socketio.on('export_data')
+def handle_export_data(data):
+    """Handle data export request from dashboard"""
+    try:
+        filters = data.get('filters', {})
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"dashboard_export_{timestamp}.json"
+        
+        # Collect export data based on filters
+        export_data = {
+            'timestamp': datetime.datetime.now().isoformat(),
+            'filters': filters,
+            'agents': [],
+            'streams': [],
+            'errors': [],
+            'metrics': {}
+        }
+        
+        # Add agent data
+        for agent_id in WEBRTC_PEER_CONNECTIONS:
+            export_data['agents'].append({
+                'id': agent_id,
+                'connection_type': 'webrtc',
+                'status': 'connected'
+            })
+        
+        # Add stream data
+        for agent_id in VIDEO_FRAMES_H264:
+            export_data['streams'].append({
+                'agent_id': agent_id,
+                'type': 'screen',
+                'status': 'active'
+            })
+        
+        for agent_id in CAMERA_FRAMES_H264:
+            export_data['streams'].append({
+                'agent_id': agent_id,
+                'type': 'camera',
+                'status': 'active'
+            })
+        
+        # Add metrics
+        export_data['metrics'] = {
+            'total_agents': len(export_data['agents']),
+            'total_streams': len(export_data['streams']),
+            'webrtc_connections': len(WEBRTC_PEER_CONNECTIONS)
+        }
+        
+        # Emit export completed event
+        emit('data_exported', {
+            'filename': filename,
+            'data': export_data,
+            'status': 'success'
+        })
+        
+        print(f"Data exported successfully: {filename}")
+        
+    except Exception as e:
+        print(f"Error exporting data: {e}")
+        emit('data_exported', {'error': str(e)})
+
+@socketio.on('update_error_counts')
+def handle_update_error_counts():
+    """Handle error counts update request from dashboard"""
+    try:
+        # Count different types of errors/statuses
+        total_errors = 0
+        critical_errors = 0
+        warning_errors = 0
+        info_errors = 0
+        
+        # This would typically analyze actual agent logs and status
+        # For now, using placeholder logic based on connection status
+        for agent_id in WEBRTC_PEER_CONNECTIONS:
+            # Simulate some error conditions
+            if agent_id in WEBRTC_STREAMS:
+                total_errors += 1
+                if len(WEBRTC_STREAMS[agent_id]) < 2:  # Missing some stream types
+                    warning_errors += 1
+                else:
+                    info_errors += 1
+        
+        # Add some simulated critical errors for demo
+        if len(WEBRTC_PEER_CONNECTIONS) == 0:
+            critical_errors += 1
+            total_errors += 1
+        
+        error_counts = {
+            'total': total_errors,
+            'critical': critical_errors,
+            'warning': warning_errors,
+            'info': info_errors
+        }
+        
+        emit('error_counts_updated', {'counts': error_counts})
+        print(f"Error counts updated: {error_counts}")
+        
+    except Exception as e:
+        print(f"Error updating error counts: {e}")
+        emit('error_counts_updated', {'error': str(e)})
 
 # WebRTC scaffolding code removed - not currently active
 
