@@ -1,48 +1,41 @@
-eventlet
-requests
-urllib3
-mss
-numpy
-opencv-python
-pyaudio
-pynput
-pygame
-websockets
-speechrecognition
-psutil
-pillow
-pyautogui
-python-socketio
-socketio
-win32api
-win32con
-win32clipboard
-win32security
-win32process
-win32event
-ctypes
-wintypes
-winreg
-win32com.client
-pythoncom
-flask
-flask-socketio
-shutil
-gc
-traceback
-hashlib
-ssl
-datetime
-collections
-wmi
-win32gui
-dxcam
-turbojpeg
-lz4
-xxhash
-msgpack
-uvloop
-cryptography
+# Core WebRTC and Networking Dependencies
+aiortc>=0.9.0                    # WebRTC implementation for Python
+aiohttp>=3.8.0                   # Async HTTP client/server
+python-socketio[client]>=5.7.0   # Socket.IO client for real-time communication
+websockets>=10.0                  # WebSocket support
+
+# Video and Audio Processing
+opencv-python>=4.5.0             # Computer vision and video processing
+mss>=6.1.0                       # Fast screen capture
+PyAudio>=0.2.11                  # Audio capture and playback
+numpy>=1.21.0                    # Numerical computing
+Pillow>=8.3.0                    # Image processing
+
+# System Integration and Control
+pyautogui>=0.9.53                # GUI automation
+pynput>=1.7.0                    # Input monitoring and control
+keyboard>=0.13.5                 # Keyboard input handling
+psutil>=5.8.0                    # System and process utilities
+
+# Additional Features
+dxcam>=1.0.0                     # DirectX screen capture (Windows)
+asyncio-mqtt>=0.11.0             # MQTT messaging support
+requests>=2.25.0                 # HTTP requests library
+cryptography>=3.4.0              # Cryptographic functions
+
+# Windows-specific Dependencies
+pywin32>=300                     # Windows API access
+wmi>=1.5.1                       # Windows Management Instrumentation
+
+# Optional Dependencies (for enhanced functionality)
+# eventlet>=0.33.0               # Event-driven networking (uncomment if needed)
+# pygame>=2.0.0                  # Game development (uncomment if needed)
+# speech_recognition>=3.8.0      # Speech recognition (uncomment if needed)
+
+# Development and Testing (optional)
+# pytest>=6.0.0                 # Testing framework
+# black>=21.0.0                  # Code formatter
+# flake8>=3.8.0                  # Linting
 
 
 

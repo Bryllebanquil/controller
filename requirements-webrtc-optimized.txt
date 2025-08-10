@@ -1,0 +1,47 @@
+# WebRTC Optimized Requirements for Smooth, Low-Latency Streaming
+# Install with: pip install -r requirements-webrtc-optimized.txt
+
+# === CORE WEBRTC (REQUIRED for sub-second latency) ===
+aiortc>=0.9.0                    # Python WebRTC implementation
+aiohttp>=3.8.0                   # Async HTTP for WebRTC signaling
+python-socketio[client]>=5.7.0   # Real-time communication
+
+# === MEDIA CAPTURE & PROCESSING (CRITICAL for smooth streaming) ===
+mss>=6.1.0                       # Fast screen capture (Windows)
+opencv-python>=4.5.0             # Video processing and encoding
+PyAudio>=0.2.11                  # Audio capture and processing
+numpy>=1.21.0                    # Fast array operations for video
+Pillow>=8.3.0                    # Image processing
+
+# === ALTERNATIVE CAPTURE BACKENDS (for compatibility) ===
+dxcam>=1.0.0                     # Alternative screen capture
+pyautogui>=0.9.53               # Fallback screen capture
+
+# === PERFORMANCE OPTIMIZATION ===
+psutil>=5.8.0                    # System monitoring
+asyncio-mqtt>=0.11.0             # Async message queuing
+uvloop>=0.17.0                   # Fast event loop (if available)
+
+# === INPUT CONTROL (for remote control) ===
+pynput>=1.7.0                    # Keyboard/mouse input
+keyboard>=0.13.5                 # Alternative input method
+
+# === NETWORKING & SECURITY ===
+websockets>=10.0                 # WebSocket support
+requests>=2.25.0                 # HTTP requests
+cryptography>=3.4.0              # Encryption
+
+# === WINDOWS-SPECIFIC ===
+pywin32>=300                     # Windows API access
+wmi>=1.5.1                       # Windows Management Instrumentation
+
+# === OPTIONAL: HARDWARE ACCELERATION ===
+# Uncomment these for GPU acceleration (better performance):
+# nvidia-ml-py3>=7.352.0         # NVIDIA GPU monitoring
+# GPUtil>=1.4.0                  # GPU utilization
+# opencv-python-headless>=4.5.0  # Headless OpenCV (faster)
+
+# === DEVELOPMENT & DEBUGGING ===
+# Uncomment for development:
+# pytest>=6.0.0                  # Testing
+# black>=21.0.0                  # Code formatting

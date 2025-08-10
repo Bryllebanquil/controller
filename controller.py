@@ -15,7 +15,19 @@ import hmac
 import secrets
 import os
 import base64
-# aiortc WebRTC imports removed - not currently active
+
+# WebRTC imports for SFU functionality
+try:
+    import asyncio
+    import aiortc
+    from aiortc import RTCPeerConnection, RTCSessionDescription, MediaStreamTrack
+    from aiortc.contrib.media import MediaPlayer, MediaRecorder
+    from aiortc.mediastreams import MediaStreamError
+    WEBRTC_AVAILABLE = True
+    print("WebRTC (aiortc) support enabled")
+except ImportError:
+    WEBRTC_AVAILABLE = False
+    print("WebRTC (aiortc) not available - falling back to Socket.IO streaming")
 
 # Configuration Management
 class Config:
@@ -44,6 +56,76 @@ class Config:
 app = Flask(__name__)
 app.config['SECRET_KEY'] = Config.SECRET_KEY or secrets.token_hex(32)  # Use config or generate secure random key
 socketio = SocketIO(app, async_mode='eventlet')
+
+# WebRTC Configuration
+WEBRTC_CONFIG = {
+    'enabled': WEBRTC_AVAILABLE,
+    'ice_servers': [
+        {'urls': 'stun:stun.l.google.com:19302'},
+        {'urls': 'stun:stun1.l.google.com:19302'},
+        {'urls': 'stun:stun2.l.google.com:19302'},
+        {'urls': 'stun:stun3.l.google.com:19302'},
+        {'urls': 'stun:stun4.l.google.com:19302'}
+    ],
+    'codecs': {
+        'video': ['VP8', 'VP9', 'H.264'],
+        'audio': ['Opus', 'PCM']
+    },
+    'simulcast': True,
+    'svc': True,
+    'bandwidth_estimation': True,
+    'adaptive_bitrate': True,
+    'frame_dropping': True,
+    'quality_levels': {
+        'low': {'width': 640, 'height': 480, 'fps': 15, 'bitrate': 500000},
+        'medium': {'width': 1280, 'height': 720, 'fps': 30, 'bitrate': 2000000},
+        'high': {'width': 1920, 'height': 1080, 'fps': 30, 'bitrate': 5000000},
+        'auto': {'adaptive': True, 'min_bitrate': 500000, 'max_bitrate': 10000000}
+    },
+    'performance_tuning': {
+        'keyframe_interval': 2,  # seconds
+        'disable_b_frames': True,
+        'ultra_low_latency': True,
+        'hardware_acceleration': True,
+        'gop_size': 60,  # frames at 30fps = 2 seconds
+        'max_bitrate_variance': 0.3  # 30% variance allowed
+    },
+    'monitoring': {
+        'connection_quality_metrics': True,
+        'automatic_reconnection': True,
+        'detailed_logging': True,
+        'stats_interval': 1000,  # ms
+        'quality_thresholds': {
+            'min_bitrate': 100000,  # 100 kbps
+            'max_latency': 1000,    # 1 second
+            'min_fps': 15
+        }
+    }
+}
+
+# WebRTC Global State
+WEBRTC_PEER_CONNECTIONS = {}  # agent_id -> RTCPeerConnection
+WEBRTC_STREAMS = {}  # agent_id -> {screen, audio, camera} streams
+WEBRTC_VIEWERS = {}  # viewer_id -> {agent_id, pc, streams}
+
+# Production Scale Configuration
+PRODUCTION_SCALE = {
+    'current_implementation': 'aiortc_sfu',  # Current: aiortc-based SFU
+    'target_implementation': 'mediasoup',    # Target: mediasoup for production scale
+    'migration_phase': 'planning',           # Current phase: planning
+    'scalability_limits': {
+        'aiorttc_max_viewers': 50,           # aiortc suitable for smaller setups
+        'mediasoup_max_viewers': 1000,       # mediasoup for production scale
+        'concurrent_agents': 100,            # Maximum concurrent agents
+        'bandwidth_per_agent': 10000000      # 10 Mbps per agent
+    },
+    'performance_targets': {
+        'target_latency': 100,               # 100ms target latency
+        'target_bitrate': 5000000,           # 5 Mbps target bitrate
+        'target_fps': 30,                    # 30 FPS target
+        'max_packet_loss': 0.01              # 1% max packet loss
+    }
+}
 
 # Security Configuration and Password Management
 def generate_salt():
@@ -115,6 +197,535 @@ def create_secure_password_hash(password):
 
 # Generate secure hash for admin password
 ADMIN_PASSWORD_HASH, ADMIN_PASSWORD_SALT = create_secure_password_hash(Config.ADMIN_PASSWORD)
+
+# WebRTC Utility Functions
+def create_webrtc_peer_connection(agent_id):
+    """Create a WebRTC peer connection for an agent"""
+    if not WEBRTC_AVAILABLE:
+        return None
+    
+    try:
+        pc = RTCPeerConnection()
+        
+        # Configure ICE servers
+        for ice_server in WEBRTC_CONFIG['ice_servers']:
+            pc.addIceServer(ice_server)
+        
+        # Store the peer connection
+        WEBRTC_PEER_CONNECTIONS[agent_id] = pc
+        
+        # Set up event handlers
+        @pc.on("connectionstatechange")
+        async def on_connectionstatechange():
+            print(f"WebRTC connection state for {agent_id}: {pc.connectionState}")
+            if pc.connectionState == "failed":
+                await pc.close()
+                if agent_id in WEBRTC_PEER_CONNECTIONS:
+                    del WEBRTC_PEER_CONNECTIONS[agent_id]
+        
+        @pc.on("iceconnectionstatechange")
+        async def on_iceconnectionstatechange():
+            print(f"ICE connection state for {agent_id}: {pc.iceConnectionState}")
+        
+        @pc.on("track")
+        async def on_track(track):
+            print(f"Received {track.kind} track from {agent_id}")
+            if agent_id not in WEBRTC_STREAMS:
+                WEBRTC_STREAMS[agent_id] = {}
+            WEBRTC_STREAMS[agent_id][track.kind] = track
+            
+            # Forward track to all viewers of this agent
+            for viewer_id, viewer_data in WEBRTC_VIEWERS.items():
+                if viewer_data['agent_id'] == agent_id:
+                    try:
+                        sender = viewer_data['pc'].addTrack(track)
+                        viewer_data['streams'][track.kind] = sender
+                    except Exception as e:
+                        print(f"Error forwarding track to viewer {viewer_id}: {e}")
+        
+        return pc
+    except Exception as e:
+        print(f"Error creating WebRTC peer connection for {agent_id}: {e}")
+        return None
+
+def close_webrtc_connection(agent_id):
+    """Close WebRTC connection for an agent"""
+    if agent_id in WEBRTC_PEER_CONNECTIONS:
+        try:
+            pc = WEBRTC_PEER_CONNECTIONS[agent_id]
+            asyncio.create_task(pc.close())
+            del WEBRTC_PEER_CONNECTIONS[agent_id]
+        except Exception as e:
+            print(f"Error closing WebRTC connection for {agent_id}: {e}")
+    
+    if agent_id in WEBRTC_STREAMS:
+        del WEBRTC_STREAMS[agent_id]
+
+def get_webrtc_stats(agent_id):
+    """Get WebRTC statistics for an agent"""
+    if not WEBRTC_AVAILABLE or agent_id not in WEBRTC_PEER_CONNECTIONS:
+        return None
+    
+    try:
+        pc = WEBRTC_PEER_CONNECTIONS[agent_id]
+        stats = {
+            'connection_state': pc.connectionState,
+            'ice_connection_state': pc.iceConnectionState,
+            'ice_gathering_state': pc.iceGatheringState,
+            'signaling_state': pc.signalingState,
+            'local_description': pc.localDescription.sdp if pc.localDescription else None,
+            'remote_description': pc.remoteDescription.sdp if pc.remoteDescription else None
+        }
+        return stats
+    except Exception as e:
+        print(f"Error getting WebRTC stats for {agent_id}: {e}")
+        return None
+
+# Advanced WebRTC Performance Optimization Functions
+def estimate_bandwidth(agent_id):
+    """Estimate available bandwidth for an agent connection"""
+    if not WEBRTC_AVAILABLE or agent_id not in WEBRTC_PEER_CONNECTIONS:
+        return None
+    
+    try:
+        pc = WEBRTC_PEER_CONNECTIONS[agent_id]
+        # Get RTCStatsReport for bandwidth estimation
+        stats_report = asyncio.run(pc.getStats())
+        
+        bandwidth_stats = {
+            'available_bandwidth': 0,
+            'current_bitrate': 0,
+            'packets_lost': 0,
+            'rtt': 0,
+            'jitter': 0
+        }
+        
+        for stat in stats_report.values():
+            if hasattr(stat, 'type'):
+                if stat.type == 'inbound-rtp' and stat.mediaType == 'video':
+                    bandwidth_stats['current_bitrate'] = getattr(stat, 'bytesReceived', 0) * 8 / 1000  # kbps
+                    bandwidth_stats['packets_lost'] = getattr(stat, 'packetsLost', 0)
+                elif stat.type == 'candidate-pair' and stat.state == 'succeeded':
+                    bandwidth_stats['rtt'] = getattr(stat, 'currentRoundTripTime', 0) * 1000  # ms
+                    bandwidth_stats['jitter'] = getattr(stat, 'jitter', 0) * 1000  # ms
+        
+        # Estimate available bandwidth based on current performance
+        if bandwidth_stats['packets_lost'] > 0:
+            # Reduce bitrate if packet loss detected
+            bandwidth_stats['available_bandwidth'] = max(
+                bandwidth_stats['current_bitrate'] * 0.8,
+                WEBRTC_CONFIG['quality_levels']['low']['bitrate']
+            )
+        else:
+            # Increase bitrate if no packet loss
+            bandwidth_stats['available_bandwidth'] = min(
+                bandwidth_stats['current_bitrate'] * 1.2,
+                WEBRTC_CONFIG['quality_levels']['high']['bitrate']
+            )
+        
+        return bandwidth_stats
+        
+    except Exception as e:
+        print(f"Error estimating bandwidth for {agent_id}: {e}")
+        return None
+
+def adaptive_bitrate_control(agent_id, current_quality='auto'):
+    """Implement adaptive bitrate control based on network conditions"""
+    if not WEBRTC_AVAILABLE or agent_id not in WEBRTC_PEER_CONNECTIONS:
+        return None
+    
+    try:
+        bandwidth_stats = estimate_bandwidth(agent_id)
+        if not bandwidth_stats:
+            return None
+        
+        # Determine optimal quality level based on bandwidth
+        available_bandwidth = bandwidth_stats['available_bandwidth']
+        current_bitrate = bandwidth_stats['current_bitrate']
+        
+        # Quality selection logic
+        if available_bandwidth >= WEBRTC_CONFIG['quality_levels']['high']['bitrate']:
+            optimal_quality = 'high'
+        elif available_bandwidth >= WEBRTC_CONFIG['quality_levels']['medium']['bitrate']:
+            optimal_quality = 'medium'
+        else:
+            optimal_quality = 'low'
+        
+        # Check if quality change is needed
+        if current_quality != optimal_quality:
+            print(f"Adaptive bitrate: Changing quality from {current_quality} to {optimal_quality}")
+            print(f"Available bandwidth: {available_bandwidth:.0f} kbps, Current: {current_bitrate:.0f} kbps")
+            
+            # Emit quality change command to agent
+            socketio.emit('webrtc_quality_change', {
+                'agent_id': agent_id,
+                'quality': optimal_quality,
+                'bandwidth_stats': bandwidth_stats
+            })
+            
+            return optimal_quality
+        
+        return current_quality
+        
+    except Exception as e:
+        print(f"Error in adaptive bitrate control for {agent_id}: {e}")
+        return None
+
+def implement_frame_dropping(agent_id, load_threshold=0.8):
+    """Implement intelligent frame dropping under high load"""
+    if not WEBRTC_AVAILABLE or agent_id not in WEBRTC_PEER_CONNECTIONS:
+        return False
+    
+    try:
+        # Get current system load
+        import psutil
+        cpu_percent = psutil.cpu_percent(interval=1)
+        memory_percent = psutil.virtual_memory().percent
+        
+        # Check if we're under high load
+        if cpu_percent > (load_threshold * 100) or memory_percent > (load_threshold * 100):
+            print(f"High load detected: CPU {cpu_percent:.1f}%, Memory {memory_percent:.1f}%")
+            
+            # Emit frame dropping command to agent
+            socketio.emit('webrtc_frame_dropping', {
+                'agent_id': agent_id,
+                'enabled': True,
+                'drop_ratio': 0.3,  # Drop 30% of frames
+                'priority': 'keyframes_only'  # Keep keyframes, drop some intermediate frames
+            })
+            
+            return True
+        
+        # Normal load - disable frame dropping
+        socketio.emit('webrtc_frame_dropping', {
+            'agent_id': agent_id,
+            'enabled': False
+        })
+        
+        return False
+        
+    except ImportError:
+        print("psutil not available for load monitoring")
+        return False
+    except Exception as e:
+        print(f"Error implementing frame dropping for {agent_id}: {e}")
+        return False
+
+def monitor_connection_quality(agent_id):
+    """Monitor and log connection quality metrics"""
+    if not WEBRTC_AVAILABLE or agent_id not in WEBRTC_PEER_CONNECTIONS:
+        return None
+    
+    try:
+        bandwidth_stats = estimate_bandwidth(agent_id)
+        if not bandwidth_stats:
+            return None
+        
+        # Quality assessment
+        quality_score = 100
+        quality_issues = []
+        
+        # Check bitrate
+        if bandwidth_stats['current_bitrate'] < WEBRTC_CONFIG['monitoring']['quality_thresholds']['min_bitrate']:
+            quality_score -= 30
+            quality_issues.append('Low bitrate')
+        
+        # Check latency
+        if bandwidth_stats['rtt'] > WEBRTC_CONFIG['monitoring']['quality_thresholds']['max_latency']:
+            quality_score -= 25
+            quality_issues.append('High latency')
+        
+        # Check packet loss
+        if bandwidth_stats['packets_lost'] > 0:
+            quality_score -= 20
+            quality_issues.append('Packet loss detected')
+        
+        # Check jitter
+        if bandwidth_stats['jitter'] > 50:  # 50ms threshold
+            quality_score -= 15
+            quality_issues.append('High jitter')
+        
+        # Log quality metrics
+        if WEBRTC_CONFIG['monitoring']['detailed_logging']:
+            print(f"Connection Quality for {agent_id}:")
+            print(f"  Quality Score: {quality_score}/100")
+            print(f"  Current Bitrate: {bandwidth_stats['current_bitrate']:.0f} kbps")
+            print(f"  RTT: {bandwidth_stats['rtt']:.1f} ms")
+            print(f"  Jitter: {bandwidth_stats['jitter']:.1f} ms")
+            print(f"  Packets Lost: {bandwidth_stats['packets_lost']}")
+            if quality_issues:
+                print(f"  Issues: {', '.join(quality_issues)}")
+        
+        return {
+            'quality_score': quality_score,
+            'bandwidth_stats': bandwidth_stats,
+            'quality_issues': quality_issues,
+            'timestamp': datetime.datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        print(f"Error monitoring connection quality for {agent_id}: {e}")
+        return None
+
+def automatic_reconnection_logic(agent_id):
+    """Implement automatic reconnection logic for failed connections"""
+    if not WEBRTC_AVAILABLE:
+        return False
+    
+    try:
+        if agent_id in WEBRTC_PEER_CONNECTIONS:
+            pc = WEBRTC_PEER_CONNECTIONS[agent_id]
+            
+            # Check connection state
+            if pc.connectionState == 'failed' or pc.connectionState == 'disconnected':
+                print(f"WebRTC connection failed for {agent_id}, attempting reconnection...")
+                
+                # Close failed connection
+                asyncio.create_task(pc.close())
+                del WEBRTC_PEER_CONNECTIONS[agent_id]
+                
+                # Wait before reconnection attempt
+                import time
+                time.sleep(2)
+                
+                # Attempt reconnection
+                new_pc = create_webrtc_peer_connection(agent_id)
+                if new_pc:
+                    print(f"Reconnection successful for {agent_id}")
+                    return True
+                else:
+                    print(f"Reconnection failed for {agent_id}")
+                    return False
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error in automatic reconnection for {agent_id}: {e}")
+        return False
+
+# Production Scale Monitoring and Migration Functions
+def assess_production_readiness():
+    """Assess current system's readiness for production scale"""
+    try:
+        current_agents = len(WEBRTC_PEER_CONNECTIONS)
+        current_viewers = len(WEBRTC_VIEWERS)
+        total_connections = current_agents + current_viewers
+        
+        readiness_report = {
+            'current_implementation': PRODUCTION_SCALE['current_implementation'],
+            'target_implementation': PRODUCTION_SCALE['target_implementation'],
+            'migration_phase': PRODUCTION_SCALE['migration_phase'],
+            'current_usage': {
+                'agents': current_agents,
+                'viewers': current_viewers,
+                'total_connections': total_connections
+            },
+            'scalability_assessment': {
+                'aiortc_limit_reached': current_viewers >= PRODUCTION_SCALE['scalability_limits']['aiorttc_max_viewers'],
+                'production_ready': current_viewers < PRODUCTION_SCALE['scalability_limits']['aiorttc_max_viewers'],
+                'recommended_action': 'migrate_to_mediasoup' if current_viewers >= PRODUCTION_SCALE['scalability_limits']['aiorttc_max_viewers'] else 'continue_with_aiortc'
+            },
+            'performance_metrics': {},
+            'recommendations': []
+        }
+        
+        # Performance assessment
+        if current_agents > 0:
+            total_latency = 0
+            total_bitrate = 0
+            total_fps = 0
+            agent_count = 0
+            
+            for agent_id in WEBRTC_PEER_CONNECTIONS:
+                quality_data = monitor_connection_quality(agent_id)
+                if quality_data:
+                    total_latency += quality_data['bandwidth_stats']['rtt']
+                    total_bitrate += quality_data['bandwidth_stats']['current_bitrate']
+                    agent_count += 1
+            
+            if agent_count > 0:
+                readiness_report['performance_metrics'] = {
+                    'average_latency': total_latency / agent_count,
+                    'average_bitrate': total_bitrate / agent_count,
+                    'latency_target_met': (total_latency / agent_count) <= PRODUCTION_SCALE['performance_targets']['target_latency'],
+                    'bitrate_target_met': (total_bitrate / agent_count) >= PRODUCTION_SCALE['performance_targets']['target_bitrate']
+                }
+        
+        # Generate recommendations
+        if readiness_report['scalability_assessment']['aiortc_limit_reached']:
+            readiness_report['recommendations'].append('Immediate migration to mediasoup required for production scale')
+        elif current_viewers > (PRODUCTION_SCALE['scalability_limits']['aiorttc_max_viewers'] * 0.8):
+            readiness_report['recommendations'].append('Approaching aiortc limits, plan mediasoup migration')
+        
+        if readiness_report['performance_metrics'].get('latency_target_met') == False:
+            readiness_report['recommendations'].append('Optimize network configuration to meet latency targets')
+        
+        if readiness_report['performance_metrics'].get('bitrate_target_met') == False:
+            readiness_report['recommendations'].append('Check bandwidth allocation and codec settings')
+        
+        return readiness_report
+        
+    except Exception as e:
+        print(f"Error assessing production readiness: {e}")
+        return None
+
+def generate_mediasoup_migration_plan():
+    """Generate detailed migration plan from aiortc to mediasoup"""
+    try:
+        migration_plan = {
+            'current_state': {
+                'implementation': 'aiortc_sfu',
+                'max_viewers': PRODUCTION_SCALE['scalability_limits']['aiorttc_max_viewers'],
+                'technology': 'Python + aiortc'
+            },
+            'target_state': {
+                'implementation': 'mediasoup_sfu',
+                'max_viewers': PRODUCTION_SCALE['scalability_limits']['mediasoup_max_viewers'],
+                'technology': 'Node.js + mediasoup'
+            },
+            'migration_phases': [
+                {
+                    'phase': 1,
+                    'name': 'Parallel Implementation',
+                    'description': 'Implement mediasoup alongside existing aiortc',
+                    'duration': '2-3 weeks',
+                    'tasks': [
+                        'Set up Node.js mediasoup server',
+                        'Implement mediasoup SFU logic',
+                        'Create migration endpoints',
+                        'Test with subset of viewers'
+                    ]
+                },
+                {
+                    'phase': 2,
+                    'name': 'Gradual Migration',
+                    'description': 'Migrate viewers from aiortc to mediasoup',
+                    'duration': '1-2 weeks',
+                    'tasks': [
+                        'Implement viewer routing logic',
+                        'Add load balancing between aiortc and mediasoup',
+                        'Monitor performance during migration',
+                        'Handle fallback scenarios'
+                    ]
+                },
+                {
+                    'phase': 3,
+                    'name': 'Full Migration',
+                    'description': 'Complete migration to mediasoup',
+                    'duration': '1 week',
+                    'tasks': [
+                        'Migrate all remaining viewers',
+                        'Decommission aiortc implementation',
+                        'Performance validation',
+                        'Documentation updates'
+                    ]
+                }
+            ],
+            'technical_requirements': [
+                'Node.js 18+ runtime',
+                'mediasoup library installation',
+                'Redis for session management',
+                'Load balancer configuration',
+                'Monitoring and alerting setup'
+            ],
+            'estimated_effort': '4-6 weeks',
+            'risk_assessment': 'Medium - requires careful testing and rollback plan'
+        }
+        
+        return migration_plan
+        
+    except Exception as e:
+        print(f"Error generating mediasoup migration plan: {e}")
+        return None
+
+def enhanced_webrtc_monitoring():
+    """Enhanced WebRTC monitoring with production-scale metrics"""
+    try:
+        monitoring_data = {
+            'timestamp': datetime.datetime.now().isoformat(),
+            'system_overview': {
+                'total_agents': len(WEBRTC_PEER_CONNECTIONS),
+                'total_viewers': len(WEBRTC_VIEWERS),
+                'total_connections': len(WEBRTC_PEER_CONNECTIONS) + len(WEBRTC_VIEWERS),
+                'system_load': {}
+            },
+            'performance_metrics': {},
+            'quality_metrics': {},
+            'scalability_metrics': {},
+            'alerts': []
+        }
+        
+        # System load monitoring
+        try:
+            import psutil
+            monitoring_data['system_overview']['system_load'] = {
+                'cpu_percent': psutil.cpu_percent(interval=1),
+                'memory_percent': psutil.virtual_memory().percent,
+                'network_io': psutil.net_io_counters()._asdict()
+            }
+        except ImportError:
+            monitoring_data['system_overview']['system_load'] = {'error': 'psutil not available'}
+        
+        # Performance metrics per agent
+        for agent_id in WEBRTC_PEER_CONNECTIONS:
+            quality_data = monitor_connection_quality(agent_id)
+            if quality_data:
+                monitoring_data['performance_metrics'][agent_id] = quality_data
+        
+        # Quality assessment
+        if monitoring_data['performance_metrics']:
+            total_quality_score = sum(data['quality_score'] for data in monitoring_data['performance_metrics'].values())
+            avg_quality_score = total_quality_score / len(monitoring_data['performance_metrics'])
+            
+            monitoring_data['quality_metrics'] = {
+                'average_quality_score': avg_quality_score,
+                'quality_distribution': {
+                    'excellent': len([s for s in monitoring_data['performance_metrics'].values() if s['quality_score'] >= 90]),
+                    'good': len([s for s in monitoring_data['performance_metrics'].values() if 70 <= s['quality_score'] < 90]),
+                    'fair': len([s for s in monitoring_data['performance_metrics'].values() if 50 <= s['quality_score'] < 70]),
+                    'poor': len([s for s in monitoring_data['performance_metrics'].values() if s['quality_score'] < 50])
+                }
+            }
+        
+        # Scalability assessment
+        current_viewers = len(WEBRTC_VIEWERS)
+        aiortc_limit = PRODUCTION_SCALE['scalability_limits']['aiorttc_max_viewers']
+        
+        monitoring_data['scalability_metrics'] = {
+            'current_viewer_count': current_viewers,
+            'aiortc_limit': aiortc_limit,
+            'utilization_percentage': (current_viewers / aiortc_limit) * 100,
+            'approaching_limit': current_viewers >= (aiortc_limit * 0.8),
+            'limit_reached': current_viewers >= aiortc_limit
+        }
+        
+        # Generate alerts
+        if monitoring_data['scalability_metrics']['limit_reached']:
+            monitoring_data['alerts'].append({
+                'level': 'CRITICAL',
+                'message': 'aiortc viewer limit reached - immediate migration required',
+                'action': 'migrate_to_mediasoup'
+            })
+        elif monitoring_data['scalability_metrics']['approaching_limit']:
+            monitoring_data['alerts'].append({
+                'level': 'WARNING',
+                'message': 'Approaching aiortc viewer limit - plan migration',
+                'action': 'plan_migration'
+            })
+        
+        # Quality alerts
+        if monitoring_data['quality_metrics'].get('average_quality_score', 100) < 70:
+            monitoring_data['alerts'].append({
+                'level': 'WARNING',
+                'message': 'Average connection quality below threshold',
+                'action': 'investigate_network_issues'
+            })
+        
+        return monitoring_data
+        
+    except Exception as e:
+        print(f"Error in enhanced WebRTC monitoring: {e}")
+        return None
 
 # Session management and security tracking
 LOGIN_ATTEMPTS = {}  # Track failed login attempts by IP
@@ -1080,6 +1691,14 @@ DASHBOARD_HTML = r'''
                     </div>
 
                     <div class="control-group">
+                        <div class="control-header">WebRTC Commands</div>
+                        <button class="btn btn-success" onclick="startWebRTCCommand()">Start WebRTC</button>
+                        <button class="btn btn-danger" onclick="stopWebRTCCommand()">Stop WebRTC</button>
+                        <button class="btn" onclick="getWebRTCStatsCommand()">Get Stats</button>
+                        <button class="btn" onclick="setWebRTCQuality()">Set Quality</button>
+                    </div>
+
+                    <div class="control-group">
                         <div class="control-header">Live Keyboard</div>
                         <div class="input-group">
                             <label class="input-label">Press keys here to control the agent directly</label>
@@ -1135,6 +1754,22 @@ DASHBOARD_HTML = r'''
             </div>
             <video id="h264-video" width="640" height="360" controls autoplay muted style="background:#000; width:100%; max-width:100%; border-radius:10px;"></video>
             <div id="video-status" style="color:#00d4ff; margin-top:10px;"></div>
+        </div>
+
+        <!-- WebRTC Stream Panel -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-icon">🌐</div>
+                <div class="panel-title">WebRTC Stream (Low Latency)</div>
+            </div>
+            <div class="webrtc-controls">
+                <button class="btn btn-success" onclick="startWebRTCStream()">Start WebRTC</button>
+                <button class="btn btn-danger" onclick="stopWebRTCStream()">Stop WebRTC</button>
+                <button class="btn" onclick="getWebRTCStats()">Get Stats</button>
+            </div>
+            <video id="webrtc-video" width="640" height="360" controls autoplay muted style="background:#000; width:100%; max-width:100%; border-radius:10px; margin-top:10px;"></video>
+            <div id="webrtc-status" style="color:#00d4ff; margin-top:10px;"></div>
+            <div id="webrtc-stats" style="color:#a0a0a0; margin-top:10px; font-size:0.9rem;"></div>
         </div>
         <!-- Output Terminal -->
         <div class="panel">
@@ -1720,6 +2355,11 @@ DASHBOARD_HTML = r'''
         let mseReady = false;
         let videoAgentId = null;
 
+        // --- WebRTC Variables ---
+        let webrtcPeerConnection = null;
+        let webrtcStream = null;
+        let webrtcAgentId = null;
+
         function setupMSE() {
             videoElement = document.getElementById('h264-video');
             if (!window.MediaSource) {
@@ -1768,6 +2408,235 @@ DASHBOARD_HTML = r'''
         }, 100);
 
         document.addEventListener('DOMContentLoaded', setupMSE);
+
+        // --- WebRTC Functions ---
+        function startWebRTCStream() {
+            if (!selectedAgentId) {
+                showStatus('Please select an agent first.', 'error');
+                return;
+            }
+
+            if (webrtcPeerConnection) {
+                stopWebRTCStream();
+            }
+
+            webrtcAgentId = selectedAgentId;
+            
+            // Create RTCPeerConnection
+            const configuration = {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' }
+                ]
+            };
+
+            webrtcPeerConnection = new RTCPeerConnection(configuration);
+            
+            // Set up event handlers
+            webrtcPeerConnection.ontrack = function(event) {
+                console.log('WebRTC track received:', event.track.kind);
+                if (event.track.kind === 'video') {
+                    document.getElementById('webrtc-video').srcObject = event.streams[0];
+                }
+                webrtcStream = event.streams[0];
+            };
+
+            webrtcPeerConnection.onicecandidate = function(event) {
+                if (event.candidate) {
+                    socket.emit('webrtc_ice_candidate', {
+                        agent_id: webrtcAgentId,
+                        candidate: event.candidate
+                    });
+                }
+            };
+
+            webrtcPeerConnection.onconnectionstatechange = function() {
+                console.log('WebRTC connection state:', webrtcPeerConnection.connectionState);
+                updateWebRTCStatus(webrtcPeerConnection.connectionState);
+            };
+
+            // Create offer
+            webrtcPeerConnection.createOffer()
+                .then(offer => webrtcPeerConnection.setLocalDescription(offer))
+                .then(() => {
+                    // Send offer to agent via controller
+                    socket.emit('webrtc_offer', {
+                        agent_id: webrtcAgentId,
+                        offer: webrtcPeerConnection.localDescription.sdp
+                    });
+                    
+                    updateWebRTCStatus('Creating offer...');
+                    showStatus('WebRTC stream starting...', 'success');
+                })
+                .catch(error => {
+                    console.error('Error creating WebRTC offer:', error);
+                    showStatus('Error starting WebRTC stream', 'error');
+                    updateWebRTCStatus('Error');
+                });
+        }
+
+        function stopWebRTCStream() {
+            if (webrtcPeerConnection) {
+                webrtcPeerConnection.close();
+                webrtcPeerConnection = null;
+            }
+            
+            if (webrtcStream) {
+                webrtcStream.getTracks().forEach(track => track.stop());
+                webrtcStream = null;
+            }
+            
+            document.getElementById('webrtc-video').srcObject = null;
+            updateWebRTCStatus('Stopped');
+            showStatus('WebRTC stream stopped', 'success');
+            
+            // Notify agent to stop WebRTC streaming
+            if (webrtcAgentId) {
+                socket.emit('webrtc_stop_streaming', { agent_id: webrtcAgentId });
+                webrtcAgentId = null;
+            }
+        }
+
+        function getWebRTCStats() {
+            if (!webrtcPeerConnection) {
+                showStatus('No WebRTC connection active', 'error');
+                return;
+            }
+
+            webrtcPeerConnection.getStats()
+                .then(stats => {
+                    let statsText = 'WebRTC Statistics:\n';
+                    stats.forEach(report => {
+                        if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
+                            statsText += `Video: ${report.framesReceived} frames, ${report.bytesReceived} bytes\n`;
+                        }
+                        if (report.type === 'inbound-rtp' && report.mediaType === 'audio') {
+                            statsText += `Audio: ${report.bytesReceived} bytes\n`;
+                        }
+                    });
+                    document.getElementById('webrtc-stats').textContent = statsText;
+                })
+                .catch(error => {
+                    console.error('Error getting WebRTC stats:', error);
+                    showStatus('Error getting WebRTC stats', 'error');
+                });
+        }
+
+        function updateWebRTCStatus(status) {
+            const statusDiv = document.getElementById('webrtc-status');
+            statusDiv.textContent = `Status: ${status}`;
+            
+            // Color coding for different states
+            switch(status) {
+                case 'connected':
+                    statusDiv.style.color = '#00ff88';
+                    break;
+                case 'connecting':
+                    statusDiv.style.color = '#ffc107';
+                    break;
+                case 'failed':
+                case 'Error':
+                    statusDiv.style.color = '#ff4757';
+                    break;
+                default:
+                    statusDiv.style.color = '#00d4ff';
+            }
+        }
+
+        // WebRTC Socket.IO event handlers
+        socket.on('webrtc_answer', function(data) {
+            if (webrtcPeerConnection && webrtcPeerConnection.signalingState !== 'closed') {
+                const answer = new RTCSessionDescription({
+                    type: data.type,
+                    sdp: data.answer
+                });
+                
+                webrtcPeerConnection.setRemoteDescription(answer)
+                    .then(() => {
+                        updateWebRTCStatus('Connected');
+                        showStatus('WebRTC stream connected!', 'success');
+                    })
+                    .catch(error => {
+                        console.error('Error setting remote description:', error);
+                        updateWebRTCStatus('Error');
+                        showStatus('Error connecting WebRTC stream', 'error');
+                    });
+            }
+        });
+
+        socket.on('webrtc_error', function(data) {
+            console.error('WebRTC error:', data.message);
+            updateWebRTCStatus('Error');
+            showStatus(`WebRTC error: ${data.message}`, 'error');
+        });
+
+        socket.on('webrtc_stats', function(data) {
+            console.log('WebRTC stats received:', data);
+            let statsText = `Connection: ${data.connection_state}\n`;
+            statsText += `ICE: ${data.ice_connection_state}\n`;
+            statsText += `Signaling: ${data.signaling_state}`;
+            document.getElementById('webrtc-stats').textContent = statsText;
+        });
+
+        // --- WebRTC Command Functions ---
+        function startWebRTCCommand() {
+            if (!selectedAgentId) {
+                showStatus('Please select an agent first.', 'error');
+                return;
+            }
+            
+            socket.emit('webrtc_start_streaming', {
+                agent_id: selectedAgentId,
+                type: 'all'  // Start all streams (screen, audio, camera)
+            });
+            
+            showStatus('Starting WebRTC streaming...', 'success');
+        }
+
+        function stopWebRTCCommand() {
+            if (!selectedAgentId) {
+                showStatus('Please select an agent first.', 'error');
+                return;
+            }
+            
+            socket.emit('webrtc_stop_streaming', {
+                agent_id: selectedAgentId
+            });
+            
+            showStatus('Stopping WebRTC streaming...', 'success');
+        }
+
+        function getWebRTCStatsCommand() {
+            if (!selectedAgentId) {
+                showStatus('Please select an agent first.', 'error');
+                return;
+            }
+            
+            socket.emit('webrtc_get_stats', {
+                agent_id: selectedAgentId
+            });
+            
+            showStatus('Requesting WebRTC stats...', 'success');
+        }
+
+        function setWebRTCQuality() {
+            if (!selectedAgentId) {
+                showStatus('Please select an agent first.', 'error');
+                return;
+            }
+            
+            const quality = prompt('Enter quality (low/medium/high/auto):', 'auto');
+            if (quality && ['low', 'medium', 'high', 'auto'].includes(quality.toLowerCase())) {
+                socket.emit('webrtc_set_quality', {
+                    agent_id: selectedAgentId,
+                    quality: quality.toLowerCase()
+                });
+                
+                showStatus(`WebRTC quality set to ${quality}`, 'success');
+            } else {
+                showStatus('Invalid quality setting', 'error');
+            }
+        }
 
     </script>
 </body>
@@ -2073,14 +2942,457 @@ def handle_audio_frame(data):
     if agent_id and frame:
         AUDIO_FRAMES_OPUS[agent_id] = frame
 
+# --- WebRTC Socket.IO Event Handlers ---
+
+@socketio.on('webrtc_offer')
+def handle_webrtc_offer(data):
+    """Handle WebRTC offer from agent"""
+    agent_id = data.get('agent_id')
+    offer_sdp = data.get('offer')
+    
+    if not agent_id or not offer_sdp:
+        emit('webrtc_error', {'message': 'Invalid offer data'}, room=request.sid)
+        return
+    
+    try:
+        # Create or get existing peer connection
+        if agent_id not in WEBRTC_PEER_CONNECTIONS:
+            pc = create_webrtc_peer_connection(agent_id)
+            if not pc:
+                emit('webrtc_error', {'message': 'Failed to create peer connection'}, room=request.sid)
+                return
+        else:
+            pc = WEBRTC_PEER_CONNECTIONS[agent_id]
+        
+        # Set remote description (offer)
+        offer = RTCSessionDescription(sdp=offer_sdp, type='offer')
+        asyncio.create_task(pc.setRemoteDescription(offer))
+        
+        # Create answer
+        answer = asyncio.create_task(pc.createAnswer())
+        answer.add_done_callback(lambda future: handle_answer_created(future, agent_id, request.sid))
+        
+        print(f"WebRTC offer received from {agent_id}")
+        
+    except Exception as e:
+        print(f"Error handling WebRTC offer from {agent_id}: {e}")
+        emit('webrtc_error', {'message': f'Error processing offer: {str(e)}'}, room=request.sid)
+
+def handle_answer_created(future, agent_id, sid):
+    """Handle WebRTC answer creation"""
+    try:
+        answer = future.result()
+        asyncio.create_task(WEBRTC_PEER_CONNECTIONS[agent_id].setLocalDescription(answer))
+        
+        # Send answer back to agent
+        socketio.emit('webrtc_answer', {
+            'answer': answer.sdp,
+            'type': answer.type
+        }, room=sid)
+        
+        print(f"WebRTC answer sent to {agent_id}")
+        
+    except Exception as e:
+        print(f"Error creating WebRTC answer for {agent_id}: {e}")
+        socketio.emit('webrtc_error', {'message': f'Error creating answer: {str(e)}'}, room=sid)
+
+@socketio.on('webrtc_ice_candidate')
+def handle_webrtc_ice_candidate(data):
+    """Handle ICE candidate from agent"""
+    agent_id = data.get('agent_id')
+    candidate = data.get('candidate')
+    
+    if not agent_id or not candidate or agent_id not in WEBRTC_PEER_CONNECTIONS:
+        return
+    
+    try:
+        pc = WEBRTC_PEER_CONNECTIONS[agent_id]
+        asyncio.create_task(pc.addIceCandidate(candidate))
+        print(f"ICE candidate added for {agent_id}")
+        
+    except Exception as e:
+        print(f"Error adding ICE candidate for {agent_id}: {e}")
+
+@socketio.on('webrtc_start_streaming')
+def handle_webrtc_start_streaming(data):
+    """Handle WebRTC streaming start request"""
+    agent_id = data.get('agent_id')
+    stream_type = data.get('type', 'all')  # screen, audio, camera, all
+    
+    if not agent_id:
+        emit('webrtc_error', {'message': 'Agent ID required'}, room=request.sid)
+        return
+    
+    try:
+        # Ensure peer connection exists
+        if agent_id not in WEBRTC_PEER_CONNECTIONS:
+            pc = create_webrtc_peer_connection(agent_id)
+            if not pc:
+                emit('webrtc_error', {'message': 'Failed to create peer connection'}, room=request.sid)
+                return
+        
+        # Notify agent to start WebRTC streaming
+        emit('start_webrtc_streaming', {
+            'type': stream_type,
+            'ice_servers': WEBRTC_CONFIG['ice_servers'],
+            'codecs': WEBRTC_CONFIG['codecs']
+        }, room=request.sid)
+        
+        print(f"WebRTC streaming started for {agent_id} ({stream_type})")
+        
+    except Exception as e:
+        print(f"Error starting WebRTC streaming for {agent_id}: {e}")
+        emit('webrtc_error', {'message': f'Error starting streaming: {str(e)}'}, room=request.sid)
+
+@socketio.on('webrtc_stop_streaming')
+def handle_webrtc_stop_streaming(data):
+    """Handle WebRTC streaming stop request"""
+    agent_id = data.get('agent_id')
+    
+    if not agent_id:
+        emit('webrtc_error', {'message': 'Agent ID required'}, room=request.sid)
+        return
+    
+    try:
+        # Close WebRTC connection
+        close_webrtc_connection(agent_id)
+        
+        # Notify agent to stop WebRTC streaming
+        emit('stop_webrtc_streaming', {}, room=request.sid)
+        
+        print(f"WebRTC streaming stopped for {agent_id}")
+        
+    except Exception as e:
+        print(f"Error stopping WebRTC streaming for {agent_id}: {e}")
+        emit('webrtc_error', {'message': f'Error stopping streaming: {str(e)}'}, room=request.sid)
+
+@socketio.on('webrtc_get_stats')
+def handle_webrtc_get_stats(data):
+    """Handle WebRTC stats request"""
+    agent_id = data.get('agent_id')
+    
+    if not agent_id:
+        emit('webrtc_error', {'message': 'Agent ID required'}, room=request.sid)
+        return
+    
+    try:
+        stats = get_webrtc_stats(agent_id)
+        if stats:
+            emit('webrtc_stats', stats, room=request.sid)
+        else:
+            emit('webrtc_error', {'message': 'No WebRTC connection found'}, room=request.sid)
+        
+    except Exception as e:
+        print(f"Error getting WebRTC stats for {agent_id}: {e}")
+        emit('webrtc_error', {'message': f'Error getting stats: {str(e)}'}, room=request.sid)
+
+@socketio.on('webrtc_set_quality')
+def handle_webrtc_set_quality(data):
+    """Handle WebRTC quality settings"""
+    agent_id = data.get('agent_id')
+    quality = data.get('quality', 'auto')  # low, medium, high, auto
+    
+    if not agent_id:
+        emit('webrtc_error', {'message': 'Agent ID required'}, room=request.sid)
+        return
+    
+    try:
+        # Forward quality setting to agent
+        emit('set_webrtc_quality', {'quality': quality}, room=request.sid)
+        print(f"WebRTC quality set to {quality} for {agent_id}")
+        
+    except Exception as e:
+        print(f"Error setting WebRTC quality for {agent_id}: {e}")
+        emit('webrtc_error', {'message': f'Error setting quality: {str(e)}'}, room=request.sid)
+
+# --- WebRTC Viewer Management ---
+
+@socketio.on('webrtc_viewer_connect')
+def handle_webrtc_viewer_connect(data):
+    """Handle WebRTC viewer connection"""
+    viewer_id = request.sid
+    agent_id = data.get('agent_id')
+    
+    if not agent_id or agent_id not in WEBRTC_STREAMS:
+        emit('webrtc_error', {'message': 'Agent not available for WebRTC'}, room=request.sid)
+        return
+    
+    try:
+        # Create viewer peer connection
+        viewer_pc = RTCPeerConnection()
+        
+        # Configure ICE servers
+        for ice_server in WEBRTC_CONFIG['ice_servers']:
+            viewer_pc.addIceServer(ice_server)
+        
+        # Store viewer data
+        WEBRTC_VIEWERS[viewer_id] = {
+            'agent_id': agent_id,
+            'pc': viewer_pc,
+            'streams': {}
+        }
+        
+        # Add existing tracks from agent
+        agent_streams = WEBRTC_STREAMS[agent_id]
+        for track_kind, track in agent_streams.items():
+            try:
+                sender = viewer_pc.addTrack(track)
+                WEBRTC_VIEWERS[viewer_id]['streams'][track_kind] = sender
+            except Exception as e:
+                print(f"Error adding track {track_kind} to viewer {viewer_id}: {e}")
+        
+        # Set up viewer event handlers
+        @viewer_pc.on("connectionstatechange")
+        async def on_viewer_connectionstatechange():
+            print(f"Viewer {viewer_id} connection state: {viewer_pc.connectionState}")
+            if viewer_pc.connectionState == "failed":
+                await viewer_pc.close()
+                if viewer_id in WEBRTC_VIEWERS:
+                    del WEBRTC_VIEWERS[viewer_id]
+        
+        @viewer_pc.on("icecandidate")
+        def on_viewer_icecandidate(candidate):
+            if candidate:
+                emit('webrtc_ice_candidate', {
+                    'agent_id': agent_id,
+                    'candidate': candidate
+                }, room=viewer_id)
+        
+        # Create offer for viewer
+        offer = asyncio.create_task(viewer_pc.createOffer())
+        offer.add_done_callback(lambda future: handle_viewer_offer_created(future, viewer_id))
+        
+        print(f"WebRTC viewer {viewer_id} connected to agent {agent_id}")
+        
+    except Exception as e:
+        print(f"Error connecting WebRTC viewer {viewer_id} to agent {agent_id}: {e}")
+        emit('webrtc_error', {'message': f'Error connecting viewer: {str(e)}'}, room=request.sid)
+
+def handle_viewer_offer_created(future, viewer_id):
+    """Handle viewer offer creation"""
+    try:
+        offer = future.result()
+        asyncio.create_task(WEBRTC_VIEWERS[viewer_id]['pc'].setLocalDescription(offer))
+        
+        # Send offer to viewer
+        socketio.emit('webrtc_viewer_offer', {
+            'offer': offer.sdp,
+            'type': offer.type
+        }, room=viewer_id)
+        
+        print(f"WebRTC viewer offer sent to {viewer_id}")
+        
+    except Exception as e:
+        print(f"Error creating WebRTC viewer offer for {viewer_id}: {e}")
+        socketio.emit('webrtc_error', {'message': f'Error creating viewer offer: {str(e)}'}, room=viewer_id)
+
+@socketio.on('webrtc_viewer_answer')
+def handle_webrtc_viewer_answer(data):
+    """Handle viewer answer"""
+    viewer_id = request.sid
+    answer_sdp = data.get('answer')
+    
+    if not answer_sdp or viewer_id not in WEBRTC_VIEWERS:
+        return
+    
+    try:
+        viewer_pc = WEBRTC_VIEWERS[viewer_id]['pc']
+        answer = RTCSessionDescription(sdp=answer_sdp, type='answer')
+        asyncio.create_task(viewer_pc.setRemoteDescription(answer))
+        print(f"WebRTC viewer answer received from {viewer_id}")
+        
+    except Exception as e:
+        print(f"Error setting viewer answer for {viewer_id}: {e}")
+
+@socketio.on('webrtc_viewer_disconnect')
+def handle_webrtc_viewer_disconnect():
+    """Handle WebRTC viewer disconnection"""
+    viewer_id = request.sid
+    
+    if viewer_id in WEBRTC_VIEWERS:
+        try:
+            viewer_pc = WEBRTC_VIEWERS[viewer_id]['pc']
+            asyncio.create_task(viewer_pc.close())
+            del WEBRTC_VIEWERS[viewer_id]
+            print(f"WebRTC viewer {viewer_id} disconnected")
+        except Exception as e:
+            print(f"Error disconnecting WebRTC viewer {viewer_id}: {e}")
+
+# Advanced WebRTC Monitoring and Optimization Event Handlers
+@socketio.on('webrtc_quality_change')
+def handle_webrtc_quality_change(data):
+    """Handle WebRTC quality change requests from adaptive bitrate control"""
+    agent_id = data.get('agent_id')
+    quality = data.get('quality')
+    bandwidth_stats = data.get('bandwidth_stats')
+    
+    print(f"Quality change request for {agent_id}: {quality}")
+    print(f"Bandwidth stats: {bandwidth_stats}")
+    
+    # Forward quality change to agent
+    agent_sid = AGENTS_DATA.get(agent_id, {}).get('sid')
+    if agent_sid:
+        emit('webrtc_quality_change', {
+            'quality': quality,
+            'bandwidth_stats': bandwidth_stats
+        }, room=agent_sid)
+        print(f"Quality change command sent to agent {agent_id}")
+    else:
+        print(f"Agent {agent_id} not found for quality change")
+
+@socketio.on('webrtc_frame_dropping')
+def handle_webrtc_frame_dropping(data):
+    """Handle WebRTC frame dropping requests from load monitoring"""
+    agent_id = data.get('agent_id')
+    enabled = data.get('enabled')
+    drop_ratio = data.get('drop_ratio', 0.3)
+    priority = data.get('priority', 'keyframes_only')
+    
+    print(f"Frame dropping request for {agent_id}: enabled={enabled}, ratio={drop_ratio}, priority={priority}")
+    
+    # Forward frame dropping command to agent
+    agent_sid = AGENTS_DATA.get(agent_id, {}).get('sid')
+    if agent_sid:
+        emit('webrtc_frame_dropping', {
+            'enabled': enabled,
+            'drop_ratio': drop_ratio,
+            'priority': priority
+        }, room=agent_sid)
+        print(f"Frame dropping command sent to agent {agent_id}")
+    else:
+        print(f"Agent {agent_id} not found for frame dropping")
+
+@socketio.on('webrtc_get_enhanced_stats')
+def handle_webrtc_get_enhanced_stats(data):
+    """Get enhanced WebRTC statistics including performance metrics"""
+    agent_id = data.get('agent_id')
+    
+    if not agent_id:
+        emit('webrtc_enhanced_stats', {'error': 'Agent ID required'}, room=request.sid)
+        return
+    
+    try:
+        # Get basic stats
+        basic_stats = get_webrtc_stats(agent_id)
+        
+        # Get bandwidth estimation
+        bandwidth_stats = estimate_bandwidth(agent_id)
+        
+        # Get connection quality
+        quality_data = monitor_connection_quality(agent_id)
+        
+        # Get production readiness assessment
+        production_readiness = assess_production_readiness()
+        
+        enhanced_stats = {
+            'agent_id': agent_id,
+            'basic_stats': basic_stats,
+            'bandwidth_stats': bandwidth_stats,
+            'quality_data': quality_data,
+            'production_readiness': production_readiness,
+            'timestamp': datetime.datetime.now().isoformat()
+        }
+        
+        emit('webrtc_enhanced_stats', enhanced_stats, room=request.sid)
+        print(f"Enhanced stats sent for agent {agent_id}")
+        
+    except Exception as e:
+        print(f"Error getting enhanced stats for {agent_id}: {e}")
+        emit('webrtc_enhanced_stats', {'error': str(e)}, room=request.sid)
+
+@socketio.on('webrtc_get_production_readiness')
+def handle_webrtc_get_production_readiness():
+    """Get production readiness assessment"""
+    try:
+        readiness_report = assess_production_readiness()
+        emit('webrtc_production_readiness', readiness_report, room=request.sid)
+        print("Production readiness report sent")
+    except Exception as e:
+        print(f"Error getting production readiness: {e}")
+        emit('webrtc_production_readiness', {'error': str(e)}, room=request.sid)
+
+@socketio.on('webrtc_get_migration_plan')
+def handle_webrtc_get_migration_plan():
+    """Get mediasoup migration plan"""
+    try:
+        migration_plan = generate_mediasoup_migration_plan()
+        emit('webrtc_migration_plan', migration_plan, room=request.sid)
+        print("Mediasoup migration plan sent")
+    except Exception as e:
+        print(f"Error getting migration plan: {e}")
+        emit('webrtc_migration_plan', {'error': str(e)}, room=request.sid)
+
+@socketio.on('webrtc_get_monitoring_data')
+def handle_webrtc_get_monitoring_data():
+    """Get comprehensive WebRTC monitoring data"""
+    try:
+        monitoring_data = enhanced_webrtc_monitoring()
+        emit('webrtc_monitoring_data', monitoring_data, room=request.sid)
+        print("Comprehensive monitoring data sent")
+    except Exception as e:
+        print(f"Error getting monitoring data: {e}")
+        emit('webrtc_monitoring_data', {'error': str(e)}, room=request.sid)
+
+@socketio.on('webrtc_adaptive_bitrate_control')
+def handle_webrtc_adaptive_bitrate_control(data):
+    """Manually trigger adaptive bitrate control"""
+    agent_id = data.get('agent_id')
+    current_quality = data.get('current_quality', 'auto')
+    
+    if not agent_id:
+        emit('webrtc_adaptive_bitrate_result', {'error': 'Agent ID required'}, room=request.sid)
+        return
+    
+    try:
+        result = adaptive_bitrate_control(agent_id, current_quality)
+        emit('webrtc_adaptive_bitrate_result', {
+            'agent_id': agent_id,
+            'result': result,
+            'timestamp': datetime.datetime.now().isoformat()
+        }, room=request.sid)
+        print(f"Adaptive bitrate control result for {agent_id}: {result}")
+    except Exception as e:
+        print(f"Error in adaptive bitrate control for {agent_id}: {e}")
+        emit('webrtc_adaptive_bitrate_result', {'error': str(e)}, room=request.sid)
+
+@socketio.on('webrtc_implement_frame_dropping')
+def handle_webrtc_implement_frame_dropping(data):
+    """Manually trigger frame dropping implementation"""
+    agent_id = data.get('agent_id')
+    load_threshold = data.get('load_threshold', 0.8)
+    
+    if not agent_id:
+        emit('webrtc_frame_dropping_result', {'error': 'Agent ID required'}, room=request.sid)
+        return
+    
+    try:
+        result = implement_frame_dropping(agent_id, load_threshold)
+        emit('webrtc_frame_dropping_result', {
+            'agent_id': agent_id,
+            'result': result,
+            'load_threshold': load_threshold,
+            'timestamp': datetime.datetime.now().isoformat()
+        }, room=request.sid)
+        print(f"Frame dropping implementation result for {agent_id}: {result}")
+    except Exception as e:
+        print(f"Error implementing frame dropping for {agent_id}: {e}")
+        emit('webrtc_frame_dropping_result', {'error': str(e)}, room=request.sid)
+
 # WebRTC scaffolding code removed - not currently active
 
 if __name__ == "__main__":
-    print("Starting Neural Control Hub with Socket.IO support...")
+    print("Starting Neural Control Hub with Socket.IO + WebRTC support...")
     print(f"Admin password: {Config.ADMIN_PASSWORD}")
     print(f"Server will be available at: http://{Config.HOST}:{Config.PORT}")
     print(f"Session timeout: {Config.SESSION_TIMEOUT} seconds")
     print(f"Max login attempts: {Config.MAX_LOGIN_ATTEMPTS}")
     print(f"Password security: PBKDF2-SHA256 with {Config.HASH_ITERATIONS:,} iterations")
     print(f"Salt length: {Config.SALT_LENGTH} bytes")
+    print(f"WebRTC support: {'Enabled' if WEBRTC_AVAILABLE else 'Disabled (aiortc not available)'}")
+    if WEBRTC_AVAILABLE:
+        print(f"WebRTC codecs: Video={', '.join(WEBRTC_CONFIG['codecs']['video'])}, Audio={', '.join(WEBRTC_CONFIG['codecs']['audio'])}")
+        print(f"WebRTC features: Simulcast={WEBRTC_CONFIG['simulcast']}, SVC={WEBRTC_CONFIG['svc']}")
+        print(f"Performance tuning: Bandwidth estimation, Adaptive bitrate, Frame dropping")
+        print(f"Production scale: Current={PRODUCTION_SCALE['current_implementation']}, Target={PRODUCTION_SCALE['target_implementation']}")
+        print(f"Scalability limits: aiortc={PRODUCTION_SCALE['scalability_limits']['aiorttc_max_viewers']}, mediasoup={PRODUCTION_SCALE['scalability_limits']['mediasoup_max_viewers']}")
     socketio.run(app, host=Config.HOST, port=Config.PORT, debug=False)
