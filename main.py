@@ -337,7 +337,7 @@ except ImportError:
     AIORTC_SIGNALING_AVAILABLE = False
     log_message("aiortc.contrib.signaling not available, using custom signaling", "warning")
 
-SERVER_URL = os.environ.get('CONTROLLER_URL', "http://localhost:8080")  # Use local controller by default (controller.py runs on 8080)
+SERVER_URL = os.environ.get('CONTROLLER_URL', "https://agent-controller.onrender.com")  # Use deployed Render controller
 
 # Global state variables
 STREAMING_ENABLED = False
@@ -9329,8 +9329,8 @@ def agent_main():
                         test_response = requests.get(SERVER_URL, timeout=5)
                         log_message(f"[OK] Controller is reachable (HTTP {test_response.status_code})")
                     except Exception as e:
-                        log_message(f"[WARN] Controller may not be running: {e}")
-                        log_message(f"[INFO] Make sure to run: python controller.py")
+                        log_message(f"[WARN] Controller may not be reachable: {e}")
+                        log_message(f"[INFO] Controller should be running at: {SERVER_URL}")
                 
                 sio.connect(SERVER_URL, wait_timeout=10)
                 log_message("[OK] Connected to server successfully!")
