@@ -1,0 +1,41 @@
+# Windows 11 Oracle VM Requirements for WebRTC Agent
+# Install with: pip install -r requirements-windows.txt
+
+# Core WebRTC and streaming
+aiortc>=0.9.0
+aiohttp>=3.8.0
+python-socketio[client]>=5.7.0
+
+# Media capture and processing (Windows optimized)
+mss>=6.1.0
+opencv-python>=4.5.0
+PyAudio>=0.2.11
+
+# Alternative screen capture for Windows
+dxcam>=1.0.0
+
+# System monitoring and optimization
+psutil>=5.8.0
+
+# Input control (Windows compatible)
+pynput>=1.7.0
+pyautogui>=0.9.53
+
+# Networking
+requests>=2.25.0
+websockets>=10.0
+
+# Data processing
+numpy>=1.21.0
+Pillow>=8.3.0
+
+# Security
+cryptography>=3.4.0
+
+# Windows-specific dependencies
+pywin32>=300
+wmi>=1.5.1
+
+# Optional: Hardware acceleration (uncomment if needed)
+# nvidia-ml-py3>=7.352.0
+# GPUtil>=1.4.0
