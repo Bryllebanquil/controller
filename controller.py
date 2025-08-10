@@ -1182,26 +1182,26 @@ DASHBOARD_HTML = r'''
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <style>
         :root {
-            --primary-bg: #f8fafc;
+            --primary-bg: #f5f7fa;
             --secondary-bg: #ffffff;
-            --tertiary-bg: #f1f5f9;
-            --accent-blue: #3b82f6;
-            --accent-indigo: #6366f1;
-            --accent-purple: #8b5cf6;
-            --accent-green: #10b981;
-            --accent-red: #ef4444;
-            --accent-orange: #f59e0b;
-            --text-primary: #1e293b;
-            --text-secondary: #64748b;
-            --text-muted: #94a3b8;
-            --border-color: #e2e8f0;
-            --border-light: #f1f5f9;
+            --tertiary-bg: #f8fafc;
+            --accent-blue: #1e40af;
+            --accent-indigo: #3730a3;
+            --accent-purple: #5b21b6;
+            --accent-green: #059669;
+            --accent-red: #dc2626;
+            --accent-orange: #ea580c;
+            --text-primary: #0f172a;
+            --text-secondary: #334155;
+            --text-muted: #64748b;
+            --border-color: #cbd5e1;
+            --border-light: #e2e8f0;
             --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
             --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
             --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
             --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-            --glass-bg: rgba(255, 255, 255, 0.8);
-            --glass-border: rgba(255, 255, 255, 0.2);
+            --glass-bg: rgba(255, 255, 255, 0.9);
+            --glass-border: rgba(30, 64, 175, 0.1);
         }
 
         * {
@@ -1226,9 +1226,8 @@ DASHBOARD_HTML = r'''
             width: 100%;
             height: 100%;
             background: 
-                radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.03) 0%, transparent 50%),
-                radial-gradient(circle at 80% 20%, rgba(99, 102, 241, 0.03) 0%, transparent 50%),
-                radial-gradient(circle at 40% 40%, rgba(139, 92, 246, 0.02) 0%, transparent 50%);
+                linear-gradient(135deg, rgba(30, 64, 175, 0.02) 0%, transparent 50%),
+                linear-gradient(45deg, rgba(15, 23, 42, 0.01) 0%, transparent 50%);
             z-index: -1;
         }
 
@@ -1335,7 +1334,7 @@ DASHBOARD_HTML = r'''
             left: 0;
             right: 0;
             height: 3px;
-            background: linear-gradient(90deg, var(--accent-blue), var(--accent-purple));
+            background: var(--accent-blue);
             opacity: 0;
             transition: opacity 0.2s ease;
         }
@@ -1518,7 +1517,7 @@ DASHBOARD_HTML = r'''
         }
 
         .btn:hover {
-            background: #2563eb;
+            background: #1e3a8a;
             box-shadow: var(--shadow-md);
         }
 
@@ -1531,7 +1530,7 @@ DASHBOARD_HTML = r'''
         }
 
         .btn-danger:hover {
-            background: #dc2626;
+            background: #b91c1c;
         }
 
         .btn-success {
@@ -1539,7 +1538,7 @@ DASHBOARD_HTML = r'''
         }
 
         .btn-success:hover {
-            background: #059669;
+            background: #047857;
         }
 
         .output-terminal {
@@ -1718,8 +1717,8 @@ DASHBOARD_HTML = r'''
             left: 0;
             right: 0;
             height: 1px;
-            background: linear-gradient(90deg, var(--accent-blue), transparent);
-            opacity: 0.3;
+            background: var(--border-color);
+            opacity: 0.5;
         }
 
         /* Enhanced Button Styling */
