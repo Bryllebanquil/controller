@@ -1335,11 +1335,11 @@ DASHBOARD_HTML = r'''
   }
 
   .summary-row{display:grid;grid-template-columns: repeat(3,1fr);gap:14px}
-  .summary-card{display:flex;gap:14px;align-items:center}
-  .summary-card .chart-wrap{width:100px;height:100px;display:flex;align-items:center;justify-content:center}
-  .summary-card .info{flex:1}
-  .metric-big{font-size:1.45rem;font-weight:800;color:#fff}
-  .metric-sub{color:var(--muted);font-size:0.85rem;margin-top:6px}
+  .summary-card{display:flex;gap:18px;align-items:center;min-width:0;flex:1 1 0;}
+  .summary-card .chart-wrap{width:110px;height:110px;display:flex;align-items:center;justify-content:center;min-width:110px;}
+  .summary-card .info{flex:1;min-width:0;overflow:visible;}
+  .metric-big{font-size:1.55rem;font-weight:800;color:#fff;white-space:nowrap;overflow:visible;text-overflow:unset;}
+  .metric-sub{color:var(--muted);font-size:0.95rem;margin-top:6px;white-space:normal;overflow:visible;text-overflow:unset;}
 
   .trend{
     margin-top:6px;height:320px;
@@ -1353,13 +1353,13 @@ DASHBOARD_HTML = r'''
   .terminal{height:260px;padding:12px;border-radius:10px;background:#071226;border:1px solid rgba(255,255,255,0.02);overflow:auto;font-family:monospace;color:#8ef0c5}
 
   /* System Overview sections */
-  .system-overview{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
-  .overview-section{padding:16px;border-radius:10px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05)}
-  .overview-section h4{margin:0 0 12px 0;color:#fff;font-size:1rem;font-weight:600}
-  .info-display{display:flex;flex-direction:column;gap:8px}
-  .info-item{display:flex;justify-content:space-between;align-items:center;padding:6px 0}
-  .info-item .label{color:var(--muted);font-size:0.9rem}
-  .info-item span:last-child{color:#fff;font-weight:500;text-align:right}
+  .system-overview{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:10px}
+  .overview-section{padding:18px;border-radius:10px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);min-width:0;}
+  .overview-section h4{margin:0 0 12px 0;color:#fff;font-size:1.1rem;font-weight:600}
+  .info-display{display:flex;flex-direction:column;gap:10px}
+  .info-item{display:flex;justify-content:space-between;align-items:center;padding:6px 0;min-width:0;}
+  .info-item .label{color:var(--muted);font-size:1rem;white-space:nowrap;}
+  .info-item span:last-child{color:#fff;font-weight:500;text-align:right;max-width:60%;overflow-wrap:break-word;word-break:break-all;white-space:normal;}
 
   /* Small helpers */
   .muted{color:var(--muted)}
@@ -1373,6 +1373,12 @@ DASHBOARD_HTML = r'''
   @media (max-width:1100px){
     .page{grid-template-columns: 1fr; grid-auto-rows: auto; height:calc(100vh - 68px); overflow:auto}
     .filters{grid-column:1}
+    .summary-row{grid-template-columns:1fr;}
+    .system-overview{grid-template-columns:1fr;}
+    .card{padding:12px;}
+    .summary-card .chart-wrap{width:90px;height:90px;min-width:90px;}
+    .metric-big{font-size:1.1rem;}
+    .metric-sub{font-size:0.85rem;}
   }
 </style>
 </head>
