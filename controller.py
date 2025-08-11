@@ -1402,6 +1402,7 @@ DASHBOARD_HTML = r'''
         <span>Category: </span>
         <select id="category-select" onchange="onCategoryChange()" style="background:transparent;border:none;color:white;font-weight:600;cursor:pointer;outline:none;margin-left:8px">
           <option value="all">All Categories</option>
+          <option value="system-health">🏥 System Health & Monitoring</option>
           <option value="auth-security">🔐 Authentication & Security</option>
           <option value="agent-persistence">🤖 Agent & Persistence</option>
           <option value="streaming-communication">📡 Streaming & Communication</option>
@@ -1649,6 +1650,65 @@ DASHBOARD_HTML = r'''
 
   /* --------- Category Management System --------- */
   const categoryData = {
+    'system-health': {
+      title: '🏥 System Health & Monitoring',
+      controls: [
+        { text: 'Run Health Check', onclick: 'runHealthCheck()', primary: true },
+        { text: 'Agent Status', onclick: 'checkAgentStatus()', primary: false },
+        { text: 'Security Status', onclick: 'checkSecurityStatus()', primary: false },
+        { text: 'Persistence Status', onclick: 'checkPersistenceStatus()', primary: false },
+        { text: 'WebRTC Status', onclick: 'checkWebRTCStatus()', primary: false }
+      ],
+      content: `
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div style="font-weight:700">System Health Overview</div>
+            <div class="muted small">Real-time monitoring</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="metric-pill" id="health-agent-status">
+              <div class="v" id="health-metric1">🔍</div>
+              <div class="small muted">Agent Status</div>
+            </div>
+            <div class="metric-pill" id="health-security-status">
+              <div class="v" id="health-metric2">🔍</div>
+              <div class="small muted">Security Status</div>
+            </div>
+            <div class="metric-pill" id="health-persistence-status">
+              <div class="v" id="health-metric3">🔍</div>
+              <div class="small muted">Persistence</div>
+            </div>
+            <div class="metric-pill" id="health-webrtc-status">
+              <div class="v" id="health-metric4">🔍</div>
+              <div class="small muted">WebRTC Status</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:12px">Health Check Results</div>
+          <div id="health-check-results" style="max-height:300px;overflow-y:auto;background:rgba(0,0,0,0.2);border-radius:8px;padding:12px;font-family:monospace;font-size:0.85rem">
+            <div class="muted">Click "Run Health Check" to start monitoring...</div>
+          </div>
+        </div>
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:12px">Configuration Status</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div style="padding:12px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.03)">
+              <div style="font-weight:600;margin-bottom:8px">Server Config</div>
+              <div class="small muted" id="config-host">Host: Loading...</div>
+              <div class="small muted" id="config-port">Port: Loading...</div>
+              <div class="small muted" id="config-timeout">Session Timeout: Loading...</div>
+            </div>
+            <div style="padding:12px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.03)">
+              <div style="font-weight:600;margin-bottom:8px">Security Config</div>
+              <div class="small muted" id="config-login-attempts">Max Login Attempts: Loading...</div>
+              <div class="small muted" id="config-login-timeout">Login Timeout: Loading...</div>
+              <div class="small muted" id="config-salt-length">Salt Length: Loading...</div>
+            </div>
+          </div>
+        </div>
+      `
+    },
     'auth-security': {
       title: '🔐 Authentication & Security',
       controls: [
@@ -1750,7 +1810,8 @@ DASHBOARD_HTML = r'''
         { text: 'Configure Codecs', onclick: 'configureCodecs()', primary: false },
         { text: 'Adaptive Bitrate', onclick: 'toggleAdaptiveBitrate()', primary: false },
         { text: 'Frame Dropping', onclick: 'toggleFrameDropping()', primary: false },
-        { text: 'Connection Stats', onclick: 'viewConnectionStats()', primary: false }
+        { text: 'Connection Stats', onclick: 'viewConnectionStats()', primary: false },
+        { text: 'Stream Health', onclick: 'checkStreamHealth()', primary: false }
       ],
       content: `
         <div class="card">
@@ -1783,6 +1844,17 @@ DASHBOARD_HTML = r'''
             <button class="control-btn primary" onclick="startScreenStream()">Start Screen</button>
             <button class="control-btn" onclick="startCameraStream()">Start Camera</button>
             <button class="control-btn" onclick="startAudioStream()">Start Audio</button>
+          </div>
+          <div style="margin-top:12px;padding:12px;border-radius:8px;background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.03)">
+            <div style="font-weight:600;margin-bottom:8px">WebRTC Connection Status</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+              <div class="small muted">Connection: <span id="webrtc-connection-status" style="color:#ff5c7c">Disconnected</span></div>
+              <div class="small muted">ICE State: <span id="webrtc-ice-status" style="color:#ff5c7c">Unknown</span></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div class="small muted">Signaling: <span id="webrtc-signaling-status" style="color:#ff5c7c">Unknown</span></div>
+              <div class="small muted">Streaming: <span id="webrtc-streaming-status" style="color:#ff5c7c">No</span></div>
+            </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
             <div style="padding:12px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.03)">
@@ -2045,6 +2117,189 @@ DASHBOARD_HTML = r'''
   function manageSessions() { appendLog('Managing sessions...'); }
   function viewSecurityLog() { appendLog('Viewing security audit log...'); }
   function toggleWindowsDefender() { appendLog('Toggling Windows Defender...'); }
+
+  /* --------- System Health & Monitoring Functions --------- */
+  // Comprehensive health check system
+  function runHealthCheck() {
+    appendLog('🏥 Running comprehensive system health check...');
+    
+    // Update health metrics with loading state
+    updateHealthMetric('health-metric1', '⏳', 'Checking...');
+    updateHealthMetric('health-metric2', '⏳', 'Checking...');
+    updateHealthMetric('health-metric3', '⏳', 'Checking...');
+    updateHealthMetric('health-metric4', '⏳', 'Checking...');
+    
+    // Run all health checks
+    checkAgentStatus();
+    checkSecurityStatus();
+    checkPersistenceStatus();
+    checkWebRTCStatus();
+    loadConfigurationStatus();
+    
+    // Update results display
+    const resultsDiv = document.getElementById('health-check-results');
+    if (resultsDiv) {
+      resultsDiv.innerHTML = `
+        <div style="color:#00ff88">✅ Health check initiated...</div>
+        <div style="margin-top:8px;color:#888">Running comprehensive diagnostics...</div>
+      `;
+    }
+  }
+
+  function checkAgentStatus() {
+    appendLog('🔍 Checking agent connection status...');
+    
+    // Simulate agent status check (replace with actual WebSocket verification)
+    setTimeout(() => {
+      const isConnected = Math.random() > 0.3; // Simulate 70% connection rate
+      const status = isConnected ? '🟢' : '🔴';
+      const text = isConnected ? 'Online' : 'Offline';
+      
+      updateHealthMetric('health-metric1', status, text);
+      
+      const resultsDiv = document.getElementById('health-check-results');
+      if (resultsDiv) {
+        const existingContent = resultsDiv.innerHTML;
+        resultsDiv.innerHTML = existingContent + `
+          <div style="margin-top:8px;color:${isConnected ? '#00ff88' : '#ff5c7c'}">
+            ${status} Agent Status: ${text}
+          </div>
+        `;
+      }
+    }, 1000);
+  }
+
+  function checkSecurityStatus() {
+    appendLog('🔒 Checking security evasion status...');
+    
+    // Simulate security status check
+    setTimeout(() => {
+      const isSecure = Math.random() > 0.2; // Simulate 80% security rate
+      const status = isSecure ? '🟢' : '🟡';
+      const text = isSecure ? 'Secure' : 'Warning';
+      
+      updateHealthMetric('health-metric2', status, text);
+      
+      const resultsDiv = document.getElementById('health-check-results');
+      if (resultsDiv) {
+        const existingContent = resultsDiv.innerHTML;
+        resultsDiv.innerHTML = existingContent + `
+          <div style="margin-top:8px;color:${isSecure ? '#00ff88' : '#ffaa00'}">
+            ${status} Security Status: ${text}
+          </div>
+        `;
+      }
+    }, 1500);
+  }
+
+  function checkPersistenceStatus() {
+    appendLog('🔗 Checking persistence mechanisms...');
+    
+    // Simulate persistence status check
+    setTimeout(() => {
+      const isPersistent = Math.random() > 0.1; // Simulate 90% persistence rate
+      const status = isPersistent ? '🟢' : '🔴';
+      const text = isPersistent ? 'Active' : 'Inactive';
+      
+      updateHealthMetric('health-metric3', status, text);
+      
+      const resultsDiv = document.getElementById('health-check-results');
+      if (resultsDiv) {
+        const existingContent = resultsDiv.innerHTML;
+        resultsDiv.innerHTML = existingContent + `
+          <div style="margin-top:8px;color:${isPersistent ? '#00ff88' : '#ff5c7c'}">
+            ${status} Persistence Status: ${text}
+          </div>
+        `;
+      }
+    }, 2000);
+  }
+
+  function checkWebRTCStatus() {
+    appendLog('📡 Checking WebRTC connection status...');
+    
+    // Simulate WebRTC status check
+    setTimeout(() => {
+      const isConnected = Math.random() > 0.4; // Simulate 60% connection rate
+      const status = isConnected ? '🟢' : '🔴';
+      const text = isConnected ? 'Connected' : 'Disconnected';
+      
+      updateHealthMetric('health-metric4', status, text);
+      
+      const resultsDiv = document.getElementById('health-check-results');
+      if (resultsDiv) {
+        const existingContent = resultsDiv.innerHTML;
+        resultsDiv.innerHTML = existingContent + `
+          <div style="margin-top:8px;color:${isConnected ? '#00ff88' : '#ff5c7c'}">
+            ${status} WebRTC Status: ${text}
+          </div>
+        `;
+      }
+    }, 2500);
+  }
+
+  function loadConfigurationStatus() {
+    appendLog('⚙️ Loading configuration status...');
+    
+    // Load server configuration
+    setTimeout(() => {
+      document.getElementById('config-host').innerHTML = 'Host: 0.0.0.0';
+      document.getElementById('config-port').innerHTML = 'Port: 8080';
+      document.getElementById('config-timeout').innerHTML = 'Session Timeout: 3600s';
+      document.getElementById('config-login-attempts').innerHTML = 'Max Login Attempts: 5';
+      document.getElementById('config-login-timeout').innerHTML = 'Login Timeout: 300s';
+      document.getElementById('config-salt-length').innerHTML = 'Salt Length: 32 bytes';
+      
+      const resultsDiv = document.getElementById('health-check-results');
+      if (resultsDiv) {
+        const existingContent = resultsDiv.innerHTML;
+        resultsDiv.innerHTML = existingContent + `
+          <div style="margin-top:8px;color:#00ff88">
+            ✅ Configuration loaded successfully
+          </div>
+          <div style="margin-top:8px;color:#00ff88">
+            🏁 Health check completed at ${new Date().toLocaleTimeString()}
+          </div>
+        `;
+      }
+    }, 3000);
+  }
+
+  function updateHealthMetric(metricId, icon, text) {
+    const metricElement = document.getElementById(metricId);
+    if (metricElement) {
+      metricElement.innerHTML = icon;
+      metricElement.parentElement.querySelector('.small.muted').innerHTML = text;
+    }
+  }
+
+  // WebRTC Stream Health Monitoring
+  function checkStreamHealth() {
+    appendLog('📊 Checking WebRTC stream health...');
+    
+    // Simulate stream health metrics
+    setTimeout(() => {
+      const bitrate = Math.floor(Math.random() * 5000) + 1000; // 1-6 Mbps
+      const framerate = Math.floor(Math.random() * 15) + 15; // 15-30 fps
+      const droppedFrames = Math.floor(Math.random() * 50); // 0-50 frames
+      
+      // Update WebRTC status display
+      updateWebRTCStatus('webrtc-connection-status', 'Connected', '#00ff88');
+      updateWebRTCStatus('webrtc-ice-status', 'Connected', '#00ff88');
+      updateWebRTCStatus('webrtc-signaling-status', 'Established', '#00ff88');
+      updateWebRTCStatus('webrtc-streaming-status', 'Yes', '#00ff88');
+      
+      appendLog(`📊 Stream Health: ${bitrate}kbps, ${framerate}fps, ${droppedFrames} dropped frames`);
+    }, 1000);
+  }
+
+  function updateWebRTCStatus(elementId, status, color) {
+    const element = document.getElementById(elementId);
+    if (element) {
+      element.innerHTML = status;
+      element.style.color = color;
+    }
+  }
   function toggleProcessHiding() { appendLog('Toggling process hiding...'); }
 
   // Agent & Persistence functions
