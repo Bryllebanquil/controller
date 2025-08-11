@@ -1267,6 +1267,34 @@ DASHBOARD_HTML = r'''
   .filters .filter{padding:10px 12px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.02);color:var(--muted);font-weight:600}
   .filters .filter.select{min-width:180px}
   .filters .spacer{flex:1}
+  
+  /* Category dropdown styling */
+  #category-select {
+    background: transparent !important;
+    border: none !important;
+    color: white !important;
+    font-weight: 600 !important;
+    cursor: pointer !important;
+    outline: none !important;
+    margin-left: 8px !important;
+    padding: 4px 8px !important;
+    border-radius: 6px !important;
+    transition: all 0.15s ease !important;
+  }
+  
+  #category-select:hover {
+    background: rgba(255,255,255,0.05) !important;
+  }
+  
+  #category-select option {
+    background: #0f1724 !important;
+    color: white !important;
+    padding: 8px !important;
+  }
+  
+  #category-select:focus {
+    background: rgba(255,255,255,0.08) !important;
+  }
 
   /* Left sidebar */
   .sidebar{
@@ -1368,7 +1396,21 @@ DASHBOARD_HTML = r'''
     <!-- FILTERS -->
     <div class="filters">
       <div class="filter select">Device Group: <strong style="margin-left:8px;color:white">Online</strong></div>
-      <div class="filter select">Category: <strong style="margin-left:8px;color:white">Security</strong></div>
+      
+      <!-- Category Dropdown -->
+      <div class="filter select" id="category-filter">
+        <span>Category: </span>
+        <select id="category-select" onchange="onCategoryChange()" style="background:transparent;border:none;color:white;font-weight:600;cursor:pointer;outline:none;margin-left:8px">
+          <option value="all">All Categories</option>
+          <option value="auth-security">🔐 Authentication & Security</option>
+          <option value="agent-persistence">🤖 Agent & Persistence</option>
+          <option value="streaming-communication">📡 Streaming & Communication</option>
+          <option value="system-monitoring">💻 System Monitoring</option>
+          <option value="file-operations">📁 File Operations</option>
+          <option value="network-control">🌐 Network Control</option>
+        </select>
+      </div>
+      
       <div class="filter">Checks: <strong style="margin-left:8px;color:white">Failed</strong></div>
       <div class="filter">Time Range: <strong style="margin-left:8px;color:white">current</strong></div>
       <div class="spacer"></div>
@@ -1387,10 +1429,14 @@ DASHBOARD_HTML = r'''
       </div>
 
       <div class="controls">
-        <button class="control-btn primary" onclick="startScreenStream()">Start Screen</button>
-        <button class="control-btn" onclick="startCameraStream()">Start Camera</button>
-        <button class="control-btn" onclick="listProcesses()">List Processes</button>
-        <button class="control-btn" onclick="stopAllStreams()">Stop All</button>
+        <!-- Category-based controls will be dynamically loaded -->
+        <div id="category-controls">
+          <!-- Default controls for "All Categories" -->
+          <button class="control-btn primary" onclick="startScreenStream()">Start Screen</button>
+          <button class="control-btn" onclick="startCameraStream()">Start Camera</button>
+          <button class="control-btn" onclick="listProcesses()">List Processes</button>
+          <button class="control-btn" onclick="stopAllStreams()">Stop All</button>
+        </div>
       </div>
     </div>
 
@@ -1442,18 +1488,20 @@ DASHBOARD_HTML = r'''
         </div>
       </div>
 
-      <!-- Videos -->
-      <div style="display:flex;gap:12px">
-        <div class="card" style="flex:1">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <div style="font-weight:700">Live Screen</div>
-            <div class="muted small">Agent stream</div>
+      <!-- Category-specific content sections -->
+      <div id="category-content">
+        <!-- Default content for "All Categories" -->
+        <div style="display:flex;gap:12px">
+          <div class="card" style="flex:1">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div style="font-weight:700">Live Screen</div>
+              <div class="muted small">Agent stream</div>
+            </div>
+            <div class="videos">
+              <div class="video-card"><video id="screen-video" autoplay muted playsinline></video></div>
+              <div class="video-card"><video id="camera-video" autoplay muted playsinline></video></div>
+            </div>
           </div>
-          <div class="videos">
-            <div class="video-card"><video id="screen-video" autoplay muted playsinline></video></div>
-            <div class="video-card"><video id="camera-video" autoplay muted playsinline></video></div>
-          </div>
-        </div>
 
         <div class="card" style="width:340px">
           <div style="display:flex;justify-content:space-between;align-items:center">
@@ -1599,6 +1647,380 @@ DASHBOARD_HTML = r'''
   function updateMetric(id,val){ const el=document.getElementById(id); if(el) el.innerText=val; }
   function appendToEl(id,txt){ const e=document.getElementById(id); if(e) e.innerText += '\\n'+txt; }
 
+  /* --------- Category Management System --------- */
+  const categoryData = {
+    'auth-security': {
+      title: '🔐 Authentication & Security',
+      controls: [
+        { text: 'Change Admin Password', onclick: 'changePassword()', primary: true },
+        { text: 'View Security Status', onclick: 'viewSecurityStatus()', primary: false },
+        { text: 'Block IP Address', onclick: 'blockIPAddress()', primary: false },
+        { text: 'Session Management', onclick: 'manageSessions()', primary: false },
+        { text: 'Security Audit Log', onclick: 'viewSecurityLog()', primary: false }
+      ],
+      content: `
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div style="font-weight:700">Security Dashboard</div>
+            <div class="muted small">Real-time monitoring</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="metric-pill">
+              <div class="v" id="security-metric1">0</div>
+              <div class="small muted">Blocked IPs</div>
+            </div>
+            <div class="metric-pill">
+              <div class="v" id="security-metric2">0</div>
+              <div class="small muted">Failed Logins</div>
+            </div>
+            <div class="metric-pill">
+              <div class="v" id="security-metric3">3600s</div>
+              <div class="small muted">Session Timeout</div>
+            </div>
+            <div class="metric-pill">
+              <div class="v" id="security-metric4">5</div>
+              <div class="small muted">Max Login Attempts</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:12px">Security Controls</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div style="padding:12px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.03)">
+              <div style="font-weight:600;margin-bottom:8px">Windows Defender</div>
+              <button class="control-btn" onclick="toggleWindowsDefender()">Disable/Enable</button>
+            </div>
+            <div style="padding:12px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.03)">
+              <div style="font-weight:600;margin-bottom:8px">Process Hiding</div>
+              <button class="control-btn" onclick="toggleProcessHiding()">Toggle</button>
+            </div>
+          </div>
+        </div>
+      `
+    },
+    'agent-persistence': {
+      title: '🤖 Agent & Persistence',
+      controls: [
+        { text: 'UAC Bypass', onclick: 'executeUACBypass()', primary: true },
+        { text: 'Registry Persistence', onclick: 'setRegistryPersistence()', primary: false },
+        { text: 'Startup Entry', onclick: 'addStartupEntry()', primary: false },
+        { text: 'Service Installation', onclick: 'installService()', primary: false },
+        { text: 'Cross-Platform Toggle', onclick: 'toggleCrossPlatform()', primary: false }
+      ],
+      content: `
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div style="font-weight:700">Persistence Status</div>
+            <div class="muted small">Agent survival mechanisms</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="metric-pill">
+              <div class="v" id="persistence-metric1">Active</div>
+              <div class="small muted">Registry Keys</div>
+            </div>
+            <div class="metric-pill">
+              <div class="v" id="persistence-metric2">Enabled</div>
+              <div class="small muted">Startup Entries</div>
+            </div>
+            <div class="metric-pill">
+              <div class="v" id="persistence-metric3">Windows</div>
+              <div class="small muted">Platform</div>
+            </div>
+            <div class="metric-pill">
+              <div class="v" id="persistence-metric4">3</div>
+              <div class="small muted">Active Methods</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:12px">UAC Bypass Methods</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <button class="control-btn" onclick="executeUACBypass('fodhelper')">Fodhelper</button>
+            <button class="control-btn" onclick="executeUACBypass('computerdefaults')">Computer Defaults</button>
+            <button class="control-btn" onclick="executeUACBypass('slui')">SLUI</button>
+            <button class="control-btn" onclick="executeUACBypass('sdclt')">SDCLT</button>
+          </div>
+        </div>
+      `
+    },
+    'streaming-communication': {
+      title: '📡 Streaming & Communication',
+      controls: [
+        { text: 'Start WebRTC Stream', onclick: 'startWebRTCStream()', primary: true },
+        { text: 'Configure Codecs', onclick: 'configureCodecs()', primary: false },
+        { text: 'Adaptive Bitrate', onclick: 'toggleAdaptiveBitrate()', primary: false },
+        { text: 'Frame Dropping', onclick: 'toggleFrameDropping()', primary: false },
+        { text: 'Connection Stats', onclick: 'viewConnectionStats()', primary: false }
+      ],
+      content: `
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div style="font-weight:700">Streaming Dashboard</div>
+            <div class="muted small">Real-time metrics</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="metric-pill">
+              <div class="v" id="stream-metric1">95%</div>
+              <div class="small muted">Stream Health</div>
+            </div>
+            <div class="metric-pill">
+              <div class="v" id="stream-metric2">120ms</div>
+              <div class="small muted">Latency</div>
+            </div>
+            <div class="metric-pill">
+              <div class="v" id="stream-metric3">1080p</div>
+              <div class="small muted">Quality</div>
+            </div>
+            <div class="metric-pill">
+              <div class="v" id="stream-metric4">30fps</div>
+              <div class="small muted">Frame Rate</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:12px">Stream Controls</div>
+          <div style="display:flex;gap:12px;margin-bottom:12px">
+            <button class="control-btn primary" onclick="startScreenStream()">Start Screen</button>
+            <button class="control-btn" onclick="startCameraStream()">Start Camera</button>
+            <button class="control-btn" onclick="startAudioStream()">Start Audio</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div style="padding:12px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.03)">
+              <div style="font-weight:600;margin-bottom:8px">Video Codec</div>
+              <select id="video-codec" style="width:100%;padding:8px;background:transparent;border:1px solid rgba(255,255,255,0.1);color:white;border-radius:4px">
+                <option value="h264">H.264</option>
+                <option value="h265">H.265</option>
+                <option value="vp8">VP8</option>
+                <option value="vp9">VP9</option>
+              </select>
+            </div>
+            <div style="padding:12px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.03)">
+              <div style="font-weight:600;margin-bottom:8px">Audio Codec</div>
+              <select id="audio-codec" style="width:100%;padding:8px;background:transparent;border:1px solid rgba(255,255,255,0.1);color:white;border-radius:4px">
+                <option value="opus">Opus</option>
+                <option value="aac">AAC</option>
+                <option value="pcm">PCM</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      `
+    },
+    'system-monitoring': {
+      title: '💻 System Monitoring',
+      controls: [
+        { text: 'List Processes', onclick: 'listProcesses()', primary: true },
+        { text: 'System Info', onclick: 'getSystemInfo()', primary: false },
+        { text: 'Performance Monitor', onclick: 'monitorPerformance()', primary: false },
+        { text: 'Service Status', onclick: 'checkServices()', primary: false },
+        { text: 'Event Logs', onclick: 'viewEventLogs()', primary: false }
+      ],
+      content: `
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div style="font-weight:700">System Overview</div>
+            <div class="muted small">Real-time monitoring</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="metric-pill">
+              <div class="v" id="system-metric1">0</div>
+              <div class="small muted">Active Processes</div>
+            </div>
+            <div class="metric-pill">
+              <div class="v" id="system-metric2">0%</div>
+              <div class="small muted">CPU Usage</div>
+            </div>
+            <div class="metric-pill">
+              <div class="v" id="system-metric3">0%</div>
+              <div class="small muted">Memory Usage</div>
+            </div>
+            <div class="metric-pill">
+              <div class="v" id="system-metric4">0</div>
+              <div class="small muted">Network Connections</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:12px">Process Management</div>
+          <div style="display:flex;gap:12px;margin-bottom:12px">
+            <button class="control-btn primary" onclick="listProcesses()">List All</button>
+            <button class="control-btn" onclick="killProcess()">Kill Process</button>
+            <button class="control-btn" onclick="suspendProcess()">Suspend</button>
+          </div>
+          <div id="process-list" style="max-height:200px;overflow-y:auto;background:rgba(0,0,0,0.2);border-radius:8px;padding:12px;font-family:monospace;font-size:0.85rem">
+            <div class="muted">Click "List All" to view processes...</div>
+          </div>
+        </div>
+      `
+    },
+    'file-operations': {
+      title: '📁 File Operations',
+      controls: [
+        { text: 'File Upload', onclick: 'uploadFile()', primary: true },
+        { text: 'File Download', onclick: 'downloadFile()', primary: false },
+        { text: 'Directory Browse', onclick: 'browseDirectory()', primary: false },
+        { text: 'File Search', onclick: 'searchFiles()', primary: false },
+        { text: 'File Monitor', onclick: 'monitorFiles()', primary: false }
+      ],
+      content: `
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div style="font-weight:700">File Manager</div>
+            <div class="muted small">Remote file operations</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="metric-pill">
+              <div class="v" id="file-metric1">0</div>
+              <div class="small muted">Files Uploaded</div>
+            </div>
+            <div class="metric-pill">
+              <div class="v" id="file-metric2">0</div>
+              <div class="small muted">Files Downloaded</div>
+            </div>
+            <div class="metric-pill">
+              <div class="v" id="file-metric3">0</div>
+              <div class="small muted">Active Transfers</div>
+            </div>
+            <div class="metric-pill">
+              <div class="v" id="file-metric4">0MB</div>
+              <div class="small muted">Total Size</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:12px">File Operations</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div style="padding:12px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.03)">
+              <div style="font-weight:600;margin-bottom:8px">Upload File</div>
+              <input type="file" id="file-upload" style="width:100%;padding:8px;background:transparent;border:1px solid rgba(255,255,255,0.1);color:white;border-radius:4px">
+              <button class="control-btn" onclick="uploadSelectedFile()" style="margin-top:8px;width:100%">Upload</button>
+            </div>
+            <div style="padding:12px;border-radius:8px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.03)">
+              <div style="font-weight:600;margin-bottom:8px">Download Path</div>
+              <input type="text" id="download-path" placeholder="/path/to/file" style="width:100%;padding:8px;background:transparent;border:1px solid rgba(255,255,255,0.1);color:white;border-radius:4px">
+              <button class="control-btn" onclick="downloadFromPath()" style="margin-top:8px;width:100%">Download</button>
+            </div>
+          </div>
+        </div>
+      `
+    },
+    'network-control': {
+      title: '🌐 Network Control',
+      controls: [
+        { text: 'Network Scan', onclick: 'scanNetwork()', primary: true },
+        { text: 'Port Scanner', onclick: 'scanPorts()', primary: false },
+        { text: 'Traffic Monitor', onclick: 'monitorTraffic()', primary: false },
+        { text: 'Firewall Rules', onclick: 'manageFirewall()', primary: false },
+        { text: 'DNS Control', onclick: 'controlDNS()', primary: false }
+      ],
+      content: `
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div style="font-weight:700">Network Overview</div>
+            <div class="muted small">Network monitoring & control</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="metric-pill">
+              <div class="v" id="network-metric1">0</div>
+              <div class="small muted">Active Connections</div>
+            </div>
+            <div class="metric-pill">
+              <div class="v" id="network-metric2">0</div>
+              <div class="small muted">Open Ports</div>
+            </div>
+            <div class="metric-pill">
+              <div class="v" id="network-metric3">0MB/s</div>
+              <div class="small muted">Bandwidth</div>
+            </div>
+            <div class="metric-pill">
+              <div class="v" id="network-metric4">0</div>
+              <div class="small muted">Blocked IPs</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:12px">Network Tools</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <button class="control-btn" onclick="scanNetwork()">Network Scan</button>
+            <button class="control-btn" onclick="scanPorts()">Port Scanner</button>
+            <button class="control-btn" onclick="monitorTraffic()">Traffic Monitor</button>
+            <button class="control-btn" onclick="manageFirewall()">Firewall</button>
+          </div>
+        </div>
+      `
+    }
+  };
+
+  function onCategoryChange() {
+    const category = document.getElementById('category-select').value;
+    updateCategoryContent(category);
+  }
+
+  function updateCategoryContent(category) {
+    const controlsContainer = document.getElementById('category-controls');
+    const contentContainer = document.getElementById('category-content');
+    
+    if (category === 'all') {
+      // Show default content
+      controlsContainer.innerHTML = `
+        <button class="control-btn primary" onclick="startScreenStream()">Start Screen</button>
+        <button class="control-btn" onclick="startCameraStream()">Start Camera</button>
+        <button class="control-btn" onclick="listProcesses()">List Processes</button>
+        <button class="control-btn" onclick="stopAllStreams()">Stop All</button>
+      `;
+      
+      contentContainer.innerHTML = `
+        <div style="display:flex;gap:12px">
+          <div class="card" style="flex:1">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div style="font-weight:700">Live Screen</div>
+              <div class="muted small">Agent stream</div>
+            </div>
+            <div class="videos">
+              <div class="video-card"><video id="screen-video" autoplay muted playsinline></video></div>
+              <div class="video-card"><video id="camera-video" autoplay muted playsinline></video></div>
+            </div>
+          </div>
+          <div class="card" style="width:340px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div style="font-weight:700">Quick Metrics</div>
+              <div class="muted small">Real-time</div>
+            </div>
+            <div class="metric-grid" style="margin-top:12px">
+              <div class="metric-pill"><div class="v" id="m1">12</div><div class="small muted">Active Agents</div></div>
+              <div class="metric-pill"><div class="v" id="m2">3</div><div class="small muted">Active Streams</div></div>
+              <div class="metric-pill"><div class="v" id="m3">95%</div><div class="small muted">Stream Health</div></div>
+              <div class="metric-pill"><div class="v" id="m4">120ms</div><div class="small muted">Avg Latency</div></div>
+            </div>
+            <div style="margin-top:12px;font-weight:700">Output</div>
+            <div class="terminal" id="output-terminal">NEURAL_TERMINAL_v2.1 &gt; Waiting for events...</div>
+          </div>
+        </div>
+      `;
+    } else {
+      const categoryInfo = categoryData[category];
+      if (categoryInfo) {
+        // Update controls
+        controlsContainer.innerHTML = categoryInfo.controls.map(control => 
+          `<button class="control-btn ${control.primary ? 'primary' : ''}" onclick="${control.onclick}">${control.text}</button>`
+        ).join('');
+        
+        // Update content
+        contentContainer.innerHTML = categoryInfo.content;
+      }
+    }
+    
+    // Update the page title to reflect the selected category
+    if (category !== 'all') {
+      const categoryInfo = categoryData[category];
+      if (categoryInfo) {
+        document.querySelector('.brand h1').innerText = `Advance Rat Controller - ${categoryInfo.title}`;
+      }
+    } else {
+      document.querySelector('.brand h1').innerText = 'Advance Rat Controller';
+    }
+  }
+
   /* --------- placeholder functions preserved from original file - keep your existing implementations if needed --------- */
   function issueCommand(){ const cmd = document.getElementById('command')?.value || ''; if(cmd) { socket.emit('issue_command', {command:cmd}); appendLog('Issued command: '+cmd);} }
   function listProcesses(){ socket.emit('list_processes'); appendLog('Requested process list'); }
@@ -1615,6 +2037,54 @@ DASHBOARD_HTML = r'''
 
   /* demo: update metrics every 7s */
   setInterval(()=>{ updateMetric('metric1', Math.floor(Math.random()*60)); updateMetric('metric2', Math.floor(Math.random()*40)); updateMetric('metric3', Math.floor(Math.random()*100)+'%'); updateMetric('m1', Math.floor(Math.random()*20)); },7000);
+
+  /* --------- Category-specific function placeholders --------- */
+  // Authentication & Security functions
+  function viewSecurityStatus() { appendLog('Viewing security status...'); }
+  function blockIPAddress() { appendLog('Blocking IP address...'); }
+  function manageSessions() { appendLog('Managing sessions...'); }
+  function viewSecurityLog() { appendLog('Viewing security audit log...'); }
+  function toggleWindowsDefender() { appendLog('Toggling Windows Defender...'); }
+  function toggleProcessHiding() { appendLog('Toggling process hiding...'); }
+
+  // Agent & Persistence functions
+  function executeUACBypass(method = 'fodhelper') { appendLog(`Executing UAC bypass: ${method}...`); }
+  function setRegistryPersistence() { appendLog('Setting registry persistence...'); }
+  function addStartupEntry() { appendLog('Adding startup entry...'); }
+  function installService() { appendLog('Installing service...'); }
+  function toggleCrossPlatform() { appendLog('Toggling cross-platform mode...'); }
+
+  // Streaming & Communication functions
+  function startWebRTCStream() { appendLog('Starting WebRTC stream...'); }
+  function configureCodecs() { appendLog('Configuring codecs...'); }
+  function toggleAdaptiveBitrate() { appendLog('Toggling adaptive bitrate...'); }
+  function toggleFrameDropping() { appendLog('Toggling frame dropping...'); }
+  function viewConnectionStats() { appendLog('Viewing connection statistics...'); }
+  function startAudioStream() { appendLog('Starting audio stream...'); }
+
+  // System Monitoring functions
+  function getSystemInfo() { appendLog('Getting system information...'); }
+  function monitorPerformance() { appendLog('Monitoring performance...'); }
+  function checkServices() { appendLog('Checking services...'); }
+  function viewEventLogs() { appendLog('Viewing event logs...'); }
+  function killProcess() { appendLog('Killing process...'); }
+  function suspendProcess() { appendLog('Suspending process...'); }
+
+  // File Operations functions
+  function uploadFile() { appendLog('Uploading file...'); }
+  function downloadFile() { appendLog('Downloading file...'); }
+  function browseDirectory() { appendLog('Browsing directory...'); }
+  function searchFiles() { appendLog('Searching files...'); }
+  function monitorFiles() { appendLog('Monitoring files...'); }
+  function uploadSelectedFile() { appendLog('Uploading selected file...'); }
+  function downloadFromPath() { appendLog('Downloading from path...'); }
+
+  // Network Control functions
+  function scanNetwork() { appendLog('Scanning network...'); }
+  function scanPorts() { appendLog('Scanning ports...'); }
+  function monitorTraffic() { appendLog('Monitoring network traffic...'); }
+  function manageFirewall() { appendLog('Managing firewall rules...'); }
+  function controlDNS() { appendLog('Controlling DNS...'); }
 
   /* demo: append a start line */
   appendLog('Dashboard ready — waiting for agents');
