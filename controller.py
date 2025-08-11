@@ -1391,10 +1391,10 @@ DASHBOARD_HTML = r'''
       </div>
 
       <div class="controls">
-        <button class="control-btn primary" onclick="getSystemInfo()">System Info</button>
-        <button class="control-btn" onclick="getNetworkInfo()">Network Info</button>
+        <button class="control-btn primary" onclick="getSystemInfo()">Agent Stats</button>
+        <button class="control-btn" onclick="getNetworkInfo()">System Health</button>
         <button class="control-btn" onclick="listProcesses()">List Processes</button>
-        <button class="control-btn" onclick="refreshOverview()">Refresh Overview</button>
+        <button class="control-btn" onclick="refreshOverview()">Refresh Dashboard</button>
       </div>
     </div>
 
@@ -1446,29 +1446,30 @@ DASHBOARD_HTML = r'''
         </div>
       </div>
 
-      <!-- System Overview -->
+      <!-- System Overview with Dashboard Metrics -->
       <div style="display:flex;gap:12px">
         <div class="card" style="flex:1">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
             <div style="font-weight:700">System Overview</div>
-            <div class="muted small">Agent information</div>
+            <div class="muted small">Real-time monitoring</div>
           </div>
           <div class="system-overview">
             <div class="overview-section">
-              <h4>System Information</h4>
-              <div id="system-info-display" class="info-display">
-                <div class="info-item"><span class="label">OS:</span> <span id="os-info">Loading...</span></div>
-                <div class="info-item"><span class="label">CPU:</span> <span id="cpu-info">Loading...</span></div>
-                <div class="info-item"><span class="label">Memory:</span> <span id="memory-info">Loading...</span></div>
-                <div class="info-item"><span class="label">Disk:</span> <span id="disk-info">Loading...</span></div>
+              <h4>Agent Statistics</h4>
+              <div id="agent-stats-display" class="info-display">
+                <div class="info-item"><span class="label">Agent Reports:</span> <span id="agent-reports">39</span></div>
+                <div class="info-item"><span class="label">Agents Status:</span> <span id="agents-status">26</span></div>
+                <div class="info-item"><span class="label">Overall Pass Rate:</span> <span id="pass-rate">57%</span></div>
+                <div class="info-item"><span class="label">Trend:</span> <span id="trend-info">vs previous period</span></div>
               </div>
             </div>
             <div class="overview-section">
-              <h4>Network Information</h4>
-              <div id="network-info-display" class="info-display">
-                <div class="info-item"><span class="label">IP Address:</span> <span id="ip-info">Loading...</span></div>
-                <div class="info-item"><span class="label">Hostname:</span> <span id="hostname-info">Loading...</span></div>
-                <div class="info-item"><span class="label">Network:</span> <span id="network-status">Loading...</span></div>
+              <h4>System Health</h4>
+              <div id="system-health-display" class="info-display">
+                <div class="info-item"><span class="label">Controller Status:</span> <span id="controller-status">Active</span></div>
+                <div class="info-item"><span class="label">Monitoring Period:</span> <span id="monitoring-period">Last 30 days</span></div>
+                <div class="info-item"><span class="label">System Uptime:</span> <span id="system-uptime">Loading...</span></div>
+                <div class="info-item"><span class="label">Last Update:</span> <span id="last-update">Just now</span></div>
               </div>
             </div>
           </div>
@@ -1618,29 +1619,35 @@ DASHBOARD_HTML = r'''
   function updateMetric(id,val){ const el=document.getElementById(id); if(el) el.innerText=val; }
   function appendToEl(id,txt){ const e=document.getElementById(id); if(e) e.innerText += '\\n'+txt; }
 
-  /* --------- Overview and system information functions --------- */
+  /* --------- Overview and dashboard functions --------- */
   function issueCommand(){ const cmd = document.getElementById('command')?.value || ''; if(cmd) { socket.emit('issue_command', {command:cmd}); appendLog('Issued command: '+cmd);} }
   function listProcesses(){ socket.emit('list_processes'); appendLog('Requested process list'); }
-  function getSystemInfo(){ socket.emit('get_system_info'); appendLog('Requested system information'); }
-  function getNetworkInfo(){ socket.emit('get_network_info'); appendLog('Requested network information'); }
-  function refreshOverview(){ socket.emit('refresh_overview'); appendLog('Refreshing overview data'); }
+  function getSystemInfo(){ socket.emit('get_agent_stats'); appendLog('Requested agent statistics'); }
+  function getNetworkInfo(){ socket.emit('get_system_health'); appendLog('Requested system health'); }
+  function refreshOverview(){ socket.emit('refresh_dashboard'); appendLog('Refreshing dashboard data'); }
   
-  // Handle system info response
-  socket.on('system_info_response', function(data) {
-    if(data.os) document.getElementById('os-info').textContent = data.os;
-    if(data.cpu) document.getElementById('cpu-info').textContent = data.cpu;
-    if(data.memory) document.getElementById('memory-info').textContent = data.memory;
-    if(data.disk) document.getElementById('disk-info').textContent = data.disk;
-    appendLog('System information updated');
+  // Handle agent stats response
+  socket.on('agent_stats_response', function(data) {
+    if(data.reports) document.getElementById('agent-reports').textContent = data.reports;
+    if(data.status) document.getElementById('agents-status').textContent = data.status;
+    if(data.pass_rate) document.getElementById('pass-rate').textContent = data.pass_rate;
+    if(data.trend) document.getElementById('trend-info').textContent = data.trend;
+    appendLog('Agent statistics updated');
   });
   
-  // Handle network info response
-  socket.on('network_info_response', function(data) {
-    if(data.ip) document.getElementById('ip-info').textContent = data.ip;
-    if(data.hostname) document.getElementById('hostname-info').textContent = data.hostname;
-    if(data.status) document.getElementById('network-status').textContent = data.status;
-    appendLog('Network information updated');
+  // Handle system health response
+  socket.on('system_health_response', function(data) {
+    if(data.controller_status) document.getElementById('controller-status').textContent = data.controller_status;
+    if(data.monitoring_period) document.getElementById('monitoring-period').textContent = data.monitoring_period;
+    if(data.uptime) document.getElementById('system-uptime').textContent = data.uptime;
+    if(data.last_update) document.getElementById('last-update').textContent = data.last_update;
+    appendLog('System health updated');
   });
+  
+  // Auto-refresh dashboard metrics every 30 seconds
+  setInterval(() => {
+    refreshOverview();
+  }, 30000);
   function changePassword(){
     const p = document.getElementById('new-pass').value;
     if(!p || p.length<8){ alert('Choose password >= 8 chars'); return; }
