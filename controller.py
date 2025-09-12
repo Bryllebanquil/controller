@@ -1,6 +1,10 @@
 #final controller
-from gevent import monkey as gevent_monkey
-gevent_monkey.patch_all()
+# Prefer eventlet when running with gunicorn -k eventlet
+try:
+    import eventlet
+    eventlet.monkey_patch()
+except ImportError:
+    pass
 
 from flask import Flask, request, jsonify, redirect, url_for, Response, send_file, session, flash, render_template_string, render_template
 from flask_socketio import SocketIO, emit, join_room, leave_room
