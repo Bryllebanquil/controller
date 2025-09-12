@@ -35,6 +35,7 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useSocket } from "./SocketProvider";
 
 interface VoiceCommand {
   id: string;
@@ -52,6 +53,7 @@ interface VoiceControlProps {
 }
 
 export function VoiceControl({ agentId, isConnected }: VoiceControlProps) {
+  const { socket } = useSocket();
   const [isListening, setIsListening] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
@@ -265,36 +267,10 @@ export function VoiceControl({ agentId, isConnected }: VoiceControlProps) {
     setVoiceCommands(prev => [newCommand, ...prev.slice(0, 49)]); // Keep last 50 commands
 
     // Send to agent
-    if (agentId) {
-      // Simulate sending voice command to agent
-      setTimeout(() => {
-        setVoiceCommands(prev => 
-          prev.map(cmd => 
-            cmd.id === commandId 
-              ? { ...cmd, status: "executing" } 
-              : cmd
-          )
-        );
-        
-        // Simulate response
-        setTimeout(() => {
-          setVoiceCommands(prev => 
-            prev.map(cmd => 
-              cmd.id === commandId 
-                ? { 
-                    ...cmd, 
-                    status: Math.random() > 0.1 ? "completed" : "failed",
-                    response: Math.random() > 0.1 
-                      ? `Command "${command}" executed successfully`
-                      : `Failed to execute "${command}"`
-                  } 
-                : cmd
-            )
-          );
-        }, 2000);
-      }, 500);
-
-      toast.success(`Voice command: "${command}"`);
+    if (agentId && socket) {
+      socket.emit('execute_command', { agent_id: agentId, command });
+      setVoiceCommands(prev => prev.map(cmd => cmd.id === commandId ? { ...cmd, status: 'executing' } : cmd));
+      toast.success(`Voice command: "${command}" sent`);
     }
   };
 
@@ -306,9 +282,10 @@ export function VoiceControl({ agentId, isConnected }: VoiceControlProps) {
       const reader = new FileReader();
       reader.onload = () => {
         const base64Audio = reader.result as string;
-        // This would normally send to the socket connection
-        console.log("Sending live audio to agent:", agentId);
-        toast.success("Live audio sent to agent");
+        if (socket && agentId) {
+          socket.emit('audio_frame', { agent_id: agentId, frame: base64Audio });
+          toast.success("Live audio sent to agent");
+        }
       };
       reader.readAsDataURL(audioBlob);
     } catch (error) {

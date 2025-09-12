@@ -89,6 +89,7 @@ const formatFileSize = (bytes?: number) => {
 
 export function FileManager({ agentId }: FileManagerProps) {
   const { uploadFile, downloadFile } = useSocket();
+  const { socket } = useSocket();
   const [currentPath, setCurrentPath] = useState('/');
   const [files, setFiles] = useState(mockFiles);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
@@ -111,7 +112,10 @@ export function FileManager({ agentId }: FileManagerProps) {
   const handleNavigate = (path: string) => {
     setCurrentPath(path);
     setSelectedFiles([]);
-    // In a real app, this would fetch files from the agent
+    if (agentId && socket) {
+      const reqPath = path === '..' ? '/' : path;
+      socket.emit('execute_command', { agent_id: agentId, command: `list-dir:${reqPath}` });
+    }
   };
 
   const handleDownload = () => {
@@ -129,11 +133,29 @@ export function FileManager({ agentId }: FileManagerProps) {
 
   const handleRefresh = () => {
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      // In a real app, this would refresh the file list
-    }, 1000);
+    handleNavigate(currentPath);
+    setTimeout(() => setIsLoading(false), 500);
   };
+
+  // Listen for file_list updates from agent and map to UI items
+  useEffect(() => {
+    if (!socket) return;
+    const handler = (data: any) => {
+      if (!agentId || data.agent_id !== agentId) return;
+      setCurrentPath(data.path || '/');
+      const mapped = (data.files || []).map((f: any) => ({
+        name: f.name,
+        type: f.type,
+        size: f.size,
+        modified: new Date(f.modified || Date.now()),
+        path: f.path,
+        extension: f.extension
+      }));
+      setFiles(mapped);
+    };
+    socket.on('file_list', handler);
+    return () => { socket.off('file_list', handler); };
+  }, [socket, agentId]);
 
   return (
     <div className="space-y-6">

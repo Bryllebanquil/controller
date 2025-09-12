@@ -172,8 +172,9 @@ export function ProcessManager({ agentId, isConnected }: ProcessManagerProps) {
 
     setLoading(true);
     try {
-      // Ask agent to send process list via a known command; adapt as needed
+      // Ask agent to send process list via a structured event
       sendCommand(agentId, "list-processes");
+      // Listener will update processes below
       toast.success("Requested process list");
     } catch (error) {
       console.error("Failed to fetch processes:", error);
@@ -258,6 +259,32 @@ export function ProcessManager({ agentId, isConnected }: ProcessManagerProps) {
       fetchProcesses();
     }
   }, [agentId, isConnected]);
+
+  // Listen for process_list socket event
+  const { socket } = useSocket();
+  useEffect(() => {
+    if (!socket) return;
+    const handler = (data: any) => {
+      if (!agentId || data.agent_id !== agentId) return;
+      const mapped: Process[] = (data.processes || []).map((p: any) => ({
+        pid: p.pid,
+        name: p.name,
+        username: p.username,
+        cpu: p.cpu,
+        memory: p.memory,
+        status: (p.status || 'running') as any,
+        ppid: p.ppid,
+        cmdline: p.cmdline || '',
+        create_time: p.create_time || 0,
+        priority: p.priority || 0,
+        nice: p.nice || 0,
+        num_threads: p.num_threads || 0,
+      }));
+      setProcesses(mapped);
+    };
+    socket.on('process_list', handler);
+    return () => { socket.off('process_list', handler); };
+  }, [socket, agentId]);
 
   const getStatusBadge = (status: Process["status"]) => {
     switch (status) {
