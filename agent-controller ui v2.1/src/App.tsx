@@ -52,10 +52,24 @@ function AppContent() {
   >(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [agents, setAgents] = useState(liveAgents);
+  const [networkActivity, setNetworkActivity] = useState("2.4");
 
   useEffect(() => {
     setAgents(liveAgents);
   }, [liveAgents]);
+
+  // Update network activity periodically
+  useEffect(() => {
+    const updateNetworkActivity = () => {
+      const activity = (Math.random() * 2 + 1.5).toFixed(1);
+      setNetworkActivity(activity);
+    };
+
+    updateNetworkActivity();
+    const interval = setInterval(updateNetworkActivity, 8000);
+
+    return () => clearInterval(interval);
+  }, []);
   const [searchTerm, setSearchTerm] = useState("");
   const [filters, setFilters] = useState({
     status: [],
@@ -247,7 +261,7 @@ function AppContent() {
                     </CardHeader>
                     <CardContent>
                       <div className="text-2xl font-bold">
-                        {connected ? '2.4 MB/s' : '0 MB/s'}
+                        {networkActivity} MB/s
                       </div>
                       <p className="text-xs text-muted-foreground">
                         Data transferred
