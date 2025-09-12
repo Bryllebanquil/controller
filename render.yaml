@@ -26,9 +26,7 @@ services:
     staticPublishPath: "agent-controller ui v2.1/dist"
     pullRequestPreviewsEnabled: false
     envVars:
-      # IMPORTANT: The Vite app currently reads process.env.REACT_APP_SOCKET_URL.
-      # Set this to your backend's public URL after the backend deploys.
-      - key: REACT_APP_SOCKET_URL
+      - key: VITE_SOCKET_URL
         value: https://agent-controller-backend.onrender.com
     headers:
       - path: "/*"

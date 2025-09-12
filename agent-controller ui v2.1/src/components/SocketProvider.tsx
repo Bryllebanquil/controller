@@ -51,7 +51,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Connect to Socket.IO server
-    const socketInstance = io(process.env.REACT_APP_SOCKET_URL || 'http://localhost:8080', {
+    const socketUrl = (import.meta as any)?.env?.VITE_SOCKET_URL || (window as any)?.__SOCKET_URL__ || 'http://localhost:8080';
+    const socketInstance = io(socketUrl, {
       transports: ['websocket', 'polling'],
       timeout: 20000,
     });
