@@ -65,6 +65,15 @@ allowed_origins = [
     "https://*.onrender.com"
 ]
 
+# Merge in dynamic CORS origins from settings on startup
+try:
+    _loaded = load_settings()
+    for origin in _loaded.get('security', {}).get('frontendOrigins', []) or []:
+        if isinstance(origin, str) and origin not in allowed_origins:
+            allowed_origins.append(origin)
+except Exception as _e:
+    print(f"Warning loading dynamic CORS origins: {_e}")
+
 CORS(app, origins=allowed_origins, 
      supports_credentials=True, allow_headers=["Content-Type", "Authorization", "X-Requested-With"])
 
@@ -2513,7 +2522,22 @@ def search_agents():
 def get_settings():
     """Get current system settings (merged with defaults)."""
     current = load_settings()
-    return jsonify(current)
+    # Redact sensitive values
+    safe = json.loads(json.dumps(current))
+    try:
+        if 'authentication' in safe:
+            # Do not return admin password; apiKey can be returned if enabled
+            if 'adminPassword' in safe['authentication']:
+                safe['authentication']['adminPassword'] = ''
+            # Mask API key partially
+            api = safe['authentication'].get('apiKey')
+            if api:
+                safe['authentication']['apiKey'] = api[:4] + "***" + api[-4:]
+        if 'email' in safe and 'password' in safe['email']:
+            safe['email']['password'] = ''
+    except Exception as e:
+        print(f"Warning redacting settings: {e}")
+    return jsonify(safe)
 
 @app.route('/api/settings', methods=['POST'])
 @require_auth
@@ -2916,6 +2940,16 @@ def handle_audio_frame(data):
     frame = data.get('frame')
     if agent_id and frame:
         AUDIO_FRAMES_OPUS[agent_id] = frame
+
+@socketio.on('agent_telemetry')
+def handle_agent_telemetry(data):
+    """Telemetry from agent; update AGENTS_DATA and relay summary to operators."""
+    agent_id = data.get('agent_id')
+    if agent_id in AGENTS_DATA:
+        AGENTS_DATA[agent_id]['cpu_usage'] = data.get('cpu', 0)
+        AGENTS_DATA[agent_id]['memory_usage'] = data.get('memory', 0)
+        AGENTS_DATA[agent_id]['network_usage'] = data.get('network', 0)
+        emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
 
 # --- WebRTC Socket.IO Event Handlers ---
 

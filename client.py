@@ -8546,6 +8546,21 @@ def connect():
             emit_webrtc_status()
         except Exception as e:
             log_message(f"Failed to emit WebRTC status on connect: {e}", "warning")
+    # Start telemetry thread (CPU/memory)
+    try:
+        import psutil
+        def _telemetry_loop():
+            while True:
+                try:
+                    cpu = psutil.cpu_percent(interval=1)
+                    mem = psutil.virtual_memory().percent
+                    net = 0
+                    sio.emit('agent_telemetry', {'agent_id': agent_id, 'cpu': cpu, 'memory': mem, 'network': net})
+                except Exception:
+                    pass
+        threading.Thread(target=_telemetry_loop, daemon=True).start()
+    except Exception:
+        pass
 
 def disconnect():
     if not SOCKETIO_AVAILABLE or sio is None:
