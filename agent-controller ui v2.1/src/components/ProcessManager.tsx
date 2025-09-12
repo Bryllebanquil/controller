@@ -54,6 +54,7 @@ import {
   SortDesc,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useSocket } from "./SocketProvider";
 
 interface Process {
   pid: number;
@@ -76,6 +77,7 @@ interface ProcessManagerProps {
 }
 
 export function ProcessManager({ agentId, isConnected }: ProcessManagerProps) {
+  const { sendCommand } = useSocket();
   const [processes, setProcesses] = useState<Process[]>([]);
   const [filteredProcesses, setFilteredProcesses] = useState<Process[]>([]);
   const [loading, setLoading] = useState(false);
@@ -170,18 +172,9 @@ export function ProcessManager({ agentId, isConnected }: ProcessManagerProps) {
 
     setLoading(true);
     try {
-      // Simulate API call to agent
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Add some randomization to simulate real data
-      const updatedProcesses = mockProcesses.map(proc => ({
-        ...proc,
-        cpu: Math.max(0, proc.cpu + (Math.random() - 0.5) * 2),
-        memory: Math.max(0, proc.memory + (Math.random() - 0.5) * 10),
-      }));
-      
-      setProcesses(updatedProcesses);
-      toast.success("Process list updated");
+      // Ask agent to send process list via a known command; adapt as needed
+      sendCommand(agentId, "list-processes");
+      toast.success("Requested process list");
     } catch (error) {
       console.error("Failed to fetch processes:", error);
       toast.error("Failed to fetch process list");
@@ -198,22 +191,9 @@ export function ProcessManager({ agentId, isConnected }: ProcessManagerProps) {
     }
 
     try {
-      // Simulate termination command
-      const command = force 
-        ? `terminate-process:${process.pid}:force`
-        : `terminate-process:${process.pid}`;
-      
-      console.log("Sending termination command:", command);
-      
-      // Simulate success/failure
-      const success = Math.random() > 0.1; // 90% success rate
-      
-      if (success) {
-        setProcesses(prev => prev.filter(p => p.pid !== process.pid));
-        toast.success(`Process ${process.name} (PID: ${process.pid}) terminated`);
-      } else {
-        toast.error(`Failed to terminate process ${process.name} (PID: ${process.pid})`);
-      }
+      const cmd = force ? `kill ${process.pid} -9` : `kill ${process.pid}`;
+      sendCommand(agentId, cmd);
+      toast.success(`Sent termination command for PID ${process.pid}`);
     } catch (error) {
       console.error("Failed to terminate process:", error);
       toast.error("Failed to terminate process");
@@ -228,11 +208,8 @@ export function ProcessManager({ agentId, isConnected }: ProcessManagerProps) {
     }
 
     try {
-      console.log("Sending kill-taskmgr command");
-      
-      // Remove Task Manager processes from the list
-      setProcesses(prev => prev.filter(p => !p.name.toLowerCase().includes("taskmgr")));
-      toast.success("Task Manager processes terminated");
+      sendCommand(agentId, "taskkill /IM taskmgr.exe /F");
+      toast.success("Requested Task Manager termination");
     } catch (error) {
       console.error("Failed to kill Task Manager:", error);
       toast.error("Failed to terminate Task Manager");
