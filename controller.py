@@ -69,7 +69,8 @@ allowed_origins = [
 CORS(app, origins=allowed_origins, 
      supports_credentials=True, allow_headers=["Content-Type", "Authorization", "X-Requested-With"])
 
-socketio = SocketIO(app, async_mode='gevent', cors_allowed_origins=allowed_origins)
+# Use eventlet (matches Procfile start command) or auto-detect if eventlet is available
+socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins=allowed_origins)
 
 # WebRTC Configuration
 WEBRTC_CONFIG = {
