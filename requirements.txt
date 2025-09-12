@@ -2,7 +2,9 @@
 flask>=2.3.2
 flask_socketio>=5.5.1
 flask-cors>=4.0.0
-eventlet==0.33.3
+# Use gevent stack on Render (Python 3.13 compatible)
+gevent==23.9.1
+gevent-websocket==0.10.1
 gunicorn>=23.0.0
 python-socketio>=5.13.0
 websockets>=10.4

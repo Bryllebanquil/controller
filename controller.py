@@ -1,8 +1,8 @@
 #final controller
-# Prefer eventlet when running with gunicorn -k eventlet
+# Prefer gevent when running with gunicorn gevent-websocket worker
 try:
-    import eventlet
-    eventlet.monkey_patch()
+    from gevent import monkey as gevent_monkey
+    gevent_monkey.patch_all()
 except ImportError:
     pass
 
@@ -74,7 +74,7 @@ CORS(app, origins=allowed_origins,
      supports_credentials=True, allow_headers=["Content-Type", "Authorization", "X-Requested-With"])
 
 # Use eventlet (matches Procfile start command) or auto-detect if eventlet is available
-socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins=allowed_origins)
+socketio = SocketIO(app, async_mode='gevent', cors_allowed_origins=allowed_origins)
 
 # WebRTC Configuration
 WEBRTC_CONFIG = {

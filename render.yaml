@@ -5,7 +5,7 @@ services:
     pythonVersion: 3.12.6
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn -k eventlet -w 1 controller:app --bind 0.0.0.0:$PORT
+    startCommand: gunicorn -k geventwebsocket.gunicorn.workers.GeventWebSocketWorker -w 1 controller:app --bind 0.0.0.0:$PORT
     autoDeploy: true
     envVars:
       - key: HOST
