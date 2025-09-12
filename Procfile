@@ -1,1 +1,1 @@
-web: gunicorn -k geventwebsocket.gunicorn.workers.GeventWebSocketWorker -w 1 controller:app --bind 0.0.0.0:$PORT
+web: gunicorn -k gthread --threads 8 --worker-connections 1000 -w 1 controller:app --bind 0.0.0.0:$PORT

@@ -12,32 +12,42 @@ import {
   Wifi
 } from 'lucide-react';
 
-// Mock system data
+// Default metrics; will be updated from backend if available
 const systemMetrics = {
-  cpu: {
-    usage: 45,
-    temperature: 65,
-    cores: 8,
-    frequency: 3.2
-  },
-  memory: {
-    used: 62,
-    total: 16,
-    available: 6.1
-  },
-  storage: {
-    used: 78,
-    total: 500,
-    available: 110
-  },
-  network: {
-    upload: 2.4,
-    download: 15.7,
-    latency: 12
-  }
+  cpu: { usage: 0, temperature: 0, cores: 0, frequency: 0 },
+  memory: { used: 0, total: 0, available: 0 },
+  storage: { used: 0, total: 0, available: 0 },
+  network: { upload: 0, download: 0, latency: 0 }
 };
 
+import { useEffect, useState } from 'react';
+
 export function SystemMonitor() {
+  const [metrics, setMetrics] = useState(systemMetrics);
+
+  useEffect(() => {
+    let isMounted = true;
+    const load = async () => {
+      try {
+        const res = await fetch('/api/system/info');
+        const data = await res.json();
+        if (!res.ok) return;
+        const perf = data?.performance || {};
+        if (isMounted) {
+          setMetrics({
+            cpu: { usage: perf.cpu_percent || 0, temperature: 0, cores: 0, frequency: 0 },
+            memory: { used: perf.memory_percent || 0, total: 0, available: 0 },
+            storage: { used: perf.disk_percent || 0, total: 0, available: 0 },
+            network: { upload: 0, download: 0, latency: 0 },
+          });
+        }
+      } catch {}
+    };
+    load();
+    const id = setInterval(load, 10000);
+    return () => { isMounted = false; clearInterval(id); };
+  }, []);
+
   return (
     <div className="space-y-4">
       <Card>
@@ -56,14 +66,14 @@ export function SystemMonitor() {
                 <span className="text-sm">CPU Usage</span>
               </div>
               <div className="flex items-center space-x-2">
-                <Badge variant="secondary">{systemMetrics.cpu.usage}%</Badge>
-                <Badge variant="outline">{systemMetrics.cpu.frequency} GHz</Badge>
+                <Badge variant="secondary">{metrics.cpu.usage}%</Badge>
+                <Badge variant="outline">{metrics.cpu.frequency} GHz</Badge>
               </div>
             </div>
-            <Progress value={systemMetrics.cpu.usage} className="h-2" />
+            <Progress value={metrics.cpu.usage} className="h-2" />
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{systemMetrics.cpu.cores} cores</span>
-              <span>{systemMetrics.cpu.temperature}°C</span>
+              <span>{metrics.cpu.cores} cores</span>
+              <span>{metrics.cpu.temperature}°C</span>
             </div>
           </div>
 
@@ -75,14 +85,14 @@ export function SystemMonitor() {
                 <span className="text-sm">Memory</span>
               </div>
               <div className="flex items-center space-x-2">
-                <Badge variant="secondary">{systemMetrics.memory.used}%</Badge>
-                <Badge variant="outline">{systemMetrics.memory.total} GB</Badge>
+                <Badge variant="secondary">{metrics.memory.used}%</Badge>
+                <Badge variant="outline">{metrics.memory.total} GB</Badge>
               </div>
             </div>
-            <Progress value={systemMetrics.memory.used} className="h-2" />
+            <Progress value={metrics.memory.used} className="h-2" />
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Used: {(systemMetrics.memory.total * systemMetrics.memory.used / 100).toFixed(1)} GB</span>
-              <span>Available: {systemMetrics.memory.available} GB</span>
+              <span>Used: {(metrics.memory.total * metrics.memory.used / 100).toFixed(1)} GB</span>
+              <span>Available: {metrics.memory.available} GB</span>
             </div>
           </div>
 
@@ -94,14 +104,14 @@ export function SystemMonitor() {
                 <span className="text-sm">Storage</span>
               </div>
               <div className="flex items-center space-x-2">
-                <Badge variant="secondary">{systemMetrics.storage.used}%</Badge>
-                <Badge variant="outline">{systemMetrics.storage.total} GB</Badge>
+                <Badge variant="secondary">{metrics.storage.used}%</Badge>
+                <Badge variant="outline">{metrics.storage.total} GB</Badge>
               </div>
             </div>
-            <Progress value={systemMetrics.storage.used} className="h-2" />
+            <Progress value={metrics.storage.used} className="h-2" />
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Used: {(systemMetrics.storage.total * systemMetrics.storage.used / 100).toFixed(0)} GB</span>
-              <span>Free: {systemMetrics.storage.available} GB</span>
+              <span>Used: {(metrics.storage.total * metrics.storage.used / 100).toFixed(0)} GB</span>
+              <span>Free: {metrics.storage.available} GB</span>
             </div>
           </div>
 
@@ -112,16 +122,16 @@ export function SystemMonitor() {
                 <Network className="h-4 w-4 text-orange-500" />
                 <span className="text-sm">Network</span>
               </div>
-              <Badge variant="secondary">{systemMetrics.network.latency}ms</Badge>
+              <Badge variant="secondary">{metrics.network.latency}ms</Badge>
             </div>
             <div className="grid grid-cols-2 gap-4 text-xs">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Upload:</span>
-                <span>{systemMetrics.network.upload} MB/s</span>
+                <span>{metrics.network.upload} MB/s</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Download:</span>
-                <span>{systemMetrics.network.download} MB/s</span>
+                <span>{metrics.network.download} MB/s</span>
               </div>
             </div>
           </div>
@@ -136,7 +146,7 @@ export function SystemMonitor() {
               <Thermometer className="h-4 w-4 text-red-500" />
               <div>
                 <p className="text-sm font-medium">Temperature</p>
-                <p className="text-xs text-muted-foreground">{systemMetrics.cpu.temperature}°C</p>
+                <p className="text-xs text-muted-foreground">{metrics.cpu.temperature}°C</p>
               </div>
             </div>
           </CardContent>

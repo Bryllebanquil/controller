@@ -1,7 +1,9 @@
 # Core web & socket dependencies
 flask>=2.3.2
 flask_socketio>=5.5.1
-eventlet>=0.40.2
+flask-cors>=4.0.0
+# Use eventlet stack (pin for Python 3.12 compatibility)
+eventlet==0.33.3
 gunicorn>=23.0.0
 python-socketio>=5.13.0
 websockets>=10.4

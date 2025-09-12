@@ -21,6 +21,7 @@ import {
   Clock
 } from 'lucide-react';
 import { cn } from './ui/utils';
+import { useSocket } from './SocketProvider';
 
 interface ActivityEvent {
   id: string;
@@ -49,110 +50,50 @@ const statusColors = {
   info: 'text-blue-600'
 };
 
-const mockActivities: ActivityEvent[] = [
-  {
-    id: 'act-001',
-    type: 'connection',
-    action: 'Agent Connected',
-    details: 'Successfully established connection',
-    agentId: 'agent-001',
-    agentName: 'Windows-Desktop-01',
-    timestamp: new Date(Date.now() - 30000),
-    status: 'success'
-  },
-  {
-    id: 'act-002',
-    type: 'stream',
-    action: 'Screen Stream Started',
-    details: 'High quality stream initiated',
-    agentId: 'agent-001',
-    agentName: 'Windows-Desktop-01',
-    timestamp: new Date(Date.now() - 120000),
-    status: 'info'
-  },
-  {
-    id: 'act-003',
-    type: 'command',
-    action: 'Command Executed',
-    details: 'systeminfo command completed successfully',
-    agentId: 'agent-002',
-    agentName: 'Linux-Server-01',
-    timestamp: new Date(Date.now() - 180000),
-    status: 'success'
-  },
-  {
-    id: 'act-004',
-    type: 'connection',
-    action: 'Agent Disconnected',
-    details: 'Connection lost unexpectedly',
-    agentId: 'agent-003',
-    agentName: 'MacBook-Pro-01',
-    timestamp: new Date(Date.now() - 300000),
-    status: 'warning'
-  },
-  {
-    id: 'act-005',
-    type: 'security',
-    action: 'Authentication Failed',
-    details: 'Invalid credentials from 192.168.1.250',
-    agentId: '',
-    agentName: 'System',
-    timestamp: new Date(Date.now() - 450000),
-    status: 'error'
-  },
-  {
-    id: 'act-006',
-    type: 'file',
-    action: 'File Transfer',
-    details: 'Downloaded system logs (2.4 MB)',
-    agentId: 'agent-002',
-    agentName: 'Linux-Server-01',
-    timestamp: new Date(Date.now() - 600000),
-    status: 'success'
-  }
-];
+const mockActivities: ActivityEvent[] = [];
 
 export function ActivityFeed() {
   const [activities, setActivities] = useState<ActivityEvent[]>(mockActivities);
   const [filter, setFilter] = useState<'all' | ActivityEvent['type']>('all');
   const [isLive, setIsLive] = useState(true);
+  const { socket } = useSocket();
 
-  // Simulate real-time activities
+  // Wire real-time activities
   useEffect(() => {
-    if (!isLive) return;
-
-    const interval = setInterval(() => {
-      if (Math.random() > 0.6) { // 40% chance every 5 seconds
-        const activityTypes: ActivityEvent['type'][] = ['connection', 'command', 'stream', 'file', 'system'];
-        const actions = {
-          connection: ['Agent Connected', 'Agent Disconnected', 'Connection Timeout'],
-          command: ['Command Executed', 'Command Failed', 'Batch Script Run'],
-          stream: ['Stream Started', 'Stream Stopped', 'Quality Changed'],
-          file: ['File Downloaded', 'File Uploaded', 'Directory Listed'],
-          system: ['System Restart', 'Service Started', 'Update Installed']
-        };
-        
-        const type = activityTypes[Math.floor(Math.random() * activityTypes.length)];
-        const typeActions = actions[type];
-        const action = typeActions[Math.floor(Math.random() * typeActions.length)];
-        
-        const newActivity: ActivityEvent = {
-          id: `act-${Date.now()}`,
-          type,
-          action,
-          details: 'Simulated activity for demonstration',
-          agentId: `agent-${String(Math.floor(Math.random() * 3) + 1).padStart(3, '0')}`,
-          agentName: ['Windows-Desktop-01', 'Linux-Server-01', 'MacBook-Pro-01'][Math.floor(Math.random() * 3)],
-          timestamp: new Date(),
-          status: ['success', 'info', 'warning'][Math.floor(Math.random() * 3)] as any
-        };
-        
-        setActivities(prev => [newActivity, ...prev.slice(0, 49)]); // Keep last 50 activities
-      }
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [isLive]);
+    if (!socket || !isLive) return;
+    const handleStatusUpdate = (data: any) => {
+      const newActivity: ActivityEvent = {
+        id: `act-${Date.now()}`,
+        type: 'system',
+        action: data.type || 'Status Update',
+        details: data.message || '',
+        agentId: data.agent_id || '',
+        agentName: data.agent_id || 'System',
+        timestamp: new Date(),
+        status: data.type === 'error' ? 'error' : 'info'
+      };
+      setActivities(prev => [newActivity, ...prev.slice(0, 49)]);
+    };
+    const handleActivity = (data: any) => {
+      const newActivity: ActivityEvent = {
+        id: `act-${Date.now()}`,
+        type: (data.category || 'system') as ActivityEvent['type'],
+        action: data.action || 'Activity',
+        details: data.details || '',
+        agentId: data.agent_id || '',
+        agentName: data.agent_name || 'System',
+        timestamp: new Date(),
+        status: (data.status || 'info') as any
+      };
+      setActivities(prev => [newActivity, ...prev.slice(0, 49)]);
+    };
+    socket.on('status_update', handleStatusUpdate);
+    socket.on('activity_update', handleActivity);
+    return () => {
+      socket.off('status_update', handleStatusUpdate);
+      socket.off('activity_update', handleActivity);
+    };
+  }, [socket, isLive]);
 
   const filteredActivities = activities.filter(activity => 
     filter === 'all' || activity.type === filter

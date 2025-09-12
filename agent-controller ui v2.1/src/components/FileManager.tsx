@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSocket } from './SocketProvider';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -23,6 +24,7 @@ import {
   Video,
   Music
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface FileManagerProps {
   agentId: string | null;
@@ -87,6 +89,8 @@ const formatFileSize = (bytes?: number) => {
 };
 
 export function FileManager({ agentId }: FileManagerProps) {
+  const { uploadFile, downloadFile } = useSocket();
+  const { socket } = useSocket();
   const [currentPath, setCurrentPath] = useState('/');
   const [files, setFiles] = useState(mockFiles);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
@@ -109,48 +113,77 @@ export function FileManager({ agentId }: FileManagerProps) {
   const handleNavigate = (path: string) => {
     setCurrentPath(path);
     setSelectedFiles([]);
-    // In a real app, this would fetch files from the agent
+    if (agentId && socket) {
+      const reqPath = path === '..' ? '/' : path;
+      socket.emit('execute_command', { agent_id: agentId, command: `list-dir:${reqPath}` });
+    }
   };
 
   const handleDownload = () => {
     if (selectedFiles.length === 0) return;
-    
-    // Simulate download progress
-    setUploadProgress(0);
-    const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev === null || prev >= 100) {
-          clearInterval(interval);
-          setTimeout(() => setUploadProgress(null), 1000);
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 200);
+    // Request download via socket (first selected file)
+    downloadFile(agentId!, selectedFiles[0]);
   };
 
-  const handleUpload = () => {
-    // Simulate file upload
+  const handleUpload = (e?: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e?.target?.files?.[0];
+    if (!file || !agentId) return;
     setUploadProgress(0);
-    const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev === null || prev >= 100) {
-          clearInterval(interval);
-          setTimeout(() => setUploadProgress(null), 1000);
-          return 100;
-        }
-        return prev + 15;
-      });
-    }, 300);
+    uploadFile(agentId, file, currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`);
   };
 
   const handleRefresh = () => {
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      // In a real app, this would refresh the file list
-    }, 1000);
+    handleNavigate(currentPath);
+    setTimeout(() => setIsLoading(false), 500);
   };
+
+  // Delete selected files
+  const handleDelete = () => {
+    if (!agentId || selectedFiles.length === 0 || !socket) return;
+    selectedFiles.forEach(name => {
+      const item = files.find(f => f.name === name);
+      if (item) {
+        socket.emit('execute_command', { agent_id: agentId, command: `delete-file:${item.path}` });
+      }
+    });
+  };
+
+  // Listen to operation results
+  useEffect(() => {
+    if (!socket) return;
+    const handler = (data: any) => {
+      if (!agentId || data.agent_id !== agentId) return;
+      if (data.success) {
+        toast.success(`${data.op} ok: ${data.path || data.dst || ''}`);
+        handleRefresh();
+      } else {
+        toast.error(`${data.op} failed: ${data.error || ''}`);
+      }
+    };
+    socket.on('file_op_result', handler);
+    return () => { socket.off('file_op_result', handler); };
+  }, [socket, agentId, files]);
+
+  // Listen for file_list updates from agent and map to UI items
+  useEffect(() => {
+    if (!socket) return;
+    const handler = (data: any) => {
+      if (!agentId || data.agent_id !== agentId) return;
+      setCurrentPath(data.path || '/');
+      const mapped = (data.files || []).map((f: any) => ({
+        name: f.name,
+        type: f.type,
+        size: f.size,
+        modified: new Date(f.modified || Date.now()),
+        path: f.path,
+        extension: f.extension
+      }));
+      setFiles(mapped);
+    };
+    socket.on('file_list', handler);
+    return () => { socket.off('file_list', handler); };
+  }, [socket, agentId]);
 
   return (
     <div className="space-y-6">
@@ -209,19 +242,17 @@ export function FileManager({ agentId }: FileManagerProps) {
                   <Download className="h-3 w-3 mr-1" />
                   Download ({selectedFiles.length})
                 </Button>
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  onClick={handleUpload}
-                  disabled={uploadProgress !== null}
-                >
-                  <Upload className="h-3 w-3 mr-1" />
-                  Upload
-                </Button>
+                <label className="inline-flex items-center">
+                  <input type="file" className="hidden" onChange={handleUpload} />
+                  <Button size="sm" variant="outline" disabled={uploadProgress !== null} asChild>
+                    <span className="inline-flex items-center"><Upload className="h-3 w-3 mr-1" />Upload</span>
+                  </Button>
+                </label>
                 <Button 
                   size="sm" 
                   variant="destructive"
                   disabled={selectedFiles.length === 0}
+                  onClick={handleDelete}
                 >
                   <Trash2 className="h-3 w-3" />
                 </Button>

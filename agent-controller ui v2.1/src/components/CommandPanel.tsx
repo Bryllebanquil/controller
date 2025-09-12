@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { useSocket } from './SocketProvider';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
@@ -40,6 +41,7 @@ const commandHistory = [
 ];
 
 export function CommandPanel({ agentId }: CommandPanelProps) {
+  const { sendCommand, commandOutput } = useSocket();
   const [command, setCommand] = useState('');
   const [output, setOutput] = useState('');
   const [isExecuting, setIsExecuting] = useState(false);
@@ -51,22 +53,20 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
 
     setIsExecuting(true);
     setOutput('Executing command...\n');
-
-    // Simulate command execution
-    setTimeout(() => {
-      const newEntry = {
+    try {
+      sendCommand(agentId, commandToExecute);
+      const entry = {
         id: Date.now(),
         command: commandToExecute,
-        output: `Command "${commandToExecute}" executed successfully.\n\nSample output for demonstration purposes.`,
+        output: '',
         timestamp: new Date(),
-        success: Math.random() > 0.1 // 90% success rate for demo
+        success: true
       };
-      
-      setHistory(prev => [newEntry, ...prev]);
-      setOutput(newEntry.output);
+      setHistory(prev => [entry, ...prev]);
+    } finally {
       setIsExecuting(false);
-      if (!cmd) setCommand(''); // Only clear if it's from the input field
-    }, 1000 + Math.random() * 2000);
+      if (!cmd) setCommand('');
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -79,6 +79,13 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
   const copyOutput = () => {
     navigator.clipboard.writeText(output);
   };
+
+  useEffect(() => {
+    // Update output window as new lines come in
+    if (commandOutput.length > 0) {
+      setOutput(prev => (prev ? prev + '\n' : '') + commandOutput[commandOutput.length - 1]);
+    }
+  }, [commandOutput]);
 
   return (
     <div className="space-y-6">

@@ -21,6 +21,7 @@ import {
   Clock
 } from 'lucide-react';
 import { cn } from './ui/utils';
+import { toast } from 'sonner';
 
 interface QuickAction {
   id: string;
@@ -126,22 +127,39 @@ export function QuickActions({ agentCount, selectedAgent }: QuickActionsProps) {
     }
 
     setExecutingAction(action.id);
-    
-    // Simulate execution
-    setTimeout(() => {
+    try {
+      const res = await fetch('/api/actions/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: action.id, agent_ids: [] })
+      });
+      const data = await res.json();
+      if (!res.ok || data.success === false) throw new Error(data.message || 'Action failed');
+      toast.success(`${action.label} sent to ${data.total_agents} agent(s)`);
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to execute action');
+    } finally {
       setExecutingAction(null);
-      // Show success notification (would integrate with notification system)
-    }, 2000 + Math.random() * 3000);
+    }
   };
 
   const confirmAndExecute = async (action: QuickAction) => {
     setConfirmAction(null);
     setExecutingAction(action.id);
-    
-    // Simulate execution
-    setTimeout(() => {
+    try {
+      const res = await fetch('/api/actions/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: action.id, agent_ids: [] })
+      });
+      const data = await res.json();
+      if (!res.ok || data.success === false) throw new Error(data.message || 'Action failed');
+      toast.success(`${action.label} sent to ${data.total_agents} agent(s)`);
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to execute action');
+    } finally {
       setExecutingAction(null);
-    }, 3000 + Math.random() * 2000);
+    }
   };
 
   const categoryIcons = {

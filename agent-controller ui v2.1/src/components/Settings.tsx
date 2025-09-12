@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -192,15 +192,86 @@ export function Settings() {
     setSaved(false);
   };
 
-  const saveSettings = () => {
-    // Simulate saving to backend
-    setTimeout(() => {
+  const saveSettings = async () => {
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+      });
+      const data = await res.json();
+      if (!res.ok || data.success === false) throw new Error(data.message || 'Save failed');
       setHasChanges(false);
       setSaved(true);
-      toast.success("Settings saved successfully");
+      toast.success(data.message || 'Settings saved successfully');
       setTimeout(() => setSaved(false), 3000);
-    }, 500);
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to save settings');
+    }
   };
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch('/api/settings');
+        const data = await res.json();
+        if (!res.ok) throw new Error('Failed to load settings');
+        setSettings(prev => ({
+          ...prev,
+          server: {
+            ...prev.server,
+            controllerUrl: data?.server?.controllerUrl ?? prev.server.controllerUrl,
+            serverPort: data?.server?.serverPort ?? prev.server.serverPort,
+            sslEnabled: data?.server?.sslEnabled ?? prev.server.sslEnabled,
+            maxAgents: data?.server?.maxAgents ?? prev.server.maxAgents,
+            heartbeatInterval: data?.server?.heartbeatInterval ?? prev.server.heartbeatInterval,
+            commandTimeout: data?.server?.commandTimeout ?? prev.server.commandTimeout,
+            autoReconnect: data?.server?.autoReconnect ?? prev.server.autoReconnect,
+            backupUrl: data?.server?.backupUrl ?? prev.server.backupUrl,
+          },
+          authentication: {
+            ...prev.authentication,
+            operatorPassword: data?.authentication?.operatorPassword ?? prev.authentication.operatorPassword,
+            sessionTimeout: data?.authentication?.sessionTimeout ?? prev.authentication.sessionTimeout,
+            maxLoginAttempts: data?.authentication?.maxLoginAttempts ?? prev.authentication.maxLoginAttempts,
+            requireTwoFactor: data?.authentication?.requireTwoFactor ?? prev.authentication.requireTwoFactor,
+            apiKeyEnabled: data?.authentication?.apiKeyEnabled ?? prev.authentication.apiKeyEnabled,
+            apiKey: data?.authentication?.apiKey ?? prev.authentication.apiKey,
+          },
+          email: {
+            ...prev.email,
+            enabled: data?.email?.enabled ?? prev.email.enabled,
+            smtpServer: data?.email?.smtpServer ?? prev.email.smtpServer,
+            smtpPort: data?.email?.smtpPort ?? prev.email.smtpPort,
+            username: data?.email?.username ?? prev.email.username,
+            password: data?.email?.password ?? prev.email.password,
+            recipient: data?.email?.recipient ?? prev.email.recipient,
+            enableTLS: data?.email?.enableTLS ?? prev.email.enableTLS,
+            notifyAgentOnline: data?.email?.notifyAgentOnline ?? prev.email.notifyAgentOnline,
+            notifyAgentOffline: data?.email?.notifyAgentOffline ?? prev.email.notifyAgentOffline,
+            notifyCommandFailure: data?.email?.notifyCommandFailure ?? prev.email.notifyCommandFailure,
+            notifySecurityAlert: data?.email?.notifySecurityAlert ?? prev.email.notifySecurityAlert,
+          },
+          agent: {
+            ...prev.agent,
+            ...data?.agent,
+          },
+          webrtc: {
+            ...prev.webrtc,
+            ...data?.webrtc,
+          },
+          security: {
+            ...prev.security,
+            ...data?.security,
+          },
+        }));
+      } catch (e: any) {
+        toast.error(e.message || 'Failed to load settings');
+      }
+    };
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const exportSettings = () => {
     const dataStr = JSON.stringify(settings, null, 2);
