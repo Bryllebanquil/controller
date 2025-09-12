@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: agent-controller-backend
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -k geventwebsocket.gunicorn.workers.GeventWebSocketWorker -w 1 controller:app --bind 0.0.0.0:$PORT
+    autoDeploy: true
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 10000
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      # Optional: allow CORS from your frontend URL (set this after frontend is created)
+      # - key: FRONTEND_ORIGIN
+      #   value: https://YOUR_FRONTEND.onrender.com
+
+  - type: static
+    name: agent-controller-frontend
+    buildCommand: |
+      cd "agent-controller ui v2.1" && \
+      npm ci || npm install && \
+      npm run build
+    staticPublishPath: "agent-controller ui v2.1/dist"
+    pullRequestPreviewsEnabled: false
+    envVars:
+      # IMPORTANT: The Vite app currently reads process.env.REACT_APP_SOCKET_URL.
+      # Set this to your backend's public URL after the backend deploys.
+      - key: REACT_APP_SOCKET_URL
+        value: https://agent-controller-backend.onrender.com
+    headers:
+      - path: "/*"
+        name: "Cache-Control"
+        value: "public, max-age=60"
+    routes:
+      # Let the SPA handle client-side routing
+      - type: rewrite
+        source: "/**"
+        destination: "/index.html"
+
