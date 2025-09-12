@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: neural-control-hub-frontend
+    env: node
+    plan: starter
+    region: oregon
+    buildCommand: cd "agent-controller ui" && npm install && npm run build
+    startCommand: cd "agent-controller ui" && npm run preview
+    envVars:
+      - key: NODE_VERSION
+        value: 18.17.0
+      - key: VITE_API_URL
+        value: https://neural-control-hub-backend.onrender.com
+      - key: VITE_WS_URL
+        value: https://neural-control-hub-backend.onrender.com
+      - key: VITE_NODE_ENV
+        value: production
+    autoDeploy: false

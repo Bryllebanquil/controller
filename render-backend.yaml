@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: neural-control-hub-backend
+    env: python
+    plan: starter
+    buildCommand: pip install -r backend-requirements.txt
+    startCommand: python start-backend.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 10000
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      - key: SECRET_KEY
+        generateValue: true
+      - key: SESSION_TIMEOUT
+        value: 3600
+      - key: MAX_LOGIN_ATTEMPTS
+        value: 5
+      - key: LOGIN_TIMEOUT
+        value: 300
+    healthCheckPath: /api/auth/status
+    autoDeploy: false
