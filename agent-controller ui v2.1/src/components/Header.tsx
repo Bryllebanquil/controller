@@ -4,7 +4,6 @@ import { Badge } from './ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { NotificationCenter } from './NotificationCenter';
 import { KeyboardShortcuts } from './KeyboardShortcuts';
-import { ConnectionStatus } from './ConnectionStatus';
 import { useTheme } from './ThemeProvider';
 
 interface HeaderProps {
@@ -18,24 +17,21 @@ export function Header({ onTabChange, onAgentSelect, onAgentDeselect }: HeaderPr
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center justify-between px-6">
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2">
-            <Shield className="h-8 w-8 text-primary" />
-            <div>
-              <h1 className="text-lg font-semibold">Neural Control Hub</h1>
-              <p className="text-xs text-muted-foreground">Advanced Agent Management</p>
+      <div className="container flex h-16 items-center justify-between px-4 sm:px-6 gap-4">
+        <div className="flex items-center space-x-2 sm:space-x-4 min-w-0 flex-1">
+          <div className="flex items-center space-x-2 min-w-0">
+            <Shield className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-sm sm:text-lg font-semibold truncate">Neural Control Hub</h1>
+              <p className="text-xs text-muted-foreground hidden sm:block">Advanced Agent Management</p>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
-          <div className="hidden xl:block">
-            <ConnectionStatus />
-          </div>
+        <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
           
           <div className="hidden md:flex items-center space-x-2">
-            <Badge variant="secondary">v2.1</Badge>
+            <Badge variant="secondary" className="text-xs">v2.1</Badge>
           </div>
           
           <KeyboardShortcuts 
