@@ -67,7 +67,7 @@ export function ConnectionStatus() {
   return (
     <Card className="p-3">
       <CardContent className="p-0">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center space-x-3">
             <div className={cn("p-1 rounded-full", getStatusColor())}>
               <SignalIcon className="h-4 w-4" />
@@ -88,9 +88,9 @@ export function ConnectionStatus() {
               </div>
             </div>
           </div>
-          
-          <div className="text-right">
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+
+          <div className="text-right w-full sm:w-auto">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs justify-end">
               <div className="flex items-center space-x-1">
                 <Globe className="h-3 w-3 text-muted-foreground" />
                 <span>{connection.latency}ms</span>
