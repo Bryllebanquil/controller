@@ -65,7 +65,7 @@ export function ConnectionStatus() {
   const SignalIcon = getSignalIcon();
 
   return (
-    <Card className="p-3 w-auto max-w-[280px]">
+    <Card className="p-3 w-full">
       <CardContent className="p-0">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center space-x-3">

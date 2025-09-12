@@ -232,7 +232,10 @@ function AppContent() {
                     </CardContent>
                   </Card>
 
-                  {/* Removed duplicate Network Status summary to avoid confusion with ConnectionStatus widget */}
+                  {/* Insert compact connection status card here */}
+                  <div className="hidden md:block">
+                    <ConnectionStatus />
+                  </div>
                 </div>
               )}
 
