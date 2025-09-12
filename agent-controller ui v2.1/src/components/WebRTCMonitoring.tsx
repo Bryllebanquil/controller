@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSocket } from './SocketProvider';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -105,120 +106,37 @@ export function WebRTCMonitoring({ selectedAgent }: WebRTCMonitoringProps) {
   const [migrationPlan, setMigrationPlan] = useState<MigrationPlan | null>(null);
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [selectedQuality, setSelectedQuality] = useState<'low' | 'medium' | 'high' | 'auto'>('auto');
+  const { socket } = useSocket();
 
-  // Mock data for demonstration - in real app, this would come from Socket.IO
+  // Listen to backend WebRTC events
   useEffect(() => {
-    const mockStats: WebRTCStats = {
-      connection_state: 'connected',
-      ice_connection_state: 'connected',
-      ice_gathering_state: 'complete',
-      signaling_state: 'stable'
+    if (!socket || !selectedAgent) return;
+    const handleStats = (data: any) => {
+      setStats({
+        connection_state: data.connection_state || 'unknown',
+        ice_connection_state: data.ice_connection_state || 'unknown',
+        ice_gathering_state: data.ice_gathering_state || 'unknown',
+        signaling_state: data.signaling_state || 'unknown'
+      });
+      if (data.bandwidth_stats || data.quality_score) {
+        setQualityData({
+          quality_score: data.quality_score || 0,
+          bandwidth_stats: data.bandwidth_stats || { available_bandwidth: 0, current_bitrate: 0, packets_lost: 0, rtt: 0, jitter: 0 },
+          quality_issues: data.quality_issues || [],
+          timestamp: new Date().toISOString()
+        });
+      }
     };
-
-    const mockQualityData: QualityData = {
-      quality_score: 87,
-      bandwidth_stats: {
-        available_bandwidth: 2500000,
-        current_bitrate: 1800000,
-        packets_lost: 2,
-        rtt: 24,
-        jitter: 8.5
-      },
-      quality_issues: ['Minor jitter detected'],
-      timestamp: new Date().toISOString()
+    const handleError = (data: any) => {
+      console.error('WebRTC error:', data);
     };
-
-    const mockProductionReadiness: ProductionReadiness = {
-      current_implementation: 'aiortc_sfu',
-      target_implementation: 'mediasoup',
-      migration_phase: 'planning',
-      current_usage: {
-        agents: 12,
-        viewers: 35,
-        total_connections: 47
-      },
-      scalability_assessment: {
-        aiortc_limit_reached: false,
-        production_ready: true,
-        recommended_action: 'continue_with_aiortc'
-      },
-      performance_metrics: {
-        average_latency: 28,
-        average_bitrate: 1650000,
-        latency_target_met: true,
-        bitrate_target_met: true
-      },
-      recommendations: [
-        'Monitor viewer count approaching aiortc limits',
-        'Plan mediasoup migration for scale beyond 50 viewers'
-      ]
+    socket.on('webrtc_stats', handleStats);
+    socket.on('webrtc_error', handleError);
+    return () => {
+      socket.off('webrtc_stats', handleStats);
+      socket.off('webrtc_error', handleError);
     };
-
-    const mockMigrationPlan: MigrationPlan = {
-      current_state: {
-        implementation: 'aiortc_sfu',
-        max_viewers: 50,
-        technology: 'Python + aiortc'
-      },
-      target_state: {
-        implementation: 'mediasoup_sfu',
-        max_viewers: 1000,
-        technology: 'Node.js + mediasoup'
-      },
-      migration_phases: [
-        {
-          phase: 1,
-          name: 'Parallel Implementation',
-          description: 'Implement mediasoup alongside existing aiortc',
-          duration: '2-3 weeks',
-          tasks: [
-            'Set up Node.js mediasoup server',
-            'Implement mediasoup SFU logic',
-            'Create migration endpoints',
-            'Test with subset of viewers'
-          ]
-        },
-        {
-          phase: 2,
-          name: 'Gradual Migration',
-          description: 'Migrate viewers from aiortc to mediasoup',
-          duration: '1-2 weeks',
-          tasks: [
-            'Implement viewer routing logic',
-            'Add load balancing between aiortc and mediasoup',
-            'Monitor performance during migration',
-            'Handle fallback scenarios'
-          ]
-        },
-        {
-          phase: 3,
-          name: 'Full Migration',
-          description: 'Complete migration to mediasoup',
-          duration: '1 week',
-          tasks: [
-            'Migrate all remaining viewers',
-            'Decommission aiortc implementation',
-            'Performance validation',
-            'Documentation updates'
-          ]
-        }
-      ],
-      technical_requirements: [
-        'Node.js 18+ runtime',
-        'mediasoup library installation',
-        'Redis for session management',
-        'Load balancer configuration',
-        'Monitoring and alerting setup'
-      ],
-      estimated_effort: '4-6 weeks',
-      risk_assessment: 'Medium - requires careful testing and rollback plan'
-    };
-
-    setStats(mockStats);
-    setQualityData(mockQualityData);
-    setProductionReadiness(mockProductionReadiness);
-    setMigrationPlan(mockMigrationPlan);
-  }, [selectedAgent]);
+  }, [socket, selectedAgent]);
 
   const getConnectionStateColor = (state: string) => {
     switch (state) {
@@ -245,18 +163,21 @@ export function WebRTCMonitoring({ selectedAgent }: WebRTCMonitoringProps) {
 
   const handleQualityChange = (quality: 'low' | 'medium' | 'high' | 'auto') => {
     setSelectedQuality(quality);
-    // In real app, emit Socket.IO event: socket.emit('webrtc_set_quality', { agent_id: selectedAgent, quality });
-    console.log(`Setting WebRTC quality to ${quality} for agent ${selectedAgent}`);
+    if (socket && selectedAgent) {
+      socket.emit('webrtc_set_quality', { agent_id: selectedAgent, quality });
+    }
   };
 
   const toggleAdaptiveBitrate = () => {
-    // In real app, emit Socket.IO event: socket.emit('webrtc_adaptive_bitrate_control', { agent_id: selectedAgent });
-    console.log(`Triggering adaptive bitrate control for agent ${selectedAgent}`);
+    if (socket && selectedAgent) {
+      socket.emit('webrtc_adaptive_bitrate_control', { agent_id: selectedAgent });
+    }
   };
 
   const toggleFrameDropping = () => {
-    // In real app, emit Socket.IO event: socket.emit('webrtc_implement_frame_dropping', { agent_id: selectedAgent });
-    console.log(`Implementing frame dropping for agent ${selectedAgent}`);
+    if (socket && selectedAgent) {
+      socket.emit('webrtc_implement_frame_dropping', { agent_id: selectedAgent });
+    }
   };
 
   if (!selectedAgent) {
