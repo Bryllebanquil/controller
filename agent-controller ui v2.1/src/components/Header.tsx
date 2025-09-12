@@ -4,7 +4,6 @@ import { Badge } from './ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { NotificationCenter } from './NotificationCenter';
 import { KeyboardShortcuts } from './KeyboardShortcuts';
-import { ConnectionStatus } from './ConnectionStatus';
 import { useTheme } from './ThemeProvider';
 
 interface HeaderProps {
@@ -30,9 +29,6 @@ export function Header({ onTabChange, onAgentSelect, onAgentDeselect }: HeaderPr
         </div>
 
         <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
-          <div className="hidden lg:block">
-            <ConnectionStatus />
-          </div>
           
           <div className="hidden md:flex items-center space-x-2">
             <Badge variant="secondary" className="text-xs">v2.1</Badge>
