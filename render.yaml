@@ -23,7 +23,7 @@ services:
       cd "agent-controller ui v2.1" && \
       npm ci || npm install && \
       npm run build
-    staticPublishPath: "agent-controller ui v2.1/dist"
+    staticPublishPath: "agent-controller ui v2.1/build"
     pullRequestPreviewsEnabled: false
     envVars:
       - key: VITE_SOCKET_URL
