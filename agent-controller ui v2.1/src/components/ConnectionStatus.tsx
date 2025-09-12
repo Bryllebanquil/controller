@@ -65,44 +65,44 @@ export function ConnectionStatus() {
   const SignalIcon = getSignalIcon();
 
   return (
-    <Card className="p-3">
+    <Card className="p-2 sm:p-3 min-w-0 max-w-sm">
       <CardContent className="p-0">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center space-x-3">
-            <div className={cn("p-1 rounded-full", getStatusColor())}>
-              <SignalIcon className="h-4 w-4" />
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3">
+          <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
+            <div className={cn("p-1 rounded-full flex-shrink-0", getStatusColor())}>
+              <SignalIcon className="h-3 w-3 sm:h-4 sm:w-4" />
             </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <span className="text-sm font-medium">Network Status</span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center space-x-1 sm:space-x-2">
+                <span className="text-xs sm:text-sm font-medium truncate">Network Status</span>
                 <Badge 
                   variant={connection.status === 'excellent' ? 'default' : 
                           connection.status === 'good' ? 'secondary' : 'destructive'}
-                  className="text-xs capitalize"
+                  className="text-xs capitalize flex-shrink-0"
                 >
                   {connection.status}
                 </Badge>
               </div>
-              <div className="text-xs text-muted-foreground">
+              <div className="text-xs text-muted-foreground truncate">
                 Last updated: {connection.lastUpdate.toLocaleTimeString()}
               </div>
             </div>
           </div>
 
-          <div className="text-right w-full sm:w-auto">
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs justify-end">
+          <div className="w-full sm:w-auto flex-shrink-0">
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
               <div className="flex items-center space-x-1">
-                <Globe className="h-3 w-3 text-muted-foreground" />
-                <span>{connection.latency}ms</span>
+                <Globe className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                <span className="truncate">{connection.latency}ms</span>
               </div>
               <div className="flex items-center space-x-1">
-                <Server className="h-3 w-3 text-muted-foreground" />
-                <span>{connection.bandwidth} MB/s</span>
+                <Server className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                <span className="truncate">{connection.bandwidth} MB/s</span>
               </div>
-              <div className="text-muted-foreground">
+              <div className="text-muted-foreground truncate">
                 Uptime: {connection.uptime}%
               </div>
-              <div className="text-muted-foreground">
+              <div className="text-muted-foreground truncate">
                 Loss: {connection.packetsLost}%
               </div>
             </div>

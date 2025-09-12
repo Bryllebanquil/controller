@@ -16,6 +16,7 @@ import { WebRTCMonitoring } from "./components/WebRTCMonitoring";
 import { VoiceControl } from "./components/VoiceControl";
 import { ProcessManager } from "./components/ProcessManager";
 import { ThemeProvider } from "./components/ThemeProvider";
+import { ConnectionStatus } from "./components/ConnectionStatus";
 import {
   Tabs,
   TabsContent,
@@ -180,7 +181,12 @@ function AppContent() {
         />
 
         <main className="flex-1 overflow-auto">
-          <div className="p-6 space-y-6">
+          <div className="p-4 sm:p-6 space-y-6">
+            {/* Mobile Network Status - show on smaller screens */}
+            <div className="lg:hidden">
+              <ConnectionStatus />
+            </div>
+
             {/* Overview Stats - only show for overview tab */}
             {activeTab === "overview" &&
               !["settings", "about"].includes(activeTab) && (
