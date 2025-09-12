@@ -2562,7 +2562,18 @@ def update_settings():
     except Exception as e:
         print(f"Warning applying live settings: {e}")
 
-    return jsonify({'success': True, 'message': 'Settings saved. Some changes may require restart.'})
+    # Determine if restart is required for certain keys
+    restart_required = False
+    critical_paths = [
+        ('server', 'serverPort'),
+        ('server', 'sslEnabled'),
+        ('security', 'frontendOrigins')
+    ]
+    for sect, key in critical_paths:
+        if sect in incoming and key in incoming.get(sect, {}):
+            restart_required = True
+            break
+    return jsonify({'success': True, 'message': 'Settings saved.', 'restart_required': restart_required})
 
 @app.route('/api/settings/reset', methods=['POST'])
 @require_auth
@@ -2747,6 +2758,11 @@ def handle_file_list(data):
     path = data.get('path', '/')
     files = data.get('files', [])
     emit('file_list', {'agent_id': agent_id, 'path': path, 'files': files}, room='operators', broadcast=True)
+
+@socketio.on('file_op_result')
+def handle_file_op_result(data):
+    """Relay file operation result to operators."""
+    emit('file_op_result', data, room='operators', broadcast=True)
 
 @socketio.on('command_output')
 def handle_command_output(data):

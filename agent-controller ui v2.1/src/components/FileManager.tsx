@@ -24,6 +24,7 @@ import {
   Video,
   Music
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface FileManagerProps {
   agentId: string | null;
@@ -137,6 +138,33 @@ export function FileManager({ agentId }: FileManagerProps) {
     setTimeout(() => setIsLoading(false), 500);
   };
 
+  // Delete selected files
+  const handleDelete = () => {
+    if (!agentId || selectedFiles.length === 0 || !socket) return;
+    selectedFiles.forEach(name => {
+      const item = files.find(f => f.name === name);
+      if (item) {
+        socket.emit('execute_command', { agent_id: agentId, command: `delete-file:${item.path}` });
+      }
+    });
+  };
+
+  // Listen to operation results
+  useEffect(() => {
+    if (!socket) return;
+    const handler = (data: any) => {
+      if (!agentId || data.agent_id !== agentId) return;
+      if (data.success) {
+        toast.success(`${data.op} ok: ${data.path || data.dst || ''}`);
+        handleRefresh();
+      } else {
+        toast.error(`${data.op} failed: ${data.error || ''}`);
+      }
+    };
+    socket.on('file_op_result', handler);
+    return () => { socket.off('file_op_result', handler); };
+  }, [socket, agentId, files]);
+
   // Listen for file_list updates from agent and map to UI items
   useEffect(() => {
     if (!socket) return;
@@ -224,6 +252,7 @@ export function FileManager({ agentId }: FileManagerProps) {
                   size="sm" 
                   variant="destructive"
                   disabled={selectedFiles.length === 0}
+                  onClick={handleDelete}
                 >
                   <Trash2 className="h-3 w-3" />
                 </Button>

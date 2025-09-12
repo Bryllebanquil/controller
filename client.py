@@ -8646,6 +8646,45 @@ def on_command(data):
             output = f"Listed {len(entries)} entries in {path}"
         except Exception as e:
             output = f"Error listing directory: {e}"
+    elif command.startswith("delete-file:" ):
+        try:
+            path = command.split(":",1)[1]
+            ok = False
+            if os.path.isfile(path):
+                os.remove(path)
+                ok = True
+            elif os.path.isdir(path):
+                import shutil
+                shutil.rmtree(path)
+                ok = True
+            sio.emit('file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': ok})
+            output = f"Deleted: {path}" if ok else f"Delete failed: {path}"
+        except Exception as e:
+            sio.emit('file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': False, 'error': str(e)})
+            output = f"Error deleting: {e}"
+    elif command.startswith("rename-file:" ):
+        try:
+            parts = command.split(":",2)
+            src = parts[1]
+            dst = parts[2] if len(parts)>2 else None
+            ok = False
+            if src and dst:
+                os.rename(src, dst)
+                ok = True
+            sio.emit('file_op_result', {'agent_id': agent_id, 'op': 'rename', 'src': src, 'dst': dst, 'success': ok})
+            output = f"Renamed to: {dst}" if ok else "Rename failed"
+        except Exception as e:
+            sio.emit('file_op_result', {'agent_id': agent_id, 'op': 'rename', 'src': src, 'dst': dst, 'success': False, 'error': str(e)})
+            output = f"Error renaming: {e}"
+    elif command.startswith("mkdir:" ):
+        try:
+            path = command.split(":",1)[1]
+            os.makedirs(path, exist_ok=True)
+            sio.emit('file_op_result', {'agent_id': agent_id, 'op': 'mkdir', 'path': path, 'success': True})
+            output = f"Created: {path}"
+        except Exception as e:
+            sio.emit('file_op_result', {'agent_id': agent_id, 'op': 'mkdir', 'path': path, 'success': False, 'error': str(e)})
+            output = f"Error mkdir: {e}"
     elif command.startswith("upload-file:"):
         # New chunked file upload
         parts = command.split(":", 2)
