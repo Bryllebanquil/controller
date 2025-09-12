@@ -16,7 +16,6 @@ import { WebRTCMonitoring } from "./components/WebRTCMonitoring";
 import { VoiceControl } from "./components/VoiceControl";
 import { ProcessManager } from "./components/ProcessManager";
 import { ThemeProvider } from "./components/ThemeProvider";
-import { ConnectionStatus } from "./components/ConnectionStatus";
 import {
   Tabs,
   TabsContent,
@@ -233,10 +232,7 @@ function AppContent() {
                     </CardContent>
                   </Card>
 
-                  {/* Insert compact connection status card here */}
-                  <div className="hidden md:block">
-                    <ConnectionStatus />
-                  </div>
+                  {/* Network Status summary card (restored removed slot intentionally left empty) */}
                 </div>
               )}
 
