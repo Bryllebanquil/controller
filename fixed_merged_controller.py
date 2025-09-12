@@ -1,4 +1,4 @@
-# MERGED CONTROLLER WITH FRONTEND UI
+# FIXED MERGED CONTROLLER WITH FRONTEND UI
 # This file combines the controller.py backend with the frontend UI
 
 from flask import Flask, request, jsonify, redirect, url_for, Response, send_file, session, flash, render_template_string, render_template
@@ -15,6 +15,7 @@ import hmac
 import secrets
 import threading
 import smtplib
+import json
 from email.mime.text import MIMEText
 
 # WebRTC imports for SFU functionality
@@ -57,29 +58,15 @@ class Config:
 app = Flask(__name__)
 app.config['SECRET_KEY'] = Config.SECRET_KEY or secrets.token_hex(32)
 
-# Configure CORS for frontend-backend communication
-allowed_origins = [
-    "http://localhost:3000", 
-    "http://localhost:5173", 
-    "http://127.0.0.1:3000", 
-    "http://127.0.0.1:5173",
-    "http://localhost:8080",
-    "http://127.0.0.1:8080",
-    "http://192.168.100.239:8080",
-    "https://neural-control-hub-frontend.onrender.com",
-    "https://agent-controller-dashboard.onrender.com",
-    "https://*.onrender.com"
-]
-
-CORS(app, origins=allowed_origins, 
-     supports_credentials=True, allow_headers=["Content-Type", "Authorization", "X-Requested-With"])
+# Configure CORS for frontend-backend communication - ALLOW ALL ORIGINS
+CORS(app, origins="*", supports_credentials=True, allow_headers=["Content-Type", "Authorization", "X-Requested-With"])
 
 # Use threading for Socket.IO with proper CORS configuration
 socketio = SocketIO(app, 
                    async_mode='threading', 
-                   cors_allowed_origins=allowed_origins,
+                   cors_allowed_origins="*",
                    allow_upgrades=True,
-                   transports=['websocket', 'polling'],
+                   transports=['polling', 'websocket'],
                    ping_timeout=60,
                    ping_interval=25)
 
@@ -118,7 +105,7 @@ DEFAULT_SETTINGS = {
         'enableRateLimiting': False,
         'allowedIPs': [],
         'blockedIPs': [],
-        'frontendOrigins': allowed_origins
+        'frontendOrigins': ["*"]
     },
     'notifications': {
         'enableEmailNotifications': False,
