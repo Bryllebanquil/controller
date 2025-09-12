@@ -16,6 +16,7 @@ import { WebRTCMonitoring } from "./components/WebRTCMonitoring";
 import { VoiceControl } from "./components/VoiceControl";
 import { ProcessManager } from "./components/ProcessManager";
 import { ThemeProvider } from "./components/ThemeProvider";
+import { ConnectionStatus } from "./components/ConnectionStatus";
 import {
   Tabs,
   TabsContent,
