@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSocket } from "./components/SocketProvider";
 import { AgentCard } from "./components/AgentCard";
 import { StreamViewer } from "./components/StreamViewer";
 import { CommandPanel } from "./components/CommandPanel";
@@ -41,52 +42,19 @@ import {
   Wifi,
 } from "lucide-react";
 
-// Mock data for demonstration
-const mockAgents = [
-  {
-    id: "agent-001",
-    name: "Windows-Desktop-01",
-    status: "online",
-    platform: "Windows 11",
-    ip: "192.168.1.100",
-    lastSeen: new Date(),
-    capabilities: [
-      "screen",
-      "audio",
-      "camera",
-      "files",
-      "commands",
-    ],
-    performance: { cpu: 45, memory: 62, network: 12 },
-  },
-  {
-    id: "agent-002",
-    name: "Linux-Server-01",
-    status: "online",
-    platform: "Ubuntu 22.04",
-    ip: "192.168.1.101",
-    lastSeen: new Date(),
-    capabilities: ["screen", "files", "commands"],
-    performance: { cpu: 23, memory: 78, network: 8 },
-  },
-  {
-    id: "agent-003",
-    name: "MacBook-Pro-01",
-    status: "offline",
-    platform: "macOS Sonoma",
-    ip: "192.168.1.102",
-    lastSeen: new Date(Date.now() - 300000),
-    capabilities: ["screen", "audio", "camera", "files"],
-    performance: { cpu: 0, memory: 0, network: 0 },
-  },
-];
+// Live agents come from SocketProvider via agent_list_update
 
 function AppContent() {
+  const { agents: liveAgents } = useSocket();
   const [selectedAgent, setSelectedAgent] = useState<
     string | null
   >(null);
   const [activeTab, setActiveTab] = useState("overview");
-  const [agents, setAgents] = useState(mockAgents);
+  const [agents, setAgents] = useState(liveAgents);
+
+  useEffect(() => {
+    setAgents(liveAgents);
+  }, [liveAgents]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filters, setFilters] = useState({
     status: [],
@@ -242,9 +210,7 @@ function AppContent() {
                       <Monitor className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold">
-                        2
-                      </div>
+                      <div className="text-2xl font-bold">0</div>
                       <p className="text-xs text-muted-foreground">
                         Screen + Audio
                       </p>
@@ -259,9 +225,7 @@ function AppContent() {
                       <Terminal className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold">
-                        127
-                      </div>
+                      <div className="text-2xl font-bold">0</div>
                       <p className="text-xs text-muted-foreground">
                         +12 from last hour
                       </p>

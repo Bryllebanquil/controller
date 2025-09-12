@@ -1475,7 +1475,7 @@ DASHBOARD_HTML = r'''
             <div class="overview-section">
               <h4>Agent Statistics</h4>
               <div id="agent-stats-display" class="info-display">
-                <div class="info-item"><span class="label">Agent Reports:</span> <span id="agent-reports">39</span></div>
+                <div class="info-item"><span class="label">Agent Reports:</span> <span id="agent-reports">0</span></div>
                 <div class="info-item"><span class="label">Agents Status:</span> <span id="agents-status">26</span></div>
                 <div class="info-item"><span class="label">Overall Pass Rate:</span> <span id="pass-rate">57%</span></div>
                 <div class="info-item"><span class="label">Trend:</span> <span id="trend-info">vs previous period</span></div>
