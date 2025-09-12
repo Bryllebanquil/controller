@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSocket } from './SocketProvider';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -87,6 +88,7 @@ const formatFileSize = (bytes?: number) => {
 };
 
 export function FileManager({ agentId }: FileManagerProps) {
+  const { uploadFile, downloadFile } = useSocket();
   const [currentPath, setCurrentPath] = useState('/');
   const [files, setFiles] = useState(mockFiles);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
@@ -114,34 +116,15 @@ export function FileManager({ agentId }: FileManagerProps) {
 
   const handleDownload = () => {
     if (selectedFiles.length === 0) return;
-    
-    // Simulate download progress
-    setUploadProgress(0);
-    const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev === null || prev >= 100) {
-          clearInterval(interval);
-          setTimeout(() => setUploadProgress(null), 1000);
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 200);
+    // Request download via socket (first selected file)
+    downloadFile(agentId!, selectedFiles[0]);
   };
 
-  const handleUpload = () => {
-    // Simulate file upload
+  const handleUpload = (e?: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e?.target?.files?.[0];
+    if (!file || !agentId) return;
     setUploadProgress(0);
-    const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        if (prev === null || prev >= 100) {
-          clearInterval(interval);
-          setTimeout(() => setUploadProgress(null), 1000);
-          return 100;
-        }
-        return prev + 15;
-      });
-    }, 300);
+    uploadFile(agentId, file, currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`);
   };
 
   const handleRefresh = () => {
@@ -209,15 +192,12 @@ export function FileManager({ agentId }: FileManagerProps) {
                   <Download className="h-3 w-3 mr-1" />
                   Download ({selectedFiles.length})
                 </Button>
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  onClick={handleUpload}
-                  disabled={uploadProgress !== null}
-                >
-                  <Upload className="h-3 w-3 mr-1" />
-                  Upload
-                </Button>
+                <label className="inline-flex items-center">
+                  <input type="file" className="hidden" onChange={handleUpload} />
+                  <Button size="sm" variant="outline" disabled={uploadProgress !== null} asChild>
+                    <span className="inline-flex items-center"><Upload className="h-3 w-3 mr-1" />Upload</span>
+                  </Button>
+                </label>
                 <Button 
                   size="sm" 
                   variant="destructive"

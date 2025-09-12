@@ -12,6 +12,7 @@ import {
   Server
 } from 'lucide-react';
 import { cn } from './ui/utils';
+import { useSocket } from './SocketProvider';
 
 interface ConnectionData {
   status: 'excellent' | 'good' | 'poor' | 'offline';
@@ -23,43 +24,23 @@ interface ConnectionData {
 }
 
 export function ConnectionStatus() {
+  const { connected } = useSocket();
   const [connection, setConnection] = useState<ConnectionData>({
-    status: 'excellent',
-    latency: 12,
-    bandwidth: 2.4,
-    uptime: 99.8,
-    packetsLost: 0.1,
+    status: 'offline',
+    latency: 0,
+    bandwidth: 0,
+    uptime: 0,
+    packetsLost: 0,
     lastUpdate: new Date()
   });
 
-  // Simulate connection fluctuations
   useEffect(() => {
-    const interval = setInterval(() => {
-      setConnection(prev => {
-        const newLatency = Math.max(5, prev.latency + (Math.random() - 0.5) * 10);
-        const newBandwidth = Math.max(0.5, prev.bandwidth + (Math.random() - 0.5) * 0.5);
-        const newPacketsLost = Math.max(0, prev.packetsLost + (Math.random() - 0.5) * 0.2);
-        
-        let newStatus: ConnectionData['status'] = 'excellent';
-        if (newLatency > 50 || newPacketsLost > 2) {
-          newStatus = 'poor';
-        } else if (newLatency > 25 || newPacketsLost > 1) {
-          newStatus = 'good';
-        }
-
-        return {
-          ...prev,
-          status: newStatus,
-          latency: Math.round(newLatency),
-          bandwidth: Math.round(newBandwidth * 10) / 10,
-          packetsLost: Math.round(newPacketsLost * 10) / 10,
-          lastUpdate: new Date()
-        };
-      });
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, []);
+    setConnection(prev => ({
+      ...prev,
+      status: connected ? 'excellent' : 'offline',
+      lastUpdate: new Date()
+    }));
+  }, [connected]);
 
   const getSignalIcon = () => {
     switch (connection.status) {
