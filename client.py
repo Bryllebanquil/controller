@@ -5874,6 +5874,18 @@ def register_socketio_handlers():
     sio.on('webrtc_get_production_readiness')(on_webrtc_get_production_readiness)
     sio.on('webrtc_get_migration_plan')(on_webrtc_get_migration_plan)
     sio.on('webrtc_get_monitoring_data')(on_webrtc_get_monitoring_data)
+    
+    # Apply configuration pushed from controller
+    def on_agent_config(data):
+        try:
+            cfg = data.get('config', {})
+            server_cfg = cfg.get('server', {})
+            # These could control internal intervals/behaviors if needed
+            # For now, just log and acknowledge receipt
+            log_message(f"Received agent_config: {server_cfg}")
+        except Exception as e:
+            log_message(f"Error applying agent_config: {e}", "warning")
+    sio.on('agent_config')(on_agent_config)
     sio.on('webrtc_adaptive_bitrate_control')(on_webrtc_adaptive_bitrate_control)
     sio.on('webrtc_implement_frame_dropping')(on_webrtc_implement_frame_dropping)
     
