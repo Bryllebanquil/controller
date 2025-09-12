@@ -5880,9 +5880,15 @@ def register_socketio_handlers():
         try:
             cfg = data.get('config', {})
             server_cfg = cfg.get('server', {})
-            # These could control internal intervals/behaviors if needed
-            # For now, just log and acknowledge receipt
-            log_message(f"Received agent_config: {server_cfg}")
+            # Apply heartbeat/timeout/autoreconnect in globals if present
+            try:
+                hb = int(server_cfg.get('heartbeatInterval', 30))
+            except Exception:
+                hb = 30
+            globals()['HEARTBEAT_INTERVAL'] = hb
+            globals()['AUTO_RECONNECT'] = bool(server_cfg.get('autoReconnect', True))
+            globals()['COMMAND_TIMEOUT'] = int(server_cfg.get('commandTimeout', 30))
+            log_message(f"Applied agent_config: heartbeat={hb}s, autoreconnect={AUTO_RECONNECT}")
         except Exception as e:
             log_message(f"Error applying agent_config: {e}", "warning")
     sio.on('agent_config')(on_agent_config)
