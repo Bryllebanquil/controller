@@ -4,12 +4,7 @@
 from flask import Flask, request, jsonify, redirect, url_for, Response, send_file, session, flash, render_template_string, render_template
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_cors import CORS
-try:
-    from flask_limiter import Limiter
-    from flask_limiter.util import get_remote_address
-    LIMITER_AVAILABLE = True
-except ImportError:
-    LIMITER_AVAILABLE = False
+LIMITER_AVAILABLE = False
 from collections import defaultdict
 import datetime
 import time
@@ -88,9 +83,7 @@ CORS(app, origins=allowed_origins,
 # Use eventlet (matches Procfile start command) or auto-detect if eventlet is available
 socketio = SocketIO(app, async_mode='threading', cors_allowed_origins=allowed_origins)
 
-# Optional rate limiting
-if LIMITER_AVAILABLE:
-    limiter = Limiter(get_remote_address, app=app, default_limits=[])
+# Optional rate limiting (disabled in this revision)
 
 # -----------------------------
 # Settings persistence (JSON)
@@ -2501,7 +2494,7 @@ def execute_bulk_action():
     })
 
 if LIMITER_AVAILABLE:
-    execute_bulk_action = limiter.limit("20/minute")(execute_bulk_action)  # type: ignore
+    pass
 
 # Search and Filter API
 @app.route('/api/agents/search', methods=['GET'])
@@ -2583,7 +2576,7 @@ def get_settings():
     return jsonify(safe)
 
 if LIMITER_AVAILABLE:
-    get_settings = limiter.limit("30/minute")(get_settings)  # type: ignore
+    pass
 
 @app.route('/api/settings', methods=['POST'])
 @require_auth
@@ -2629,7 +2622,7 @@ def update_settings():
     return jsonify({'success': True, 'message': 'Settings saved.', 'restart_required': restart_required})
 
 if LIMITER_AVAILABLE:
-    update_settings = limiter.limit("10/minute")(update_settings)  # type: ignore
+    pass
 
 @app.route('/api/settings/reset', methods=['POST'])
 @require_auth
@@ -2741,12 +2734,6 @@ def handle_disconnect():
         }, room='operators', broadcast=True)
         
         print(f"Agent {disconnected_agent_id} disconnected.")
-        try:
-            cfg = load_settings().get('email', {})
-            if cfg.get('enabled') and cfg.get('notifyAgentOffline'):
-                send_email_notification("Agent Disconnected", f"Agent {disconnected_agent_id} disconnected")
-        except Exception:
-            pass
     else:
         print(f"Operator client disconnected: {request.sid}")
 
@@ -2758,18 +2745,7 @@ def handle_operator_connect():
     print("Operator dashboard connected.")
 
 def _emit_agent_config(agent_id: str):
-    settings = load_settings()
-    config = {
-        'agent': settings.get('agent', {}),
-        'server': {
-            'heartbeatInterval': settings.get('server', {}).get('heartbeatInterval', 30),
-            'commandTimeout': settings.get('server', {}).get('commandTimeout', 30),
-            'autoReconnect': settings.get('server', {}).get('autoReconnect', True),
-        }
-    }
-    agent_sid = AGENTS_DATA.get(agent_id, {}).get('sid')
-    if agent_sid:
-        socketio.emit('agent_config', {'config': config}, room=agent_sid)
+    return
 
 @socketio.on('agent_connect')
 def handle_agent_connect(data):
@@ -2806,18 +2782,7 @@ def handle_agent_connect(data):
         'status': 'success'
     }, room='operators', broadcast=True)
     print(f"Agent {agent_id} connected with SID {request.sid}")
-    # Notify via email if configured
-    try:
-        cfg = load_settings().get('email', {})
-        if cfg.get('enabled') and cfg.get('notifyAgentOnline'):
-            send_email_notification("Agent Connected", f"Agent {agent_id} connected")
-    except Exception:
-        pass
-    # Send configuration to agent
-    try:
-        _emit_agent_config(agent_id)
-    except Exception:
-        pass
+    pass
 
 @socketio.on('execute_command')
 def handle_execute_command(data):

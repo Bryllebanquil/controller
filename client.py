@@ -5876,22 +5876,7 @@ def register_socketio_handlers():
     sio.on('webrtc_get_monitoring_data')(on_webrtc_get_monitoring_data)
     
     # Apply configuration pushed from controller
-    def on_agent_config(data):
-        try:
-            cfg = data.get('config', {})
-            server_cfg = cfg.get('server', {})
-            # Apply heartbeat/timeout/autoreconnect in globals if present
-            try:
-                hb = int(server_cfg.get('heartbeatInterval', 30))
-            except Exception:
-                hb = 30
-            globals()['HEARTBEAT_INTERVAL'] = hb
-            globals()['AUTO_RECONNECT'] = bool(server_cfg.get('autoReconnect', True))
-            globals()['COMMAND_TIMEOUT'] = int(server_cfg.get('commandTimeout', 30))
-            log_message(f"Applied agent_config: heartbeat={hb}s, autoreconnect={AUTO_RECONNECT}")
-        except Exception as e:
-            log_message(f"Error applying agent_config: {e}", "warning")
-    sio.on('agent_config')(on_agent_config)
+    # agent_config handling removed in this revision
     sio.on('webrtc_adaptive_bitrate_control')(on_webrtc_adaptive_bitrate_control)
     sio.on('webrtc_implement_frame_dropping')(on_webrtc_implement_frame_dropping)
     
