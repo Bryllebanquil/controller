@@ -29,46 +29,7 @@ interface Notification {
   category: 'agent' | 'system' | 'security' | 'command';
 }
 
-const mockNotifications: Notification[] = [
-  {
-    id: 'notif-001',
-    type: 'warning',
-    title: 'Agent Disconnected',
-    message: 'MacBook-Pro-01 has gone offline unexpectedly',
-    timestamp: new Date(Date.now() - 300000),
-    agentId: 'agent-003',
-    read: false,
-    category: 'agent'
-  },
-  {
-    id: 'notif-002',
-    type: 'success',
-    title: 'Command Executed',
-    message: 'System info command completed successfully on Windows-Desktop-01',
-    timestamp: new Date(Date.now() - 600000),
-    agentId: 'agent-001',
-    read: false,
-    category: 'command'
-  },
-  {
-    id: 'notif-003',
-    type: 'error',
-    title: 'Security Alert',
-    message: 'Failed authentication attempt detected from IP 192.168.1.250',
-    timestamp: new Date(Date.now() - 900000),
-    read: true,
-    category: 'security'
-  },
-  {
-    id: 'notif-004',
-    type: 'info',
-    title: 'System Update',
-    message: 'Neural Control Hub v2.1 is available for download',
-    timestamp: new Date(Date.now() - 1200000),
-    read: true,
-    category: 'system'
-  }
-];
+const mockNotifications: Notification[] = [];
 
 const notificationIcons = {
   success: CheckCircle,
@@ -110,25 +71,7 @@ export function NotificationCenter() {
     setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
-  // Simulate new notifications
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (Math.random() > 0.7) { // 30% chance every 10 seconds
-        const newNotification: Notification = {
-          id: `notif-${Date.now()}`,
-          type: ['success', 'warning', 'info'][Math.floor(Math.random() * 3)] as any,
-          title: 'New Event',
-          message: 'Simulated notification for demonstration',
-          timestamp: new Date(),
-          read: false,
-          category: ['agent', 'system', 'command'][Math.floor(Math.random() * 3)] as any
-        };
-        setNotifications(prev => [newNotification, ...prev]);
-      }
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, []);
+  // Remove simulated notifications in production; rely on real events
 
   return (
     <Sheet>

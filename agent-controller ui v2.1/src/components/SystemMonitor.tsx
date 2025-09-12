@@ -12,29 +12,12 @@ import {
   Wifi
 } from 'lucide-react';
 
-// Mock system data
+// Placeholder zeros until real agent telemetry is wired
 const systemMetrics = {
-  cpu: {
-    usage: 45,
-    temperature: 65,
-    cores: 8,
-    frequency: 3.2
-  },
-  memory: {
-    used: 62,
-    total: 16,
-    available: 6.1
-  },
-  storage: {
-    used: 78,
-    total: 500,
-    available: 110
-  },
-  network: {
-    upload: 2.4,
-    download: 15.7,
-    latency: 12
-  }
+  cpu: { usage: 0, temperature: 0, cores: 0, frequency: 0 },
+  memory: { used: 0, total: 0, available: 0 },
+  storage: { used: 0, total: 0, available: 0 },
+  network: { upload: 0, download: 0, latency: 0 }
 };
 
 export function SystemMonitor() {
