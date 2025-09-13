@@ -36,8 +36,8 @@ else
 fi
 
 echo "📦 Installing Node.js dependencies..."
-if [ -d "agent-controller ui" ]; then
-    cd "agent-controller ui"
+if [ -d "agent-controller ui v2.1" ]; then
+    cd "agent-controller ui v2.1"
     npm install
     cd ..
 else
@@ -52,7 +52,7 @@ BACKEND_PID=$!
 sleep 3
 
 echo "🎨 Starting Frontend Development Server (Port 3000)..."
-cd "agent-controller ui"
+cd "agent-controller ui v2.1"
 npm run dev &
 FRONTEND_PID=$!
 cd ..
