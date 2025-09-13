@@ -1843,13 +1843,18 @@ DOWNLOAD_BUFFERS = defaultdict(lambda: {"chunks": [], "total_size": 0, "local_pa
 @app.route("/")
 def index():
     if is_authenticated():
-        return redirect(url_for('dashboard'))
+        return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html'))
     return redirect(url_for('login'))
 
 @app.route("/dashboard")
 @require_auth
 def dashboard():
     return DASHBOARD_HTML
+
+# Serve static assets for the UI v2.1
+@app.route('/assets/<path:filename>')
+def serve_assets(filename):
+    return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'assets', filename))
 
 # --- Real-time Streaming Endpoints (COMMENTED OUT - REPLACED WITH OVERVIEW) ---
 # 
