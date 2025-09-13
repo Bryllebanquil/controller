@@ -3813,4 +3813,4 @@ if __name__ == "__main__":
         print(f"Performance tuning: Bandwidth estimation, Adaptive bitrate, Frame dropping")
         print(f"Production scale: Current={PRODUCTION_SCALE['current_implementation']}, Target={PRODUCTION_SCALE['target_implementation']}")
         print(f"Scalability limits: aiortc={PRODUCTION_SCALE['scalability_limits']['aiorttc_max_viewers']}, mediasoup={PRODUCTION_SCALE['scalability_limits']['mediasoup_max_viewers']}")
-    socketio.run(app, host=Config.HOST, port=Config.PORT, debug=False)
+    socketio.run(app, host=Config.HOST, port=Config.PORT, debug=False, allow_unsafe_werkzeug=True)
