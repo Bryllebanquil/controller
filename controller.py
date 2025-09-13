@@ -2675,18 +2675,64 @@ def get_system_info():
     # Try to add performance info if psutil is available
     try:
         import psutil
+        
+        # Get detailed system information
+        cpu_percent = psutil.cpu_percent(interval=1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        
+        # Get CPU information
+        cpu_count = psutil.cpu_count()
+        cpu_freq = psutil.cpu_freq()
+        cpu_freq_ghz = round(cpu_freq.current / 1000, 2) if cpu_freq else 0
+        
+        # Get memory information in GB
+        memory_total_gb = round(memory.total / (1024**3), 1)
+        memory_used_gb = round(memory.used / (1024**3), 1)
+        memory_available_gb = round(memory.available / (1024**3), 1)
+        
+        # Get disk information in GB
+        disk_total_gb = round(disk.total / (1024**3), 1)
+        disk_used_gb = round(disk.used / (1024**3), 1)
+        disk_free_gb = round(disk.free / (1024**3), 1)
+        
+        # Get network information
+        network_io = psutil.net_io_counters()
+        network_upload_mb = round(network_io.bytes_sent / (1024**2), 1)
+        network_download_mb = round(network_io.bytes_recv / (1024**2), 1)
+        
         info['performance'] = {
-            'cpu_percent': psutil.cpu_percent(interval=1),
-            'memory_percent': psutil.virtual_memory().percent,
-            'disk_percent': psutil.disk_usage('/').percent,
+            'cpu_percent': cpu_percent,
+            'cpu_cores': cpu_count,
+            'cpu_frequency_ghz': cpu_freq_ghz,
+            'memory_percent': memory.percent,
+            'memory_total_gb': memory_total_gb,
+            'memory_used_gb': memory_used_gb,
+            'memory_available_gb': memory_available_gb,
+            'disk_percent': round((disk.used / disk.total) * 100, 1),
+            'disk_total_gb': disk_total_gb,
+            'disk_used_gb': disk_used_gb,
+            'disk_free_gb': disk_free_gb,
+            'network_upload_mb': network_upload_mb,
+            'network_download_mb': network_download_mb,
             'boot_time': psutil.boot_time()
         }
     except ImportError:
         # psutil not available, provide placeholder data
         info['performance'] = {
             'cpu_percent': 0,
+            'cpu_cores': 0,
+            'cpu_frequency_ghz': 0,
             'memory_percent': 0,
+            'memory_total_gb': 0,
+            'memory_used_gb': 0,
+            'memory_available_gb': 0,
             'disk_percent': 0,
+            'disk_total_gb': 0,
+            'disk_used_gb': 0,
+            'disk_free_gb': 0,
+            'network_upload_mb': 0,
+            'network_download_mb': 0,
             'boot_time': 0,
             'error': 'psutil not available'
         }
