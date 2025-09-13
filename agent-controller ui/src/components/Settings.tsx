@@ -9,6 +9,7 @@ import { Separator } from './ui/separator';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
 import { useTheme } from './ThemeProvider';
+import { useSocket } from './SocketProvider-new';
 import { 
   Settings as SettingsIcon,
   Monitor,
@@ -26,7 +27,8 @@ import {
   RefreshCw,
   AlertTriangle,
   CheckCircle,
-  Info
+  Info,
+  LogOut
 } from 'lucide-react';
 
 interface SettingsData {
@@ -70,6 +72,7 @@ interface SettingsData {
 
 export function Settings() {
   const { theme, setTheme } = useTheme();
+  const { logout } = useSocket();
   const [settings, setSettings] = useState<SettingsData>({
     general: {
       autoConnect: true,
@@ -148,6 +151,14 @@ export function Settings() {
     link.click();
   };
 
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -170,6 +181,14 @@ export function Settings() {
           >
             <Save className="h-4 w-4" />
             <span>Save Changes</span>
+          </Button>
+          <Button 
+            onClick={handleLogout}
+            variant="outline"
+            className="flex items-center space-x-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+          >
+            <LogOut className="h-4 w-4" />
+            <span>Logout</span>
           </Button>
         </div>
       </div>
