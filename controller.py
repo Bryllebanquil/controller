@@ -65,6 +65,7 @@ allowed_origins = [
     "http://127.0.0.1:3000", 
     "http://127.0.0.1:5173",
     "https://neural-control-hub-frontend.onrender.com",
+    "https://agent-controller-backend.onrender.com",
     "https://*.onrender.com"
 ]
 
