@@ -1,10 +1,11 @@
-import { Shield, User, Sun, Moon, Monitor, CheckCircle } from 'lucide-react';
+import { Shield, User, Sun, Moon, Monitor, CheckCircle, LogOut, Settings } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from './ui/dropdown-menu';
 import { NotificationCenter } from './NotificationCenter';
 import { KeyboardShortcuts } from './KeyboardShortcuts';
 import { useTheme } from './ThemeProvider';
+import { useSocket } from './SocketProvider';
 
 interface HeaderProps {
   onTabChange?: (tab: string) => void;
@@ -14,6 +15,21 @@ interface HeaderProps {
 
 export function Header({ onTabChange, onAgentSelect, onAgentDeselect }: HeaderProps) {
   const { theme, setTheme } = useTheme();
+  const { logout } = useSocket();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  };
+
+  const handleSettingsClick = () => {
+    if (onTabChange) {
+      onTabChange('settings');
+    }
+  };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -76,9 +92,24 @@ export function Header({ onTabChange, onAgentSelect, onAgentDeselect }: HeaderPr
           
           <NotificationCenter />
           
-          <Button variant="ghost" size="sm">
-            <User className="h-4 w-4" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm">
+                <User className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onClick={handleSettingsClick}>
+                <Settings className="mr-2 h-4 w-4" />
+                <span>Settings</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout} className="text-red-600 focus:text-red-600">
+                <LogOut className="mr-2 h-4 w-4" />
+                <span>Logout</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </header>

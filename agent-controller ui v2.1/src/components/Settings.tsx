@@ -11,6 +11,7 @@ import { Alert, AlertDescription } from './ui/alert';
 import { Textarea } from './ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { useTheme } from './ThemeProvider';
+import { useSocket } from './SocketProvider';
 import { 
   Settings as SettingsIcon,
   Monitor,
@@ -37,6 +38,7 @@ import {
   Zap,
   Activity,
   Copy,
+  LogOut,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -104,6 +106,7 @@ interface C2Settings {
 
 export function Settings() {
   const { theme, setTheme } = useTheme();
+  const { logout } = useSocket();
   const [showPasswords, setShowPasswords] = useState({
     admin: false,
     operator: false,
@@ -295,6 +298,14 @@ export function Settings() {
     toast.success(`${label} copied to clipboard`);
   };
 
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  };
+
   const togglePasswordVisibility = (field: keyof typeof showPasswords) => {
     setShowPasswords(prev => ({
       ...prev,
@@ -329,6 +340,14 @@ export function Settings() {
           >
             <Save className="h-4 w-4" />
             <span>Save All</span>
+          </Button>
+          <Button 
+            onClick={handleLogout}
+            variant="outline"
+            className="flex items-center space-x-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+          >
+            <LogOut className="h-4 w-4" />
+            <span>Logout</span>
           </Button>
         </div>
       </div>
