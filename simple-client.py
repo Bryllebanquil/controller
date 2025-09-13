@@ -135,6 +135,20 @@ def test_socketio_connection():
                 'timestamp': time.time()
             })
         
+        @sio.event
+        def agent_registered(data):
+            log_message(f"✅ Agent registration confirmed: {data}")
+        
+        @sio.event
+        def agent_list_update(data):
+            log_message(f"📋 Agent list updated: {len(data)} agents")
+            for agent_id, agent_data in data.items():
+                log_message(f"   - {agent_id}: {agent_data.get('status', 'unknown')}")
+        
+        @sio.event
+        def registration_error(data):
+            log_message(f"❌ Registration error: {data}", "error")
+        
         # Connect to controller
         log_message(f"Connecting to {CONTROLLER_URL}...")
         sio.connect(CONTROLLER_URL, wait_timeout=CONNECTION_TIMEOUT)
