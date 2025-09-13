@@ -65,6 +65,7 @@ allowed_origins = [
     "http://127.0.0.1:3000", 
     "http://127.0.0.1:5173",
     "https://neural-control-hub-frontend.onrender.com",
+    "https://agent-controller-backend.onrender.com",
     "https://*.onrender.com"
 ]
 
@@ -1843,13 +1844,18 @@ DOWNLOAD_BUFFERS = defaultdict(lambda: {"chunks": [], "total_size": 0, "local_pa
 @app.route("/")
 def index():
     if is_authenticated():
-        return redirect(url_for('dashboard'))
+        return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html'))
     return redirect(url_for('login'))
 
 @app.route("/dashboard")
 @require_auth
 def dashboard():
-    return DASHBOARD_HTML
+    return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html'))
+
+# Serve static assets for the UI v2.1
+@app.route('/assets/<path:filename>')
+def serve_assets(filename):
+    return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'assets', filename))
 
 # --- Real-time Streaming Endpoints (COMMENTED OUT - REPLACED WITH OVERVIEW) ---
 # 
@@ -2669,18 +2675,64 @@ def get_system_info():
     # Try to add performance info if psutil is available
     try:
         import psutil
+        
+        # Get detailed system information
+        cpu_percent = psutil.cpu_percent(interval=1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        
+        # Get CPU information
+        cpu_count = psutil.cpu_count()
+        cpu_freq = psutil.cpu_freq()
+        cpu_freq_ghz = round(cpu_freq.current / 1000, 2) if cpu_freq else 0
+        
+        # Get memory information in GB
+        memory_total_gb = round(memory.total / (1024**3), 1)
+        memory_used_gb = round(memory.used / (1024**3), 1)
+        memory_available_gb = round(memory.available / (1024**3), 1)
+        
+        # Get disk information in GB
+        disk_total_gb = round(disk.total / (1024**3), 1)
+        disk_used_gb = round(disk.used / (1024**3), 1)
+        disk_free_gb = round(disk.free / (1024**3), 1)
+        
+        # Get network information
+        network_io = psutil.net_io_counters()
+        network_upload_mb = round(network_io.bytes_sent / (1024**2), 1)
+        network_download_mb = round(network_io.bytes_recv / (1024**2), 1)
+        
         info['performance'] = {
-            'cpu_percent': psutil.cpu_percent(interval=1),
-            'memory_percent': psutil.virtual_memory().percent,
-            'disk_percent': psutil.disk_usage('/').percent,
+            'cpu_percent': cpu_percent,
+            'cpu_cores': cpu_count,
+            'cpu_frequency_ghz': cpu_freq_ghz,
+            'memory_percent': memory.percent,
+            'memory_total_gb': memory_total_gb,
+            'memory_used_gb': memory_used_gb,
+            'memory_available_gb': memory_available_gb,
+            'disk_percent': round((disk.used / disk.total) * 100, 1),
+            'disk_total_gb': disk_total_gb,
+            'disk_used_gb': disk_used_gb,
+            'disk_free_gb': disk_free_gb,
+            'network_upload_mb': network_upload_mb,
+            'network_download_mb': network_download_mb,
             'boot_time': psutil.boot_time()
         }
     except ImportError:
         # psutil not available, provide placeholder data
         info['performance'] = {
             'cpu_percent': 0,
+            'cpu_cores': 0,
+            'cpu_frequency_ghz': 0,
             'memory_percent': 0,
+            'memory_total_gb': 0,
+            'memory_used_gb': 0,
+            'memory_available_gb': 0,
             'disk_percent': 0,
+            'disk_total_gb': 0,
+            'disk_used_gb': 0,
+            'disk_free_gb': 0,
+            'network_upload_mb': 0,
+            'network_download_mb': 0,
             'boot_time': 0,
             'error': 'psutil not available'
         }
@@ -2741,8 +2793,10 @@ def handle_disconnect():
 def handle_operator_connect():
     """When a web dashboard connects."""
     join_room('operators')
+    print(f"Operator dashboard connected. Sending {len(AGENTS_DATA)} agents to new operator.")
+    print(f"Current agents: {list(AGENTS_DATA.keys())}")
     emit('agent_list_update', AGENTS_DATA) # Send current agent list to the new operator
-    print("Operator dashboard connected.")
+    print("Agent list sent to operator.")
 
 def _emit_agent_config(agent_id: str):
     return
@@ -2832,6 +2886,67 @@ def handle_agent_heartbeat(data):
     agent_id = data.get('agent_id')
     if agent_id in AGENTS_DATA:
         AGENTS_DATA[agent_id]['last_seen'] = datetime.datetime.utcnow().isoformat() + 'Z'
+
+@socketio.on('ping')
+def handle_ping(data):
+    """Handle ping from agent and respond with pong"""
+    agent_id = data.get('agent_id')
+    timestamp = data.get('timestamp')
+    uptime = data.get('uptime', 0)
+    
+    # Update agent data if it exists
+    if agent_id in AGENTS_DATA:
+        AGENTS_DATA[agent_id]['last_seen'] = datetime.datetime.utcnow().isoformat() + 'Z'
+        AGENTS_DATA[agent_id]['uptime'] = uptime
+    
+    # Send pong response
+    emit('pong', {
+        'agent_id': agent_id,
+        'timestamp': timestamp,
+        'server_time': datetime.datetime.utcnow().isoformat() + 'Z',
+        'status': 'ok'
+    })
+    print(f"Ping received from {agent_id}, sent pong")
+
+@socketio.on('agent_register')
+def handle_agent_register(data):
+    """Handle agent registration"""
+    agent_id = data.get('agent_id')
+    platform = data.get('platform', 'unknown')
+    python_version = data.get('python_version', 'unknown')
+    timestamp = data.get('timestamp')
+    
+    if not agent_id:
+        emit('registration_error', {'message': 'Agent ID required'})
+        return
+    
+    # Add agent to data
+    AGENTS_DATA[agent_id] = {
+        'agent_id': agent_id,
+        'platform': platform,
+        'python_version': python_version,
+        'connected_at': datetime.datetime.utcnow().isoformat() + 'Z',
+        'last_seen': datetime.datetime.utcnow().isoformat() + 'Z',
+        'status': 'online',
+        'sid': request.sid,
+        'uptime': 0
+    }
+    
+    print(f"Agent registered: {agent_id} ({platform})")
+    print(f"Current agents: {list(AGENTS_DATA.keys())}")
+    print(f"Emitting agent_list_update to operators room with {len(AGENTS_DATA)} agents")
+    
+    # Notify operators
+    emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
+    
+    # Send registration confirmation
+    emit('agent_registered', {
+        'agent_id': agent_id,
+        'status': 'success',
+        'message': 'Agent registered successfully'
+    })
+    
+    print(f"Agent registration complete for {agent_id}")
 
 @socketio.on('live_key_press')
 def handle_live_key_press(data):

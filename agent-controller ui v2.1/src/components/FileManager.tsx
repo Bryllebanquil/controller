@@ -39,17 +39,7 @@ interface FileItem {
   extension?: string;
 }
 
-const mockFiles: FileItem[] = [
-  { name: '..', type: 'directory', modified: new Date(), path: '..' },
-  { name: 'Documents', type: 'directory', modified: new Date(), path: '/Documents' },
-  { name: 'Downloads', type: 'directory', modified: new Date(), path: '/Downloads' },
-  { name: 'Desktop', type: 'directory', modified: new Date(), path: '/Desktop' },
-  { name: 'Pictures', type: 'directory', modified: new Date(), path: '/Pictures' },
-  { name: 'config.txt', type: 'file', size: 1024, modified: new Date(), path: '/config.txt', extension: 'txt' },
-  { name: 'data.json', type: 'file', size: 2048, modified: new Date(), path: '/data.json', extension: 'json' },
-  { name: 'image.png', type: 'file', size: 512000, modified: new Date(), path: '/image.png', extension: 'png' },
-  { name: 'video.mp4', type: 'file', size: 10485760, modified: new Date(), path: '/video.mp4', extension: 'mp4' },
-];
+const mockFiles: FileItem[] = [];
 
 const getFileIcon = (item: FileItem) => {
   if (item.type === 'directory') return Folder;

@@ -1,6 +1,7 @@
 # Core web & socket dependencies for Neural Control Hub
 flask>=3.0.0
 flask-socketio>=5.5.0
+flask-cors>=4.0.0
 eventlet>=0.40.0
 gunicorn>=21.0.0
 python-socketio>=5.13.0

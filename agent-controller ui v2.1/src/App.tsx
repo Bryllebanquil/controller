@@ -51,24 +51,11 @@ function AppContent() {
   >(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [agents, setAgents] = useState(liveAgents);
-  const [networkActivity, setNetworkActivity] = useState("2.4");
+  const [networkActivity, setNetworkActivity] = useState("0.0");
 
   useEffect(() => {
     setAgents(liveAgents);
   }, [liveAgents]);
-
-  // Update network activity periodically
-  useEffect(() => {
-    const updateNetworkActivity = () => {
-      const activity = (Math.random() * 2 + 1.5).toFixed(1);
-      setNetworkActivity(activity);
-    };
-
-    updateNetworkActivity();
-    const interval = setInterval(updateNetworkActivity, 8000);
-
-    return () => clearInterval(interval);
-  }, []);
   const [searchTerm, setSearchTerm] = useState("");
   const [filters, setFilters] = useState({
     status: [],

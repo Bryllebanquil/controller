@@ -106,8 +106,10 @@ export function WebRTCMonitoring({ selectedAgent }: WebRTCMonitoringProps) {
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [selectedQuality, setSelectedQuality] = useState<'low' | 'medium' | 'high' | 'auto'>('auto');
 
-  // Mock data for demonstration - in real app, this would come from Socket.IO
+  // Mock data for demonstration - DISABLED for real-time operation
   useEffect(() => {
+    // Mock data disabled - will use real Socket.IO data
+    return;
     const mockStats: WebRTCStats = {
       connection_state: 'connected',
       ice_connection_state: 'connected',

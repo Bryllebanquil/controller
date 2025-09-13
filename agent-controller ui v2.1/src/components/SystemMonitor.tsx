@@ -35,10 +35,27 @@ export function SystemMonitor() {
         const perf = data?.performance || {};
         if (isMounted) {
           setMetrics({
-            cpu: { usage: perf.cpu_percent || 0, temperature: 0, cores: 0, frequency: 0 },
-            memory: { used: perf.memory_percent || 0, total: 0, available: 0 },
-            storage: { used: perf.disk_percent || 0, total: 0, available: 0 },
-            network: { upload: 0, download: 0, latency: 0 },
+            cpu: { 
+              usage: perf.cpu_percent || 0, 
+              temperature: 0, // Temperature not available in psutil
+              cores: perf.cpu_cores || 0, 
+              frequency: perf.cpu_frequency_ghz || 0 
+            },
+            memory: { 
+              used: perf.memory_percent || 0, 
+              total: perf.memory_total_gb || 0, 
+              available: perf.memory_available_gb || 0 
+            },
+            storage: { 
+              used: perf.disk_percent || 0, 
+              total: perf.disk_total_gb || 0, 
+              available: perf.disk_free_gb || 0 
+            },
+            network: { 
+              upload: perf.network_upload_mb || 0, 
+              download: perf.network_download_mb || 0, 
+              latency: 0 // Latency not available in psutil
+            },
           });
         }
       } catch {}
@@ -158,7 +175,7 @@ export function SystemMonitor() {
               <Zap className="h-4 w-4 text-yellow-500" />
               <div>
                 <p className="text-sm font-medium">Power</p>
-                <p className="text-xs text-muted-foreground">85W</p>
+                <p className="text-xs text-muted-foreground">N/A</p>
               </div>
             </div>
           </CardContent>
