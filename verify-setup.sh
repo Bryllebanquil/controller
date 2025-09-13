@@ -30,11 +30,13 @@ echo "📁 Checking required files..."
 
 files_to_check=(
     "controller.py"
+    "client.py"
     "agent-controller ui/package.json"
     "agent-controller ui/src/services/api.ts"
     "agent-controller ui/src/services/websocket.ts"
     "agent-controller ui/.env"
     "agent-controller ui/vite.config.ts"
+    "client.env"
 )
 
 for file in "${files_to_check[@]}"; do
@@ -79,6 +81,19 @@ if [ -d "agent-controller ui/node_modules" ]; then
 else
     print_status "Frontend dependencies not installed" 1
     print_warning "Run: cd 'agent-controller ui' && npm install"
+fi
+
+# Check client configuration
+echo ""
+echo "🤖 Checking client configuration..."
+if [ -f "client.env" ]; then
+    if grep -q "FIXED_SERVER_URL=http://localhost:8080" "client.env"; then
+        print_status "Client configured for local controller" 0
+    else
+        print_status "Client not configured for local controller" 1
+    fi
+else
+    print_status "Client environment file missing" 1
 fi
 
 # Check if Python dependencies are installed

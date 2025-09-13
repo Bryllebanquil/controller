@@ -21,7 +21,7 @@ fi
 # Function to kill background processes on exit
 cleanup() {
     echo "🛑 Shutting down development servers..."
-    kill $BACKEND_PID $FRONTEND_PID 2>/dev/null
+    kill $BACKEND_PID $FRONTEND_PID $CLIENT_PID 2>/dev/null
     exit 0
 }
 
@@ -58,13 +58,23 @@ FRONTEND_PID=$!
 cd ..
 
 echo ""
+echo "🤖 Starting Agent Client..."
+# Load client environment variables
+if [ -f "client.env" ]; then
+    export $(cat client.env | grep -v '^#' | xargs)
+fi
+python3 client.py --mode agent --no-ssl &
+CLIENT_PID=$!
+
+echo ""
 echo "✅ Development Environment Started!"
 echo "=================================="
 echo "🌐 Backend API: http://localhost:8080"
 echo "🎨 Frontend UI: http://localhost:3000"
+echo "🤖 Agent Client: Connected to controller"
 echo ""
 echo "Press Ctrl+C to stop all servers"
 echo ""
 
 # Wait for background processes
-wait $BACKEND_PID $FRONTEND_PID
+wait $BACKEND_PID $FRONTEND_PID $CLIENT_PID

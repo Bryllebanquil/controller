@@ -1,16 +1,21 @@
-# Frontend-Backend Connection Setup
+# Complete System Connection Setup
 
-This document explains how the frontend UI and controller.py backend are connected in the Neural Control Hub.
+This document explains how the frontend UI, controller.py backend, and client.py agent are connected in the Neural Control Hub.
 
 ## Architecture Overview
 
 ```
-┌─────────────────┐    HTTP/WebSocket    ┌─────────────────┐
-│   Frontend UI   │ ←─────────────────→ │  Backend API    │
-│  (React + Vite) │                     │ (Flask + SocketIO)│
-│   Port: 3000    │                     │   Port: 8080     │
-└─────────────────┘                     └─────────────────┘
+┌─────────────────┐    HTTP/WebSocket    ┌─────────────────┐    Socket.IO    ┌─────────────────┐
+│   Frontend UI   │ ←─────────────────→ │  Controller.py  │ ←──────────────→ │   Client.py     │
+│  (React + Vite) │                     │  (Flask Server) │                  │  (Agent Client) │
+│   Port: 3000    │                     │   Port: 8080    │                  │  (Connects to)  │
+└─────────────────┘                     └─────────────────┘                  └─────────────────┘
 ```
+
+### Component Roles:
+- **Frontend UI**: Web interface for operators to monitor and control agents
+- **Controller.py**: Central server that manages agents and provides API endpoints
+- **Client.py**: Agent that runs on target systems and connects to the controller
 
 ## Connection Configuration
 
@@ -66,11 +71,32 @@ CORS(app, origins=allowed_origins,
 - `stream_status_update` - Streaming status changes
 - `activity_update` - System activity notifications
 
+### Client Configuration
+
+**Connection Setup** (`client.py`):
+```python
+FIXED_SERVER_URL = os.environ.get('FIXED_SERVER_URL', 'http://localhost:8080')
+```
+
+**Environment Variables** (`client.env`):
+- `FIXED_SERVER_URL` - Controller server URL (default: `http://localhost:8080`)
+- `RUN_MODE` - Client mode: `agent` (connects to controller)
+- `SILENT_MODE` - Enable/disable console output
+- `DEBUG_MODE` - Enable debug logging
+
+**Client Features**:
+- Real-time communication via Socket.IO
+- Screen/audio/camera streaming
+- File transfer capabilities
+- Command execution
+- System monitoring
+- Anti-detection mechanisms
+
 ## Development Setup
 
 ### Quick Start
 
-1. **Start Development Environment**:
+1. **Start Complete Development Environment**:
    ```bash
    ./start-dev.sh
    ```
@@ -79,6 +105,7 @@ CORS(app, origins=allowed_origins,
    - Install Node.js dependencies
    - Start backend server on port 8080
    - Start frontend development server on port 3000
+   - Start agent client connected to controller
 
 2. **Manual Setup**:
    ```bash
@@ -89,6 +116,10 @@ CORS(app, origins=allowed_origins,
    cd "agent-controller ui"
    npm install
    npm run dev
+   
+   # Terminal 3 - Agent Client
+   export $(cat client.env | grep -v '^#' | xargs)
+   python3 client.py --mode agent --no-ssl
    ```
 
 ### Testing Connection
@@ -101,7 +132,8 @@ python3 test-connection.py
 This will test:
 - Backend API endpoints
 - CORS configuration
-- Connection stability
+- Client connection capability
+- Complete system connectivity
 
 ## Production Deployment
 

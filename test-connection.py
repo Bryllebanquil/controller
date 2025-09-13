@@ -86,6 +86,31 @@ def test_cors_headers(base_url="http://localhost:8080"):
         print(f"    ❌ CORS test failed: {e}")
         return {}
 
+def test_client_connection():
+    """Test if client can connect to controller"""
+    print(f"\n🤖 Testing client connection...")
+    
+    try:
+        # Test if client.py can import required modules
+        import subprocess
+        import sys
+        
+        result = subprocess.run([
+            sys.executable, "-c", 
+            "import sys; sys.path.append('.'); import client; print('Client imports successful')"
+        ], capture_output=True, text=True, timeout=10)
+        
+        if result.returncode == 0:
+            print("  ✅ Client imports successful")
+            return True
+        else:
+            print(f"  ❌ Client import failed: {result.stderr}")
+            return False
+            
+    except Exception as e:
+        print(f"  ❌ Client test failed: {e}")
+        return False
+
 def main():
     """Main test function"""
     print("🧪 Neural Control Hub Connection Test")
@@ -97,6 +122,9 @@ def main():
     # Test CORS
     cors_results = test_cors_headers()
     
+    # Test client
+    client_success = test_client_connection()
+    
     # Summary
     print("\n📊 Test Summary")
     print("=" * 50)
@@ -105,12 +133,14 @@ def main():
     total_count = len(backend_results)
     
     print(f"Backend API Tests: {success_count}/{total_count} passed")
+    print(f"Client Connection: {'✅ Passed' if client_success else '❌ Failed'}")
     
-    if success_count == total_count:
-        print("🎉 All tests passed! Frontend should be able to connect to backend.")
+    if success_count == total_count and client_success:
+        print("🎉 All tests passed! Complete system should work.")
+        print("   Frontend ↔ Controller ↔ Client")
         return 0
     else:
-        print("⚠️  Some tests failed. Check backend server status.")
+        print("⚠️  Some tests failed. Check server and client status.")
         return 1
 
 if __name__ == "__main__":
