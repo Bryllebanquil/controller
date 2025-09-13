@@ -85,9 +85,12 @@ DEBUG_MODE = True  # Enable debug logging for troubleshooting
 DEPLOYMENT_COMPLETED = False  # Track deployment status to prevent repeated attempts
 RUN_MODE = 'agent'  # Track run mode: 'agent' | 'controller' | 'both'
 
+# Import os early for environment variables
+import os
+
 # Controller URL override flag (set URL via env)
 USE_FIXED_SERVER_URL = True
-FIXED_SERVER_URL = os.environ.get('FIXED_SERVER_URL', 'https://agent-controller-backend.onrender.com')
+FIXED_SERVER_URL = os.environ.get('FIXED_SERVER_URL', 'http://localhost:8080')
 
 # Fix eventlet issue by patching BEFORE any other imports
 try:
