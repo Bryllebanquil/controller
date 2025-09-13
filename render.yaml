@@ -4,7 +4,7 @@ services:
     env: python
     pythonVersion: 3.12.6
     plan: free
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements-controller.txt
     startCommand: gunicorn -k gthread --threads 8 --worker-connections 1000 -w 1 controller:app --bind 0.0.0.0:$PORT
     autoDeploy: true
     envVars:
@@ -14,28 +14,14 @@ services:
         value: 10000
       - key: PYTHONUNBUFFERED
         value: "1"
-      # Optional: allow CORS from your frontend URL (set this after frontend is created)
-      # - key: FRONTEND_ORIGIN
-      #   value: https://YOUR_FRONTEND.onrender.com
-
-  - type: static
-    name: agent-controller-frontend
-    buildCommand: |
-      cd "agent-controller ui v2.1" && \
-      npm ci || npm install && \
-      npm run build
-    staticPublishPath: "agent-controller ui v2.1/build"
-    pullRequestPreviewsEnabled: false
-    envVars:
-      - key: VITE_SOCKET_URL
-        value: https://agent-controller-backend.onrender.com
-    headers:
-      - path: "/*"
-        name: "Cache-Control"
-        value: "public, max-age=60"
-    routes:
-      # Let the SPA handle client-side routing
-      - type: rewrite
-        source: "/**"
-        destination: "/index.html"
+      - key: ADMIN_PASSWORD
+        value: "your_secure_password_here"
+      - key: SECRET_KEY
+        value: "your_secret_key_here"
+      - key: SESSION_TIMEOUT
+        value: "3600"
+      - key: MAX_LOGIN_ATTEMPTS
+        value: "5"
+      - key: LOGIN_TIMEOUT
+        value: "300"
 
