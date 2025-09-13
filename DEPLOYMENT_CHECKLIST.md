@@ -1,166 +1,85 @@
-# Neural Control Hub - Deployment Checklist
+# 🚀 Render Deployment Checklist
 
 ## ✅ Pre-Deployment Checklist
 
-### Code Files
-- [x] `controller.py` - Main application with enhanced security
-- [x] `requirements-controller.txt` - Minimal dependencies for deployment
-- [x] `render.yaml` - Render configuration with environment variables
-- [x] `start-render.py` - Deployment startup script
-- [x] `README.md` - Updated documentation
-- [x] `SECURITY.md` - Security documentation
-- [x] `SECURITY_ENHANCEMENTS.md` - Password security details
-- [x] `RENDER_DEPLOYMENT.md` - Deployment guide
-- [x] `CHANGES.md` - Change log
+### 1. Code Changes Applied
+- [x] Modified `/` route to serve UI v2.1
+- [x] Modified `/dashboard` route to serve UI v2.1  
+- [x] Added `/assets/<path:filename>` route for static files
+- [x] Updated `requirements-controller.txt` with flask-cors
+- [x] Updated `render.yaml` configuration
 
-### Security Features
-- [x] PBKDF2-SHA256 password hashing (100,000 iterations)
-- [x] 32-byte cryptographically secure salt
-- [x] Constant-time password comparison
-- [x] Session timeout and management
-- [x] IP-based login attempt tracking
-- [x] Automatic IP blocking after failed attempts
-- [x] Password strength validation
-- [x] Secure password change functionality
+### 2. Files to Deploy
+- [x] `controller.py` (updated with UI v2.1 integration)
+- [x] `agent-controller ui v2.1/build/` (UI build files)
+- [x] `requirements-controller.txt` (updated dependencies)
+- [x] `render.yaml` (deployment configuration)
 
-### Configuration
-- [x] Environment variable support
-- [x] Secure defaults for all settings
-- [x] Configurable security parameters
-- [x] Production-ready startup script
+### 3. Environment Variables to Set
+```yaml
+ADMIN_PASSWORD: "your_secure_password_here"
+SECRET_KEY: "your_secret_key_here"
+HOST: "0.0.0.0"
+PORT: "10000"
+PYTHONUNBUFFERED: "1"
+SESSION_TIMEOUT: "3600"
+MAX_LOGIN_ATTEMPTS: "5"
+LOGIN_TIMEOUT: "300"
+```
 
 ## 🚀 Deployment Steps
 
-### 1. Repository Preparation
-- [ ] Push all files to GitHub repository
-- [ ] Verify all files are committed
-- [ ] Test local functionality
-
-### 2. Render Setup
-- [ ] Create Render account (if needed)
-- [ ] Connect GitHub repository
-- [ ] Use Blueprint deployment (render.yaml)
-
-### 3. Environment Variables (Critical)
-- [ ] Set `ADMIN_PASSWORD` to secure password
-- [ ] Set `SECRET_KEY` (or let auto-generate)
-- [ ] Configure optional security variables
-
-### 4. Deploy and Test
-- [ ] Deploy application
-- [ ] Test login functionality
-- [ ] Test password change
-- [ ] Verify security features
-
-## 🔧 Environment Variables
-
-### Required
+### 1. Commit and Push Changes
 ```bash
-ADMIN_PASSWORD=your_secure_password_here
+git add .
+git commit -m "Integrate agent-controller UI v2.1 with controller.py"
+git push origin main
 ```
 
-### Recommended
-```bash
-SECRET_KEY=your_generated_secret_key
-```
+### 2. Deploy on Render
+1. Go to your Render dashboard
+2. Find your `agent-controller-backend` service
+3. Click "Manual Deploy" → "Deploy latest commit"
+4. Wait for deployment to complete
 
-### Optional (with defaults)
-```bash
-SESSION_TIMEOUT=3600
-MAX_LOGIN_ATTEMPTS=5
-LOGIN_TIMEOUT=300
-HASH_ITERATIONS=100000
-SALT_LENGTH=32
-```
+### 3. Verify Deployment
+1. Visit: `https://agent-controller-backend.onrender.com`
+2. Login with your `ADMIN_PASSWORD`
+3. Verify you see the agent-controller UI v2.1 interface
+4. Test the `/dashboard` route specifically
 
-## 🛡️ Security Verification
+## 🔧 Troubleshooting
 
-### Post-Deployment Tests
-- [ ] Login with correct password
-- [ ] Login fails with wrong password
-- [ ] IP blocking after multiple failed attempts
-- [ ] Session timeout works
-- [ ] Password change functionality
-- [ ] All endpoints require authentication
-- [ ] Configuration status displays correctly
+### If UI v2.1 doesn't load:
+1. Check Render build logs for errors
+2. Verify `agent-controller ui v2.1/build/` directory exists
+3. Check if static assets are being served at `/assets/`
 
-### Security Checklist
-- [ ] Default password changed
-- [ ] Secret key set (not auto-generated)
-- [ ] Appropriate timeouts configured
-- [ ] Failed login monitoring working
-- [ ] Password strength validation active
+### If old dashboard still shows:
+1. Ensure the latest code is deployed
+2. Clear browser cache
+3. Check if there are multiple routes serving the old dashboard
 
-## 📊 Performance Considerations
+### If client can't connect:
+1. Verify the controller URL in `client.py`
+2. Check CORS configuration
+3. Test Socket.IO connection
 
-### Free Tier Limitations
-- [ ] 512MB RAM available
-- [ ] Shared CPU resources
-- [ ] Sleep after 15 minutes inactivity
-- [ ] Cold start delays
+## 📋 Post-Deployment Verification
 
-### Optimization
-- [ ] Minimal dependencies (requirements-controller.txt)
-- [ ] Efficient startup time
-- [ ] Resource monitoring enabled
+- [ ] Controller starts without errors
+- [ ] UI v2.1 loads at root URL
+- [ ] UI v2.1 loads at `/dashboard` URL
+- [ ] Static assets (JS/CSS) load correctly
+- [ ] Login authentication works
+- [ ] Client can connect to controller
+- [ ] Socket.IO communication works
+- [ ] WebRTC streaming works (if applicable)
 
-## 🔍 Monitoring
+## 🎯 Expected Result
 
-### Logs to Monitor
-- [ ] Application startup logs
-- [ ] Security events (failed logins)
-- [ ] Performance metrics
-- [ ] Error logs
-
-### Security Monitoring
-- [ ] Failed login attempts
-- [ ] IP blocking events
-- [ ] Password change events
-- [ ] Session timeouts
-
-## 🚨 Troubleshooting
-
-### Common Issues
-- [ ] Build failures (check requirements)
-- [ ] Login issues (check environment variables)
-- [ ] Security issues (change default password)
-- [ ] Performance issues (monitor resources)
-
-### Support Resources
-- [ ] Render documentation
-- [ ] Application logs
-- [ ] Security documentation
-- [ ] Deployment guide
-
-## ✅ Final Verification
-
-### Application Status
-- [ ] Application starts successfully
-- [ ] All endpoints accessible
-- [ ] Security features working
-- [ ] Dashboard functional
-- [ ] Configuration status accurate
-
-### Security Status
-- [ ] Password security active
-- [ ] Session management working
-- [ ] IP blocking functional
-- [ ] Password change working
-- [ ] All endpoints protected
-
-### Documentation
-- [ ] README updated
-- [ ] Security docs complete
-- [ ] Deployment guide ready
-- [ ] Troubleshooting info available
-
-## 🎉 Deployment Complete
-
-Your Neural Control Hub is now deployed with:
-- ✅ Enterprise-grade password security
-- ✅ Protected endpoints and sessions
-- ✅ Configurable security settings
-- ✅ User-friendly management interface
-- ✅ Production-ready deployment
-
-**Remember**: Always change the default password and set a secure SECRET_KEY for production use!
+After successful deployment:
+- `https://agent-controller-backend.onrender.com` → UI v2.1 login
+- `https://agent-controller-backend.onrender.com/dashboard` → UI v2.1 interface
+- Client connects automatically to the controller
+- Real-time communication works via Socket.IO

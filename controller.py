@@ -1849,7 +1849,7 @@ def index():
 @app.route("/dashboard")
 @require_auth
 def dashboard():
-    return DASHBOARD_HTML
+    return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html'))
 
 # Serve static assets for the UI v2.1
 @app.route('/assets/<path:filename>')
