@@ -153,7 +153,18 @@ def test_socketio_connection():
         def agent_list_update(data):
             log_message(f"📋 Agent list updated: {len(data)} agents")
             for agent_id, agent_data in data.items():
-                log_message(f"   - {agent_id}: {agent_data.get('status', 'unknown')}")
+                status = agent_data.get('status', 'unknown')
+                name = agent_data.get('name', 'Unknown')
+                sid = agent_data.get('sid', 'No SID')
+                log_message(f"   - {agent_id}: {name} ({status}) SID: {sid}")
+        
+        @sio.event
+        def operator_connected(data):
+            log_message(f"📡 Operator connected notification: {data}")
+        
+        @sio.event
+        def activity_update(data):
+            log_message(f"📰 Activity: {data.get('action', 'Unknown')} - {data.get('details', '')}")
         
         @sio.event
         def registration_error(data):

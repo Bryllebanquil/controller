@@ -1854,7 +1854,24 @@ DOWNLOAD_BUFFERS = defaultdict(lambda: {"chunks": [], "total_size": 0, "local_pa
 def index():
     print(f"Index route accessed. Authenticated: {is_authenticated()}")
     if is_authenticated():
-        return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html'))
+        # Inject the Socket.IO URL into the HTML
+        html_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html')
+        with open(html_path, 'r') as f:
+            html_content = f.read()
+        
+        # Inject the backend URL for Socket.IO connection
+        backend_url = request.url_root.rstrip('/')
+        injection_script = f'''
+        <script>
+            window.__SOCKET_URL__ = "{backend_url}";
+            console.log("Injected Socket.IO URL:", window.__SOCKET_URL__);
+        </script>
+        '''
+        # Inject before closing head tag
+        html_content = html_content.replace('</head>', injection_script + '</head>')
+        
+        from flask import Response
+        return Response(html_content, mimetype='text/html')
     return redirect(url_for('login'))
 
 @app.route("/dashboard")
@@ -1872,7 +1889,24 @@ def serve_assets(filename):
 @app.route('/<path:path>')
 def serve_react_app(path):
     if is_authenticated():
-        return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html'))
+        # Inject the Socket.IO URL into the HTML for all routes
+        html_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html')
+        with open(html_path, 'r') as f:
+            html_content = f.read()
+        
+        # Inject the backend URL for Socket.IO connection
+        backend_url = request.url_root.rstrip('/')
+        injection_script = f'''
+        <script>
+            window.__SOCKET_URL__ = "{backend_url}";
+            console.log("Injected Socket.IO URL for route {path}:", window.__SOCKET_URL__);
+        </script>
+        '''
+        # Inject before closing head tag
+        html_content = html_content.replace('</head>', injection_script + '</head>')
+        
+        from flask import Response
+        return Response(html_content, mimetype='text/html')
     return redirect(url_for('login'))
 
 # --- Real-time Streaming Endpoints (COMMENTED OUT - REPLACED WITH OVERVIEW) ---
@@ -2818,33 +2852,49 @@ def handle_disconnect():
 def handle_operator_connect():
     """When a web dashboard connects."""
     join_room('operators')
-    print(f"Operator dashboard connected. Sending {len(AGENTS_DATA)} agents to new operator.")
-    print(f"Current agents: {list(AGENTS_DATA.keys())}")
+    print(f"🖥️  Operator dashboard connected (SID: {request.sid})")
+    print(f"📊 Current agents in AGENTS_DATA: {len(AGENTS_DATA)}")
+    print(f"🔍 Agent details:")
+    for agent_id, data in AGENTS_DATA.items():
+        print(f"   - {agent_id}: {data.get('name', 'Unknown')} (SID: {data.get('sid', 'None')}) Status: {data.get('status', 'unknown')}")
     
     # Send agent list with multiple strategies to ensure delivery
     try:
         # Send to specific session
         emit('agent_list_update', AGENTS_DATA)
+        print(f"📤 Sent agent_list_update to session {request.sid}")
+        
         # Also send to operators room as backup
         emit('agent_list_update', AGENTS_DATA, room='operators')
-        print("Agent list sent to operator via multiple channels.")
+        print(f"📤 Sent agent_list_update to operators room")
         
         # Send a connection confirmation
-        emit('operator_connected', {
+        confirmation_data = {
             'status': 'success',
             'agent_count': len(AGENTS_DATA),
-            'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
-        })
+            'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+            'session_id': request.sid
+        }
+        emit('operator_connected', confirmation_data)
+        print(f"✅ Sent operator_connected confirmation: {confirmation_data}")
+        
     except Exception as e:
-        print(f"Error sending agent list to operator: {e}")
+        print(f"❌ Error sending agent list to operator: {e}")
+        import traceback
+        print(traceback.format_exc())
 
 @socketio.on('request_agent_list')
 def handle_request_agent_list():
     """Explicit request from clients to fetch current agents after connect."""
+    print(f"📋 Agent list requested by {request.sid}")
+    print(f"📊 Responding with {len(AGENTS_DATA)} agents")
     try:
         emit('agent_list_update', AGENTS_DATA)
+        print(f"✅ Sent agent list to {request.sid}")
     except Exception as e:
-        print(f"Error responding to request_agent_list from {request.sid}: {e}")
+        print(f"❌ Error responding to request_agent_list from {request.sid}: {e}")
+        import traceback
+        print(traceback.format_exc())
 
 def _emit_agent_config(agent_id: str):
     return

@@ -50,15 +50,27 @@ export function SocketProvider({ children }: { children?: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // Connect to Socket.IO server
+    // Connect to Socket.IO server with enhanced URL resolution
     const envUrl = (import.meta as any)?.env?.VITE_SOCKET_URL;
     const injectedUrl = (window as any)?.__SOCKET_URL__;
     const sameOriginUrl = typeof window !== 'undefined' ? window.location.origin : undefined;
     const socketUrl = envUrl || injectedUrl || sameOriginUrl || 'http://localhost:8080';
+    
+    console.log('Socket.IO URL resolution:');
+    console.log('  - Environment URL:', envUrl);
+    console.log('  - Injected URL:', injectedUrl);
+    console.log('  - Same Origin URL:', sameOriginUrl);
+    console.log('  - Final URL:', socketUrl);
+    
     const socketInstance = io(socketUrl, {
       transports: ['websocket', 'polling'],
       timeout: 20000,
       withCredentials: true,
+      forceNew: true, // Force a new connection
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
+      maxReconnectionAttempts: 5
     });
 
     setSocket(socketInstance);
@@ -88,9 +100,23 @@ export function SocketProvider({ children }: { children?: React.ReactNode }) {
       }
     });
 
-    socketInstance.on('disconnect', () => {
+    socketInstance.on('disconnect', (reason) => {
       setConnected(false);
-      console.log('Disconnected from Neural Control Hub');
+      console.log('Disconnected from Neural Control Hub. Reason:', reason);
+    });
+
+    socketInstance.on('connect_error', (error) => {
+      console.error('Socket.IO connection error:', error);
+      setConnected(false);
+    });
+
+    socketInstance.on('reconnect', (attemptNumber) => {
+      console.log('Reconnected to Neural Control Hub after', attemptNumber, 'attempts');
+      setConnected(true);
+    });
+
+    socketInstance.on('reconnect_error', (error) => {
+      console.error('Socket.IO reconnection error:', error);
     });
 
     // Agent management events
