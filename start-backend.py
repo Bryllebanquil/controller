@@ -17,7 +17,7 @@ if __name__ == "__main__":
     print("=" * 60)
     print("🚀 Neural Control Hub - Backend Server")
     print("=" * 60)
-    print(f"🔐 Admin password: {Config.ADMIN_PASSWORD}")
+    print(f"🔐 Admin password: {'*' * len(Config.ADMIN_PASSWORD)} (hidden for security)")
     print(f"🌐 Backend server: http://{Config.HOST}:{Config.PORT}")
     print(f"🔒 Session timeout: {Config.SESSION_TIMEOUT} seconds")
     print(f"⚠️  Max login attempts: {Config.MAX_LOGIN_ATTEMPTS}")
