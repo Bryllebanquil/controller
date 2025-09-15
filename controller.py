@@ -56,7 +56,7 @@ class Config:
     HASH_ITERATIONS = 100000  # Number of iterations for PBKDF2
 
 # Initialize Flask app with configuration
-app = Flask(__name__)
+app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build'))
 app.config['SECRET_KEY'] = Config.SECRET_KEY or secrets.token_hex(32)  # Use config or generate secure random key
 
 # Defer CORS/socket initialization until after settings helpers are defined
@@ -1852,6 +1852,7 @@ DOWNLOAD_BUFFERS = defaultdict(lambda: {"chunks": [], "total_size": 0, "local_pa
 
 @app.route("/")
 def index():
+    print(f"Index route accessed. Authenticated: {is_authenticated()}")
     if is_authenticated():
         return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html'))
     return redirect(url_for('login'))
@@ -1859,12 +1860,20 @@ def index():
 @app.route("/dashboard")
 @require_auth
 def dashboard():
+    print(f"Dashboard route accessed. Serving index.html")
     return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html'))
 
 # Serve static assets for the UI v2.1
 @app.route('/assets/<path:filename>')
 def serve_assets(filename):
     return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'assets', filename))
+
+# Catch-all route for React Router (serve index.html for any unmatched routes)
+@app.route('/<path:path>')
+def serve_react_app(path):
+    if is_authenticated():
+        return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html'))
+    return redirect(url_for('login'))
 
 # --- Real-time Streaming Endpoints (COMMENTED OUT - REPLACED WITH OVERVIEW) ---
 # 
