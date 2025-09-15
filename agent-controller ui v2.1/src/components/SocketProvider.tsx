@@ -68,6 +68,8 @@ export function SocketProvider({ children }: { children?: React.ReactNode }) {
       setConnected(true);
       console.log('Connected to Neural Control Hub');
       socketInstance.emit('operator_connect');
+      // Request current agents immediately as a fallback
+      socketInstance.emit('request_agent_list');
     });
 
     socketInstance.on('disconnect', () => {

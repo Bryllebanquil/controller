@@ -2765,6 +2765,11 @@ def handle_connect():
     # In a production environment, you'd want to implement proper Socket.IO authentication
     # For now, we'll allow connections but validate on specific events
     print(f"Client connected: {request.sid}")
+    # Proactively send current agents to any new client (operator UIs will consume this)
+    try:
+        emit('agent_list_update', AGENTS_DATA)
+    except Exception as e:
+        print(f"Error emitting initial agent list to {request.sid}: {e}")
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -2781,6 +2786,8 @@ def handle_disconnect():
     if disconnected_agent_id:
         del AGENTS_DATA[disconnected_agent_id]
         emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
+        # Also emit globally in case the dashboard did not join the operators room
+        socketio.emit('agent_list_update', AGENTS_DATA)
         
         # Log activity
         emit('activity_update', {
@@ -2807,6 +2814,14 @@ def handle_operator_connect():
     emit('agent_list_update', AGENTS_DATA) # Send current agent list to the new operator
     print("Agent list sent to operator.")
 
+@socketio.on('request_agent_list')
+def handle_request_agent_list():
+    """Explicit request from clients to fetch current agents after connect."""
+    try:
+        emit('agent_list_update', AGENTS_DATA)
+    except Exception as e:
+        print(f"Error responding to request_agent_list from {request.sid}: {e}")
+
 def _emit_agent_config(agent_id: str):
     return
 
@@ -2832,6 +2847,8 @@ def handle_agent_connect(data):
     
     # Notify all operators of the new agent
     emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
+    # Also emit globally in case the dashboard did not join the operators room
+    socketio.emit('agent_list_update', AGENTS_DATA)
     
     # Log activity
     emit('activity_update', {
