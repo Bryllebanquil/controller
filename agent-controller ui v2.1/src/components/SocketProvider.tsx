@@ -68,8 +68,24 @@ export function SocketProvider({ children }: { children?: React.ReactNode }) {
       setConnected(true);
       console.log('Connected to Neural Control Hub');
       socketInstance.emit('operator_connect');
-      // Request current agents immediately as a fallback
-      socketInstance.emit('request_agent_list');
+      
+      // Request current agents with retry logic
+      setTimeout(() => {
+        socketInstance.emit('request_agent_list');
+        console.log('Requested agent list');
+      }, 1000);
+    });
+
+    // Handle operator connection confirmation
+    socketInstance.on('operator_connected', (data: any) => {
+      console.log('Operator connection confirmed:', data);
+      // Request agent list again if we didn't get it
+      if (agents.length === 0) {
+        setTimeout(() => {
+          socketInstance.emit('request_agent_list');
+          console.log('Re-requested agent list after confirmation');
+        }, 500);
+      }
     });
 
     socketInstance.on('disconnect', () => {
@@ -79,16 +95,23 @@ export function SocketProvider({ children }: { children?: React.ReactNode }) {
 
     // Agent management events
     socketInstance.on('agent_list_update', (agentData: Record<string, any>) => {
+      console.log('Received agent_list_update:', agentData);
       const agentList = Object.entries(agentData).map(([id, data]: [string, any]) => ({
         id,
         name: data.name || `Agent-${id.slice(0, 8)}`,
-        status: data.last_seen && new Date().getTime() - new Date(data.last_seen).getTime() < 60000 ? 'online' : 'offline',
+        // Improved status calculation - consider agent online if it has a SID or recent last_seen
+        status: (data.sid || (data.last_seen && new Date().getTime() - new Date(data.last_seen).getTime() < 120000)) ? 'online' : 'offline',
         platform: data.platform || 'Unknown',
         ip: data.ip || '127.0.0.1',
         lastSeen: data.last_seen ? new Date(data.last_seen) : new Date(),
         capabilities: data.capabilities || ['screen', 'commands'],
-        performance: data.performance || { cpu: 0, memory: 0, network: 0 }
+        performance: data.performance || { 
+          cpu: data.cpu_usage || 0, 
+          memory: data.memory_usage || 0, 
+          network: data.network_usage || 0 
+        }
       }));
+      console.log('Processed agent list:', agentList);
       setAgents(agentList);
     });
 

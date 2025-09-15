@@ -2820,8 +2820,23 @@ def handle_operator_connect():
     join_room('operators')
     print(f"Operator dashboard connected. Sending {len(AGENTS_DATA)} agents to new operator.")
     print(f"Current agents: {list(AGENTS_DATA.keys())}")
-    emit('agent_list_update', AGENTS_DATA) # Send current agent list to the new operator
-    print("Agent list sent to operator.")
+    
+    # Send agent list with multiple strategies to ensure delivery
+    try:
+        # Send to specific session
+        emit('agent_list_update', AGENTS_DATA)
+        # Also send to operators room as backup
+        emit('agent_list_update', AGENTS_DATA, room='operators')
+        print("Agent list sent to operator via multiple channels.")
+        
+        # Send a connection confirmation
+        emit('operator_connected', {
+            'status': 'success',
+            'agent_count': len(AGENTS_DATA),
+            'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
+        })
+    except Exception as e:
+        print(f"Error sending agent list to operator: {e}")
 
 @socketio.on('request_agent_list')
 def handle_request_agent_list():
@@ -2834,44 +2849,7 @@ def handle_request_agent_list():
 def _emit_agent_config(agent_id: str):
     return
 
-@socketio.on('agent_connect')
-def handle_agent_connect(data):
-    """When an agent connects and registers itself."""
-    agent_id = data.get('agent_id')
-    if not agent_id:
-        return
-    
-    # Store agent information
-    AGENTS_DATA[agent_id]["sid"] = request.sid
-    AGENTS_DATA[agent_id]["last_seen"] = datetime.datetime.utcnow().isoformat() + "Z"
-    AGENTS_DATA[agent_id]["name"] = data.get('name', f'Agent-{agent_id}')
-    AGENTS_DATA[agent_id]["platform"] = data.get('platform', 'Unknown')
-    AGENTS_DATA[agent_id]["ip"] = data.get('ip', request.environ.get('REMOTE_ADDR', '0.0.0.0'))
-    AGENTS_DATA[agent_id]["capabilities"] = data.get('capabilities', ['screen', 'files', 'commands'])
-    AGENTS_DATA[agent_id]["cpu_usage"] = data.get('cpu_usage', 0)
-    AGENTS_DATA[agent_id]["memory_usage"] = data.get('memory_usage', 0)
-    AGENTS_DATA[agent_id]["network_usage"] = data.get('network_usage', 0)
-    AGENTS_DATA[agent_id]["system_info"] = data.get('system_info', {})
-    AGENTS_DATA[agent_id]["uptime"] = data.get('uptime', 0)
-    
-    # Notify all operators of the new agent
-    emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
-    # Also emit globally in case the dashboard did not join the operators room
-    socketio.emit('agent_list_update', AGENTS_DATA)
-    
-    # Log activity
-    emit('activity_update', {
-        'id': f'act_{int(time.time())}',
-        'type': 'connection',
-        'action': 'Agent Connected',
-        'details': f'Agent {agent_id} successfully connected',
-        'agent_id': agent_id,
-        'agent_name': AGENTS_DATA[agent_id]["name"],
-        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
-        'status': 'success'
-    }, room='operators', broadcast=True)
-    print(f"Agent {agent_id} connected with SID {request.sid}")
-    pass
+# Removed duplicate agent_connect handler - now using consolidated agent_register handler
 
 @socketio.on('execute_command')
 def handle_execute_command(data):
@@ -2945,7 +2923,7 @@ def handle_ping(data):
 
 @socketio.on('agent_register')
 def handle_agent_register(data):
-    """Handle agent registration"""
+    """Handle agent registration - consolidated handler"""
     agent_id = data.get('agent_id')
     platform = data.get('platform', 'unknown')
     python_version = data.get('python_version', 'unknown')
@@ -2955,24 +2933,38 @@ def handle_agent_register(data):
         emit('registration_error', {'message': 'Agent ID required'})
         return
     
-    # Add agent to data
+    # Create comprehensive agent data structure
     AGENTS_DATA[agent_id] = {
         'agent_id': agent_id,
+        'name': data.get('name', f'Agent-{agent_id}'),
         'platform': platform,
         'python_version': python_version,
         'connected_at': datetime.datetime.utcnow().isoformat() + 'Z',
         'last_seen': datetime.datetime.utcnow().isoformat() + 'Z',
         'status': 'online',
         'sid': request.sid,
-        'uptime': 0
+        'uptime': 0,
+        'ip': data.get('ip', request.environ.get('REMOTE_ADDR', '0.0.0.0')),
+        'capabilities': data.get('capabilities', ['screen', 'files', 'commands']),
+        'cpu_usage': data.get('cpu_usage', 0),
+        'memory_usage': data.get('memory_usage', 0),
+        'network_usage': data.get('network_usage', 0),
+        'system_info': data.get('system_info', {}),
+        'performance': {
+            'cpu': data.get('cpu_usage', 0),
+            'memory': data.get('memory_usage', 0),
+            'network': data.get('network_usage', 0)
+        }
     }
     
     print(f"Agent registered: {agent_id} ({platform})")
     print(f"Current agents: {list(AGENTS_DATA.keys())}")
     print(f"Emitting agent_list_update to operators room with {len(AGENTS_DATA)} agents")
     
-    # Notify operators
+    # Notify operators with multiple emit strategies to ensure delivery
     emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
+    # Also emit globally as fallback
+    socketio.emit('agent_list_update', AGENTS_DATA)
     
     # Send registration confirmation
     emit('agent_registered', {
@@ -2980,6 +2972,18 @@ def handle_agent_register(data):
         'status': 'success',
         'message': 'Agent registered successfully'
     })
+    
+    # Log activity
+    emit('activity_update', {
+        'id': f'act_{int(time.time())}',
+        'type': 'connection',
+        'action': 'Agent Connected',
+        'details': f'Agent {agent_id} successfully connected',
+        'agent_id': agent_id,
+        'agent_name': AGENTS_DATA[agent_id]["name"],
+        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+        'status': 'success'
+    }, room='operators', broadcast=True)
     
     print(f"Agent registration complete for {agent_id}")
 
