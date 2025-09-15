@@ -5330,7 +5330,9 @@ def initialize_controller():
         return False
     
     controller_app = Flask(__name__)
-    controller_app.config['SECRET_KEY'] = 'neural_control_hub_secret_key'
+    # Use environment-provided SECRET_KEY or generate a secure random one
+    import os, secrets
+    controller_app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
     controller_socketio = SocketIO(controller_app, async_mode='eventlet')
     
     # Setup routes and handlers

@@ -17,6 +17,7 @@ import secrets
 import threading
 import smtplib
 from email.mime.text import MIMEText
+import json
 
 # WebRTC imports for SFU functionality
 try:
@@ -58,31 +59,8 @@ class Config:
 app = Flask(__name__)
 app.config['SECRET_KEY'] = Config.SECRET_KEY or secrets.token_hex(32)  # Use config or generate secure random key
 
-# Configure CORS for frontend-backend communication
-allowed_origins = [
-    "http://localhost:3000", 
-    "http://localhost:5173", 
-    "http://127.0.0.1:3000", 
-    "http://127.0.0.1:5173",
-    "https://neural-control-hub-frontend.onrender.com",
-    "https://agent-controller-backend.onrender.com",
-    "https://*.onrender.com"
-]
-
-# Merge in dynamic CORS origins from settings on startup
-try:
-    _loaded = load_settings()
-    for origin in _loaded.get('security', {}).get('frontendOrigins', []) or []:
-        if isinstance(origin, str) and origin not in allowed_origins:
-            allowed_origins.append(origin)
-except Exception as _e:
-    print(f"Warning loading dynamic CORS origins: {_e}")
-
-CORS(app, origins=allowed_origins, 
-     supports_credentials=True, allow_headers=["Content-Type", "Authorization", "X-Requested-With"])
-
-# Use eventlet (matches Procfile start command) or auto-detect if eventlet is available
-socketio = SocketIO(app, async_mode='threading', cors_allowed_origins=allowed_origins)
+# Defer CORS/socket initialization until after settings helpers are defined
+socketio = None
 
 # Optional rate limiting (disabled in this revision)
 
@@ -186,6 +164,37 @@ def save_settings(data: dict) -> bool:
     except Exception as e:
         print(f"Failed to save settings.json: {e}")
         return False
+
+# Now that settings helpers exist, configure CORS and Socket.IO
+allowed_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "https://neural-control-hub-frontend.onrender.com",
+    "https://agent-controller-backend.onrender.com",
+]
+
+try:
+    _loaded = load_settings()
+    for origin in _loaded.get('security', {}).get('frontendOrigins', []) or []:
+        if isinstance(origin, str) and origin not in allowed_origins:
+            allowed_origins.append(origin)
+except Exception as _e:
+    print(f"Warning loading dynamic CORS origins: {_e}")
+
+# Add safe wildcard support for Render subdomains using regex (Flask-CORS supports regex)
+render_wildcard_regex = r'^https://.*\.onrender\.com$'
+
+CORS(
+    app,
+    origins=allowed_origins + [render_wildcard_regex],
+    supports_credentials=True,
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"]
+)
+
+# Initialize Socket.IO with the concrete origin allowlist (regex not supported here)
+socketio = SocketIO(app, async_mode='threading', cors_allowed_origins=allowed_origins)
 
 def send_email_notification(subject: str, body: str) -> bool:
     try:
