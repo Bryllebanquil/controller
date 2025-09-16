@@ -1985,8 +1985,9 @@ def index():
 @app.route("/dashboard")
 @require_auth
 def dashboard():
-    print(f"Dashboard route accessed. Serving index.html")
-    return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html'))
+    print(f"Dashboard route accessed. Checking for UI build...")
+    # Redirect to index route which has the proper fallback logic
+    return redirect(url_for('index'))
 
 # Serve static assets for the UI v2.1
 @app.route('/assets/<path:filename>')
@@ -2023,6 +2024,161 @@ def debug_login_test():
         'redirect_to': url_for('index'),
         'session': dict(session)
     })
+
+@app.route('/debug/dashboard')
+def debug_dashboard():
+    """Debug dashboard without authentication"""
+    return render_template_string('''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Debug Dashboard - Neural Control Hub</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body { 
+                font-family: Arial, sans-serif; 
+                margin: 20px; 
+                background: #1a1a2e; 
+                color: white; 
+            }
+            .container { max-width: 1000px; margin: 0 auto; }
+            .status { 
+                padding: 20px; 
+                background: #16213e; 
+                border-radius: 8px; 
+                margin: 20px 0; 
+                border-left: 4px solid #00d4ff;
+            }
+            .agents { display: grid; gap: 15px; margin-top: 20px; }
+            .agent { 
+                padding: 15px; 
+                background: #0f3460; 
+                border-radius: 5px; 
+            }
+            .online { border-left: 4px solid #00ff00; }
+            .offline { border-left: 4px solid #ff0000; }
+            .btn { 
+                padding: 10px 20px; 
+                background: #00d4ff; 
+                color: #1a1a2e; 
+                border: none; 
+                border-radius: 5px; 
+                cursor: pointer; 
+                margin: 5px;
+            }
+            .btn:hover { background: #00b4d8; }
+            .header { text-align: center; margin-bottom: 30px; }
+            .stats { display: flex; gap: 20px; justify-content: center; margin-bottom: 20px; }
+            .stat { text-align: center; padding: 15px; background: #16213e; border-radius: 8px; }
+            .stat-value { font-size: 2em; color: #00d4ff; font-weight: bold; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🚀 Neural Control Hub - Debug Dashboard</h1>
+                <p>Real-time agent monitoring (No authentication required)</p>
+            </div>
+            
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value" id="totalAgents">0</div>
+                    <div>Total Agents</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="onlineAgents">0</div>
+                    <div>Online</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="connectionStatus">❌</div>
+                    <div>Backend</div>
+                </div>
+            </div>
+            
+            <div class="status">
+                <h3>📊 System Status</h3>
+                <p>Backend: ✅ Online</p>
+                <p>WebSocket: <span id="wsStatus">Connecting...</span></p>
+                <p>Mode: 🔧 Debug Dashboard</p>
+                <p>Authentication: ⚠️ Bypassed for testing</p>
+            </div>
+            
+            <div class="status">
+                <h3>📋 Connected Agents</h3>
+                <button class="btn" onclick="refreshAgents()">🔄 Refresh</button>
+                <button class="btn" onclick="testConnection()">🔗 Test</button>
+                <button class="btn" onclick="window.location.href='/login'">🔐 Login</button>
+                <div class="agents" id="agents">Loading agents...</div>
+            </div>
+        </div>
+        
+        <script src="/socket.io/socket.io.js"></script>
+        <script>
+            const socket = io();
+            
+            socket.on('connect', function() {
+                console.log('Connected to backend');
+                document.getElementById('wsStatus').textContent = '✅ Connected';
+                document.getElementById('connectionStatus').textContent = '✅';
+                socket.emit('operator_connect');
+                socket.emit('request_agent_list');
+            });
+            
+            socket.on('disconnect', function() {
+                console.log('Disconnected');
+                document.getElementById('wsStatus').textContent = '❌ Disconnected';
+                document.getElementById('connectionStatus').textContent = '❌';
+            });
+            
+            socket.on('agent_list_update', function(agents) {
+                console.log('Agent list update:', agents);
+                updateAgentsList(agents);
+                updateStats(agents);
+            });
+            
+            function updateStats(agents) {
+                const total = Object.keys(agents).length;
+                const online = Object.values(agents).filter(a => a.sid).length;
+                document.getElementById('totalAgents').textContent = total;
+                document.getElementById('onlineAgents').textContent = online;
+            }
+            
+            function updateAgentsList(agents) {
+                const container = document.getElementById('agents');
+                if (Object.keys(agents).length === 0) {
+                    container.innerHTML = '<p>No agents connected. Start a client to see it here.</p>';
+                    return;
+                }
+                
+                let html = '';
+                for (const [id, data] of Object.entries(agents)) {
+                    const isOnline = !!data.sid;
+                    const statusClass = isOnline ? 'online' : 'offline';
+                    html += `
+                        <div class="agent ${statusClass}">
+                            <strong>${data.name || id}</strong><br>
+                            Platform: ${data.platform || 'Unknown'}<br>
+                            Status: ${isOnline ? 'ONLINE' : 'OFFLINE'}<br>
+                            Last Seen: ${data.last_seen || 'Never'}<br>
+                            ${data.sid ? `Session: ${data.sid}<br>` : ''}
+                            ID: <code>${id}</code>
+                        </div>
+                    `;
+                }
+                container.innerHTML = html;
+            }
+            
+            function refreshAgents() {
+                socket.emit('request_agent_list');
+            }
+            
+            function testConnection() {
+                alert('Connection Status: ' + (socket.connected ? 'Connected ✅' : 'Disconnected ❌'));
+            }
+        </script>
+    </body>
+    </html>
+    ''')
 
 @app.route('/health')
 def health_check():
