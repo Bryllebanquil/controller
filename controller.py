@@ -1854,24 +1854,132 @@ DOWNLOAD_BUFFERS = defaultdict(lambda: {"chunks": [], "total_size": 0, "local_pa
 def index():
     print(f"Index route accessed. Authenticated: {is_authenticated()}")
     if is_authenticated():
-        # Inject the Socket.IO URL into the HTML
-        html_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html')
-        with open(html_path, 'r') as f:
-            html_content = f.read()
-        
-        # Inject the backend URL for Socket.IO connection
-        backend_url = request.url_root.rstrip('/')
-        injection_script = f'''
-        <script>
-            window.__SOCKET_URL__ = "{backend_url}";
-            console.log("Injected Socket.IO URL:", window.__SOCKET_URL__);
-        </script>
-        '''
-        # Inject before closing head tag
-        html_content = html_content.replace('</head>', injection_script + '</head>')
-        
-        from flask import Response
-        return Response(html_content, mimetype='text/html')
+        try:
+            # Inject the Socket.IO URL into the HTML
+            html_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html')
+            print(f"Looking for UI file at: {html_path}")
+            print(f"UI file exists: {os.path.exists(html_path)}")
+            
+            if not os.path.exists(html_path):
+                # Fallback: serve a simple dashboard
+                return render_template_string('''
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Agent Controller - Dashboard</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 40px; background: #1a1a2e; color: white; }
+                        .container { max-width: 800px; margin: 0 auto; }
+                        .status { padding: 20px; background: #16213e; border-radius: 8px; margin: 20px 0; }
+                        .agents { display: grid; gap: 15px; margin-top: 20px; }
+                        .agent { padding: 15px; background: #0f3460; border-radius: 5px; }
+                        .online { border-left: 4px solid #00ff00; }
+                        .offline { border-left: 4px solid #ff0000; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1>🚀 Neural Control Hub - Dashboard</h1>
+                        <div class="status">
+                            <h3>📊 System Status</h3>
+                            <p>Backend: ✅ Online</p>
+                            <p>WebSocket: ✅ Ready</p>
+                            <p>UI Build: ❌ Not Found (Using fallback)</p>
+                        </div>
+                        <div class="status">
+                            <h3>📋 Connected Agents</h3>
+                            <div id="agents">Loading...</div>
+                        </div>
+                        <div class="status">
+                            <h3>🔧 Quick Actions</h3>
+                            <button onclick="refreshAgents()">Refresh Agents</button>
+                            <button onclick="testConnection()">Test Connection</button>
+                        </div>
+                    </div>
+                    
+                    <script src="/socket.io/socket.io.js"></script>
+                    <script>
+                        const socket = io();
+                        
+                        socket.on('connect', function() {
+                            console.log('Connected to backend');
+                            socket.emit('operator_connect');
+                            socket.emit('request_agent_list');
+                        });
+                        
+                        socket.on('agent_list_update', function(agents) {
+                            console.log('Received agents:', agents);
+                            updateAgentsList(agents);
+                        });
+                        
+                        function updateAgentsList(agents) {
+                            const container = document.getElementById('agents');
+                            if (Object.keys(agents).length === 0) {
+                                container.innerHTML = '<p>No agents connected</p>';
+                                return;
+                            }
+                            
+                            let html = '';
+                            for (const [id, data] of Object.entries(agents)) {
+                                const status = data.sid ? 'online' : 'offline';
+                                const statusClass = data.sid ? 'online' : 'offline';
+                                html += `
+                                    <div class="agent ${statusClass}">
+                                        <strong>${data.name || id}</strong><br>
+                                        Platform: ${data.platform || 'Unknown'}<br>
+                                        Status: ${status.toUpperCase()}<br>
+                                        Last Seen: ${data.last_seen || 'Never'}
+                                    </div>
+                                `;
+                            }
+                            container.innerHTML = html;
+                        }
+                        
+                        function refreshAgents() {
+                            socket.emit('request_agent_list');
+                        }
+                        
+                        function testConnection() {
+                            alert('Backend connection: ' + (socket.connected ? 'Connected' : 'Disconnected'));
+                        }
+                    </script>
+                </body>
+                </html>
+                ''')
+            
+            with open(html_path, 'r') as f:
+                html_content = f.read()
+            
+            # Inject the backend URL for Socket.IO connection
+            backend_url = request.url_root.rstrip('/')
+            injection_script = f'''
+            <script>
+                window.__SOCKET_URL__ = "{backend_url}";
+                console.log("Injected Socket.IO URL:", window.__SOCKET_URL__);
+            </script>
+            '''
+            # Inject before closing head tag
+            html_content = html_content.replace('</head>', injection_script + '</head>')
+            
+            from flask import Response
+            return Response(html_content, mimetype='text/html')
+            
+        except Exception as e:
+            print(f"Error serving UI: {e}")
+            # Fallback error page
+            return render_template_string('''
+            <!DOCTYPE html>
+            <html>
+            <head><title>Controller Error</title></head>
+            <body>
+                <h1>Controller Error</h1>
+                <p>Error loading UI: {{ error }}</p>
+                <p><a href="/login">Go to Login</a></p>
+            </body>
+            </html>
+            ''', error=str(e))
+    
+    print("User not authenticated, redirecting to login")
     return redirect(url_for('login'))
 
 @app.route("/dashboard")
@@ -1884,6 +1992,47 @@ def dashboard():
 @app.route('/assets/<path:filename>')
 def serve_assets(filename):
     return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'assets', filename))
+
+# Debug and status endpoints
+@app.route('/debug/status')
+def debug_status():
+    """Debug endpoint to check system status"""
+    ui_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html')
+    return jsonify({
+        'backend_status': 'online',
+        'authentication_required': True,
+        'current_user_authenticated': is_authenticated(),
+        'admin_password_set': bool(Config.ADMIN_PASSWORD),
+        'admin_password_hint': f'Password is "{Config.ADMIN_PASSWORD}" (for testing)',
+        'ui_build_exists': os.path.exists(ui_path),
+        'ui_build_path': ui_path,
+        'agents_count': len(AGENTS_DATA),
+        'agents': list(AGENTS_DATA.keys()),
+        'session_info': dict(session),
+        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
+    })
+
+@app.route('/debug/login-test')
+def debug_login_test():
+    """Test login endpoint for debugging"""
+    session['authenticated'] = True
+    session['login_time'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    session['login_ip'] = request.remote_addr
+    return jsonify({
+        'message': 'Debug login successful',
+        'redirect_to': url_for('index'),
+        'session': dict(session)
+    })
+
+@app.route('/health')
+def health_check():
+    """Simple health check endpoint"""
+    return jsonify({
+        'status': 'healthy',
+        'backend': 'online',
+        'agents': len(AGENTS_DATA),
+        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
+    })
 
 # Catch-all route for React Router (serve index.html for any unmatched routes)
 @app.route('/<path:path>')
