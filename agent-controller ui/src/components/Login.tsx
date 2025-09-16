@@ -106,7 +106,7 @@ export function Login() {
           
           <div className="mt-6 pt-6 border-t text-center text-xs text-muted-foreground">
             <p>Secure authentication required</p>
-            <p className="mt-1">Default password: <code className="bg-muted px-1 py-0.5 rounded">q</code></p>
+            <p className="mt-1">Contact your administrator for access credentials</p>
           </div>
         </CardContent>
       </Card>

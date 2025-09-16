@@ -23,7 +23,8 @@ services:
       context: .
       dockerfile: frontend.Dockerfile
       args:
-        - VITE_SOCKET_URL=http://localhost:8080
+        - VITE_SOCKET_URL=${VITE_SOCKET_URL:-http://localhost:8080}
+        - VITE_API_URL=${VITE_API_URL:-http://localhost:8080}
     container_name: agent-controller-frontend
     depends_on:
       - backend
@@ -31,6 +32,9 @@ services:
       - "80:80"
     networks:
       - app
+    environment:
+      - VITE_SOCKET_URL=${VITE_SOCKET_URL:-http://localhost:8080}
+      - VITE_API_URL=${VITE_API_URL:-http://localhost:8080}
 
 networks:
   app:

