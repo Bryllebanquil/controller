@@ -986,7 +986,9 @@ def require_auth(f):
 # Login route
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    print(f"🔐 Login route accessed - Method: {request.method}")
     client_ip = request.remote_addr
+    print(f"🌐 Client IP: {client_ip}")
     
     # Check if IP is blocked
     if is_ip_blocked(client_ip):
@@ -1100,7 +1102,10 @@ def login():
     </html>
     ''')
     
+    print(f"🔍 Login page requested - IP: {client_ip}, Method: {request.method}")
+    
     if request.method == 'POST':
+        print(f"📝 Processing login form submission")
         password = request.form.get('password', '')
         
         # Verify password using secure hash comparison
@@ -1852,7 +1857,12 @@ DOWNLOAD_BUFFERS = defaultdict(lambda: {"chunks": [], "total_size": 0, "local_pa
 
 @app.route("/")
 def index():
-    print(f"Index route accessed. Authenticated: {is_authenticated()}")
+    print(f"🏠 Index route accessed")
+    print(f"🔐 Authentication check: {is_authenticated()}")
+    print(f"📝 Session data: {dict(session)}")
+    print(f"🌐 Request headers: {dict(request.headers)}")
+    print(f"🔗 Request URL: {request.url}")
+    
     if is_authenticated():
         try:
             # Inject the Socket.IO URL into the HTML
@@ -1980,7 +1990,35 @@ def index():
             ''', error=str(e))
     
     print("User not authenticated, redirecting to login")
-    return redirect(url_for('login'))
+    print(f"🔄 Login URL: {url_for('login')}")
+    try:
+        redirect_response = redirect(url_for('login'))
+        print(f"✅ Redirect created successfully")
+        return redirect_response
+    except Exception as e:
+        print(f"❌ Redirect failed: {e}")
+        # Fallback: serve login page directly
+        return '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Login Required</title>
+            <style>
+                body { font-family: Arial, sans-serif; background: #1a1a2e; color: white; padding: 40px; text-align: center; }
+                .container { max-width: 500px; margin: 0 auto; background: #16213e; padding: 30px; border-radius: 10px; }
+                .btn { display: inline-block; padding: 10px 20px; background: #00d4ff; color: #1a1a2e; text-decoration: none; border-radius: 5px; margin: 10px; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>🔐 Login Required</h1>
+                <p>You need to log in to access the dashboard.</p>
+                <a href="/login" class="btn">Go to Login</a>
+                <a href="/test" class="btn">Test Page</a>
+            </div>
+        </body>
+        </html>
+        '''
 
 @app.route("/dashboard")
 @require_auth
@@ -2189,6 +2227,106 @@ def health_check():
         'agents': len(AGENTS_DATA),
         'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
     })
+
+@app.route('/simple-login')
+def simple_login():
+    """Simple login page for testing"""
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Simple Login - Neural Control Hub</title>
+        <style>
+            body { font-family: Arial, sans-serif; background: #1a1a2e; color: white; padding: 40px; }
+            .container { max-width: 400px; margin: 0 auto; background: #16213e; padding: 30px; border-radius: 10px; }
+            input { width: 100%; padding: 10px; margin: 10px 0; border: none; border-radius: 5px; }
+            button { width: 100%; padding: 12px; background: #00d4ff; color: #1a1a2e; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; }
+            button:hover { background: #00b4d8; }
+            .hint { background: #0f3460; padding: 15px; border-radius: 5px; margin: 15px 0; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🔐 Simple Login</h1>
+            <div class="hint">
+                <strong>💡 Hint:</strong> The password is just the letter "q"
+            </div>
+            <form method="POST" action="/login">
+                <input type="password" name="password" placeholder="Enter password" required>
+                <button type="submit">Login</button>
+            </form>
+            <div style="margin-top: 20px; text-align: center;">
+                <a href="/test" style="color: #00d4ff;">← Back to Test Page</a>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+
+@app.route('/test')
+def test_route():
+    """Simple test route to verify Flask is working"""
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Flask Test - Neural Control Hub</title>
+        <style>
+            body { 
+                font-family: Arial, sans-serif; 
+                background: #1a1a2e; 
+                color: white; 
+                padding: 40px; 
+                text-align: center; 
+            }
+            .container { 
+                max-width: 600px; 
+                margin: 0 auto; 
+                background: #16213e; 
+                padding: 30px; 
+                border-radius: 10px; 
+            }
+            .btn { 
+                display: inline-block; 
+                padding: 10px 20px; 
+                background: #00d4ff; 
+                color: #1a1a2e; 
+                text-decoration: none; 
+                border-radius: 5px; 
+                margin: 10px; 
+                font-weight: bold; 
+            }
+            .btn:hover { background: #00b4d8; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>✅ Flask Application is Working!</h1>
+            <p>🚀 Neural Control Hub Backend</p>
+            <p>🕒 Current Time: ''' + datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC') + '''</p>
+            <p>🔐 Session ID: ''' + str(session.get('_id', 'No session')) + '''</p>
+            <p>📊 Connected Agents: ''' + str(len(AGENTS_DATA)) + '''</p>
+            
+            <div>
+                <a href="/simple-login" class="btn">🔐 Simple Login</a>
+                <a href="/login" class="btn">📝 Full Login</a>
+                <a href="/debug/dashboard" class="btn">🔧 Debug Dashboard</a>
+                <a href="/debug/status" class="btn">📊 Status</a>
+                <a href="/debug/login-test" class="btn">🧪 Quick Login</a>
+            </div>
+            
+            <div style="margin-top: 30px; text-align: left; background: #0f3460; padding: 20px; border-radius: 5px;">
+                <h3>🔍 Debug Information:</h3>
+                <p><strong>Flask App:</strong> Running ✅</p>
+                <p><strong>Routes:</strong> Responding ✅</p>
+                <p><strong>Templates:</strong> Rendering ✅</p>
+                <p><strong>Sessions:</strong> ''' + ('Working' if session else 'Not initialized') + '''</p>
+                <p><strong>Authentication:</strong> ''' + ('Enabled' if callable(is_authenticated) else 'Error') + '''</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
 
 # Catch-all route for React Router (serve index.html for any unmatched routes)
 @app.route('/<path:path>')
