@@ -82,7 +82,7 @@ def test_socketio_connection():
         
         # Create Socket.IO client
         sio = socketio.Client(
-            ssl_verify=False,  # Disable SSL verification for testing
+            ssl_verify=True,  # Enable SSL verification for security
             engineio_logger=False,
             logger=False
         )

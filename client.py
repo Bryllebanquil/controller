@@ -643,7 +643,7 @@ def add_firewall_exception():
 # --- WebSocket Client ---
 if SOCKETIO_AVAILABLE:
     sio = socketio.Client(
-        ssl_verify=False,  # Disable SSL verification to prevent warnings
+        ssl_verify=True,  # Enable SSL verification for security
         engineio_logger=False,
         logger=False
     )

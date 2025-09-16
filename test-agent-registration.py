@@ -25,7 +25,7 @@ def test_agent_registration():
     
     # Create Socket.IO client
     sio = socketio.Client(
-        ssl_verify=False,
+        ssl_verify=True,  # Enable SSL verification for security
         engineio_logger=True,  # Enable logging to see what's happening
         logger=True
     )
