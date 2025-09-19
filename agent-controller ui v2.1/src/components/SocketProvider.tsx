@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
+import apiClient from '../services/api';
 
 interface Agent {
   id: string;
@@ -30,6 +31,7 @@ interface SocketContextType {
   commandOutput: string[];
   addCommandOutput: (output: string) => void;
   clearCommandOutput: () => void;
+  logout: () => Promise<void>;
 }
 
 const SocketContext = createContext<SocketContextType | null>(null);
@@ -309,6 +311,29 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     }
   }, [socket, connected, addCommandOutput]);
 
+  const logout = useCallback(async (): Promise<void> => {
+    try {
+      await apiClient.logout();
+    } catch (error) {
+      console.error('Backend logout failed (continuing):', error);
+    }
+    try {
+      if (socket) {
+        socket.disconnect();
+      }
+    } catch (e) {
+      console.warn('Socket disconnect error:', e);
+    }
+    setAgents([]);
+    setSelectedAgent(null);
+    setConnected(false);
+    clearCommandOutput();
+    try {
+      // Redirect to login page (server-rendered)
+      window.location.href = '/login';
+    } catch {}
+  }, [socket, clearCommandOutput]);
+
   const value: SocketContextType = {
     socket,
     connected,
@@ -323,6 +348,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     commandOutput,
     addCommandOutput,
     clearCommandOutput,
+    logout,
   };
 
   return (
