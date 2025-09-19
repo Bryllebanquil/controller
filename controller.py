@@ -2340,8 +2340,8 @@ def execute_command(agent_id):
     # Generate execution ID
     execution_id = f"exec_{int(time.time())}_{secrets.token_hex(4)}"
     
-    # Emit to agent
-    socketio.emit('execute_command', {
+    # Emit to agent (match agent listener 'command')
+    socketio.emit('command', {
         'command': command,
         'execution_id': execution_id
     }, room=agent_sid)
