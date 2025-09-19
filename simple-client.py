@@ -104,13 +104,23 @@ def test_socketio_connection():
             last_heartbeat = time.time()
             log_message("✅ Socket.IO connection established!")
             
-            # Send initial agent registration
-            sio.emit('agent_register', {
+            # Send initial agent registration (using both events for compatibility)
+            agent_data = {
                 'agent_id': AGENT_ID,
+                'name': f'Simple-Client-{AGENT_ID.split("-")[-1]}',
                 'platform': sys.platform,
                 'python_version': sys.version,
-                'timestamp': time.time()
-            })
+                'timestamp': time.time(),
+                'ip': '127.0.0.1',
+                'capabilities': ['screen', 'files', 'commands'],
+                'cpu_usage': 0,
+                'memory_usage': 0,
+                'network_usage': 0
+            }
+            
+            # Use both registration methods for maximum compatibility
+            sio.emit('agent_register', agent_data)
+            sio.emit('agent_connect', agent_data)
         
         @sio.event
         def disconnect():

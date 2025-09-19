@@ -89,6 +89,12 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       console.log('Connected to Neural Control Hub');
       console.log('Emitting operator_connect event');
       socketInstance.emit('operator_connect');
+      
+      // Also explicitly request agent list
+      setTimeout(() => {
+        console.log('Requesting agent list explicitly');
+        socketInstance.emit('request_agent_list');
+      }, 1000); // Wait 1 second after connecting
     });
 
     socketInstance.on('disconnect', (reason) => {
@@ -115,7 +121,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     // Agent management events
     socketInstance.on('agent_list_update', (agentData: Record<string, any>) => {
       try {
+        console.log('Received agent_list_update:', agentData);
+        console.log('Agent data keys:', Object.keys(agentData));
         const agentList = Object.entries(agentData).map(([id, data]: [string, any]) => {
+          console.log(`Processing agent ${id}:`, data);
           // Safely parse last_seen date
           let lastSeenDate = new Date();
           let isOnline = false;
@@ -138,9 +147,14 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
             ip: data.ip || '127.0.0.1',
             lastSeen: lastSeenDate,
             capabilities: Array.isArray(data.capabilities) ? data.capabilities : ['screen', 'commands'],
-            performance: typeof data.performance === 'object' ? data.performance : { cpu: 0, memory: 0, network: 0 }
+            performance: {
+              cpu: data.cpu_usage || data.performance?.cpu || 0,
+              memory: data.memory_usage || data.performance?.memory || 0,
+              network: data.network_usage || data.performance?.network || 0
+            }
           };
         });
+        console.log('Processed agent list:', agentList);
         setAgents(agentList);
       } catch (error) {
         console.error('Error processing agent list update:', error);

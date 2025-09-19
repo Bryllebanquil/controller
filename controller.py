@@ -2831,6 +2831,16 @@ def get_system_info():
     
     return jsonify(info)
 
+@app.route('/api/debug/agents', methods=['GET'])
+@require_auth
+def debug_agents():
+    """Debug endpoint to see raw agent data"""
+    return jsonify({
+        'agents_data': AGENTS_DATA,
+        'agent_count': len(AGENTS_DATA),
+        'agent_keys': list(AGENTS_DATA.keys())
+    })
+
 # Video/Audio Frame Storage
 VIDEO_FRAMES_H264 = defaultdict(lambda: None)
 CAMERA_FRAMES_H264 = defaultdict(lambda: None)
@@ -2843,7 +2853,12 @@ def handle_connect():
     # Note: Socket.IO doesn't have direct access to Flask session
     # In a production environment, you'd want to implement proper Socket.IO authentication
     # For now, we'll allow connections but validate on specific events
-    print(f"Client connected: {request.sid}")
+    client_info = {
+        'sid': request.sid,
+        'remote_addr': request.environ.get('REMOTE_ADDR', 'unknown'),
+        'user_agent': request.environ.get('HTTP_USER_AGENT', 'unknown')
+    }
+    print(f"Client connected: {client_info}")
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -2884,11 +2899,26 @@ def handle_operator_connect():
     join_room('operators')
     print(f"Operator joined 'operators' room. Sending {len(AGENTS_DATA)} agents to new operator.")
     print(f"Current agents: {list(AGENTS_DATA.keys())}")
-    emit('agent_list_update', AGENTS_DATA) # Send current agent list to the new operator
+    
+    # Send agent list to the specific operator that just connected
+    emit('agent_list_update', AGENTS_DATA, room=request.sid)
     print(f"Agent list sent to operator {request.sid}")
+    
+    # Also broadcast to all operators (including the new one) to ensure consistency
+    emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
+    print(f"Agent list broadcast to all operators")
 
 def _emit_agent_config(agent_id: str):
     return
+
+@socketio.on('request_agent_list')
+def handle_request_agent_list():
+    """Handle explicit request for agent list from dashboard"""
+    print(f"Agent list requested by {request.sid}")
+    print(f"Current agents: {list(AGENTS_DATA.keys())}")
+    print(f"Agent data: {AGENTS_DATA}")
+    emit('agent_list_update', AGENTS_DATA, room=request.sid)
+    print(f"Agent list sent to {request.sid}")
 
 @socketio.on('agent_connect')
 def handle_agent_connect(data):
