@@ -168,7 +168,15 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    // Command output events
+    // Command result events
+    socketInstance.on('command_result', (data: { agent_id: string; output: string; command?: string; success?: boolean }) => {
+      const { agent_id, output, command, success } = data;
+      const status = success === false ? '[ERROR]' : '[SUCCESS]';
+      const commandText = command ? `Command: ${command}\n` : '';
+      addCommandOutput(`${status} [${agent_id}] ${commandText}${output}`);
+    });
+
+    // Legacy command output events (for backward compatibility)
     socketInstance.on('command_output', (data: { agent_id: string; output: string }) => {
       addCommandOutput(`[${data.agent_id}] ${data.output}`);
     });
