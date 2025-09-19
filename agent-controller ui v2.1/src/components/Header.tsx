@@ -92,6 +92,12 @@ export function Header({ onTabChange, onAgentSelect, onAgentDeselect }: HeaderPr
           
           <NotificationCenter />
           
+          {/* Quick Logout button for visibility */}
+          <Button variant="destructive" size="sm" onClick={handleLogout} className="hidden sm:inline-flex">
+            <LogOut className="mr-2 h-4 w-4" />
+            Logout
+          </Button>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm">

@@ -1916,14 +1916,8 @@ DOWNLOAD_BUFFERS = defaultdict(lambda: {"chunks": [], "total_size": 0, "local_pa
 @app.route("/")
 def index():
     if is_authenticated():
-        # Check if we should use dev version (build is outdated)
-        build_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html')
-        dev_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'index.html')
-        
-        # Use dev version if build doesn't exist or if we detect development mode
-        if not os.path.exists(build_path) or os.environ.get('USE_DEV_UI', 'false').lower() == 'true':
-            return send_file(dev_path)
-        return send_file(build_path)
+        # Serve a single unified dashboard to avoid confusion between two UIs
+        return redirect(url_for('dashboard'))
     return redirect(url_for('login'))
 
 @app.route("/dashboard")
@@ -1931,17 +1925,32 @@ def index():
 def dashboard():
     # Serve a fully inlined single-file UI so deployment is self-contained
     try:
-        # Inline CSS
-        css_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui', 'build', 'assets', 'index-S04Vez3o.css')
-        if not os.path.exists(css_path):
-            css_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'assets', 'index-kl9EZ_3a.css')
+        # Find latest built asset files dynamically (avoid hardcoded hashed names)
+        def find_asset(glob_pattern_candidates):
+            for assets_dir, pattern in glob_pattern_candidates:
+                try:
+                    if os.path.isdir(assets_dir):
+                        for fname in sorted(os.listdir(assets_dir)):
+                            if fname.startswith(pattern[0]) and fname.endswith(pattern[1]):
+                                return os.path.join(assets_dir, fname)
+                except Exception:
+                    continue
+            return None
+
+        base_dir = os.path.dirname(__file__)
+        assets_dirs = [
+            os.path.join(base_dir, 'agent-controller ui v2.1', 'build', 'assets'),
+            os.path.join(base_dir, 'agent-controller ui', 'build', 'assets'),
+        ]
+
+        css_path = find_asset([(d, ('index-', '.css')) for d in assets_dirs])
+        js_path = find_asset([(d, ('index-', '.js')) for d in assets_dirs])
+
+        if not css_path or not js_path:
+            raise FileNotFoundError('Built assets not found in assets directories')
+
         with open(css_path, 'r') as f:
             css_inline = f.read()
-        
-        # Inline JS
-        js_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui', 'build', 'assets', 'index-DqIyI5SB.js')
-        if not os.path.exists(js_path):
-            js_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'assets', 'index-CJ1M2ZyF.js')
         with open(js_path, 'r') as f:
             js_bundle = f.read()
         
@@ -2331,8 +2340,8 @@ def execute_command(agent_id):
     # Generate execution ID
     execution_id = f"exec_{int(time.time())}_{secrets.token_hex(4)}"
     
-    # Emit to agent
-    socketio.emit('execute_command', {
+    # Emit to agent (match agent listener 'command')
+    socketio.emit('command', {
         'command': command,
         'execution_id': execution_id
     }, room=agent_sid)
