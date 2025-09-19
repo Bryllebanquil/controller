@@ -32,6 +32,7 @@ interface SocketContextType {
   addCommandOutput: (output: string) => void;
   clearCommandOutput: () => void;
   logout: () => Promise<void>;
+  agentMetrics: Record<string, { cpu: number; memory: number; network: number }>;
 }
 
 const SocketContext = createContext<SocketContextType | null>(null);
@@ -42,6 +43,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [commandOutput, setCommandOutput] = useState<string[]>([]);
+  const [agentMetrics, setAgentMetrics] = useState<Record<string, { cpu: number; memory: number; network: number }>>({});
 
   const addCommandOutput = useCallback((output: string) => {
     setCommandOutput(prev => [...prev.slice(-99), output]); // Keep last 100 lines
@@ -166,6 +168,26 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     // Command output events
     socketInstance.on('command_output', (data: { agent_id: string; output: string }) => {
       addCommandOutput(`[${data.agent_id}] ${data.output}`);
+    });
+
+    // Lightweight telemetry updates from agents
+    socketInstance.on('agent_telemetry', (data: { agent_id: string; cpu?: number; memory?: number; network?: number }) => {
+      const { agent_id, cpu = 0, memory = 0, network = 0 } = data || ({} as any);
+      if (agent_id) {
+        setAgentMetrics(prev => ({
+          ...prev,
+          [agent_id]: { cpu, memory, network }
+        }));
+        // Also update performance snapshot in agents list if present
+        setAgents(prev => prev.map(a => a.id === agent_id ? ({
+          ...a,
+          performance: {
+            cpu: cpu ?? a.performance.cpu,
+            memory: memory ?? a.performance.memory,
+            network: network ?? a.performance.network,
+          }
+        }) : a));
+      }
     });
 
     // Streaming events
@@ -349,6 +371,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     addCommandOutput,
     clearCommandOutput,
     logout,
+    agentMetrics,
   };
 
   return (
