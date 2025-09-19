@@ -42,6 +42,14 @@ class Config:
     if not ADMIN_PASSWORD:
         raise ValueError("ADMIN_PASSWORD environment variable is required. Please set a secure password.")
     
+    # Validate password strength
+    if len(ADMIN_PASSWORD) < 8:
+        raise ValueError("ADMIN_PASSWORD must be at least 8 characters long.")
+    if not any(c.isupper() for c in ADMIN_PASSWORD):
+        print("Warning: ADMIN_PASSWORD should contain uppercase letters for better security.")
+    if not any(c.isdigit() for c in ADMIN_PASSWORD):
+        print("Warning: ADMIN_PASSWORD should contain digits for better security.")
+    
     # Flask Configuration
     SECRET_KEY = os.environ.get('SECRET_KEY', None)
     
@@ -209,8 +217,20 @@ CORS(
     allow_headers=["Content-Type", "Authorization", "X-Requested-With"]
 )
 
-# Initialize Socket.IO with the concrete origin allowlist (regex not supported here)
-socketio = SocketIO(app, async_mode='threading', cors_allowed_origins=allowed_origins)
+# Initialize Socket.IO with expanded origin allowlist (include render.com wildcard)
+render_origins = [
+    "https://agent-controller-backend.onrender.com",
+    "https://neural-control-hub-frontend.onrender.com"
+]
+# Add any render.com subdomain variations
+for subdomain in ["www", "app", "dashboard", "frontend", "backend"]:
+    render_origins.append(f"https://{subdomain}.onrender.com")
+    render_origins.append(f"https://agent-controller-{subdomain}.onrender.com")
+    render_origins.append(f"https://neural-control-hub-{subdomain}.onrender.com")
+
+all_socketio_origins = allowed_origins + render_origins
+socketio = SocketIO(app, async_mode='threading', cors_allowed_origins=all_socketio_origins)
+print(f"Socket.IO CORS origins: {all_socketio_origins}")
 
 def send_email_notification(subject: str, body: str) -> bool:
     try:
@@ -387,8 +407,12 @@ def create_secure_password_hash(password):
     """
     return hash_password(password)
 
-# Generate secure hash for admin password
-ADMIN_PASSWORD_HASH, ADMIN_PASSWORD_SALT = create_secure_password_hash(Config.ADMIN_PASSWORD)
+# Generate secure hash for admin password (with error handling)
+try:
+    ADMIN_PASSWORD_HASH, ADMIN_PASSWORD_SALT = create_secure_password_hash(Config.ADMIN_PASSWORD)
+except Exception as e:
+    print(f"Error creating admin password hash: {e}")
+    raise ValueError("Failed to create secure password hash. Please check your ADMIN_PASSWORD.")
 
 # WebRTC Utility Functions
 def create_webrtc_peer_connection(agent_id):
@@ -445,14 +469,22 @@ def close_webrtc_connection(agent_id):
     if agent_id in WEBRTC_PEER_CONNECTIONS:
         try:
             pc = WEBRTC_PEER_CONNECTIONS[agent_id]
-            # Use run_coroutine_threadsafe for synchronous context
+            # Properly handle async context
             try:
                 loop = asyncio.get_event_loop()
-                asyncio.run_coroutine_threadsafe(pc.close(), loop)
-            except RuntimeError:
-                # No event loop running, use asyncio.run
-                asyncio.run(pc.close())
-            del WEBRTC_PEER_CONNECTIONS[agent_id]
+                if loop.is_running():
+                    # If loop is running, schedule the coroutine
+                    future = asyncio.run_coroutine_threadsafe(pc.close(), loop)
+                    future.result(timeout=5)  # Wait up to 5 seconds
+                else:
+                    # If no loop or not running, use asyncio.run
+                    asyncio.run(pc.close())
+            except (RuntimeError, asyncio.TimeoutError) as e:
+                print(f"Warning: Could not cleanly close WebRTC connection for {agent_id}: {e}")
+                # Force cleanup even if close fails
+                pass
+            finally:
+                del WEBRTC_PEER_CONNECTIONS[agent_id]
         except Exception as e:
             print(f"Error closing WebRTC connection for {agent_id}: {e}")
     
@@ -581,8 +613,14 @@ def implement_frame_dropping(agent_id, load_threshold=0.8):
         return False
     
     try:
+        # Check if psutil is available first
+        try:
+            import psutil
+        except ImportError:
+            print("psutil not available for load monitoring")
+            return False
+            
         # Get current system load
-        import psutil
         cpu_percent = psutil.cpu_percent(interval=1)
         memory_percent = psutil.virtual_memory().percent
         
@@ -1878,13 +1916,92 @@ DOWNLOAD_BUFFERS = defaultdict(lambda: {"chunks": [], "total_size": 0, "local_pa
 @app.route("/")
 def index():
     if is_authenticated():
-        return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html'))
+        # Check if we should use dev version (build is outdated)
+        build_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html')
+        dev_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'index.html')
+        
+        # Use dev version if build doesn't exist or if we detect development mode
+        if not os.path.exists(build_path) or os.environ.get('USE_DEV_UI', 'false').lower() == 'true':
+            return send_file(dev_path)
+        return send_file(build_path)
     return redirect(url_for('login'))
 
 @app.route("/dashboard")
 @require_auth
 def dashboard():
-    return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html'))
+    # Serve the built version with Socket.IO fixes injected
+    build_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html')
+    
+    try:
+        with open(build_path, 'r') as f:
+            html_content = f.read()
+        
+        # Inject Socket.IO fix directly into the HTML
+        socketio_fix = '''
+        <script>
+        // Socket.IO URL Fix - Override before the main app loads
+        window.__SOCKET_URL__ = window.location.protocol + '//' + window.location.host;
+        console.log('🔧 Socket.IO URL override applied:', window.__SOCKET_URL__);
+        
+        // Debug helper for agent visibility
+        window.debugAgents = function() {
+            console.log('🔍 Fetching agent data from backend...');
+            return fetch('/api/debug/agents')
+                .then(r => r.json())
+                .then(data => {
+                    console.log('📊 Raw agent data from backend:', data);
+                    return data;
+                })
+                .catch(e => console.error('❌ Failed to fetch agent data:', e));
+        };
+        
+        // Force agent list broadcast
+        window.broadcastAgents = function() {
+            console.log('📡 Manually broadcasting agent list...');
+            return fetch('/api/debug/broadcast-agents', {method: 'POST'})
+                .then(r => r.json())
+                .then(data => {
+                    console.log('📡 Broadcast result:', data);
+                    return data;
+                })
+                .catch(e => console.error('❌ Failed to broadcast agents:', e));
+        };
+        
+        // Enhanced Socket.IO debugging
+        window.debugSocketIO = function() {
+            console.log('🔌 Socket.IO Debug Info:');
+            console.log('- URL:', window.__SOCKET_URL__);
+            console.log('- Location:', window.location.href);
+            console.log('- Protocol:', window.location.protocol);
+            console.log('- Host:', window.location.host);
+        };
+        
+        // Auto-debug on page load
+        setTimeout(() => {
+            console.log('🚀 Auto-debugging agent visibility...');
+            window.debugSocketIO();
+            window.debugAgents();
+        }, 2000);
+        
+        // Listen for Socket.IO events globally for debugging
+        window.addEventListener('load', function() {
+            setTimeout(() => {
+                // Try to access the socket instance for debugging
+                if (window.io) {
+                    console.log('🔌 Socket.IO library detected');
+                }
+            }, 3000);
+        });
+        </script>
+        '''
+        
+        # Inject before the closing head tag
+        html_content = html_content.replace('</head>', socketio_fix + '</head>')
+        
+        return html_content, 200, {'Content-Type': 'text/html'}
+    except Exception as e:
+        print(f"Error serving dashboard with fixes: {e}")
+        return send_file(build_path)
 
 # Serve static assets for the UI v2.1
 @app.route('/assets/<path:filename>')
@@ -2805,6 +2922,39 @@ def get_system_info():
     
     return jsonify(info)
 
+@app.route('/api/debug/agents', methods=['GET'])
+@require_auth
+def debug_agents():
+    """Debug endpoint to see raw agent data"""
+    return jsonify({
+        'agents_data': AGENTS_DATA,
+        'agent_count': len(AGENTS_DATA),
+        'agent_keys': list(AGENTS_DATA.keys())
+    })
+
+@app.route('/api/debug/broadcast-agents', methods=['POST'])
+@require_auth
+def broadcast_agents():
+    """Manually broadcast agent list to all operators"""
+    try:
+        socketio.emit('agent_list_update', AGENTS_DATA, room='operators')
+        return jsonify({
+            'success': True,
+            'message': f'Agent list broadcast to operators room',
+            'agent_count': len(AGENTS_DATA),
+            'agents': list(AGENTS_DATA.keys())
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+# Video/Audio Frame Storage
+VIDEO_FRAMES_H264 = defaultdict(lambda: None)
+CAMERA_FRAMES_H264 = defaultdict(lambda: None)
+AUDIO_FRAMES_OPUS = defaultdict(lambda: None)
+
 # --- Socket.IO Event Handlers ---
 
 @socketio.on('connect')
@@ -2812,7 +2962,12 @@ def handle_connect():
     # Note: Socket.IO doesn't have direct access to Flask session
     # In a production environment, you'd want to implement proper Socket.IO authentication
     # For now, we'll allow connections but validate on specific events
-    print(f"Client connected: {request.sid}")
+    client_info = {
+        'sid': request.sid,
+        'remote_addr': request.environ.get('REMOTE_ADDR', 'unknown'),
+        'user_agent': request.environ.get('HTTP_USER_AGENT', 'unknown')
+    }
+    print(f"Client connected: {client_info}")
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -2849,51 +3004,75 @@ def handle_disconnect():
 @socketio.on('operator_connect')
 def handle_operator_connect():
     """When a web dashboard connects."""
+    print(f"Operator dashboard connecting with SID: {request.sid}")
     join_room('operators')
-    print(f"Operator dashboard connected. Sending {len(AGENTS_DATA)} agents to new operator.")
+    print(f"Operator joined 'operators' room. Sending {len(AGENTS_DATA)} agents to new operator.")
     print(f"Current agents: {list(AGENTS_DATA.keys())}")
-    emit('agent_list_update', AGENTS_DATA) # Send current agent list to the new operator
-    print("Agent list sent to operator.")
+    
+    # Send agent list to the specific operator that just connected
+    emit('agent_list_update', AGENTS_DATA, room=request.sid)
+    print(f"Agent list sent to operator {request.sid}")
+    
+    # Also broadcast to all operators (including the new one) to ensure consistency
+    emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
+    print(f"Agent list broadcast to all operators")
 
 def _emit_agent_config(agent_id: str):
     return
 
+@socketio.on('request_agent_list')
+def handle_request_agent_list():
+    """Handle explicit request for agent list from dashboard"""
+    print(f"Agent list requested by {request.sid}")
+    print(f"Current agents: {list(AGENTS_DATA.keys())}")
+    print(f"Agent data: {AGENTS_DATA}")
+    emit('agent_list_update', AGENTS_DATA, room=request.sid)
+    print(f"Agent list sent to {request.sid}")
+
 @socketio.on('agent_connect')
 def handle_agent_connect(data):
     """When an agent connects and registers itself."""
-    agent_id = data.get('agent_id')
-    if not agent_id:
-        return
-    
-    # Store agent information
-    AGENTS_DATA[agent_id]["sid"] = request.sid
-    AGENTS_DATA[agent_id]["last_seen"] = datetime.datetime.utcnow().isoformat() + "Z"
-    AGENTS_DATA[agent_id]["name"] = data.get('name', f'Agent-{agent_id}')
-    AGENTS_DATA[agent_id]["platform"] = data.get('platform', 'Unknown')
-    AGENTS_DATA[agent_id]["ip"] = data.get('ip', request.environ.get('REMOTE_ADDR', '0.0.0.0'))
-    AGENTS_DATA[agent_id]["capabilities"] = data.get('capabilities', ['screen', 'files', 'commands'])
-    AGENTS_DATA[agent_id]["cpu_usage"] = data.get('cpu_usage', 0)
-    AGENTS_DATA[agent_id]["memory_usage"] = data.get('memory_usage', 0)
-    AGENTS_DATA[agent_id]["network_usage"] = data.get('network_usage', 0)
-    AGENTS_DATA[agent_id]["system_info"] = data.get('system_info', {})
-    AGENTS_DATA[agent_id]["uptime"] = data.get('uptime', 0)
-    
-    # Notify all operators of the new agent
-    emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
-    
-    # Log activity
-    emit('activity_update', {
-        'id': f'act_{int(time.time())}',
-        'type': 'connection',
-        'action': 'Agent Connected',
-        'details': f'Agent {agent_id} successfully connected',
-        'agent_id': agent_id,
-        'agent_name': AGENTS_DATA[agent_id]["name"],
-        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
-        'status': 'success'
-    }, room='operators', broadcast=True)
-    print(f"Agent {agent_id} connected with SID {request.sid}")
-    pass
+    try:
+        if not data or not isinstance(data, dict):
+            print(f"Invalid agent_connect data received: {data}")
+            return
+            
+        agent_id = data.get('agent_id')
+        if not agent_id:
+            print("Agent connection attempt without agent_id")
+            return
+        
+        # Store agent information
+        AGENTS_DATA[agent_id]["sid"] = request.sid
+        AGENTS_DATA[agent_id]["last_seen"] = datetime.datetime.utcnow().isoformat() + "Z"
+        AGENTS_DATA[agent_id]["name"] = data.get('name', f'Agent-{agent_id}')
+        AGENTS_DATA[agent_id]["platform"] = data.get('platform', 'Unknown')
+        AGENTS_DATA[agent_id]["ip"] = data.get('ip', request.environ.get('REMOTE_ADDR', '0.0.0.0'))
+        AGENTS_DATA[agent_id]["capabilities"] = data.get('capabilities', ['screen', 'files', 'commands'])
+        AGENTS_DATA[agent_id]["cpu_usage"] = data.get('cpu_usage', 0)
+        AGENTS_DATA[agent_id]["memory_usage"] = data.get('memory_usage', 0)
+        AGENTS_DATA[agent_id]["network_usage"] = data.get('network_usage', 0)
+        AGENTS_DATA[agent_id]["system_info"] = data.get('system_info', {})
+        AGENTS_DATA[agent_id]["uptime"] = data.get('uptime', 0)
+        
+        # Notify all operators of the new agent
+        emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
+        
+        # Log activity
+        emit('activity_update', {
+            'id': f'act_{int(time.time())}',
+            'type': 'connection',
+            'action': 'Agent Connected',
+            'details': f'Agent {agent_id} successfully connected',
+            'agent_id': agent_id,
+            'agent_name': AGENTS_DATA[agent_id]["name"],
+            'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+            'status': 'success'
+        }, room='operators', broadcast=True)
+        print(f"Agent {agent_id} connected with SID {request.sid}")
+    except Exception as e:
+        print(f"Error handling agent_connect: {e}")
+        emit('registration_error', {'message': 'Failed to register agent'}, room=request.sid)
 
 @socketio.on('execute_command')
 def handle_execute_command(data):
@@ -2955,6 +3134,15 @@ def handle_ping(data):
     if agent_id in AGENTS_DATA:
         AGENTS_DATA[agent_id]['last_seen'] = datetime.datetime.utcnow().isoformat() + 'Z'
         AGENTS_DATA[agent_id]['uptime'] = uptime
+        
+        # Periodically update operators with agent status (every 10 pings to avoid spam)
+        if not hasattr(handle_ping, 'ping_count'):
+            handle_ping.ping_count = {}
+        handle_ping.ping_count[agent_id] = handle_ping.ping_count.get(agent_id, 0) + 1
+        
+        if handle_ping.ping_count[agent_id] % 10 == 0:
+            print(f"Updating operators with agent {agent_id} status after {handle_ping.ping_count[agent_id]} pings")
+            emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
     
     # Send pong response
     emit('pong', {
@@ -2968,42 +3156,75 @@ def handle_ping(data):
 @socketio.on('agent_register')
 def handle_agent_register(data):
     """Handle agent registration"""
-    agent_id = data.get('agent_id')
-    platform = data.get('platform', 'unknown')
-    python_version = data.get('python_version', 'unknown')
-    timestamp = data.get('timestamp')
-    
-    if not agent_id:
-        emit('registration_error', {'message': 'Agent ID required'})
-        return
-    
-    # Add agent to data
-    AGENTS_DATA[agent_id] = {
-        'agent_id': agent_id,
-        'platform': platform,
-        'python_version': python_version,
-        'connected_at': datetime.datetime.utcnow().isoformat() + 'Z',
-        'last_seen': datetime.datetime.utcnow().isoformat() + 'Z',
-        'status': 'online',
-        'sid': request.sid,
-        'uptime': 0
-    }
-    
-    print(f"Agent registered: {agent_id} ({platform})")
-    print(f"Current agents: {list(AGENTS_DATA.keys())}")
-    print(f"Emitting agent_list_update to operators room with {len(AGENTS_DATA)} agents")
-    
-    # Notify operators
-    emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
-    
-    # Send registration confirmation
-    emit('agent_registered', {
-        'agent_id': agent_id,
-        'status': 'success',
-        'message': 'Agent registered successfully'
-    })
-    
-    print(f"Agent registration complete for {agent_id}")
+    try:
+        if not data or not isinstance(data, dict):
+            print(f"Invalid agent_register data received: {data}")
+            emit('registration_error', {'message': 'Invalid registration data'})
+            return
+            
+        agent_id = data.get('agent_id')
+        platform = data.get('platform', 'unknown')
+        python_version = data.get('python_version', 'unknown')
+        timestamp = data.get('timestamp')
+        
+        if not agent_id:
+            emit('registration_error', {'message': 'Agent ID required'})
+            return
+        
+        # Add agent to data with all required fields for dashboard
+        AGENTS_DATA[agent_id] = {
+            'agent_id': agent_id,
+            'sid': request.sid,
+            'name': f'Agent-{agent_id}',
+            'platform': platform,
+            'python_version': python_version,
+            'ip': request.environ.get('REMOTE_ADDR', '0.0.0.0'),
+            'connected_at': datetime.datetime.utcnow().isoformat() + 'Z',
+            'last_seen': datetime.datetime.utcnow().isoformat() + 'Z',
+            'status': 'online',
+            'capabilities': ['screen', 'files', 'commands'],
+            'cpu_usage': 0,
+            'memory_usage': 0,
+            'network_usage': 0,
+            'system_info': {
+                'platform': platform,
+                'python_version': python_version
+            },
+            'uptime': 0
+        }
+        
+        print(f"Agent registered: {agent_id} ({platform})")
+        print(f"Current agents: {list(AGENTS_DATA.keys())}")
+        print(f"Emitting agent_list_update to operators room with {len(AGENTS_DATA)} agents")
+        
+        # Notify operators
+        print(f"Broadcasting agent_list_update to operators room with agent data: {list(AGENTS_DATA.keys())}")
+        emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
+        
+        # Log activity for operators
+        emit('activity_update', {
+            'id': f'act_{int(time.time())}',
+            'type': 'connection',
+            'action': 'Agent Connected',
+            'details': f'Agent {agent_id} successfully registered',
+            'agent_id': agent_id,
+            'agent_name': AGENTS_DATA[agent_id]["name"],
+            'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+            'status': 'success'
+        }, room='operators', broadcast=True)
+        
+        # Send registration confirmation
+        emit('agent_registered', {
+            'agent_id': agent_id,
+            'status': 'success',
+            'message': 'Agent registered successfully'
+        })
+        
+        print(f"Agent registration complete for {agent_id}")
+        
+    except Exception as e:
+        print(f"Error handling agent_register: {e}")
+        emit('registration_error', {'message': 'Registration failed due to server error'})
 
 @socketio.on('live_key_press')
 def handle_live_key_press(data):

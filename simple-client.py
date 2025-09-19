@@ -23,6 +23,7 @@ import sys
 import time
 import json
 import logging
+import signal
 from datetime import datetime
 
 # Configure simple logging
@@ -46,6 +47,13 @@ connected = False
 connection_start_time = None
 last_heartbeat = None
 message_count = 0
+shutdown_requested = False
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals gracefully"""
+    global shutdown_requested
+    log_message("🛑 Shutdown signal received, closing connections...")
+    shutdown_requested = True
 
 def log_message(message, level="info"):
     """Simple logging function"""
@@ -96,13 +104,23 @@ def test_socketio_connection():
             last_heartbeat = time.time()
             log_message("✅ Socket.IO connection established!")
             
-            # Send initial agent registration
-            sio.emit('agent_register', {
+            # Send initial agent registration (using both events for compatibility)
+            agent_data = {
                 'agent_id': AGENT_ID,
+                'name': f'Simple-Client-{AGENT_ID.split("-")[-1]}',
                 'platform': sys.platform,
                 'python_version': sys.version,
-                'timestamp': time.time()
-            })
+                'timestamp': time.time(),
+                'ip': '127.0.0.1',
+                'capabilities': ['screen', 'files', 'commands'],
+                'cpu_usage': 0,
+                'memory_usage': 0,
+                'network_usage': 0
+            }
+            
+            # Use both registration methods for maximum compatibility
+            sio.emit('agent_register', agent_data)
+            sio.emit('agent_connect', agent_data)
         
         @sio.event
         def disconnect():
@@ -155,10 +173,10 @@ def test_socketio_connection():
         
         # Keep connection alive and send heartbeats
         try:
-            while connected:
+            while connected and not shutdown_requested:
                 time.sleep(HEARTBEAT_INTERVAL)
                 
-                if connected:
+                if connected and not shutdown_requested:
                     # Send ping
                     sio.emit('ping', {
                         'agent_id': AGENT_ID,
@@ -166,9 +184,12 @@ def test_socketio_connection():
                         'uptime': time.time() - connection_start_time if connection_start_time else 0
                     })
                     
-                    # Check connection health
+                    # Check connection health only if we've received at least one heartbeat
                     if last_heartbeat and (time.time() - last_heartbeat) > (HEARTBEAT_INTERVAL * 3):
                         log_message("❌ No heartbeat received, connection may be stale", "warning")
+                else:
+                    # Exit loop if connection lost or shutdown requested
+                    break
                 
         except KeyboardInterrupt:
             log_message("🛑 Interrupted by user")
@@ -203,11 +224,18 @@ def print_connection_summary():
         print(f"Connection Duration: {uptime:.1f} seconds")
     
     print(f"Messages Received: {message_count}")
-    print(f"Last Heartbeat: {time.time() - last_heartbeat:.1f}s ago" if last_heartbeat else "No heartbeat received")
+    if last_heartbeat:
+        print(f"Last Heartbeat: {time.time() - last_heartbeat:.1f}s ago")
+    else:
+        print("Last Heartbeat: No heartbeat received")
     print("="*60)
 
 def main():
     """Main function"""
+    # Set up signal handlers for graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
     print("🚀 Simple Client - Controller Connection Test")
     print("=" * 50)
     print(f"Target Controller: {CONTROLLER_URL}")

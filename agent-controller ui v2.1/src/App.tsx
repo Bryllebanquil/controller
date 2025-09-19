@@ -16,6 +16,7 @@ import { WebRTCMonitoring } from "./components/WebRTCMonitoring";
 import { VoiceControl } from "./components/VoiceControl";
 import { ProcessManager } from "./components/ProcessManager";
 import { ThemeProvider } from "./components/ThemeProvider";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import {
   Tabs,
   TabsContent,
@@ -124,8 +125,8 @@ function AppContent() {
           bValue = b.platform;
           break;
         case "lastSeen":
-          aValue = a.lastSeen.getTime();
-          bValue = b.lastSeen.getTime();
+          aValue = a.lastSeen ? a.lastSeen.getTime() : 0;
+          bValue = b.lastSeen ? b.lastSeen.getTime() : 0;
           break;
         case "performance":
           aValue = a.performance.cpu + a.performance.memory;
@@ -167,21 +168,26 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header
-        onTabChange={setActiveTab}
-        onAgentSelect={handleAgentSelect}
-        onAgentDeselect={handleAgentDeselect}
-      />
+      <ErrorBoundary>
+        <Header
+          onTabChange={setActiveTab}
+          onAgentSelect={handleAgentSelect}
+          onAgentDeselect={handleAgentDeselect}
+        />
+      </ErrorBoundary>
 
       <div className="flex min-h-[calc(100vh-4rem)]">
-        <Sidebar
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          agentCount={onlineAgents.length}
-        />
+        <ErrorBoundary>
+          <Sidebar
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            agentCount={onlineAgents.length}
+          />
+        </ErrorBoundary>
 
         <main className="flex-1 overflow-auto">
-          <div className="p-4 sm:p-6 space-y-6">
+          <ErrorBoundary>
+            <div className="p-4 sm:p-6 space-y-6">
 
             {/* Overview Stats - only show for overview tab */}
             {activeTab === "overview" &&
@@ -459,7 +465,8 @@ function AppContent() {
 
             {/* About Page */}
             {activeTab === "about" && <About />}
-          </div>
+            </div>
+          </ErrorBoundary>
         </main>
       </div>
     </div>

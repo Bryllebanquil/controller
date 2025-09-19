@@ -51,39 +51,114 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Connect to Socket.IO server
-    const socketUrl = (import.meta as any)?.env?.VITE_SOCKET_URL || (window as any)?.__SOCKET_URL__ || 'http://localhost:8080';
-    const socketInstance = io(socketUrl, {
-      transports: ['websocket', 'polling'],
-      timeout: 20000,
-    });
+    // If running in production (same origin as backend), use current origin
+    // Otherwise use environment variable or localhost for development
+    let socketUrl: string;
+    
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      // Production: use same origin as the current page
+      socketUrl = `${window.location.protocol}//${window.location.host}`;
+    } else {
+      // Development: use environment variable or default to localhost
+      socketUrl = (import.meta as any)?.env?.VITE_SOCKET_URL || (window as any)?.__SOCKET_URL__ || 'http://localhost:8080';
+    }
+    
+    console.log('Connecting to Socket.IO server:', socketUrl);
+    
+    let socketInstance: Socket;
+    
+    try {
+      socketInstance = io(socketUrl, {
+        transports: ['websocket', 'polling'],
+        timeout: 20000,
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+      });
 
-    setSocket(socketInstance);
+      setSocket(socketInstance);
+    } catch (error) {
+      console.error('Failed to initialize socket connection:', error);
+      addCommandOutput(`Connection Error: Failed to initialize socket connection to ${socketUrl}`);
+      return;
+    }
 
     // Connection events
     socketInstance.on('connect', () => {
       setConnected(true);
       console.log('Connected to Neural Control Hub');
+      console.log('Emitting operator_connect event');
       socketInstance.emit('operator_connect');
+      
+      // Also explicitly request agent list
+      setTimeout(() => {
+        console.log('Requesting agent list explicitly');
+        socketInstance.emit('request_agent_list');
+      }, 1000); // Wait 1 second after connecting
     });
 
-    socketInstance.on('disconnect', () => {
+    socketInstance.on('disconnect', (reason) => {
       setConnected(false);
-      console.log('Disconnected from Neural Control Hub');
+      console.log('Disconnected from Neural Control Hub:', reason);
+      addCommandOutput(`Disconnected: ${reason}`);
+    });
+
+    socketInstance.on('connect_error', (error) => {
+      console.error('Connection error:', error);
+      addCommandOutput(`Connection Error: ${error.message || 'Unknown error'}`);
+    });
+
+    socketInstance.on('reconnect', (attemptNumber) => {
+      console.log('Reconnected after', attemptNumber, 'attempts');
+      addCommandOutput(`Reconnected after ${attemptNumber} attempts`);
+    });
+
+    socketInstance.on('reconnect_error', (error) => {
+      console.error('Reconnection error:', error);
+      addCommandOutput(`Reconnection Error: ${error.message || 'Unknown error'}`);
     });
 
     // Agent management events
     socketInstance.on('agent_list_update', (agentData: Record<string, any>) => {
-      const agentList = Object.entries(agentData).map(([id, data]: [string, any]) => ({
-        id,
-        name: data.name || `Agent-${id.slice(0, 8)}`,
-        status: data.last_seen && new Date().getTime() - new Date(data.last_seen).getTime() < 60000 ? 'online' : 'offline',
-        platform: data.platform || 'Unknown',
-        ip: data.ip || '127.0.0.1',
-        lastSeen: data.last_seen ? new Date(data.last_seen) : new Date(),
-        capabilities: data.capabilities || ['screen', 'commands'],
-        performance: data.performance || { cpu: 0, memory: 0, network: 0 }
-      }));
-      setAgents(agentList);
+      try {
+        console.log('Received agent_list_update:', agentData);
+        console.log('Agent data keys:', Object.keys(agentData));
+        const agentList = Object.entries(agentData).map(([id, data]: [string, any]) => {
+          console.log(`Processing agent ${id}:`, data);
+          // Safely parse last_seen date
+          let lastSeenDate = new Date();
+          let isOnline = false;
+          
+          if (data.last_seen) {
+            try {
+              lastSeenDate = new Date(data.last_seen);
+              const timeDiff = new Date().getTime() - lastSeenDate.getTime();
+              isOnline = timeDiff < 60000; // 60 seconds threshold
+            } catch (dateError) {
+              console.warn(`Invalid date format for agent ${id}: ${data.last_seen}`);
+            }
+          }
+          
+          return {
+            id,
+            name: data.name || `Agent-${id.slice(0, 8)}`,
+            status: isOnline ? 'online' : 'offline',
+            platform: data.platform || 'Unknown',
+            ip: data.ip || '127.0.0.1',
+            lastSeen: lastSeenDate,
+            capabilities: Array.isArray(data.capabilities) ? data.capabilities : ['screen', 'commands'],
+            performance: {
+              cpu: data.cpu_usage || data.performance?.cpu || 0,
+              memory: data.memory_usage || data.performance?.memory || 0,
+              network: data.network_usage || data.performance?.network || 0
+            }
+          };
+        });
+        console.log('Processed agent list:', agentList);
+        setAgents(agentList);
+      } catch (error) {
+        console.error('Error processing agent list update:', error);
+      }
     });
 
     // Command output events
@@ -132,9 +207,22 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   }, [addCommandOutput]);
 
   const sendCommand = useCallback((agentId: string, command: string) => {
-    if (socket && connected) {
+    if (!socket || !connected) {
+      addCommandOutput(`Error: Not connected to server`);
+      return;
+    }
+    
+    if (!agentId || !command.trim()) {
+      addCommandOutput(`Error: Invalid agent ID or command`);
+      return;
+    }
+    
+    try {
       socket.emit('execute_command', { agent_id: agentId, command });
       addCommandOutput(`> ${command}`);
+    } catch (error) {
+      console.error('Error sending command:', error);
+      addCommandOutput(`Error: Failed to send command`);
     }
   }, [socket, connected, addCommandOutput]);
 
