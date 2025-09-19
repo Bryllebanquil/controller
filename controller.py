@@ -1192,18 +1192,50 @@ def login():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Advance RAT Controller - Login</title>
-        <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+        <title>Neural Control Hub - Login</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
         <style>
             :root {
-                --primary-bg: #0a0a0f;
-                --secondary-bg: #1a1a2e;
-                --accent-blue: #00d4ff;
-                --accent-purple: #6c5ce7;
-                --text-primary: #ffffff;
-                --text-secondary: #a0a0a0;
-                --glass-bg: rgba(255, 255, 255, 0.05);
-                --glass-border: rgba(255, 255, 255, 0.1);
+                --background: #ffffff;
+                --foreground: #0a0a0f;
+                --card: #ffffff;
+                --card-foreground: #0a0a0f;
+                --primary: #0a0a0f;
+                --primary-foreground: #ffffff;
+                --secondary: #f1f5f9;
+                --secondary-foreground: #0a0a0f;
+                --muted: #f1f5f9;
+                --muted-foreground: #64748b;
+                --accent: #f1f5f9;
+                --accent-foreground: #0a0a0f;
+                --destructive: #ef4444;
+                --destructive-foreground: #ffffff;
+                --border: #e2e8f0;
+                --input: #f8fafc;
+                --ring: #0a0a0f;
+                --radius: 0.625rem;
+            }
+            
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --background: #0a0a0f;
+                    --foreground: #f8fafc;
+                    --card: #0a0a0f;
+                    --card-foreground: #f8fafc;
+                    --primary: #f8fafc;
+                    --primary-foreground: #0a0a0f;
+                    --secondary: #1e293b;
+                    --secondary-foreground: #f8fafc;
+                    --muted: #1e293b;
+                    --muted-foreground: #94a3b8;
+                    --accent: #1e293b;
+                    --accent-foreground: #f8fafc;
+                    --destructive: #ef4444;
+                    --destructive-foreground: #ffffff;
+                    --border: #1e293b;
+                    --input: #1e293b;
+                    --ring: #f8fafc;
+                }
             }
             
             * {
@@ -1214,108 +1246,149 @@ def login():
             
             body {
                 font-family: 'Inter', sans-serif;
-                background: linear-gradient(135deg, var(--primary-bg) 0%, var(--secondary-bg) 100%);
-                color: var(--text-primary);
+                background-color: var(--background);
+                color: var(--foreground);
                 min-height: 100vh;
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                padding: 1rem;
+                transition: background-color 0.3s ease, color 0.3s ease;
             }
             
             .login-container {
-                background: var(--glass-bg);
-                backdrop-filter: blur(20px);
-                border: 1px solid var(--glass-border);
-                border-radius: 20px;
-                padding: 40px;
+                background-color: var(--card);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                padding: 2rem;
                 width: 100%;
-                max-width: 400px;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+                max-width: 28rem;
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
             }
             
             .login-header {
                 text-align: center;
-                margin-bottom: 30px;
+                margin-bottom: 2rem;
+            }
+            
+            .login-icon {
+                width: 4rem;
+                height: 4rem;
+                background-color: var(--primary);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto 1rem;
+            }
+            
+            .login-icon svg {
+                width: 2rem;
+                height: 2rem;
+                color: var(--primary-foreground);
             }
             
             .login-header h1 {
-                font-family: 'Orbitron', monospace;
-                font-size: 2rem;
-                font-weight: 900;
-                background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                background-clip: text;
-                margin-bottom: 10px;
+                font-size: 1.5rem;
+                font-weight: 700;
+                color: var(--foreground);
+                margin-bottom: 0.5rem;
             }
             
             .login-header p {
-                color: var(--text-secondary);
-                font-size: 0.9rem;
+                color: var(--muted-foreground);
+                font-size: 1rem;
             }
             
             .form-group {
-                margin-bottom: 20px;
+                margin-bottom: 1rem;
             }
             
             .form-group label {
                 display: block;
-                margin-bottom: 8px;
-                color: var(--text-secondary);
+                margin-bottom: 0.5rem;
+                color: var(--foreground);
                 font-weight: 500;
+                font-size: 0.875rem;
             }
             
             .form-group input {
                 width: 100%;
-                background: var(--secondary-bg);
-                border: 1px solid var(--glass-border);
-                border-radius: 8px;
-                padding: 12px 16px;
-                color: var(--text-primary);
+                background-color: var(--input);
+                border: 1px solid var(--border);
+                border-radius: calc(var(--radius) - 2px);
+                padding: 0.75rem 1rem;
+                color: var(--foreground);
                 font-size: 1rem;
-                transition: all 0.3s ease;
+                transition: border-color 0.2s ease, box-shadow 0.2s ease;
             }
             
             .form-group input:focus {
                 outline: none;
-                border-color: var(--accent-blue);
-                box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1);
+                border-color: var(--ring);
+                box-shadow: 0 0 0 2px rgba(10, 10, 15, 0.1);
             }
             
             .login-btn {
                 width: 100%;
-                background: linear-gradient(45deg, var(--accent-blue), var(--accent-purple));
+                background-color: var(--primary);
+                color: var(--primary-foreground);
                 border: none;
-                border-radius: 8px;
-                padding: 12px;
-                color: white;
-                font-weight: 600;
+                border-radius: calc(var(--radius) - 2px);
+                padding: 0.75rem 1rem;
+                font-weight: 500;
                 font-size: 1rem;
                 cursor: pointer;
-                transition: all 0.3s ease;
+                transition: background-color 0.2s ease, transform 0.1s ease;
+                margin-top: 1rem;
             }
             
             .login-btn:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 8px 25px rgba(0, 212, 255, 0.3);
+                background-color: var(--primary);
+                opacity: 0.9;
+                transform: translateY(-1px);
+            }
+            
+            .login-btn:active {
+                transform: translateY(0);
             }
             
             .error-message {
-                background: rgba(255, 71, 87, 0.2);
-                color: #ff4757;
-                border: 1px solid #ff4757;
-                border-radius: 8px;
-                padding: 12px;
-                margin-bottom: 20px;
+                background-color: var(--destructive);
+                color: var(--destructive-foreground);
+                border: 1px solid var(--destructive);
+                border-radius: calc(var(--radius) - 2px);
+                padding: 0.75rem 1rem;
+                margin-bottom: 1rem;
                 text-align: center;
+                font-size: 0.875rem;
+            }
+            
+            .login-footer {
+                margin-top: 1.5rem;
+                padding-top: 1.5rem;
+                border-top: 1px solid var(--border);
+                text-align: center;
+                font-size: 0.75rem;
+                color: var(--muted-foreground);
+            }
+            
+            .login-footer p {
+                margin-bottom: 0.25rem;
             }
         </style>
     </head>
     <body>
         <div class="login-container">
             <div class="login-header">
-                <h1>Advance RAT Controller</h1>
-                <p>Admin Authentication Required</p>
+                <div class="login-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        <path d="M9 12l2 2 4-4"/>
+                    </svg>
+                </div>
+                <h1>Neural Control Hub</h1>
+                <p>Advanced Agent Management System</p>
             </div>
             
             {% with messages = get_flashed_messages(with_categories=true) %}
@@ -1329,10 +1402,15 @@ def login():
             <form method="POST">
                 <div class="form-group">
                     <label for="password">Admin Password</label>
-                    <input type="password" id="password" name="password" required>
+                    <input type="password" id="password" name="password" placeholder="Enter admin password" required>
                 </div>
-                <button type="submit" class="login-btn">Access Dashboard</button>
+                <button type="submit" class="login-btn">Sign In</button>
             </form>
+            
+            <div class="login-footer">
+                <p>Secure authentication required</p>
+                <p>Contact your administrator for access credentials</p>
+            </div>
         </div>
     </body>
     </html>
