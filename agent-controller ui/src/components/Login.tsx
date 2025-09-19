@@ -35,14 +35,14 @@ export function Login() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
+      <Card className="w-full max-w-md border-border">
         <CardHeader className="space-y-4 text-center">
-          <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
-            <Shield className="h-8 w-8 text-primary" />
+          <div className="mx-auto w-16 h-16 bg-muted rounded-full flex items-center justify-center">
+            <Shield className="h-8 w-8 text-foreground" />
           </div>
           <div>
-            <CardTitle className="text-2xl font-bold">Neural Control Hub</CardTitle>
-            <CardDescription className="text-base">
+            <CardTitle className="text-2xl font-bold text-foreground">Neural Control Hub</CardTitle>
+            <CardDescription className="text-base text-muted-foreground">
               Advanced Agent Management System
             </CardDescription>
           </div>
