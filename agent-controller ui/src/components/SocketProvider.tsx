@@ -51,7 +51,16 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Connect to Socket.IO server
-    const socketInstance = io(process.env.REACT_APP_SOCKET_URL || 'http://localhost:8080', {
+    // Prefer runtime-injected override from backend, then same-origin, then env, then localhost
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const runtimeUrl = (globalThis as any)?.__SOCKET_URL__ as string | undefined;
+    const resolvedUrl =
+      runtimeUrl ||
+      (typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.host}` : '') ||
+      process.env.REACT_APP_SOCKET_URL ||
+      'http://localhost:8080';
+
+    const socketInstance = io(resolvedUrl, {
       transports: ['websocket', 'polling'],
       timeout: 20000,
     });
