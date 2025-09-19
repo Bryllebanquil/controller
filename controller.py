@@ -1929,78 +1929,53 @@ def index():
 @app.route("/dashboard")
 @require_auth
 def dashboard():
-    # Serve the built version with Socket.IO fixes injected
-    build_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html')
-    
+    # Serve a fully inlined single-file UI so deployment is self-contained
     try:
-        with open(build_path, 'r') as f:
-            html_content = f.read()
+        # Inline CSS
+        css_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui', 'build', 'assets', 'index-S04Vez3o.css')
+        if not os.path.exists(css_path):
+            css_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'assets', 'index-kl9EZ_3a.css')
+        with open(css_path, 'r') as f:
+            css_inline = f.read()
         
-        # Inject Socket.IO fix directly into the HTML
-        socketio_fix = '''
+        # Inline JS
+        js_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui', 'build', 'assets', 'index-DqIyI5SB.js')
+        if not os.path.exists(js_path):
+            js_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'assets', 'index-CJ1M2ZyF.js')
+        with open(js_path, 'r') as f:
+            js_bundle = f.read()
+        
+        # Runtime overrides to ensure same-origin backend
+        runtime_overrides = """
         <script>
-        // Socket.IO URL Fix - Override before the main app loads
         window.__SOCKET_URL__ = window.location.protocol + '//' + window.location.host;
-        console.log('🔧 Socket.IO URL override applied:', window.__SOCKET_URL__);
-        
-        // Debug helper for agent visibility
-        window.debugAgents = function() {
-            console.log('🔍 Fetching agent data from backend...');
-            return fetch('/api/debug/agents')
-                .then(r => r.json())
-                .then(data => {
-                    console.log('📊 Raw agent data from backend:', data);
-                    return data;
-                })
-                .catch(e => console.error('❌ Failed to fetch agent data:', e));
-        };
-        
-        // Force agent list broadcast
-        window.broadcastAgents = function() {
-            console.log('📡 Manually broadcasting agent list...');
-            return fetch('/api/debug/broadcast-agents', {method: 'POST'})
-                .then(r => r.json())
-                .then(data => {
-                    console.log('📡 Broadcast result:', data);
-                    return data;
-                })
-                .catch(e => console.error('❌ Failed to broadcast agents:', e));
-        };
-        
-        // Enhanced Socket.IO debugging
-        window.debugSocketIO = function() {
-            console.log('🔌 Socket.IO Debug Info:');
-            console.log('- URL:', window.__SOCKET_URL__);
-            console.log('- Location:', window.location.href);
-            console.log('- Protocol:', window.location.protocol);
-            console.log('- Host:', window.location.host);
-        };
-        
-        // Auto-debug on page load
-        setTimeout(() => {
-            console.log('🚀 Auto-debugging agent visibility...');
-            window.debugSocketIO();
-            window.debugAgents();
-        }, 2000);
-        
-        // Listen for Socket.IO events globally for debugging
-        window.addEventListener('load', function() {
-            setTimeout(() => {
-                // Try to access the socket instance for debugging
-                if (window.io) {
-                    console.log('🔌 Socket.IO library detected');
-                }
-            }, 3000);
-        });
+        window.__API_URL__ = window.__SOCKET_URL__;
         </script>
-        '''
+        """
         
-        # Inject before the closing head tag
-        html_content = html_content.replace('</head>', socketio_fix + '</head>')
-        
-        return html_content, 200, {'Content-Type': 'text/html'}
+        html = f"""
+        <!DOCTYPE html>
+        <html lang=\"en\">
+          <head>
+            <meta charset=\"UTF-8\" />
+            <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
+            <title>Agent Controller</title>
+            <style>{css_inline}</style>
+            {runtime_overrides}
+          </head>
+          <body>
+            <div id=\"root\"></div>
+            <script type=\"module\">{js_bundle}</script>
+          </body>
+        </html>
+        """
+        return Response(html, mimetype='text/html')
     except Exception as e:
-        print(f"Error serving dashboard with fixes: {e}")
+        print(f"Failed to inline dashboard, falling back to static file: {e}")
+        # Fallback to static file if inline fails
+        build_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui', 'build', 'index.html')
+        if not os.path.exists(build_path):
+            build_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html')
         return send_file(build_path)
 
 # Serve static assets for the UI v2.1
