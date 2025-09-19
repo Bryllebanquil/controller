@@ -4,7 +4,14 @@
  */
 
 // API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+// Prefer same-origin or backend-injected override, then env, then localhost
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const runtimeApiUrl = (globalThis as any)?.__API_URL__ as string | undefined;
+const API_BASE_URL =
+  runtimeApiUrl ||
+  (typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.host}` : '') ||
+  import.meta.env.VITE_API_URL ||
+  'http://localhost:8080';
 const API_ENDPOINTS = {
   // Authentication
   auth: {

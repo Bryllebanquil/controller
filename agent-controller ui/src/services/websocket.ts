@@ -6,7 +6,14 @@
 import { io, Socket } from 'socket.io-client';
 
 // WebSocket Configuration
-const WEBSOCKET_URL = import.meta.env.VITE_WS_URL || 'http://localhost:8080';
+// Prefer runtime-injected overrides from backend, then same-origin, then env, finally localhost
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const runtimeSocketUrl = (globalThis as any)?.__SOCKET_URL__ as string | undefined;
+const WEBSOCKET_URL =
+  runtimeSocketUrl ||
+  (typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.host}` : '') ||
+  import.meta.env.VITE_WS_URL ||
+  'http://localhost:8080';
 
 // Event Types
 export interface WebSocketEvents {
