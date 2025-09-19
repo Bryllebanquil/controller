@@ -51,7 +51,19 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Connect to Socket.IO server
-    const socketUrl = (import.meta as any)?.env?.VITE_SOCKET_URL || (window as any)?.__SOCKET_URL__ || 'http://localhost:8080';
+    // If running in production (same origin as backend), use current origin
+    // Otherwise use environment variable or localhost for development
+    let socketUrl: string;
+    
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      // Production: use same origin as the current page
+      socketUrl = `${window.location.protocol}//${window.location.host}`;
+    } else {
+      // Development: use environment variable or default to localhost
+      socketUrl = (import.meta as any)?.env?.VITE_SOCKET_URL || (window as any)?.__SOCKET_URL__ || 'http://localhost:8080';
+    }
+    
+    console.log('Connecting to Socket.IO server:', socketUrl);
     
     let socketInstance: Socket;
     
@@ -75,6 +87,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     socketInstance.on('connect', () => {
       setConnected(true);
       console.log('Connected to Neural Control Hub');
+      console.log('Emitting operator_connect event');
       socketInstance.emit('operator_connect');
     });
 
