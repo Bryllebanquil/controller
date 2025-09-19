@@ -217,8 +217,20 @@ CORS(
     allow_headers=["Content-Type", "Authorization", "X-Requested-With"]
 )
 
-# Initialize Socket.IO with the concrete origin allowlist (regex not supported here)
-socketio = SocketIO(app, async_mode='threading', cors_allowed_origins=allowed_origins)
+# Initialize Socket.IO with expanded origin allowlist (include render.com wildcard)
+render_origins = [
+    "https://agent-controller-backend.onrender.com",
+    "https://neural-control-hub-frontend.onrender.com"
+]
+# Add any render.com subdomain variations
+for subdomain in ["www", "app", "dashboard", "frontend", "backend"]:
+    render_origins.append(f"https://{subdomain}.onrender.com")
+    render_origins.append(f"https://agent-controller-{subdomain}.onrender.com")
+    render_origins.append(f"https://neural-control-hub-{subdomain}.onrender.com")
+
+all_socketio_origins = allowed_origins + render_origins
+socketio = SocketIO(app, async_mode='threading', cors_allowed_origins=all_socketio_origins)
+print(f"Socket.IO CORS origins: {all_socketio_origins}")
 
 def send_email_notification(subject: str, body: str) -> bool:
     try:
@@ -1904,13 +1916,92 @@ DOWNLOAD_BUFFERS = defaultdict(lambda: {"chunks": [], "total_size": 0, "local_pa
 @app.route("/")
 def index():
     if is_authenticated():
-        return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html'))
+        # Check if we should use dev version (build is outdated)
+        build_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html')
+        dev_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'index.html')
+        
+        # Use dev version if build doesn't exist or if we detect development mode
+        if not os.path.exists(build_path) or os.environ.get('USE_DEV_UI', 'false').lower() == 'true':
+            return send_file(dev_path)
+        return send_file(build_path)
     return redirect(url_for('login'))
 
 @app.route("/dashboard")
 @require_auth
 def dashboard():
-    return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html'))
+    # Serve the built version with Socket.IO fixes injected
+    build_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html')
+    
+    try:
+        with open(build_path, 'r') as f:
+            html_content = f.read()
+        
+        # Inject Socket.IO fix directly into the HTML
+        socketio_fix = '''
+        <script>
+        // Socket.IO URL Fix - Override before the main app loads
+        window.__SOCKET_URL__ = window.location.protocol + '//' + window.location.host;
+        console.log('🔧 Socket.IO URL override applied:', window.__SOCKET_URL__);
+        
+        // Debug helper for agent visibility
+        window.debugAgents = function() {
+            console.log('🔍 Fetching agent data from backend...');
+            return fetch('/api/debug/agents')
+                .then(r => r.json())
+                .then(data => {
+                    console.log('📊 Raw agent data from backend:', data);
+                    return data;
+                })
+                .catch(e => console.error('❌ Failed to fetch agent data:', e));
+        };
+        
+        // Force agent list broadcast
+        window.broadcastAgents = function() {
+            console.log('📡 Manually broadcasting agent list...');
+            return fetch('/api/debug/broadcast-agents', {method: 'POST'})
+                .then(r => r.json())
+                .then(data => {
+                    console.log('📡 Broadcast result:', data);
+                    return data;
+                })
+                .catch(e => console.error('❌ Failed to broadcast agents:', e));
+        };
+        
+        // Enhanced Socket.IO debugging
+        window.debugSocketIO = function() {
+            console.log('🔌 Socket.IO Debug Info:');
+            console.log('- URL:', window.__SOCKET_URL__);
+            console.log('- Location:', window.location.href);
+            console.log('- Protocol:', window.location.protocol);
+            console.log('- Host:', window.location.host);
+        };
+        
+        // Auto-debug on page load
+        setTimeout(() => {
+            console.log('🚀 Auto-debugging agent visibility...');
+            window.debugSocketIO();
+            window.debugAgents();
+        }, 2000);
+        
+        // Listen for Socket.IO events globally for debugging
+        window.addEventListener('load', function() {
+            setTimeout(() => {
+                // Try to access the socket instance for debugging
+                if (window.io) {
+                    console.log('🔌 Socket.IO library detected');
+                }
+            }, 3000);
+        });
+        </script>
+        '''
+        
+        # Inject before the closing head tag
+        html_content = html_content.replace('</head>', socketio_fix + '</head>')
+        
+        return html_content, 200, {'Content-Type': 'text/html'}
+    except Exception as e:
+        print(f"Error serving dashboard with fixes: {e}")
+        return send_file(build_path)
 
 # Serve static assets for the UI v2.1
 @app.route('/assets/<path:filename>')
@@ -2840,6 +2931,24 @@ def debug_agents():
         'agent_count': len(AGENTS_DATA),
         'agent_keys': list(AGENTS_DATA.keys())
     })
+
+@app.route('/api/debug/broadcast-agents', methods=['POST'])
+@require_auth
+def broadcast_agents():
+    """Manually broadcast agent list to all operators"""
+    try:
+        socketio.emit('agent_list_update', AGENTS_DATA, room='operators')
+        return jsonify({
+            'success': True,
+            'message': f'Agent list broadcast to operators room',
+            'agent_count': len(AGENTS_DATA),
+            'agents': list(AGENTS_DATA.keys())
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 # Video/Audio Frame Storage
 VIDEO_FRAMES_H264 = defaultdict(lambda: None)
