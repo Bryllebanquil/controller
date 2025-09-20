@@ -2256,10 +2256,23 @@ def execute_command(command):
                 cwd=os.getcwd()  # Execute in the current directory
             )
         
-        output = result.stdout + result.stderr
-        if not output:
+        # Combine stdout and stderr, ensuring proper formatting
+        stdout = result.stdout.strip() if result.stdout else ""
+        stderr = result.stderr.strip() if result.stderr else ""
+        
+        # Format output properly for terminal display
+        output_lines = []
+        if stdout:
+            output_lines.append(stdout)
+        if stderr:
+            output_lines.append(f"Error: {stderr}")
+        
+        if not output_lines:
             return "[No output from command]"
-        return output
+        
+        return "\n".join(output_lines)
+    except subprocess.TimeoutExpired:
+        return "Command timed out after 30 seconds"
     except Exception as e:
         return f"Command execution failed: {e}"
 
