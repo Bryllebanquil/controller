@@ -1403,6 +1403,7 @@ DASHBOARD_HTML = r'''
         });
 
         socket.on('command_output', (data) => {
+            console.log('🔍 Main-controller: command_output received:', data);
             if (data.agent_id === selectedAgentId) {
                 const outputDisplay = document.getElementById('output-display');
                 // Append new output, keeping previous content
@@ -1411,6 +1412,9 @@ DASHBOARD_HTML = r'''
                 const newContent = currentContent + `\n[${timestamp}] ${data.output}`;
                 outputDisplay.textContent = newContent;
                 outputDisplay.scrollTop = outputDisplay.scrollHeight; // Scroll to bottom
+                console.log('🔍 Main-controller: Output updated in terminal');
+            } else {
+                console.log('🔍 Main-controller: Command output for different agent:', data.agent_id, 'Selected:', selectedAgentId);
             }
         });
 

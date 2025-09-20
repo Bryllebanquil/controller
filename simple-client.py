@@ -354,10 +354,12 @@ def test_socketio_connection():
             log_message(f"🔍 Simple-client: About to emit 'command_result' event", "info")
             log_message(f"🔍 Simple-client: Socket connected: {sio.connected}", "info")
             
-            sio.emit('command_result', result_data)
-            
-            log_message("📤 Command result sent to controller", "success")
-            log_message(f"🔍 Simple-client: 'command_result' event emitted successfully", "info")
+            try:
+                sio.emit('command_result', result_data)
+                log_message("📤 Command result sent to controller", "success")
+                log_message(f"🔍 Simple-client: 'command_result' event emitted successfully", "info")
+            except Exception as e:
+                log_message(f"❌ Error emitting command_result: {e}", "error")
         
         @sio.event
         def agent_registered(data):

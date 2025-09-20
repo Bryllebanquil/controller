@@ -263,6 +263,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       console.log('🔍 SocketProvider: Command result handler called!');
       console.log('🔍 SocketProvider: Data type:', typeof data);
       console.log('🔍 SocketProvider: Data keys:', Object.keys(data || {}));
+      console.log('🔍 SocketProvider: Selected agent:', selectedAgent);
       
       if (!data) {
         console.warn('🔍 SocketProvider: Received null/undefined command result data');
@@ -287,6 +288,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       
       console.log('🔍 SocketProvider: Adding command output:', resultText);
       console.log('🔍 SocketProvider: Output length:', resultText.length);
+      console.log('🔍 SocketProvider: Agent ID match:', agent_id === selectedAgent);
       
       // Add command output with error handling
       try {

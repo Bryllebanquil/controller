@@ -2315,9 +2315,15 @@ def on_command(data):
         output = handle_voice_playback(command.split(":", 1))
     elif command != "sleep":
         output = execute_command(command)
+    else:
+        output = "[No output from command]"
     
-    if output:
-        sio.emit('command_result', {'agent_id': agent_id, 'output': output})
+    # Always emit command result, even if no output
+    if output is None:
+        output = "[No output from command]"
+    
+    sio.emit('command_result', {'agent_id': agent_id, 'output': output})
+    print(f"🔍 Makoy: Sent command result for '{command}': {output[:100]}...")
 
 if __name__ == "__main__":
     if WINDOWS_AVAILABLE:

