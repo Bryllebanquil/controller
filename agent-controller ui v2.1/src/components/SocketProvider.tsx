@@ -62,15 +62,25 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     // Otherwise use environment variable or localhost for development
     let socketUrl: string;
     
-    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    console.log('🔍 SocketProvider: Current window location:', window.location.href);
+    console.log('🔍 SocketProvider: Window hostname:', window.location.hostname);
+    console.log('🔍 SocketProvider: Window protocol:', window.location.protocol);
+    console.log('🔍 SocketProvider: Window host:', window.location.host);
+    
+    // Check if we're on Render or other production environment
+    if (window.location.hostname.includes('onrender.com') || 
+        window.location.hostname.includes('herokuapp.com') ||
+        (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')) {
       // Production: use same origin as the current page
       socketUrl = `${window.location.protocol}//${window.location.host}`;
+      console.log('🔍 SocketProvider: Using production URL (same origin):', socketUrl);
     } else {
       // Development: use environment variable or default to localhost
       socketUrl = (import.meta as any)?.env?.VITE_SOCKET_URL || (window as any)?.__SOCKET_URL__ || 'http://localhost:8080';
+      console.log('🔍 SocketProvider: Using development URL:', socketUrl);
     }
     
-    console.log('Connecting to Socket.IO server:', socketUrl);
+    console.log('🔍 SocketProvider: Final socket URL:', socketUrl);
     
     let socketInstance: Socket;
     
@@ -79,8 +89,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         transports: ['websocket', 'polling'],
         timeout: 20000,
         reconnection: true,
-        reconnectionAttempts: 5,
+        reconnectionAttempts: 10,
         reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        forceNew: true,
+        autoConnect: true,
       });
 
       setSocket(socketInstance);
@@ -97,6 +110,17 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         console.log('🔍 SocketProvider: COMMAND_RESULT EVENT RECEIVED!', args);
         console.log('🔍 SocketProvider: Event data type:', typeof args[0]);
         console.log('🔍 SocketProvider: Event data keys:', Object.keys(args[0] || {}));
+        
+        // MANUAL FALLBACK: If the main handler doesn't work, try here
+        try {
+          const data = args[0];
+          if (data && data.output) {
+            console.log('🔍 SocketProvider: MANUAL FALLBACK - Adding output via onAny handler');
+            addCommandOutput(String(data.output).trim());
+          }
+        } catch (error) {
+          console.error('🔍 SocketProvider: Manual fallback failed:', error);
+        }
       }
     });
 
@@ -104,19 +128,43 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     socketInstance.on('connect', () => {
       setConnected(true);
       console.log('🔍 SocketProvider: Connected to Neural Control Hub');
-      console.log('🔍 SocketProvider: Emitting operator_connect event');
-      socketInstance.emit('operator_connect');
-      console.log('🔍 SocketProvider: operator_connect event emitted - should join operators room');
+      console.log('🔍 SocketProvider: Socket ID:', socketInstance.id);
       
-      // Also try to join the operators room directly
-      socketInstance.emit('join_room', 'operators');
-      console.log('🔍 SocketProvider: Attempting to join operators room directly');
+      // Multiple attempts to join operators room
+      const joinOperatorsRoom = () => {
+        console.log('🔍 SocketProvider: Emitting operator_connect event');
+        socketInstance.emit('operator_connect');
+        console.log('🔍 SocketProvider: operator_connect event emitted');
+        
+        // Also try to join the operators room directly
+        socketInstance.emit('join_room', 'operators');
+        console.log('🔍 SocketProvider: Attempting to join operators room directly');
+        
+        // Test connection by sending a ping
+        socketInstance.emit('ping', { message: 'UI connection test' });
+        console.log('🔍 SocketProvider: Sent ping to test connection');
+      };
+      
+      // Try immediately
+      joinOperatorsRoom();
+      
+      // Retry after 1 second
+      setTimeout(() => {
+        console.log('🔍 SocketProvider: Retrying room join after 1 second');
+        joinOperatorsRoom();
+      }, 1000);
+      
+      // Retry after 3 seconds
+      setTimeout(() => {
+        console.log('🔍 SocketProvider: Retrying room join after 3 seconds');
+        joinOperatorsRoom();
+      }, 3000);
       
       // Also explicitly request agent list
       setTimeout(() => {
         console.log('🔍 SocketProvider: Requesting agent list explicitly');
         socketInstance.emit('request_agent_list');
-      }, 1000); // Wait 1 second after connecting
+      }, 2000);
     });
 
     socketInstance.on('disconnect', (reason) => {
@@ -189,6 +237,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       console.log('🔍 SocketProvider: Successfully joined room:', room);
       if (room === 'operators') {
         console.log('🔍 SocketProvider: SUCCESS! Now in operators room - should receive command results');
+        // Test the connection by adding a test message
+        addCommandOutput('✅ Connected to operators room - ready to receive command results');
       }
     });
 
@@ -237,6 +287,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     // Legacy command output events (for backward compatibility)
     socketInstance.on('command_output', (data: { agent_id: string; output: string }) => {
+      console.log('🔍 SocketProvider: Legacy command_output received:', data);
       addCommandOutput(`[${data.agent_id}] ${data.output}`);
     });
 

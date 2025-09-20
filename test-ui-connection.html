@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Socket.IO Connection Test</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>Socket.IO Connection Test</h1>
+    <div id="status">Connecting...</div>
+    <div id="events"></div>
+    
+    <script>
+        const statusDiv = document.getElementById('status');
+        const eventsDiv = document.getElementById('events');
+        
+        function log(message) {
+            console.log(message);
+            eventsDiv.innerHTML += '<div>' + new Date().toISOString() + ': ' + message + '</div>';
+        }
+        
+        // Use the same URL logic as the React app
+        let socketUrl;
+        if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+            socketUrl = `${window.location.protocol}//${window.location.host}`;
+        } else {
+            socketUrl = 'http://localhost:8080';
+        }
+        
+        log('Attempting to connect to: ' + socketUrl);
+        
+        const socket = io(socketUrl, {
+            transports: ['websocket', 'polling'],
+            timeout: 20000,
+            reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000,
+        });
+        
+        socket.on('connect', () => {
+            statusDiv.textContent = 'Connected!';
+            log('Connected to server with ID: ' + socket.id);
+            
+            // Try to join operators room
+            socket.emit('operator_connect');
+            log('Sent operator_connect event');
+            
+            socket.emit('join_room', 'operators');
+            log('Sent join_room operators event');
+        });
+        
+        socket.on('disconnect', (reason) => {
+            statusDiv.textContent = 'Disconnected: ' + reason;
+            log('Disconnected: ' + reason);
+        });
+        
+        socket.on('connect_error', (error) => {
+            statusDiv.textContent = 'Connection Error: ' + error.message;
+            log('Connection error: ' + error.message);
+        });
+        
+        socket.on('joined_room', (room) => {
+            log('Successfully joined room: ' + room);
+        });
+        
+        socket.on('command_result', (data) => {
+            log('COMMAND RESULT RECEIVED: ' + JSON.stringify(data));
+        });
+        
+        socket.onAny((eventName, ...args) => {
+            log('Event received: ' + eventName + ' - ' + JSON.stringify(args));
+        });
+    </script>
+</body>
+</html>
