@@ -307,15 +307,20 @@ def test_socketio_connection():
             output = execute_command(command_text)
             
             # Send command result back to controller
-            sio.emit('command_result', {
+            result_data = {
                 'agent_id': AGENT_ID,
                 'execution_id': execution_id,
                 'command': command_text,
                 'output': output,
                 'success': True,
                 'execution_time': 0,  # Could measure actual execution time
-                'timestamp': time.time()
-            })
+                'timestamp': datetime.now().isoformat() + 'Z'
+            }
+            
+            log_message("📤 Sending command result to controller...", "info")
+            log_message(f"📋 Result data: {json.dumps(result_data, indent=2)}", "debug")
+            
+            sio.emit('command_result', result_data)
             
             log_message("📤 Command result sent to controller", "success")
         

@@ -170,10 +170,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     // Command result events
     socketInstance.on('command_result', (data: { agent_id: string; output: string; command?: string; success?: boolean }) => {
+      console.log('🔍 Command result received:', data);
       const { agent_id, output, command, success } = data;
       const status = success === false ? '[ERROR]' : '[SUCCESS]';
       const commandText = command ? `Command: ${command}\n` : '';
-      addCommandOutput(`${status} [${agent_id}] ${commandText}${output}`);
+      const resultText = `${status} [${agent_id}] ${commandText}${output}`;
+      console.log('🔍 Adding command output:', resultText);
+      addCommandOutput(resultText);
     });
 
     // Legacy command output events (for backward compatibility)
@@ -261,6 +264,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const sendCommand = useCallback((agentId: string, command: string) => {
+    console.log('🔍 sendCommand called:', { agentId, command, socket: !!socket, connected });
+    
     if (!socket || !connected) {
       addCommandOutput(`Error: Not connected to server`);
       return;
@@ -272,7 +277,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     }
     
     try {
-      socket.emit('execute_command', { agent_id: agentId, command });
+      const commandData = { agent_id: agentId, command };
+      console.log('🔍 Emitting execute_command:', commandData);
+      socket.emit('execute_command', commandData);
       addCommandOutput(`> ${command}`);
     } catch (error) {
       console.error('Error sending command:', error);
