@@ -41,7 +41,7 @@ const commandHistory = [
 ];
 
 export function CommandPanel({ agentId }: CommandPanelProps) {
-  const { sendCommand, commandOutput } = useSocket();
+  const { sendCommand, commandOutput, connected } = useSocket();
   const [command, setCommand] = useState('');
   const [output, setOutput] = useState('');
   const [isExecuting, setIsExecuting] = useState(false);
@@ -58,7 +58,10 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
     setOutput(prev => prev + (prev ? '\n' : '') + commandLine + '\n');
     
     try {
+      // Primary method: Use WebSocket
+      console.log('🔍 CommandPanel: Sending command via WebSocket:', commandToExecute);
       sendCommand(agentId, commandToExecute);
+      
       const entry = {
         id: Date.now(),
         command: commandToExecute,
@@ -68,8 +71,15 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
       };
       setHistory(prev => [entry, ...prev]);
       
-      // Don't reset isExecuting here - let the command result handler do it
-      // This ensures we show "Executing..." until we get the actual result
+      // Set a timeout to detect if we don't receive a response via WebSocket
+      setTimeout(() => {
+        if (isExecuting) {
+          console.warn('🔍 CommandPanel: No WebSocket response received, command may have failed');
+          setOutput(prev => prev + '\n⚠️ Command sent but no response received. Check agent connection.\n');
+          setIsExecuting(false);
+        }
+      }, 30000); // 30 second timeout
+      
     } catch (error) {
       console.error('Error executing command:', error);
       setOutput(prev => prev + `Error: ${error}\n`);
@@ -98,20 +108,34 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
     // Update output window as new lines come in
     console.log('🔍 CommandPanel: commandOutput changed, length:', commandOutput.length);
     console.log('🔍 CommandPanel: commandOutput array:', commandOutput);
+    
     if (commandOutput.length > 0) {
       const latestOutput = commandOutput[commandOutput.length - 1];
       console.log('🔍 CommandPanel: latest output:', latestOutput);
       console.log('🔍 CommandPanel: latest output type:', typeof latestOutput);
       
-      // Add the output directly (it's already clean from SocketProvider)
-      setOutput(prev => {
-        const newOutput = prev + (prev.endsWith('\n') ? '' : '\n') + latestOutput + '\n';
-        console.log('🔍 CommandPanel: setting new output:', newOutput);
-        return newOutput;
-      });
-      
-      // Reset executing state when we receive command output
-      setIsExecuting(false);
+      // Ensure we have valid output
+      if (latestOutput !== undefined && latestOutput !== null) {
+        // Add the output directly (it's already clean from SocketProvider)
+        setOutput(prev => {
+          // Avoid adding empty lines or duplicates
+          if (!latestOutput.trim()) {
+            console.log('🔍 CommandPanel: Skipping empty output');
+            return prev;
+          }
+          
+          const newOutput = prev + (prev && !prev.endsWith('\n') ? '\n' : '') + latestOutput + '\n';
+          console.log('🔍 CommandPanel: setting new output:', newOutput);
+          console.log('🔍 CommandPanel: ✅ Output updated in UI');
+          return newOutput;
+        });
+        
+        // Reset executing state when we receive command output
+        setIsExecuting(false);
+        console.log('🔍 CommandPanel: ✅ Execution state reset');
+      } else {
+        console.warn('🔍 CommandPanel: Received invalid output:', latestOutput);
+      }
     }
   }, [commandOutput]);
 
@@ -195,6 +219,12 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                   Select an agent to execute commands
                 </div>
               )}
+              
+              {/* Connection Status */}
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Socket: {connected ? '🟢 Connected' : '🔴 Disconnected'}</span>
+                {agentId && <span>Agent: {agentId.substring(0, 8)}</span>}
+              </div>
             </CardContent>
           </Card>
 

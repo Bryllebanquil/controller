@@ -229,8 +229,34 @@ for subdomain in ["www", "app", "dashboard", "frontend", "backend"]:
     render_origins.append(f"https://neural-control-hub-{subdomain}.onrender.com")
 
 all_socketio_origins = allowed_origins + render_origins
-socketio = SocketIO(app, async_mode='threading', cors_allowed_origins=all_socketio_origins)
-print(f"Socket.IO CORS origins: {all_socketio_origins}")
+# Try to initialize Socket.IO with the best available async mode
+socketio = None
+async_modes_to_try = ['gevent', 'threading']
+
+for async_mode in async_modes_to_try:
+    try:
+        print(f"🔄 Trying Socket.IO with {async_mode} mode...")
+        socketio = SocketIO(app, 
+                           async_mode=async_mode,
+                           cors_allowed_origins=all_socketio_origins,
+                           engineio_logger=False,
+                           logger=False,
+                           ping_timeout=60,
+                           ping_interval=25)
+        print(f"✅ Socket.IO initialized successfully with {async_mode} mode")
+        print(f"Socket.IO CORS origins: {all_socketio_origins}")
+        break
+    except Exception as e:
+        print(f"❌ Failed to initialize Socket.IO with {async_mode}: {e}")
+        continue
+
+if socketio is None:
+    print("⚠️ All async modes failed, using basic configuration")
+    socketio = SocketIO(app, cors_allowed_origins=['*'])
+    print("✅ Socket.IO initialized with basic configuration")
+
+# For Gunicorn deployment compatibility (though we're using direct python execution now)
+application = socketio
 
 def send_email_notification(subject: str, body: str) -> bool:
     try:
@@ -3066,15 +3092,22 @@ def handle_disconnect():
 @socketio.on('operator_connect')
 def handle_operator_connect():
     """When a web dashboard connects."""
-    print(f"Operator dashboard connecting with SID: {request.sid}")
+    print(f"🔍 Controller: Operator dashboard connecting with SID: {request.sid}")
     join_room('operators')
-    print(f"Operator joined 'operators' room. Sending {len(AGENTS_DATA)} agents to new operator.")
-    print(f"Current agents: {list(AGENTS_DATA.keys())}")
+    print(f"🔍 Controller: Operator joined 'operators' room. Sending {len(AGENTS_DATA)} agents to new operator.")
+    print(f"🔍 Controller: Current agents: {list(AGENTS_DATA.keys())}")
     
     # Send agent list to the specific operator that just connected
     emit('agent_list_update', AGENTS_DATA, room=request.sid)
+    print(f"🔍 Controller: Sent agent list to operator {request.sid}")
+    
     # Confirm room joining
     emit('joined_room', 'operators', room=request.sid)
+    print(f"🔍 Controller: Confirmed room joining to operator {request.sid}")
+    
+    # Test the connection by sending a test message
+    emit('test_message', {'message': 'Operator connection successful', 'timestamp': time.time()}, room=request.sid)
+    print(f"🔍 Controller: Sent test message to operator {request.sid}")
 
 @socketio.on('join_room')
 def handle_join_room(room_name):
@@ -4306,4 +4339,16 @@ if __name__ == "__main__":
         print(f"Performance tuning: Bandwidth estimation, Adaptive bitrate, Frame dropping")
         print(f"Production scale: Current={PRODUCTION_SCALE['current_implementation']}, Target={PRODUCTION_SCALE['target_implementation']}")
         print(f"Scalability limits: aiortc={PRODUCTION_SCALE['scalability_limits']['aiorttc_max_viewers']}, mediasoup={PRODUCTION_SCALE['scalability_limits']['mediasoup_max_viewers']}")
-    socketio.run(app, host=Config.HOST, port=Config.PORT, debug=False)
+    try:
+        print(f"🚀 Starting Socket.IO server on {Config.HOST}:{Config.PORT}")
+        socketio.run(app, 
+                    host=Config.HOST, 
+                    port=Config.PORT, 
+                    debug=False,
+                    use_reloader=False,
+                    allow_unsafe_werkzeug=True)
+    except Exception as e:
+        print(f"❌ Failed to start server: {e}")
+        # Fallback to regular Flask app
+        print("⚠️ Falling back to regular Flask server")
+        app.run(host=Config.HOST, port=Config.PORT, debug=False)
