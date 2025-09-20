@@ -46,6 +46,8 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
   const [output, setOutput] = useState('');
   const [isExecuting, setIsExecuting] = useState(false);
   const [history, setHistory] = useState(commandHistory);
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
 
   const executeCommand = async (cmd?: string) => {
     const commandToExecute = cmd || command;
@@ -53,8 +55,15 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
 
     setIsExecuting(true);
     
+    // Add command to history
+    if (!cmd) {
+      setCommandHistory(prev => [commandToExecute, ...prev.slice(0, 99)]); // Keep last 100 commands
+      setHistoryIndex(-1);
+    }
+    
     // Add the command to output immediately (like a real terminal)
-    const commandLine = `$ ${commandToExecute}`;
+    const timestamp = new Date().toLocaleTimeString();
+    const commandLine = `[${timestamp}] > ${commandToExecute}`;
     setOutput(prev => prev + (prev ? '\n' : '') + commandLine + '\n');
     
     try {
@@ -75,14 +84,16 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
       setTimeout(() => {
         if (isExecuting) {
           console.warn('🔍 CommandPanel: No WebSocket response received, command may have failed');
-          setOutput(prev => prev + '\n⚠️ Command sent but no response received. Check agent connection.\n');
+          const timeoutMsg = `[${new Date().toLocaleTimeString()}] ⚠️ Command sent but no response received. Check agent connection.`;
+          setOutput(prev => prev + '\n' + timeoutMsg + '\n');
           setIsExecuting(false);
         }
       }, 30000); // 30 second timeout
       
     } catch (error) {
       console.error('Error executing command:', error);
-      setOutput(prev => prev + `Error: ${error}\n`);
+      const errorMsg = `[${new Date().toLocaleTimeString()}] Error: ${error}`;
+      setOutput(prev => prev + '\n' + errorMsg + '\n');
       setIsExecuting(false);
     }
     
@@ -93,6 +104,23 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       executeCommand();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (historyIndex < commandHistory.length - 1) {
+        const newIndex = historyIndex + 1;
+        setHistoryIndex(newIndex);
+        setCommand(commandHistory[newIndex]);
+      }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (historyIndex > 0) {
+        const newIndex = historyIndex - 1;
+        setHistoryIndex(newIndex);
+        setCommand(commandHistory[newIndex]);
+      } else if (historyIndex === 0) {
+        setHistoryIndex(-1);
+        setCommand('');
+      }
     }
   };
 
@@ -124,7 +152,10 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
             return prev;
           }
           
-          const newOutput = prev + (prev && !prev.endsWith('\n') ? '\n' : '') + latestOutput + '\n';
+          // Add timestamp to the output
+          const timestamp = new Date().toLocaleTimeString();
+          const timestampedOutput = `[${timestamp}] ${latestOutput}`;
+          const newOutput = prev + (prev && !prev.endsWith('\n') ? '\n' : '') + timestampedOutput + '\n';
           console.log('🔍 CommandPanel: setting new output:', newOutput);
           console.log('🔍 CommandPanel: ✅ Output updated in UI');
           return newOutput;
@@ -248,11 +279,11 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="bg-black text-green-400 p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto">
-                  {output || 'No output yet. Execute a command to see results.'}
+                <div className="bg-black text-green-400 p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto whitespace-pre-wrap">
+                  {output || 'NEURAL_TERMINAL_v2.1 > No output yet. Execute a command to see results.'}
                   {isExecuting && (
                     <div className="text-yellow-400 animate-pulse">
-                      Executing command... <span className="animate-pulse">▋</span>
+                      [Executing] <span className="animate-pulse">▋</span>
                     </div>
                   )}
                 </div>

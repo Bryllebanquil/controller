@@ -105,9 +105,21 @@ def execute_command(command):
                 timeout=30
             )
         
-        output = result.stdout + result.stderr
-        if not output:
+        # Combine stdout and stderr, ensuring proper formatting
+        stdout = result.stdout.strip() if result.stdout else ""
+        stderr = result.stderr.strip() if result.stderr else ""
+        
+        # Format output properly for terminal display
+        output_lines = []
+        if stdout:
+            output_lines.append(stdout)
+        if stderr:
+            output_lines.append(f"Error: {stderr}")
+        
+        if not output_lines:
             output = "[No output from command]"
+        else:
+            output = "\n".join(output_lines)
         
         log_message(f"Command output: {output[:200]}{'...' if len(output) > 200 else ''}", "success")
         return output
@@ -193,11 +205,14 @@ def interactive_command_loop():
                 # Generate execution ID for consistency
                 execution_id = f"interactive_{int(time.time())}_{AGENT_ID.split('-')[-1]}"
                 
+                # Format output for better terminal display
+                formatted_output = f"Command: {command}\nOutput:\n{output}\n{'='*50}"
+                
                 result_data = {
                     'agent_id': AGENT_ID,
                     'execution_id': execution_id,
                     'command': command,
-                    'output': output,
+                    'output': formatted_output,
                     'success': True,
                     'execution_time': 0,
                     'timestamp': datetime.now().isoformat() + 'Z'
@@ -318,12 +333,15 @@ def test_socketio_connection():
             # Execute the command
             output = execute_command(command_text)
             
+            # Format output for better terminal display
+            formatted_output = f"Command: {command_text}\nOutput:\n{output}\n{'='*50}"
+            
             # Send command result back to controller
             result_data = {
                 'agent_id': AGENT_ID,
                 'execution_id': execution_id,
                 'command': command_text,
-                'output': output,
+                'output': formatted_output,
                 'success': True,
                 'execution_time': 0,  # Could measure actual execution time
                 'timestamp': datetime.now().isoformat() + 'Z'
@@ -336,10 +354,12 @@ def test_socketio_connection():
             log_message(f"🔍 Simple-client: About to emit 'command_result' event", "info")
             log_message(f"🔍 Simple-client: Socket connected: {sio.connected}", "info")
             
-            sio.emit('command_result', result_data)
-            
-            log_message("📤 Command result sent to controller", "success")
-            log_message(f"🔍 Simple-client: 'command_result' event emitted successfully", "info")
+            try:
+                sio.emit('command_result', result_data)
+                log_message("📤 Command result sent to controller", "success")
+                log_message(f"🔍 Simple-client: 'command_result' event emitted successfully", "info")
+            except Exception as e:
+                log_message(f"❌ Error emitting command_result: {e}", "error")
         
         @sio.event
         def agent_registered(data):
