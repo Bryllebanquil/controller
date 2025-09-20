@@ -52,7 +52,11 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
     if (!commandToExecute.trim() || !agentId) return;
 
     setIsExecuting(true);
-    setOutput('Executing command...\n');
+    
+    // Add the command to output immediately (like a real terminal)
+    const commandLine = `$ ${commandToExecute}`;
+    setOutput(prev => prev + (prev ? '\n' : '') + commandLine + '\n');
+    
     try {
       sendCommand(agentId, commandToExecute);
       const entry = {
@@ -80,10 +84,27 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
     navigator.clipboard.writeText(output);
   };
 
+  const clearOutput = () => {
+    setOutput('');
+  };
+
   useEffect(() => {
     // Update output window as new lines come in
     if (commandOutput.length > 0) {
-      setOutput(prev => (prev ? prev + '\n' : '') + commandOutput[commandOutput.length - 1]);
+      const latestOutput = commandOutput[commandOutput.length - 1];
+      
+      // Parse command result and add to output
+      if (latestOutput.includes('[SUCCESS]') || latestOutput.includes('[ERROR]')) {
+        // Extract the actual output from the command result
+        const outputMatch = latestOutput.match(/\[SUCCESS\] \[.*?\] (?:Command: .*?\n)?(.*)/);
+        if (outputMatch) {
+          const actualOutput = outputMatch[1];
+          setOutput(prev => prev + actualOutput + '\n');
+        }
+      } else {
+        // Handle other types of output
+        setOutput(prev => prev + (prev.endsWith('\n') ? '' : '\n') + latestOutput + '\n');
+      }
     }
   }, [commandOutput]);
 
@@ -180,6 +201,9 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                     <Button variant="ghost" size="sm" onClick={copyOutput} disabled={!output}>
                       <Copy className="h-3 w-3" />
                     </Button>
+                    <Button variant="ghost" size="sm" onClick={clearOutput} disabled={!output}>
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
                     <Button variant="ghost" size="sm" disabled={!output}>
                       <Download className="h-3 w-3" />
                     </Button>
@@ -190,7 +214,7 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                 <div className="bg-black text-green-400 p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto">
                   {output || 'No output yet. Execute a command to see results.'}
                   {isExecuting && (
-                    <span className="animate-pulse">|</span>
+                    <span className="animate-pulse text-green-400">▋</span>
                   )}
                 </div>
               </CardContent>

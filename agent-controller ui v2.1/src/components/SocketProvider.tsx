@@ -172,9 +172,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     socketInstance.on('command_result', (data: { agent_id: string; output: string; command?: string; success?: boolean }) => {
       console.log('🔍 Command result received:', data);
       const { agent_id, output, command, success } = data;
-      const status = success === false ? '[ERROR]' : '[SUCCESS]';
-      const commandText = command ? `Command: ${command}\n` : '';
-      const resultText = `${status} [${agent_id}] ${commandText}${output}`;
+      
+      // Create a clean terminal-like output
+      const resultText = output.trim();
       console.log('🔍 Adding command output:', resultText);
       addCommandOutput(resultText);
     });
@@ -280,7 +280,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       const commandData = { agent_id: agentId, command };
       console.log('🔍 Emitting execute_command:', commandData);
       socket.emit('execute_command', commandData);
-      addCommandOutput(`> ${command}`);
+      // Don't add command to output here - CommandPanel handles it
     } catch (error) {
       console.error('Error sending command:', error);
       addCommandOutput(`Error: Failed to send command`);
