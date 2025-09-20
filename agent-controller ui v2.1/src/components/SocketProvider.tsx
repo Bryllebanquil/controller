@@ -178,16 +178,20 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       console.log('🔍 Adding command output:', resultText);
       console.log('🔍 Current commandOutput length:', commandOutput.length);
       
-      // Force update the command output
-      setTimeout(() => {
-        addCommandOutput(resultText);
-        console.log('🔍 Command output added successfully');
-      }, 100);
+      // Add command output immediately for real-time terminal experience
+      addCommandOutput(resultText);
+      console.log('🔍 Command output added successfully');
     });
 
     // Legacy command output events (for backward compatibility)
     socketInstance.on('command_output', (data: { agent_id: string; output: string }) => {
-      addCommandOutput(`[${data.agent_id}] ${data.output}`);
+      console.log('🔍 Legacy command output received:', data);
+      // Add output directly to terminal for immediate feedback
+      const cleanOutput = data.output.trim();
+      if (cleanOutput) {
+        addCommandOutput(cleanOutput);
+        console.log('🔍 Legacy command output added to terminal');
+      }
     });
 
     // Lightweight telemetry updates from agents

