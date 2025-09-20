@@ -93,6 +93,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     // Add debug event listener to see all events
     socketInstance.onAny((eventName, ...args) => {
       console.log(`🔍 SocketProvider: Received event '${eventName}':`, args);
+      if (eventName === 'command_result') {
+        console.log('🔍 SocketProvider: COMMAND_RESULT EVENT RECEIVED!', args);
+      }
     });
 
     // Connection events
@@ -101,6 +104,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       console.log('🔍 SocketProvider: Connected to Neural Control Hub');
       console.log('🔍 SocketProvider: Emitting operator_connect event');
       socketInstance.emit('operator_connect');
+      console.log('🔍 SocketProvider: operator_connect event emitted - should join operators room');
       
       // Also explicitly request agent list
       setTimeout(() => {
@@ -176,6 +180,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     // Command result events
     socketInstance.on('command_result', (data: { agent_id: string; output: string; command?: string; success?: boolean }) => {
       console.log('🔍 SocketProvider: Command result received:', data);
+      console.log('🔍 SocketProvider: Command result handler called!');
       const { agent_id, output, command, success } = data;
       
       // Create a clean terminal-like output
