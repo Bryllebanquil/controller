@@ -67,10 +67,16 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
         success: true
       };
       setHistory(prev => [entry, ...prev]);
-    } finally {
+      
+      // Don't reset isExecuting here - let the command result handler do it
+      // This ensures we show "Executing..." until we get the actual result
+    } catch (error) {
+      console.error('Error executing command:', error);
+      setOutput(prev => prev + `Error: ${error}\n`);
       setIsExecuting(false);
-      if (!cmd) setCommand('');
     }
+    
+    if (!cmd) setCommand('');
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -101,6 +107,9 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
         console.log('🔍 CommandPanel: setting new output:', newOutput);
         return newOutput;
       });
+      
+      // Reset executing state when we receive command output
+      setIsExecuting(false);
     }
   }, [commandOutput]);
 
@@ -210,7 +219,9 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                 <div className="bg-black text-green-400 p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto">
                   {output || 'No output yet. Execute a command to see results.'}
                   {isExecuting && (
-                    <span className="animate-pulse text-green-400">▋</span>
+                    <div className="text-yellow-400 animate-pulse">
+                      Executing command... <span className="animate-pulse">▋</span>
+                    </div>
                   )}
                 </div>
               </CardContent>

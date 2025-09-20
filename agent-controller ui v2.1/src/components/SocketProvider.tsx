@@ -170,19 +170,17 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     // Command result events
     socketInstance.on('command_result', (data: { agent_id: string; output: string; command?: string; success?: boolean }) => {
-      console.log('🔍 Command result received:', data);
+      console.log('🔍 SocketProvider: Command result received:', data);
       const { agent_id, output, command, success } = data;
       
       // Create a clean terminal-like output
       const resultText = output.trim();
-      console.log('🔍 Adding command output:', resultText);
-      console.log('🔍 Current commandOutput length:', commandOutput.length);
+      console.log('🔍 SocketProvider: Adding command output:', resultText);
+      console.log('🔍 SocketProvider: Current commandOutput length:', commandOutput.length);
       
-      // Force update the command output
-      setTimeout(() => {
-        addCommandOutput(resultText);
-        console.log('🔍 Command output added successfully');
-      }, 100);
+      // Add command output immediately (no timeout needed)
+      addCommandOutput(resultText);
+      console.log('🔍 SocketProvider: Command output added successfully');
     });
 
     // Legacy command output events (for backward compatibility)
@@ -270,25 +268,28 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const sendCommand = useCallback((agentId: string, command: string) => {
-    console.log('🔍 sendCommand called:', { agentId, command, socket: !!socket, connected });
+    console.log('🔍 SocketProvider: sendCommand called:', { agentId, command, socket: !!socket, connected });
     
     if (!socket || !connected) {
+      console.error('🔍 SocketProvider: Not connected to server');
       addCommandOutput(`Error: Not connected to server`);
       return;
     }
     
     if (!agentId || !command.trim()) {
+      console.error('🔍 SocketProvider: Invalid agent ID or command');
       addCommandOutput(`Error: Invalid agent ID or command`);
       return;
     }
     
     try {
       const commandData = { agent_id: agentId, command };
-      console.log('🔍 Emitting execute_command:', commandData);
+      console.log('🔍 SocketProvider: Emitting execute_command:', commandData);
       socket.emit('execute_command', commandData);
+      console.log('🔍 SocketProvider: Command sent successfully');
       // Don't add command to output here - CommandPanel handles it
     } catch (error) {
-      console.error('Error sending command:', error);
+      console.error('🔍 SocketProvider: Error sending command:', error);
       addCommandOutput(`Error: Failed to send command`);
     }
   }, [socket, connected, addCommandOutput]);
