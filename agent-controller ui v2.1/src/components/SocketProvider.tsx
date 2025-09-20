@@ -20,6 +20,7 @@ interface Agent {
 interface SocketContextType {
   socket: Socket | null;
   connected: boolean;
+  authenticated: boolean;
   agents: Agent[];
   selectedAgent: string | null;
   setSelectedAgent: (agentId: string | null) => void;
@@ -31,6 +32,7 @@ interface SocketContextType {
   commandOutput: string[];
   addCommandOutput: (output: string) => void;
   clearCommandOutput: () => void;
+  login: (password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   agentMetrics: Record<string, { cpu: number; memory: number; network: number }>;
 }
@@ -40,6 +42,7 @@ const SocketContext = createContext<SocketContextType | null>(null);
 export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [commandOutput, setCommandOutput] = useState<string[]>([]);
@@ -165,7 +168,24 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    // Command output events
+    // Command result events
+    socketInstance.on('command_result', (data: { agent_id: string; output: string; command?: string; success?: boolean }) => {
+      console.log('🔍 Command result received:', data);
+      const { agent_id, output, command, success } = data;
+      
+      // Create a clean terminal-like output
+      const resultText = output.trim();
+      console.log('🔍 Adding command output:', resultText);
+      console.log('🔍 Current commandOutput length:', commandOutput.length);
+      
+      // Force update the command output
+      setTimeout(() => {
+        addCommandOutput(resultText);
+        console.log('🔍 Command output added successfully');
+      }, 100);
+    });
+
+    // Legacy command output events (for backward compatibility)
     socketInstance.on('command_output', (data: { agent_id: string; output: string }) => {
       addCommandOutput(`[${data.agent_id}] ${data.output}`);
     });
@@ -230,7 +250,28 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     };
   }, [addCommandOutput]);
 
+  // Check authentication status on mount
+  useEffect(() => {
+    const checkAuthStatus = async () => {
+      try {
+        const response = await apiClient.checkAuthStatus();
+        if (response.success && response.data?.authenticated) {
+          setAuthenticated(true);
+        } else {
+          setAuthenticated(false);
+        }
+      } catch (error) {
+        console.error('Failed to check auth status:', error);
+        setAuthenticated(false);
+      }
+    };
+
+    checkAuthStatus();
+  }, []);
+
   const sendCommand = useCallback((agentId: string, command: string) => {
+    console.log('🔍 sendCommand called:', { agentId, command, socket: !!socket, connected });
+    
     if (!socket || !connected) {
       addCommandOutput(`Error: Not connected to server`);
       return;
@@ -242,8 +283,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     }
     
     try {
-      socket.emit('execute_command', { agent_id: agentId, command });
-      addCommandOutput(`> ${command}`);
+      const commandData = { agent_id: agentId, command };
+      console.log('🔍 Emitting execute_command:', commandData);
+      socket.emit('execute_command', commandData);
+      // Don't add command to output here - CommandPanel handles it
     } catch (error) {
       console.error('Error sending command:', error);
       addCommandOutput(`Error: Failed to send command`);
@@ -333,6 +376,20 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     }
   }, [socket, connected, addCommandOutput]);
 
+  const login = useCallback(async (password: string): Promise<boolean> => {
+    try {
+      const response = await apiClient.login(password);
+      if (response.success) {
+        setAuthenticated(true);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Login failed:', error);
+      return false;
+    }
+  }, []);
+
   const logout = useCallback(async (): Promise<void> => {
     try {
       await apiClient.logout();
@@ -349,6 +406,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     setAgents([]);
     setSelectedAgent(null);
     setConnected(false);
+    setAuthenticated(false);
     clearCommandOutput();
     try {
       // Redirect to login page (server-rendered)
@@ -359,6 +417,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const value: SocketContextType = {
     socket,
     connected,
+    authenticated,
     agents,
     selectedAgent,
     setSelectedAgent,
@@ -370,6 +429,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     commandOutput,
     addCommandOutput,
     clearCommandOutput,
+    login,
     logout,
     agentMetrics,
   };

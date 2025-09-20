@@ -17,6 +17,7 @@ import { VoiceControl } from "./components/VoiceControl";
 import { ProcessManager } from "./components/ProcessManager";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { Login } from "./components/Login";
 import {
   Tabs,
   TabsContent,
@@ -46,7 +47,7 @@ import {
 // Live agents come from SocketProvider via agent_list_update
 
 function AppContent() {
-  const { agents: liveAgents, connected } = useSocket();
+  const { agents: liveAgents, connected, authenticated } = useSocket();
   const [selectedAgent, setSelectedAgent] = useState<
     string | null
   >(null);
@@ -67,6 +68,23 @@ function AppContent() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">(
     "asc",
   );
+
+  // Show login screen if not authenticated
+  if (!authenticated) {
+    return <Login />;
+  }
+
+  // Show loading screen while connecting
+  if (!connected) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+          <p className="text-muted-foreground">Connecting to Neural Control Hub...</p>
+        </div>
+      </div>
+    );
+  }
 
   const onlineAgents = agents.filter(
     (agent) => agent.status === "online",
