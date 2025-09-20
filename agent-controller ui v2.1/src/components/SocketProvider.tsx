@@ -176,7 +176,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       // Create a clean terminal-like output
       const resultText = output.trim();
       console.log('🔍 Adding command output:', resultText);
-      addCommandOutput(resultText);
+      console.log('🔍 Current commandOutput length:', commandOutput.length);
+      
+      // Force update the command output
+      setTimeout(() => {
+        addCommandOutput(resultText);
+        console.log('🔍 Command output added successfully');
+      }, 100);
     });
 
     // Legacy command output events (for backward compatibility)

@@ -90,21 +90,17 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
 
   useEffect(() => {
     // Update output window as new lines come in
+    console.log('🔍 CommandPanel: commandOutput changed, length:', commandOutput.length);
     if (commandOutput.length > 0) {
       const latestOutput = commandOutput[commandOutput.length - 1];
+      console.log('🔍 CommandPanel: latest output:', latestOutput);
       
-      // Parse command result and add to output
-      if (latestOutput.includes('[SUCCESS]') || latestOutput.includes('[ERROR]')) {
-        // Extract the actual output from the command result
-        const outputMatch = latestOutput.match(/\[SUCCESS\] \[.*?\] (?:Command: .*?\n)?(.*)/);
-        if (outputMatch) {
-          const actualOutput = outputMatch[1];
-          setOutput(prev => prev + actualOutput + '\n');
-        }
-      } else {
-        // Handle other types of output
-        setOutput(prev => prev + (prev.endsWith('\n') ? '' : '\n') + latestOutput + '\n');
-      }
+      // Add the output directly (it's already clean from SocketProvider)
+      setOutput(prev => {
+        const newOutput = prev + (prev.endsWith('\n') ? '' : '\n') + latestOutput + '\n';
+        console.log('🔍 CommandPanel: setting new output:', newOutput);
+        return newOutput;
+      });
     }
   }, [commandOutput]);
 

