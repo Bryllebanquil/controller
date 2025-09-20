@@ -198,16 +198,41 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       console.log('🔍 SocketProvider: Command result handler called!');
       console.log('🔍 SocketProvider: Data type:', typeof data);
       console.log('🔍 SocketProvider: Data keys:', Object.keys(data || {}));
+      
+      if (!data) {
+        console.warn('🔍 SocketProvider: Received null/undefined command result data');
+        return;
+      }
+      
       const { agent_id, output, command, success } = data;
       
-      // Create a clean terminal-like output
-      const resultText = output.trim();
-      console.log('🔍 SocketProvider: Adding command output:', resultText);
-      console.log('🔍 SocketProvider: Current commandOutput length:', commandOutput.length);
+      if (!output && output !== '') {
+        console.warn('🔍 SocketProvider: Received command result with no output');
+        return;
+      }
       
-      // Add command output immediately (no timeout needed)
-      addCommandOutput(resultText);
-      console.log('🔍 SocketProvider: Command output added successfully');
+      // Create a clean terminal-like output
+      let resultText = '';
+      if (typeof output === 'string') {
+        resultText = output.trim();
+      } else {
+        // Handle cases where output might not be a string
+        resultText = String(output).trim();
+      }
+      
+      console.log('🔍 SocketProvider: Adding command output:', resultText);
+      console.log('🔍 SocketProvider: Output length:', resultText.length);
+      
+      // Add command output with error handling
+      try {
+        addCommandOutput(resultText);
+        console.log('🔍 SocketProvider: Command output added successfully');
+        
+        // Also add a visual confirmation in console
+        console.log('✅ Command result processed and added to UI');
+      } catch (error) {
+        console.error('🔍 SocketProvider: Error adding command output:', error);
+      }
     });
 
     // Legacy command output events (for backward compatibility)
