@@ -3105,6 +3105,10 @@ def handle_agent_connect(data):
             return
         
         # Store agent information
+        # Create agent entry if it doesn't exist
+        if agent_id not in AGENTS_DATA:
+            AGENTS_DATA[agent_id] = {}
+            
         AGENTS_DATA[agent_id]["sid"] = request.sid
         AGENTS_DATA[agent_id]["last_seen"] = datetime.datetime.utcnow().isoformat() + "Z"
         AGENTS_DATA[agent_id]["name"] = data.get('name', f'Agent-{agent_id}')

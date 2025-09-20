@@ -90,16 +90,21 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // Add debug event listener to see all events
+    socketInstance.onAny((eventName, ...args) => {
+      console.log(`🔍 SocketProvider: Received event '${eventName}':`, args);
+    });
+
     // Connection events
     socketInstance.on('connect', () => {
       setConnected(true);
-      console.log('Connected to Neural Control Hub');
-      console.log('Emitting operator_connect event');
+      console.log('🔍 SocketProvider: Connected to Neural Control Hub');
+      console.log('🔍 SocketProvider: Emitting operator_connect event');
       socketInstance.emit('operator_connect');
       
       // Also explicitly request agent list
       setTimeout(() => {
-        console.log('Requesting agent list explicitly');
+        console.log('🔍 SocketProvider: Requesting agent list explicitly');
         socketInstance.emit('request_agent_list');
       }, 1000); // Wait 1 second after connecting
     });

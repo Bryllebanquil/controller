@@ -97,9 +97,11 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
   useEffect(() => {
     // Update output window as new lines come in
     console.log('🔍 CommandPanel: commandOutput changed, length:', commandOutput.length);
+    console.log('🔍 CommandPanel: commandOutput array:', commandOutput);
     if (commandOutput.length > 0) {
       const latestOutput = commandOutput[commandOutput.length - 1];
       console.log('🔍 CommandPanel: latest output:', latestOutput);
+      console.log('🔍 CommandPanel: latest output type:', typeof latestOutput);
       
       // Add the output directly (it's already clean from SocketProvider)
       setOutput(prev => {
