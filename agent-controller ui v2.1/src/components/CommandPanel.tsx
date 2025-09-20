@@ -97,12 +97,24 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
       
       // Add the output directly (it's already clean from SocketProvider)
       setOutput(prev => {
+        // Ensure we don't duplicate output
+        if (prev.includes(latestOutput)) {
+          console.log('🔍 CommandPanel: Output already exists, skipping');
+          return prev;
+        }
+        
         const newOutput = prev + (prev.endsWith('\n') ? '' : '\n') + latestOutput + '\n';
         console.log('🔍 CommandPanel: setting new output:', newOutput);
         return newOutput;
       });
+      
+      // Reset executing state when we receive output
+      if (isExecuting) {
+        setIsExecuting(false);
+        console.log('🔍 CommandPanel: Command execution completed, resetting state');
+      }
     }
-  }, [commandOutput]);
+  }, [commandOutput, isExecuting]);
 
   return (
     <div className="space-y-6">
@@ -211,6 +223,11 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                   {output || 'No output yet. Execute a command to see results.'}
                   {isExecuting && (
                     <span className="animate-pulse text-green-400">▋</span>
+                  )}
+                  {!isExecuting && output && (
+                    <div className="text-green-500 text-xs mt-2 opacity-70">
+                      Ready for next command...
+                    </div>
                   )}
                 </div>
               </CardContent>
