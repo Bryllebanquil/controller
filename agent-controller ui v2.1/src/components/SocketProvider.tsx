@@ -108,6 +108,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       socketInstance.emit('operator_connect');
       console.log('🔍 SocketProvider: operator_connect event emitted - should join operators room');
       
+      // Also try to join the operators room directly
+      socketInstance.emit('join_room', 'operators');
+      console.log('🔍 SocketProvider: Attempting to join operators room directly');
+      
       // Also explicitly request agent list
       setTimeout(() => {
         console.log('🔍 SocketProvider: Requesting agent list explicitly');
@@ -180,10 +184,20 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
+    // Room joining confirmation
+    socketInstance.on('joined_room', (room: string) => {
+      console.log('🔍 SocketProvider: Successfully joined room:', room);
+      if (room === 'operators') {
+        console.log('🔍 SocketProvider: SUCCESS! Now in operators room - should receive command results');
+      }
+    });
+
     // Command result events
     socketInstance.on('command_result', (data: { agent_id: string; output: string; command?: string; success?: boolean }) => {
       console.log('🔍 SocketProvider: Command result received:', data);
       console.log('🔍 SocketProvider: Command result handler called!');
+      console.log('🔍 SocketProvider: Data type:', typeof data);
+      console.log('🔍 SocketProvider: Data keys:', Object.keys(data || {}));
       const { agent_id, output, command, success } = data;
       
       // Create a clean terminal-like output

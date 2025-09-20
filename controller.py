@@ -3073,11 +3073,21 @@ def handle_operator_connect():
     
     # Send agent list to the specific operator that just connected
     emit('agent_list_update', AGENTS_DATA, room=request.sid)
-    print(f"Agent list sent to operator {request.sid}")
+    # Confirm room joining
+    emit('joined_room', 'operators', room=request.sid)
+
+@socketio.on('join_room')
+def handle_join_room(room_name):
+    """Handle explicit room joining requests."""
+    print(f"🔍 Controller: Client {request.sid} requesting to join room: {room_name}")
+    join_room(room_name)
+    print(f"🔍 Controller: Client {request.sid} joined room: {room_name}")
+    emit('joined_room', room_name, room=request.sid)
     
-    # Also broadcast to all operators (including the new one) to ensure consistency
-    emit('agent_list_update', AGENTS_DATA, room='operators', broadcast=True)
-    print(f"Agent list broadcast to all operators")
+    # If joining operators room, also send agent list
+    if room_name == 'operators':
+        emit('agent_list_update', AGENTS_DATA, room=request.sid)
+        print(f"Agent list sent to operator {request.sid}")
 
 def _emit_agent_config(agent_id: str):
     return
