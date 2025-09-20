@@ -49,7 +49,12 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [agentMetrics, setAgentMetrics] = useState<Record<string, { cpu: number; memory: number; network: number }>>({});
 
   const addCommandOutput = useCallback((output: string) => {
-    setCommandOutput(prev => [...prev.slice(-99), output]); // Keep last 100 lines
+    console.log('🔍 SocketProvider: addCommandOutput called with:', output);
+    setCommandOutput(prev => {
+      const newOutput = [...prev.slice(-99), output]; // Keep last 100 lines
+      console.log('🔍 SocketProvider: Updated commandOutput array length:', newOutput.length);
+      return newOutput;
+    });
   }, []);
 
   const clearCommandOutput = useCallback(() => {
@@ -104,19 +109,16 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     socketInstance.on('connect', () => {
       setConnected(true);
       console.log('🔍 SocketProvider: Connected to Neural Control Hub');
-      console.log('🔍 SocketProvider: Emitting operator_connect event');
+      
+      // Join operators room and request agent list
       socketInstance.emit('operator_connect');
-      console.log('🔍 SocketProvider: operator_connect event emitted - should join operators room');
+      console.log('🔍 SocketProvider: operator_connect event emitted');
       
-      // Also try to join the operators room directly
-      socketInstance.emit('join_room', 'operators');
-      console.log('🔍 SocketProvider: Attempting to join operators room directly');
-      
-      // Also explicitly request agent list
+      // Request agent list after a short delay to ensure room joining is complete
       setTimeout(() => {
-        console.log('🔍 SocketProvider: Requesting agent list explicitly');
+        console.log('🔍 SocketProvider: Requesting agent list');
         socketInstance.emit('request_agent_list');
-      }, 1000); // Wait 1 second after connecting
+      }, 500);
     });
 
     socketInstance.on('disconnect', (reason) => {
@@ -193,19 +195,30 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     });
 
     // Command result events
-    socketInstance.on('command_result', (data: { agent_id: string; output: string; command?: string; success?: boolean }) => {
+    socketInstance.on('command_result', (data: { agent_id: string; output: string; command?: string; success?: boolean; execution_id?: string; timestamp?: string }) => {
       console.log('🔍 SocketProvider: Command result received:', data);
       console.log('🔍 SocketProvider: Command result handler called!');
       console.log('🔍 SocketProvider: Data type:', typeof data);
       console.log('🔍 SocketProvider: Data keys:', Object.keys(data || {}));
-      const { agent_id, output, command, success } = data;
+      
+      if (!data || typeof data !== 'object') {
+        console.error('🔍 SocketProvider: Invalid command result data:', data);
+        return;
+      }
+      
+      const { agent_id, output, command, success, execution_id, timestamp } = data;
+      
+      if (!output) {
+        console.warn('🔍 SocketProvider: No output in command result');
+        return;
+      }
       
       // Create a clean terminal-like output
       const resultText = output.trim();
       console.log('🔍 SocketProvider: Adding command output:', resultText);
       console.log('🔍 SocketProvider: Current commandOutput length:', commandOutput.length);
       
-      // Add command output immediately (no timeout needed)
+      // Add command output immediately
       addCommandOutput(resultText);
       console.log('🔍 SocketProvider: Command output added successfully');
     });

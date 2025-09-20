@@ -98,17 +98,20 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
     // Update output window as new lines come in
     console.log('🔍 CommandPanel: commandOutput changed, length:', commandOutput.length);
     console.log('🔍 CommandPanel: commandOutput array:', commandOutput);
+    
     if (commandOutput.length > 0) {
+      // Get the latest output line
       const latestOutput = commandOutput[commandOutput.length - 1];
       console.log('🔍 CommandPanel: latest output:', latestOutput);
-      console.log('🔍 CommandPanel: latest output type:', typeof latestOutput);
       
-      // Add the output directly (it's already clean from SocketProvider)
-      setOutput(prev => {
-        const newOutput = prev + (prev.endsWith('\n') ? '' : '\n') + latestOutput + '\n';
-        console.log('🔍 CommandPanel: setting new output:', newOutput);
-        return newOutput;
-      });
+      if (latestOutput && latestOutput.trim()) {
+        // Add the latest output to the display
+        setOutput(prev => {
+          const newOutput = prev + (prev.endsWith('\n') ? '' : '\n') + latestOutput + '\n';
+          console.log('🔍 CommandPanel: setting new output:', newOutput);
+          return newOutput;
+        });
+      }
       
       // Reset executing state when we receive command output
       setIsExecuting(false);
