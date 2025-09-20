@@ -67,17 +67,26 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     console.log('🔍 SocketProvider: Window protocol:', window.location.protocol);
     console.log('🔍 SocketProvider: Window host:', window.location.host);
     
-    // Check if we're on Render or other production environment
-    if (window.location.hostname.includes('onrender.com') || 
-        window.location.hostname.includes('herokuapp.com') ||
-        (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')) {
+    // Priority: 1. Backend-injected URL, 2. Environment variable, 3. Same origin, 4. Localhost
+    const backendInjectedUrl = (window as any)?.__SOCKET_URL__;
+    const envUrl = (import.meta as any)?.env?.VITE_SOCKET_URL;
+    
+    if (backendInjectedUrl) {
+      socketUrl = backendInjectedUrl;
+      console.log('🔍 SocketProvider: Using backend-injected URL:', socketUrl);
+    } else if (envUrl) {
+      socketUrl = envUrl;
+      console.log('🔍 SocketProvider: Using environment URL:', socketUrl);
+    } else if (window.location.hostname.includes('onrender.com') || 
+               window.location.hostname.includes('herokuapp.com') ||
+               (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')) {
       // Production: use same origin as the current page
       socketUrl = `${window.location.protocol}//${window.location.host}`;
       console.log('🔍 SocketProvider: Using production URL (same origin):', socketUrl);
     } else {
-      // Development: use environment variable or default to localhost
-      socketUrl = (import.meta as any)?.env?.VITE_SOCKET_URL || (window as any)?.__SOCKET_URL__ || 'http://localhost:8080';
-      console.log('🔍 SocketProvider: Using development URL:', socketUrl);
+      // Development fallback
+      socketUrl = 'http://localhost:8080';
+      console.log('🔍 SocketProvider: Using development fallback:', socketUrl);
     }
     
     console.log('🔍 SocketProvider: Final socket URL:', socketUrl);
@@ -240,6 +249,12 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         // Test the connection by adding a test message
         addCommandOutput('✅ Connected to operators room - ready to receive command results');
       }
+    });
+
+    // Test message handler
+    socketInstance.on('test_message', (data: any) => {
+      console.log('🔍 SocketProvider: Test message received from backend:', data);
+      addCommandOutput(`🧪 Backend connection test: ${data.message}`);
     });
 
     // Command result events

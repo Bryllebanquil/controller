@@ -229,8 +229,13 @@ for subdomain in ["www", "app", "dashboard", "frontend", "backend"]:
     render_origins.append(f"https://neural-control-hub-{subdomain}.onrender.com")
 
 all_socketio_origins = allowed_origins + render_origins
-socketio = SocketIO(app, async_mode='threading', cors_allowed_origins=all_socketio_origins)
+socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins=all_socketio_origins)
 print(f"Socket.IO CORS origins: {all_socketio_origins}")
+
+# For Gunicorn deployment, we need to expose the socketio app
+# The Flask app is already wrapped by socketio, so we need to make sure
+# Gunicorn can access the socketio-wrapped app
+application = socketio
 
 def send_email_notification(subject: str, body: str) -> bool:
     try:
@@ -3066,15 +3071,22 @@ def handle_disconnect():
 @socketio.on('operator_connect')
 def handle_operator_connect():
     """When a web dashboard connects."""
-    print(f"Operator dashboard connecting with SID: {request.sid}")
+    print(f"🔍 Controller: Operator dashboard connecting with SID: {request.sid}")
     join_room('operators')
-    print(f"Operator joined 'operators' room. Sending {len(AGENTS_DATA)} agents to new operator.")
-    print(f"Current agents: {list(AGENTS_DATA.keys())}")
+    print(f"🔍 Controller: Operator joined 'operators' room. Sending {len(AGENTS_DATA)} agents to new operator.")
+    print(f"🔍 Controller: Current agents: {list(AGENTS_DATA.keys())}")
     
     # Send agent list to the specific operator that just connected
     emit('agent_list_update', AGENTS_DATA, room=request.sid)
+    print(f"🔍 Controller: Sent agent list to operator {request.sid}")
+    
     # Confirm room joining
     emit('joined_room', 'operators', room=request.sid)
+    print(f"🔍 Controller: Confirmed room joining to operator {request.sid}")
+    
+    # Test the connection by sending a test message
+    emit('test_message', {'message': 'Operator connection successful', 'timestamp': time.time()}, room=request.sid)
+    print(f"🔍 Controller: Sent test message to operator {request.sid}")
 
 @socketio.on('join_room')
 def handle_join_room(room_name):
