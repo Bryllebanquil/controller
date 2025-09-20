@@ -3148,8 +3148,14 @@ def handle_execute_command(data):
     
     agent_sid = AGENTS_DATA.get(agent_id, {}).get('sid')
     if agent_sid:
-        emit('command', {'command': command}, room=agent_sid)
-        print(f"Sent command '{command}' to agent {agent_id}")
+        # Generate execution ID for tracking
+        execution_id = f"exec_{int(time.time())}_{secrets.token_hex(4)}"
+        
+        emit('command', {
+            'command': command,
+            'execution_id': execution_id
+        }, room=agent_sid)
+        print(f"Sent command '{command}' to agent {agent_id} with execution_id {execution_id}")
     else:
         emit('status_update', {'message': f'Agent {agent_id} not found or disconnected.', 'type': 'error'}, room=request.sid)
 
