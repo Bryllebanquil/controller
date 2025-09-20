@@ -95,6 +95,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       console.log(`🔍 SocketProvider: Received event '${eventName}':`, args);
       if (eventName === 'command_result') {
         console.log('🔍 SocketProvider: COMMAND_RESULT EVENT RECEIVED!', args);
+        console.log('🔍 SocketProvider: Event data type:', typeof args[0]);
+        console.log('🔍 SocketProvider: Event data keys:', Object.keys(args[0] || {}));
       }
     });
 
@@ -137,8 +139,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     // Agent management events
     socketInstance.on('agent_list_update', (agentData: Record<string, any>) => {
       try {
-        console.log('Received agent_list_update:', agentData);
-        console.log('Agent data keys:', Object.keys(agentData));
+        console.log('🔍 SocketProvider: Received agent_list_update:', agentData);
+        console.log('🔍 SocketProvider: Agent data keys:', Object.keys(agentData));
+        console.log('🔍 SocketProvider: This confirms we are in the operators room!');
         const agentList = Object.entries(agentData).map(([id, data]: [string, any]) => {
           console.log(`Processing agent ${id}:`, data);
           // Safely parse last_seen date
