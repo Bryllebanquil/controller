@@ -46,7 +46,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration
-DEFAULT_CONTROLLER_URL = os.environ.get('CONTROLLER_URL', 'http://localhost:8080')
+DEFAULT_CONTROLLER_URL = os.environ.get('CONTROLLER_URL', 'https://agent-controller-backend.onrender.com')
 AGENT_ID = f"simple-client-{int(time.time())}"
 CONNECTION_TIMEOUT = 30
 HEARTBEAT_INTERVAL = 10
@@ -190,14 +190,26 @@ def interactive_command_loop():
             
             # Send command result to controller
             if sio and connected:
-                sio.emit('command_result', {
+                # Generate execution ID for consistency
+                execution_id = f"interactive_{int(time.time())}_{AGENT_ID.split('-')[-1]}"
+                
+                result_data = {
                     'agent_id': AGENT_ID,
+                    'execution_id': execution_id,
                     'command': command,
                     'output': output,
                     'success': True,
-                    'timestamp': time.time()
-                })
+                    'execution_time': 0,
+                    'timestamp': datetime.now().isoformat() + 'Z'
+                }
+                
+                log_message(f"🔍 Simple-client (interactive): About to emit 'command_result' event", "info")
+                log_message(f"🔍 Simple-client (interactive): Socket connected: {sio.connected}", "info")
+                
+                sio.emit('command_result', result_data)
+                
                 log_message("Command result sent to controller", "success")
+                log_message(f"🔍 Simple-client (interactive): 'command_result' event emitted successfully", "info")
             else:
                 log_message("Not connected to controller, result not sent", "warning")
                 
@@ -320,9 +332,14 @@ def test_socketio_connection():
             log_message("📤 Sending command result to controller...", "info")
             log_message(f"📋 Result data: {json.dumps(result_data, indent=2)}", "debug")
             
+            # Add debugging for the emit
+            log_message(f"🔍 Simple-client: About to emit 'command_result' event", "info")
+            log_message(f"🔍 Simple-client: Socket connected: {sio.connected}", "info")
+            
             sio.emit('command_result', result_data)
             
             log_message("📤 Command result sent to controller", "success")
+            log_message(f"🔍 Simple-client: 'command_result' event emitted successfully", "info")
         
         @sio.event
         def agent_registered(data):
