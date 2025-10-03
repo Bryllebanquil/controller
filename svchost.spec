@@ -116,7 +116,6 @@ a = Analysis(
         'test',
         'unittest',
         'distutils',
-        'setuptools',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
