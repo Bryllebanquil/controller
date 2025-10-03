@@ -266,9 +266,21 @@ taskkill /f /im svchost32.exe >nul 2>&1
 taskkill /f /im client.py >nul 2>&1
 taskkill /f /im pythonw.exe >nul 2>&1
 
-REM Clear registry policy changes
+REM CRITICAL: Re-enable Task Manager, Registry Editor, and CMD
+echo [CRITICAL] Re-enabling Task Manager...
+reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v "DisableTaskMgr" /f >nul 2>&1
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v "DisableTaskMgr" /t REG_DWORD /d 0 /f >nul 2>&1
+
+echo [CRITICAL] Re-enabling Registry Editor...
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v "DisableRegistryTools" /f >nul 2>&1
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v "DisableRegistryTools" /t REG_DWORD /d 0 /f >nul 2>&1
+
+echo [CRITICAL] Re-enabling Command Prompt...
 reg delete "HKCU\Software\Policies\Microsoft\Windows\System" /v "DisableCMD" /f >nul 2>&1
+reg add "HKCU\Software\Policies\Microsoft\Windows\System" /v "DisableCMD" /t REG_DWORD /d 0 /f >nul 2>&1
+
+echo [CRITICAL] Restoring PowerShell Execution Policy...
+reg delete "HKCU\Software\Microsoft\PowerShell\1\ShellIds\Microsoft.PowerShell" /v "ExecutionPolicy" /f >nul 2>&1
 
 REM Restore UAC settings if modified
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v "EnableLUA" /t REG_DWORD /d 1 /f >nul 2>&1
