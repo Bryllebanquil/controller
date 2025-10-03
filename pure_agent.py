@@ -138,6 +138,17 @@ def execute_command(command):
                 log(f"Auto-translated: '{original_command}' → '{command}'")
                 break
         
+        # Handle cd commands specially - they need to actually change directory
+        if command.strip().lower().startswith('cd '):
+            try:
+                path = command.strip()[3:].strip()
+                # Remove quotes if present
+                path = path.strip('"').strip("'")
+                os.chdir(path)
+                return f"Changed directory to: {os.getcwd()}"
+            except Exception as e:
+                return f"Error changing directory: {str(e)}"
+        
         # Execute command
         if platform.system() == 'Windows':
             if is_powershell:
@@ -148,7 +159,9 @@ def execute_command(command):
                     capture_output=True,
                     text=True,
                     timeout=30,
-                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
+                    encoding='utf-8',
+                    errors='replace'  # Replace invalid Unicode chars
                 )
             else:
                 # Execute via CMD
@@ -158,7 +171,9 @@ def execute_command(command):
                     capture_output=True,
                     text=True,
                     timeout=30,
-                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
+                    encoding='utf-8',
+                    errors='replace'  # Replace invalid Unicode chars
                 )
         else:
             # Unix/Linux/Mac
@@ -167,7 +182,9 @@ def execute_command(command):
                 shell=True,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
+                encoding='utf-8',
+                errors='replace'
             )
         
         # Get output
