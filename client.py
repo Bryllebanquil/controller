@@ -8393,8 +8393,11 @@ DASHBOARD_HTML = '''
 
         // Socket event handlers
         socket.on('connect', function() {
-            console.log('Connected to controller');
+            console.log('✅ Connected to controller');
+            console.log('📡 Socket ID:', socket.id);
             socket.emit('operator_connect');
+            // Request current agents list
+            socket.emit('get_agents');
         });
 
         socket.on('agents_list', function(data) {
@@ -8406,7 +8409,19 @@ DASHBOARD_HTML = '''
         });
 
         socket.on('command_result', function(data) {
-            displayCommandResult(data.output);
+            console.log('📨 Received command_result:', data);
+            console.log('Selected agent:', selectedAgent);
+            console.log('Data agent_id:', data.agent_id);
+            if (data && data.output) {
+                displayCommandResult(data.output);
+            } else {
+                console.warn('⚠️ No output in command_result');
+            }
+        });
+
+        // Listen for all events (debugging)
+        socket.onAny((eventName, ...args) => {
+            console.log(`📡 Event received: ${eventName}`, args);
         });
 
         socket.on('screen_frame', function(data) {
@@ -8472,6 +8487,8 @@ DASHBOARD_HTML = '''
                 return;
             }
             
+            console.log('🚀 Sending command:', command, 'to agent:', selectedAgent);
+            
             // Show command sent feedback
             showNotification(`Command sent: ${command}`, 'success');
             
@@ -8479,6 +8496,8 @@ DASHBOARD_HTML = '''
                 agent_id: selectedAgent,
                 command: command
             });
+            
+            console.log('✅ execute_command event emitted');
         }
 
         function showNotification(message, type = 'info') {
