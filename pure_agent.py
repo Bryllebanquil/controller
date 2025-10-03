@@ -50,7 +50,7 @@ def log(message):
     print(f"[{timestamp}] {message}")
 
 def execute_command(command):
-    """Execute shell command and return output"""
+    """Execute shell command and return output - supports both CMD and PowerShell"""
     try:
         log(f"Executing command: {command}")
         
@@ -68,17 +68,66 @@ def execute_command(command):
             sio.disconnect()
             sys.exit(0)
         
-        # Execute regular shell command
+        # Determine if this is a PowerShell or CMD command
+        powershell_indicators = [
+            'get-', 'set-', 'new-', 'remove-', 'start-', 'stop-', 'test-',
+            'invoke-', 'import-', 'export-', 'select-', 'where-', 'foreach-',
+            '$', '|', 'write-host', 'write-output', '.ps1'
+        ]
+        
+        # Check if command looks like PowerShell
+        command_lower = command.lower()
+        is_powershell = any(indicator in command_lower for indicator in powershell_indicators)
+        
+        # Map common Unix/Linux commands to Windows equivalents
+        command_mappings = {
+            'ls': 'dir',
+            'ls -la': 'dir',
+            'ls -l': 'dir',
+            'pwd': 'cd',
+            'cat': 'type',
+            'rm': 'del',
+            'cp': 'copy',
+            'mv': 'move',
+            'clear': 'cls',
+            'ps': 'tasklist',
+            'kill': 'taskkill /PID',
+            'grep': 'findstr',
+            'which': 'where'
+        }
+        
+        # Auto-translate common Unix commands
+        original_command = command
+        for unix_cmd, windows_cmd in command_mappings.items():
+            if command.strip().startswith(unix_cmd):
+                command = command.replace(unix_cmd, windows_cmd, 1)
+                log(f"Auto-translated: '{original_command}' → '{command}'")
+                break
+        
+        # Execute command
         if platform.system() == 'Windows':
-            result = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=30,
-                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
-            )
+            if is_powershell:
+                # Execute via PowerShell
+                ps_command = ['powershell', '-NoProfile', '-NonInteractive', '-Command', command]
+                result = subprocess.run(
+                    ps_command,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                )
+            else:
+                # Execute via CMD
+                result = subprocess.run(
+                    command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                )
         else:
+            # Unix/Linux/Mac
             result = subprocess.run(
                 command,
                 shell=True,
@@ -87,9 +136,13 @@ def execute_command(command):
                 timeout=30
             )
         
+        # Get output
         output = result.stdout if result.stdout else result.stderr
         if not output:
             output = "Command executed successfully (no output)"
+        
+        # Clean and format output
+        output = clean_output(output)
         
         log(f"Command completed: {len(output)} characters")
         return output
@@ -98,6 +151,42 @@ def execute_command(command):
         return "Error: Command timed out after 30 seconds"
     except Exception as e:
         return f"Error executing command: {str(e)}"
+
+def clean_output(output):
+    """Clean and format command output for better readability"""
+    try:
+        # Remove excessive blank lines (more than 2 consecutive)
+        lines = output.split('\n')
+        cleaned_lines = []
+        blank_count = 0
+        
+        for line in lines:
+            if line.strip():
+                cleaned_lines.append(line)
+                blank_count = 0
+            else:
+                blank_count += 1
+                if blank_count <= 2:  # Keep max 2 blank lines
+                    cleaned_lines.append(line)
+        
+        output = '\n'.join(cleaned_lines)
+        
+        # Remove excessive spaces (more than 2 consecutive spaces)
+        import re
+        output = re.sub(r'  +', '  ', output)
+        
+        # Remove trailing whitespace from each line
+        lines = output.split('\n')
+        output = '\n'.join(line.rstrip() for line in lines)
+        
+        # Remove trailing blank lines
+        output = output.rstrip('\n')
+        
+        return output
+        
+    except Exception as e:
+        log(f"Error cleaning output: {e}")
+        return output
 
 def get_system_info():
     """Get system information - compatible with controller.py format"""
