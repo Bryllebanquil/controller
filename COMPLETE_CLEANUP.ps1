@@ -289,7 +289,7 @@ Restore-Notifications
 # 6) REGISTRY CLEANUP (Persistence & Hijacks)
 # ═══════════════════════════════════════════════════════════════════════════
 
-Log "`n[STEP 6] Cleaning Registry Persistence & Hijacks..."
+Log "`n[STEP 6] Cleaning Registry Persistence and Hijacks..."
 Log "───────────────────────────────────────────────────────────────"
 
 $regKeysToDelete = @(
@@ -582,7 +582,7 @@ if ($PerformCleanup) {
     Write-Host ""
     $restart = Read-Host "Restart computer now? (Y/N)"
     if ($restart -eq 'Y' -or $restart -eq 'y') {
-        Log "Restarting computer..."
+        Log "Restarting computer now..."
         Restart-Computer -Force
     }
 }
