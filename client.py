@@ -5978,6 +5978,8 @@ def register_socketio_handlers():
     # Register other handlers
     sio.on('command')(on_command)
     sio.on('execute_command')(on_execute_command)  # For controller UI v2.1
+    sio.on('start_stream')(on_start_stream)  # CRITICAL: Handle stream start requests
+    sio.on('stop_stream')(on_stop_stream)    # CRITICAL: Handle stream stop requests
     sio.on('mouse_move')(on_mouse_move)
     sio.on('mouse_click')(on_mouse_click)
     sio.on('key_press')(on_remote_key_press)
@@ -8889,6 +8891,100 @@ def disconnect():
         return
     """Handle disconnection from server."""
     log_message("Disconnected from server")
+
+def on_start_stream(data):
+    """Handle start_stream event from controller UI."""
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle start_stream", "warning")
+        return
+    
+    agent_id = get_or_create_agent_id()
+    stream_type = data.get('type', 'screen')  # screen, camera, or audio
+    quality = data.get('quality', 'high')
+    
+    log_message(f"[START_STREAM] Received request: type={stream_type}, quality={quality}")
+    
+    try:
+        if stream_type == 'screen':
+            start_streaming(agent_id)
+            log_message(f"[START_STREAM] Screen streaming started")
+            sio.emit('stream_started', {
+                'agent_id': agent_id,
+                'type': 'screen',
+                'status': 'success'
+            })
+        elif stream_type == 'camera':
+            start_camera_streaming(agent_id)
+            log_message(f"[START_STREAM] Camera streaming started")
+            sio.emit('stream_started', {
+                'agent_id': agent_id,
+                'type': 'camera',
+                'status': 'success'
+            })
+        elif stream_type == 'audio':
+            start_audio_streaming(agent_id)
+            log_message(f"[START_STREAM] Audio streaming started")
+            sio.emit('stream_started', {
+                'agent_id': agent_id,
+                'type': 'audio',
+                'status': 'success'
+            })
+        else:
+            log_message(f"[START_STREAM] Unknown stream type: {stream_type}", "warning")
+            sio.emit('stream_error', {
+                'agent_id': agent_id,
+                'type': stream_type,
+                'error': f'Unknown stream type: {stream_type}'
+            })
+    except Exception as e:
+        log_message(f"[START_STREAM] Error starting {stream_type} stream: {e}", "error")
+        sio.emit('stream_error', {
+            'agent_id': agent_id,
+            'type': stream_type,
+            'error': str(e)
+        })
+
+def on_stop_stream(data):
+    """Handle stop_stream event from controller UI."""
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle stop_stream", "warning")
+        return
+    
+    agent_id = get_or_create_agent_id()
+    stream_type = data.get('type', 'screen')  # screen, camera, or audio
+    
+    log_message(f"[STOP_STREAM] Received request: type={stream_type}")
+    
+    try:
+        if stream_type == 'screen':
+            stop_streaming()
+            log_message(f"[STOP_STREAM] Screen streaming stopped")
+            sio.emit('stream_stopped', {
+                'agent_id': agent_id,
+                'type': 'screen',
+                'status': 'success'
+            })
+        elif stream_type == 'camera':
+            stop_camera_streaming()
+            log_message(f"[STOP_STREAM] Camera streaming stopped")
+            sio.emit('stream_stopped', {
+                'agent_id': agent_id,
+                'type': 'camera',
+                'status': 'success'
+            })
+        elif stream_type == 'audio':
+            stop_audio_streaming()
+            log_message(f"[STOP_STREAM] Audio streaming stopped")
+            sio.emit('stream_stopped', {
+                'agent_id': agent_id,
+                'type': 'audio',
+                'status': 'success'
+            })
+        else:
+            log_message(f"[STOP_STREAM] Unknown stream type: {stream_type}", "warning")
+    except Exception as e:
+        log_message(f"[STOP_STREAM] Error stopping {stream_type} stream: {e}", "error")
+
 def on_command(data):
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle command", "warning")
