@@ -1,9 +1,12 @@
 # Fix eventlet RLock warning - MUST BE FIRST IMPORT BEFORE ANYTHING ELSE
 # This MUST be at the very top to prevent "RLock was not greened" warning
+import os  # Import os FIRST before anything else
+
 try:
     import eventlet
     # Comprehensive monkey patching - fixes RLock issues with Python 3.13+
-    eventlet.monkey_patch(all=True, thread=True, time=True, os=True, socket=True, select=True, ssl=True)
+    # Note: 'ssl' parameter not supported in older eventlet versions, removed
+    eventlet.monkey_patch(all=True, thread=True, time=True, socket=True, select=True)
     EVENTLET_PATCHED = True
 except ImportError:
     # eventlet not installed - will use standard threading
