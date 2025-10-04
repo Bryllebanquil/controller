@@ -1,5 +1,8 @@
 # Fix eventlet RLock warning - MUST BE FIRST IMPORT BEFORE ANYTHING ELSE
 # This MUST be at the very top to prevent "RLock was not greened" warning
+import warnings
+warnings.filterwarnings('ignore', message='.*RLock.*')
+
 import os  # Import os FIRST before anything else
 
 try:
@@ -13,7 +16,7 @@ except ImportError:
     EVENTLET_PATCHED = False
 except Exception as e:
     # Any other error during patching
-    print(f"Warning: eventlet monkey_patch failed: {e}")
+    # print(f"Warning: eventlet monkey_patch failed: {e}")  # Suppressed
     EVENTLET_PATCHED = False
 
 #CREATED BY SPHINX
@@ -6293,13 +6296,16 @@ def execute_command(command):
     """Executes a command and returns its output."""
     try:
         if WINDOWS_AVAILABLE:
-            # Explicitly use PowerShell to execute commands on Windows
+            # Use CMD.exe directly to avoid WSL issues
+            # Full path to avoid WSL interception
             result = subprocess.run(
-                ["powershell.exe", "-NoProfile", "-Command", command],
+                ["C:\\Windows\\System32\\cmd.exe", "/c", command],
                 capture_output=True,
                 text=True,
                 timeout=30,
-                creationflags=subprocess.CREATE_NO_WINDOW
+                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
+                encoding='utf-8',
+                errors='replace'
             )
         else:
             # Use bash on Linux/Unix systems
