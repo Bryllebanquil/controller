@@ -1,0 +1,103 @@
+================================================================================
+           EMERGENCY: YOUR SYSTEM IS LOCKED - UNLOCK NOW!
+================================================================================
+
+PROBLEM:
+  X Task Manager won't open (Ctrl+Shift+Esc doesn't work)
+  X Every admin app asks for password
+  X Registry Editor blocked
+  X Command Prompt blocked
+
+WHY:
+  The agent disabled these tools and changed UAC settings
+
+SOLUTION - DO THIS RIGHT NOW:
+================================================================================
+
+STEP 1: Run EMERGENCY_UNLOCK.bat
+
+  1. Find the file: EMERGENCY_UNLOCK.bat
+  2. Right-click it
+  3. Click "Run as administrator"
+  4. Enter your admin password (LAST TIME!)
+  5. Wait for it to finish
+  6. Press Y to restart
+
+STEP 2: After Restart
+
+  1. Test Task Manager (Ctrl+Shift+Esc) - Should work now!
+  2. Run restore.bat as admin - Removes all agent traces
+  3. Restart again
+  4. Everything is fixed!
+
+================================================================================
+
+IF EMERGENCY_UNLOCK.BAT WON'T RUN:
+
+Option A: Use PowerShell
+  1. Press Windows + X
+  2. Click "Windows PowerShell (Admin)" or "Terminal (Admin)"
+  3. Enter password
+  4. Copy and paste these commands:
+
+reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v "DisableTaskMgr" /f
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v "DisableTaskMgr" /t REG_DWORD /d 0 /f
+reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v "DisableRegistryTools" /f
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v "DisableRegistryTools" /t REG_DWORD /d 0 /f
+reg delete "HKCU\Software\Policies\Microsoft\Windows\System" /v "DisableCMD" /f
+reg add "HKCU\Software\Policies\Microsoft\Windows\System" /v "DisableCMD" /t REG_DWORD /d 0 /f
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v "ConsentPromptBehaviorAdmin" /t REG_DWORD /d 5 /f
+
+  5. Restart: shutdown /r /t 0
+
+Option B: Use Safe Mode
+  1. Hold Shift while clicking Restart
+  2. Troubleshoot → Advanced → Startup Settings → Restart
+  3. Press 4 for Safe Mode
+  4. Run EMERGENCY_UNLOCK.bat in Safe Mode
+  5. Restart normally
+
+================================================================================
+
+WHAT GETS FIXED:
+
+  Task Manager:          DISABLED → ENABLED
+  Registry Editor:       DISABLED → ENABLED
+  Command Prompt:        DISABLED → ENABLED
+  Admin Password:        REQUIRED → NOT REQUIRED
+
+================================================================================
+
+AFTER UNLOCKING:
+
+  1. Task Manager opens instantly (Ctrl+Shift+Esc)
+  2. No password prompts for admin apps
+  3. Full system control restored
+  4. Run restore.bat to clean everything
+
+================================================================================
+
+FILES YOU NEED:
+
+  1. EMERGENCY_UNLOCK.bat       ← RUN THIS FIRST!
+  2. restore.bat                ← Run after unlock to clean everything
+  3. test_restore.bat           ← Verify cleanup
+  4. CRITICAL_UNLOCK_NOW.md     ← Detailed instructions
+
+================================================================================
+
+QUICK RECOVERY:
+
+  1. Run EMERGENCY_UNLOCK.bat as admin
+  2. Restart computer
+  3. Task Manager now works!
+  4. Run restore.bat as admin
+  5. System completely clean!
+
+TIME TO FIX: 5 minutes
+
+================================================================================
+
+RUN EMERGENCY_UNLOCK.BAT NOW TO REGAIN CONTROL!
+
+================================================================================

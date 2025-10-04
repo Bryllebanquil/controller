@@ -1,0 +1,170 @@
+============================================================
+  HOW TO RUN THE COMPLETE CLEANUP SCRIPT
+============================================================
+
+FIXED VERSION: SIMPLE_CLEANUP.ps1
+(No special characters, works in all PowerShell versions)
+
+============================================================
+STEP 1: OPEN POWERSHELL AS ADMINISTRATOR
+============================================================
+
+Method 1 (Windows 10/11):
+  1. Press Win + X
+  2. Click "Windows PowerShell (Admin)"
+  
+Method 2 (Any Windows):
+  1. Press Win + R
+  2. Type: powershell
+  3. Press Ctrl + Shift + Enter
+  
+Method 3 (Search):
+  1. Press Win
+  2. Type: powershell
+  3. Right-click "Windows PowerShell"
+  4. Click "Run as administrator"
+
+============================================================
+STEP 2: NAVIGATE TO SCRIPT LOCATION
+============================================================
+
+cd C:\Users\Brylle
+
+============================================================
+STEP 3: ALLOW SCRIPT EXECUTION
+============================================================
+
+Set-ExecutionPolicy Bypass -Scope Process -Force
+
+============================================================
+STEP 4: DRY-RUN (SEE WHAT IT WOULD DO)
+============================================================
+
+.\SIMPLE_CLEANUP.ps1
+
+This will show you what the script WOULD do without making
+any changes. Review the output carefully.
+
+============================================================
+STEP 5: PERFORM ACTUAL CLEANUP
+============================================================
+
+.\SIMPLE_CLEANUP.ps1 -PerformCleanup
+
+This will ACTUALLY make changes! The script will:
+  [OK] Kill malicious processes
+  [OK] Delete malicious files
+  [OK] Restore UAC (re-enable)
+  [OK] Restore Windows Defender
+  [OK] Restore Notifications
+  [OK] Clean registry
+  [OK] Remove scheduled tasks
+  [OK] Remove services
+  [OK] Remove WMI persistence
+  [OK] Reset firewall
+  [OK] Run SFC and DISM
+  [OK] Start Defender full scan
+
+============================================================
+STEP 6: RESTART YOUR COMPUTER
+============================================================
+
+The script will ask:
+  "Restart computer now? (Y/N)"
+
+Type: Y
+
+OR restart manually:
+  shutdown /r /t 0
+
+============================================================
+STEP 7: VERIFY EVERYTHING IS FIXED
+============================================================
+
+After restart:
+
+1. Check UAC is enabled:
+   - Open PowerShell as admin
+   - Run: Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name EnableLUA
+   - Should show: EnableLUA : 1
+
+2. Check Defender is enabled:
+   - Open Windows Security
+   - Go to Virus & threat protection
+   - Should show: Real-time protection ON
+
+3. Check system tools work:
+   - Press Ctrl + Shift + Esc (Task Manager should open)
+   - Press Win + R, type: regedit (Registry Editor should open)
+   - Press Win + R, type: cmd (Command Prompt should open)
+
+4. Check UAC prompts work:
+   - Right-click Notepad
+   - Click "Run as administrator"
+   - Should show UAC prompt
+
+5. Check notifications work:
+   - Disconnect/reconnect network
+   - Should see network notification
+
+============================================================
+TROUBLESHOOTING
+============================================================
+
+Error: "File cannot be loaded because running scripts is disabled"
+Solution: Run Step 3 again (Set-ExecutionPolicy)
+
+Error: "Access denied"
+Solution: Make sure you are running PowerShell as Administrator
+
+Error: "Path not found"
+Solution: Make sure you are in the correct directory (cd C:\Users\Brylle)
+
+Script hangs on SFC or DISM:
+  - This is normal, they can take 15-30 minutes
+  - Wait for them to complete
+
+============================================================
+LOG FILES LOCATION
+============================================================
+
+All logs are saved to:
+  C:\Users\Brylle\AppData\Local\MalwareCleanup\<timestamp>\
+
+Files:
+  - cleanup.log (main log)
+  - transcript.txt (full PowerShell transcript)
+  - netstat.txt (network connections)
+  - sfc.txt (System File Checker output)
+  - dism.txt (DISM output)
+  - run_keys.txt (registry run keys snapshot)
+  - services.txt (services snapshot)
+  - tasks.txt (scheduled tasks snapshot)
+  - processes.txt (processes snapshot)
+
+============================================================
+WHAT THIS SCRIPT FIXES
+============================================================
+
+[OK] UAC disabled -> ENABLED
+[OK] Defender disabled -> ENABLED
+[OK] Notifications disabled -> ENABLED
+[OK] Task Manager blocked -> UNBLOCKED
+[OK] Registry Editor blocked -> UNBLOCKED
+[OK] Command Prompt blocked -> UNBLOCKED
+[OK] Malicious files -> DELETED
+[OK] Malicious registry keys -> DELETED
+[OK] Malicious scheduled tasks -> DELETED
+[OK] Malicious services -> DELETED
+[OK] WMI persistence -> DELETED
+[OK] Firewall rules -> RESET
+[OK] System files -> REPAIRED (SFC)
+[OK] Windows image -> REPAIRED (DISM)
+
+============================================================
+COMPLETE RESTORATION: 100%
+============================================================
+
+Your system will be fully restored to its original state!
+
+============================================================
