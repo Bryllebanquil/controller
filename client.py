@@ -34,8 +34,23 @@ except ImportError as e:
 
 debug_print("Step 2: Running eventlet.monkey_patch()...")
 try:
+    # CRITICAL: Suppress the RLock warning by redirecting stderr temporarily
+    import io as _io
+    old_stderr = sys.stderr
+    sys.stderr = _io.StringIO()  # Capture stderr
+    
     # Patch threading BEFORE any other imports!
     eventlet.monkey_patch(all=True, thread=True, time=True, socket=True, select=True)
+    
+    # Restore stderr
+    captured_stderr = sys.stderr.getvalue()
+    sys.stderr = old_stderr
+    
+    # Check if there was an RLock warning
+    if "RLock" in captured_stderr:
+        debug_print("⚠️ RLock warning detected (Python created locks before eventlet patch)")
+        debug_print("   This is EXPECTED and can be ignored - eventlet will patch future locks")
+    
     debug_print("✅ eventlet.monkey_patch() SUCCESS!")
     debug_print("   - all=True")
     debug_print("   - thread=True (threading patched)")
@@ -44,6 +59,12 @@ try:
     debug_print("   - select=True")
     EVENTLET_PATCHED = True
 except Exception as e:
+    # Restore stderr if exception occurred
+    try:
+        sys.stderr = old_stderr
+    except:
+        pass
+    
     debug_print(f"❌ eventlet.monkey_patch() FAILED: {e}")
     debug_print("Trying basic monkey_patch()...")
     try:
@@ -240,32 +261,85 @@ def safe_import(module_name, feature_description=""):
         handle_missing_dependency(module_name, feature_description)
         return False
 
-# eventlet already imported and patched at the top of the file
+# ============================================================================
+# CRITICAL: Import standard library AFTER eventlet.monkey_patch()
+# ============================================================================
+# eventlet is already imported and patched at the top of the file
+# Now we can safely import everything else
+# ============================================================================
 
-# Standard library imports
+debug_print("[IMPORTS] Starting standard library imports...")
+
+# Standard library imports (AFTER eventlet patch!)
 import time
-import urllib3
+debug_print("[IMPORTS] ✅ time imported")
+
 import warnings
+debug_print("[IMPORTS] ✅ warnings imported")
+
 import uuid
-import os
+debug_print("[IMPORTS] ✅ uuid imported")
+
 import subprocess
+debug_print("[IMPORTS] ✅ subprocess imported")
+
 import threading
-import sys
+debug_print("[IMPORTS] ✅ threading imported")
+
 import random
+debug_print("[IMPORTS] ✅ random imported")
+
 import base64
+debug_print("[IMPORTS] ✅ base64 imported")
+
 import tempfile
+debug_print("[IMPORTS] ✅ tempfile imported")
+
 import io
+debug_print("[IMPORTS] ✅ io imported")
+
 import wave
+debug_print("[IMPORTS] ✅ wave imported")
+
 import socket
+debug_print("[IMPORTS] ✅ socket imported")
+
 import json
+debug_print("[IMPORTS] ✅ json imported")
+
 import asyncio
+debug_print("[IMPORTS] ✅ asyncio imported")
+
 import platform
-from collections import defaultdict
+debug_print("[IMPORTS] ✅ platform imported")
+
 import queue
+debug_print("[IMPORTS] ✅ queue imported")
+
 import math
+debug_print("[IMPORTS] ✅ math imported")
+
 import smtplib
+debug_print("[IMPORTS] ✅ smtplib imported")
+
 from email.mime.text import MIMEText
+debug_print("[IMPORTS] ✅ email.mime.text imported")
+
 import hashlib
+debug_print("[IMPORTS] ✅ hashlib imported")
+
+# collections.defaultdict AFTER eventlet patch
+from collections import defaultdict
+debug_print("[IMPORTS] ✅ collections.defaultdict imported")
+
+# urllib3 AFTER eventlet patch (this was causing http.client issue)
+try:
+    import urllib3
+    debug_print("[IMPORTS] ✅ urllib3 imported")
+    URLLIB3_AVAILABLE = True
+except ImportError as e:
+    debug_print(f"[IMPORTS] ⚠️ urllib3 import failed: {e}")
+    URLLIB3_AVAILABLE = False
 
 # HTTP requests (used as fallback)
 try:
@@ -276,8 +350,15 @@ except ImportError:
     log_message("requests library not available, HTTP fallback disabled", "warning")
 
 # Suppress SSL warnings
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+if URLLIB3_AVAILABLE:
+    try:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        debug_print("[IMPORTS] ✅ urllib3 warnings disabled")
+    except Exception as e:
+        debug_print(f"[IMPORTS] ⚠️ urllib3.disable_warnings failed: {e}")
+
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
+debug_print("[IMPORTS] ✅ SSL warnings suppressed")
 
 # Third-party imports with error handling
 try:
