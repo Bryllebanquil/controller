@@ -7219,18 +7219,48 @@ def on_file_chunk_from_operator(data):
         elif total_size > 0:
             buffers[destination_path]['total_size'] = total_size
         
-        # Calculate progress
+        # Calculate progress and send to UI
         if total_size > 0:
             progress = int((received_size / total_size) * 100)
             log_message(f"File {filename}: received {received_size}/{total_size} bytes ({progress}%)")
+            
+            # ✅ SEND PROGRESS UPDATE TO UI!
+            sio.emit('file_upload_progress', {
+                'agent_id': get_or_create_agent_id(),
+                'filename': filename,
+                'destination_path': destination_path,
+                'received': received_size,
+                'total': total_size,
+                'progress': progress
+            })
         else:
+            # Even if total_size is 0, send progress based on received bytes
             log_message(f"File {filename}: received {received_size} bytes (waiting for total_size or completion event)")
+            
+            # ✅ SEND PROGRESS UPDATE (unknown total)
+            sio.emit('file_upload_progress', {
+                'agent_id': get_or_create_agent_id(),
+                'filename': filename,
+                'destination_path': destination_path,
+                'received': received_size,
+                'total': 0,  # Unknown total
+                'progress': -1  # -1 indicates unknown progress
+            })
         
         # Only save when we've received all chunks (wait for completion event)
         # Don't auto-save when total_size is 0 - wait for upload_complete event instead
         if total_size > 0 and received_size >= total_size:
             log_message(f"File complete: received {received_size}/{total_size} bytes")
             _save_completed_file(destination_path, buffers[destination_path])
+            
+            # ✅ SEND COMPLETION EVENT TO UI!
+            sio.emit('file_upload_complete', {
+                'agent_id': get_or_create_agent_id(),
+                'filename': filename,
+                'destination_path': destination_path,
+                'size': received_size,
+                'success': True
+            })
             
     except Exception as e:
         log_message(f"Error processing chunk: {e}")
@@ -7274,7 +7304,26 @@ def on_file_upload_complete_from_operator(data):
     if hasattr(on_file_chunk_from_operator, 'buffers'):
         if destination_path in on_file_chunk_from_operator.buffers:
             log_message(f"Force saving file {destination_path} from completion event")
-            _save_completed_file(destination_path, on_file_chunk_from_operator.buffers[destination_path])
+            buffer_data = on_file_chunk_from_operator.buffers[destination_path]
+            _save_completed_file(destination_path, buffer_data)
+            
+            # ✅ SEND FINAL UPLOAD COMPLETION WITH 100% PROGRESS!
+            file_size = sum(len(c[1]) for c in buffer_data['chunks'])
+            sio.emit('file_upload_progress', {
+                'agent_id': get_or_create_agent_id(),
+                'filename': filename,
+                'destination_path': destination_path,
+                'received': file_size,
+                'total': file_size,
+                'progress': 100  # ✅ 100% complete!
+            })
+            sio.emit('file_upload_complete', {
+                'agent_id': get_or_create_agent_id(),
+                'filename': filename,
+                'destination_path': destination_path,
+                'size': file_size,
+                'success': True
+            })
 
 def on_request_file_chunk_from_agent(data):
     """Handle file download request from controller - send file in chunks."""
@@ -7342,6 +7391,10 @@ def on_request_file_chunk_from_agent(data):
         chunk_size = 512 * 1024  # 512KB
         total_size = os.path.getsize(file_path)
         log_message(f"Sending file {file_path} ({total_size} bytes) in chunks...")
+        
+        agent_id = get_or_create_agent_id()
+        filename_only = os.path.basename(file_path)
+        
         with open(file_path, 'rb') as f:
             offset = 0
             chunk_count = 0
@@ -7350,17 +7403,41 @@ def on_request_file_chunk_from_agent(data):
                 if not chunk:
                     break
                 chunk_b64 = 'data:application/octet-stream;base64,' + base64.b64encode(chunk).decode('utf-8')
+                
+                # Send file chunk
                 sio.emit('file_chunk_from_agent', {
-                    'agent_id': get_or_create_agent_id(),
-                    'filename': os.path.basename(file_path),  # Send just the filename
+                    'agent_id': agent_id,
+                    'filename': filename_only,
                     'chunk': chunk_b64,
                     'offset': offset,
                     'total_size': total_size
                 })
+                
                 offset += len(chunk)
                 chunk_count += 1
-                log_message(f"Sent chunk {chunk_count}: {len(chunk)} bytes at offset {offset}")
+                
+                # ✅ Calculate and send download progress
+                progress = int((offset / total_size) * 100)
+                log_message(f"Sent chunk {chunk_count}: {len(chunk)} bytes at offset {offset} ({progress}%)")
+                
+                # ✅ SEND DOWNLOAD PROGRESS UPDATE TO UI!
+                sio.emit('file_download_progress', {
+                    'agent_id': agent_id,
+                    'filename': filename_only,
+                    'sent': offset,
+                    'total': total_size,
+                    'progress': progress
+                })
+        
         log_message(f"File {file_path} sent to controller in {chunk_count} chunks")
+        
+        # ✅ SEND DOWNLOAD COMPLETION EVENT TO UI!
+        sio.emit('file_download_complete', {
+            'agent_id': agent_id,
+            'filename': filename_only,
+            'size': total_size,
+            'success': True
+        })
     except Exception as e:
         log_message(f"Error sending file {file_path}: {e}")
 
