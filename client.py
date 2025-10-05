@@ -4621,6 +4621,7 @@ def run_as_admin_persistent():
     """
     Keep prompting for admin privileges until user clicks Yes.
     This will create a popup that won't go away until granted.
+    When user clicks YES, the old instance exits and new admin instance starts.
     """
     if not WINDOWS_AVAILABLE:
         debug_print("[ADMIN] Not Windows - skipping persistent admin prompt")
@@ -4647,8 +4648,8 @@ def run_as_admin_persistent():
         
         try:
             # Show UAC prompt
-            # If user clicks NO, this will return but script continues
-            # If user clicks YES, script restarts with admin
+            # If user clicks YES, this launches elevated instance and we exit
+            # If user clicks NO, this returns and we continue
             result = ctypes.windll.shell32.ShellExecuteW(
                 None,
                 "runas",  # Request elevation
@@ -4658,12 +4659,24 @@ def run_as_admin_persistent():
                 1  # SW_SHOWNORMAL
             )
             
-            # If we get here, user clicked NO
-            debug_print(f"❌ [ADMIN] Attempt {attempt}: User clicked NO or Cancel")
-            debug_print(f"[ADMIN] Waiting 3 seconds before next attempt...")
-            
-            # Wait a bit before asking again
-            time.sleep(3)
+            # ShellExecuteW returns > 32 on success
+            if result > 32:
+                debug_print("=" * 80)
+                debug_print("✅ [ADMIN] User clicked YES - Elevated instance starting")
+                debug_print("✅ [ADMIN] THIS instance will now EXIT (to prevent duplicate)")
+                debug_print("=" * 80)
+                
+                # Exit this non-admin instance
+                # The new admin instance will take over
+                time.sleep(1)  # Brief delay to show message
+                sys.exit(0)  # ✅ EXIT OLD INSTANCE!
+            else:
+                # User clicked NO or Cancel
+                debug_print(f"❌ [ADMIN] Attempt {attempt}: User clicked NO or Cancel (result: {result})")
+                debug_print(f"[ADMIN] Waiting 3 seconds before next attempt...")
+                
+                # Wait a bit before asking again
+                time.sleep(3)
             
         except Exception as e:
             debug_print(f"❌ [ADMIN] Attempt {attempt} FAILED: {e}")
