@@ -250,18 +250,21 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     // Streaming events
     socketInstance.on('screen_frame', (data: { agent_id: string; frame: string }) => {
+      console.log('📹 SocketProvider: Received screen_frame from agent:', data.agent_id);
       // Handle screen frame updates
       const event = new CustomEvent('screen_frame', { detail: data });
       window.dispatchEvent(event);
     });
 
     socketInstance.on('camera_frame', (data: { agent_id: string; frame: string }) => {
+      console.log('📷 SocketProvider: Received camera_frame from agent:', data.agent_id);
       // Handle camera frame updates
       const event = new CustomEvent('camera_frame', { detail: data });
       window.dispatchEvent(event);
     });
 
     socketInstance.on('audio_frame', (data: { agent_id: string; frame: string }) => {
+      console.log('🎤 SocketProvider: Received audio_frame from agent:', data.agent_id);
       // Handle audio frame updates
       const event = new CustomEvent('audio_frame', { detail: data });
       window.dispatchEvent(event);

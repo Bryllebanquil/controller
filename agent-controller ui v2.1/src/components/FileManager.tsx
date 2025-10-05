@@ -86,6 +86,8 @@ export function FileManager({ agentId }: FileManagerProps) {
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
+  const [transferFileName, setTransferFileName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const filteredFiles = files.filter(file => 
@@ -111,6 +113,9 @@ export function FileManager({ agentId }: FileManagerProps) {
 
   const handleDownload = () => {
     if (selectedFiles.length === 0) return;
+    setDownloadProgress(0);
+    setUploadProgress(null);
+    setTransferFileName(selectedFiles[0]);
     // Request download via socket (first selected file)
     downloadFile(agentId!, selectedFiles[0]);
   };
@@ -119,6 +124,8 @@ export function FileManager({ agentId }: FileManagerProps) {
     const file = e?.target?.files?.[0];
     if (!file || !agentId) return;
     setUploadProgress(0);
+    setDownloadProgress(null);
+    setTransferFileName(file.name);
     uploadFile(agentId, file, currentPath === '/' ? `/${file.name}` : `${currentPath}/${file.name}`);
   };
 
@@ -175,6 +182,69 @@ export function FileManager({ agentId }: FileManagerProps) {
     return () => { socket.off('file_list', handler); };
   }, [socket, agentId]);
 
+  // Listen for upload progress events
+  useEffect(() => {
+    const handleUploadProgress = (event: any) => {
+      const data = event.detail;
+      console.log('📊 FileManager: Upload progress received:', data);
+      if (data && typeof data.progress === 'number' && data.progress >= 0) {
+        setUploadProgress(data.progress);
+        console.log(`📊 FileManager: Setting upload progress to ${data.progress}%`);
+      }
+    };
+
+    const handleUploadComplete = (event: any) => {
+      const data = event.detail;
+      console.log('✅ FileManager: Upload complete received:', data);
+      setUploadProgress(100);
+      setTimeout(() => {
+        setUploadProgress(null);
+        setTransferFileName(null);
+        toast.success(`File uploaded successfully: ${data.filename}`);
+        handleRefresh();
+      }, 1000);
+    };
+
+    window.addEventListener('file_upload_progress', handleUploadProgress);
+    window.addEventListener('file_upload_complete', handleUploadComplete);
+
+    return () => {
+      window.removeEventListener('file_upload_progress', handleUploadProgress);
+      window.removeEventListener('file_upload_complete', handleUploadComplete);
+    };
+  }, []);
+
+  // Listen for download progress events
+  useEffect(() => {
+    const handleDownloadProgress = (event: any) => {
+      const data = event.detail;
+      console.log('📊 FileManager: Download progress received:', data);
+      if (data && typeof data.progress === 'number' && data.progress >= 0) {
+        setDownloadProgress(data.progress);
+        console.log(`📊 FileManager: Setting download progress to ${data.progress}%`);
+      }
+    };
+
+    const handleDownloadComplete = (event: any) => {
+      const data = event.detail;
+      console.log('✅ FileManager: Download complete received:', data);
+      setDownloadProgress(100);
+      setTimeout(() => {
+        setDownloadProgress(null);
+        setTransferFileName(null);
+        toast.success(`File downloaded successfully: ${data.filename}`);
+      }, 1000);
+    };
+
+    window.addEventListener('file_download_progress', handleDownloadProgress);
+    window.addEventListener('file_download_complete', handleDownloadComplete);
+
+    return () => {
+      window.removeEventListener('file_download_progress', handleDownloadProgress);
+      window.removeEventListener('file_download_complete', handleDownloadComplete);
+    };
+  }, []);
+
   return (
     <div className="space-y-6">
       <Card>
@@ -227,14 +297,14 @@ export function FileManager({ agentId }: FileManagerProps) {
                 <Button 
                   size="sm" 
                   onClick={handleDownload}
-                  disabled={selectedFiles.length === 0 || uploadProgress !== null}
+                  disabled={selectedFiles.length === 0 || uploadProgress !== null || downloadProgress !== null}
                 >
                   <Download className="h-3 w-3 mr-1" />
                   Download ({selectedFiles.length})
                 </Button>
                 <label className="inline-flex items-center">
                   <input type="file" className="hidden" onChange={handleUpload} />
-                  <Button size="sm" variant="outline" disabled={uploadProgress !== null} asChild>
+                  <Button size="sm" variant="outline" disabled={uploadProgress !== null || downloadProgress !== null} asChild>
                     <span className="inline-flex items-center"><Upload className="h-3 w-3 mr-1" />Upload</span>
                   </Button>
                 </label>
@@ -249,13 +319,27 @@ export function FileManager({ agentId }: FileManagerProps) {
               </div>
 
               {/* Upload/Download Progress */}
-              {uploadProgress !== null && (
+              {(uploadProgress !== null || downloadProgress !== null) && (
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span>Transfer Progress</span>
-                    <span>{uploadProgress}%</span>
+                    <span className="flex items-center gap-2">
+                      {uploadProgress !== null ? (
+                        <>
+                          <Upload className="h-3 w-3 animate-pulse" />
+                          Uploading {transferFileName || '...'}
+                        </>
+                      ) : (
+                        <>
+                          <Download className="h-3 w-3 animate-pulse" />
+                          Downloading {transferFileName || '...'}
+                        </>
+                      )}
+                    </span>
+                    <span className="font-mono font-semibold">
+                      {uploadProgress !== null ? uploadProgress : downloadProgress}%
+                    </span>
                   </div>
-                  <Progress value={uploadProgress} />
+                  <Progress value={uploadProgress !== null ? uploadProgress : downloadProgress || 0} />
                 </div>
               )}
 

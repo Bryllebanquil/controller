@@ -3482,6 +3482,8 @@ def handle_screen_frame(data):
     frame = data.get('frame')
     if agent_id and frame:
         VIDEO_FRAMES_H264[agent_id] = frame  # Store latest frame for this agent
+        # Forward frame to operators room for real-time streaming
+        emit('screen_frame', data, room='operators')
 
 @socketio.on('request_video_frame')
 def handle_request_video_frame(data):
@@ -3515,6 +3517,8 @@ def handle_camera_frame(data):
     frame = data.get('frame')
     if agent_id and frame:
         CAMERA_FRAMES_H264[agent_id] = frame
+        # Forward frame to operators room for real-time streaming
+        emit('camera_frame', data, room='operators')
 
 @socketio.on('audio_frame')
 def handle_audio_frame(data):
@@ -3522,6 +3526,8 @@ def handle_audio_frame(data):
     frame = data.get('frame')
     if agent_id and frame:
         AUDIO_FRAMES_OPUS[agent_id] = frame
+        # Forward frame to operators room for real-time streaming
+        emit('audio_frame', data, room='operators')
 
 @socketio.on('agent_telemetry')
 def handle_agent_telemetry(data):

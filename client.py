@@ -5068,11 +5068,19 @@ def camera_send_worker(agent_id):
             except queue.Empty:
                 continue
             
-            # Send via socket.io (binary data is automatically detected)
+            # Send via socket.io - encode as base64 data URL for browser display
             try:
+                # If already a data URL string, send as-is
+                if isinstance(encoded_data, str) and encoded_data.startswith('data:'):
+                    frame_data_url = encoded_data
+                else:
+                    # Encode bytes as base64 data URL
+                    frame_b64 = base64.b64encode(encoded_data).decode('utf-8')
+                    frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
+                
                 sio.emit('camera_frame', {
                     'agent_id': agent_id,
-                    'frame': encoded_data
+                    'frame': frame_data_url
                 })
             except Exception as e:
                 log_message(f"Camera send error: {e}")
@@ -5090,11 +5098,8 @@ def stream_camera_h264_socketio(agent_id):
     import queue
     import threading
     
-    if CAMERA_STREAMING_ENABLED:
-        log_message("Camera streaming already active")
-        return
-    
-    CAMERA_STREAMING_ENABLED = True
+    # Don't check CAMERA_STREAMING_ENABLED here - it's already set by start_camera_streaming()
+    # Always start the worker threads when this function is called
     
     # Initialize queues
     camera_capture_queue = queue.Queue(maxsize=CAMERA_CAPTURE_QUEUE_SIZE)
@@ -5280,22 +5285,7 @@ def audio_send_worker(agent_id):
     
     log_message("Audio sending stopped")
 
-def stream_screen_h264_socketio(agent_id):
-    """Modern H.264 screen streaming with SocketIO."""
-    global STREAMING_ENABLED, STREAM_THREADS, capture_queue, encode_queue
-    
-    if not STREAMING_ENABLED:
-        STREAMING_ENABLED = True
-        capture_queue = queue.Queue(maxsize=CAPTURE_QUEUE_SIZE)
-        encode_queue = queue.Queue(maxsize=ENCODE_QUEUE_SIZE)
-        STREAM_THREADS = [
-            threading.Thread(target=screen_capture_worker, args=(agent_id,), daemon=True),
-            threading.Thread(target=screen_encode_worker, args=(agent_id,), daemon=True),
-            threading.Thread(target=screen_send_worker, args=(agent_id,), daemon=True),
-        ]
-        for t in STREAM_THREADS:
-            t.start()
-        log_message(f"Started modern non-blocking video stream at {TARGET_FPS} FPS.")
+# stream_screen_h264_socketio() is defined later after worker functions (line ~11851)
 
 def start_streaming(agent_id):
     global STREAMING_ENABLED, STREAM_THREAD
@@ -6360,14 +6350,7 @@ def switch_to_socketio_streaming(agent_id, stream_type='screen'):
 # ENHANCED STREAMING FUNCTIONS WITH WEBRTC INTEGRATION
 # ========================================================================================
 
-def stream_screen_webrtc_or_socketio(agent_id):
-    """Smart screen streaming that automatically chooses WebRTC or Socket.IO based on availability."""
-    if AIORTC_AVAILABLE and WEBRTC_ENABLED:
-        log_message("Using WebRTC for screen streaming (sub-second latency)")
-        return start_webrtc_screen_streaming(agent_id)
-    else:
-        log_message("Using Socket.IO for screen streaming (fallback mode)")
-        return stream_screen_h264_socketio(agent_id)
+# stream_screen_webrtc_or_socketio is defined later after stream_screen_h264_socketio (line ~11870)
 
 def stream_audio_webrtc_or_socketio(agent_id):
     """Smart audio streaming that automatically chooses WebRTC or Socket.IO based on availability."""
@@ -11846,10 +11829,42 @@ def screen_send_worker(agent_id):
         except queue.Empty:
             continue
         try:
-            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame})
+            # Encode frame as base64 data URL for browser display
+            frame_b64 = base64.b64encode(frame).decode('utf-8')
+            frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
+            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame_data_url})
         except Exception as e:
             log_message(f"SocketIO send error: {e}", "error")
 
+# ✅ NOW DEFINE stream_screen_h264_socketio AFTER worker functions exist
+def stream_screen_h264_socketio(agent_id):
+    """Modern H.264 screen streaming with SocketIO."""
+    global STREAMING_ENABLED, STREAM_THREADS, capture_queue, encode_queue
+    import queue
+    import threading
+    
+    # Don't check STREAMING_ENABLED here - it's already set by start_streaming()
+    # Always start the worker threads when this function is called
+    capture_queue = queue.Queue(maxsize=CAPTURE_QUEUE_SIZE)
+    encode_queue = queue.Queue(maxsize=ENCODE_QUEUE_SIZE)
+    STREAM_THREADS = [
+        threading.Thread(target=screen_capture_worker, args=(agent_id,), daemon=True),
+        threading.Thread(target=screen_encode_worker, args=(agent_id,), daemon=True),
+        threading.Thread(target=screen_send_worker, args=(agent_id,), daemon=True),
+    ]
+    for t in STREAM_THREADS:
+        t.start()
+    log_message(f"Started modern non-blocking video stream at {TARGET_FPS} FPS.")
+
+# ✅ NOW DEFINE stream_screen_webrtc_or_socketio AFTER stream_screen_h264_socketio
+def stream_screen_webrtc_or_socketio(agent_id):
+    """Smart screen streaming that automatically chooses WebRTC or Socket.IO based on availability."""
+    if AIORTC_AVAILABLE and WEBRTC_ENABLED:
+        log_message("Using WebRTC for screen streaming (sub-second latency)")
+        return start_webrtc_screen_streaming(agent_id)
+    else:
+        log_message("Using Socket.IO for screen streaming (fallback mode)")
+        return stream_screen_h264_socketio(agent_id)
 
 # Removed duplicate functions - these are already defined above
 
