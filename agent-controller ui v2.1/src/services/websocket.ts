@@ -199,22 +199,6 @@ class WebSocketClient {
 
     // Activity events
     this.socket.on('activity_update', (data) => this.emit('activity_update', data));
-
-    // CRITICAL: Forward frame events to window custom events for StreamViewer
-    // Screen frames
-    this.socket.on('screen_frame', (data) => {
-      window.dispatchEvent(new CustomEvent('screen_frame', { detail: data }));
-    });
-
-    // Camera frames
-    this.socket.on('camera_frame', (data) => {
-      window.dispatchEvent(new CustomEvent('camera_frame', { detail: data }));
-    });
-
-    // Audio frames
-    this.socket.on('audio_frame', (data) => {
-      window.dispatchEvent(new CustomEvent('audio_frame', { detail: data }));
-    });
   }
 
   // Outgoing Events (to server)
