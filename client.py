@@ -7456,6 +7456,23 @@ def execute_command(command):
     try:
         log_message(f"[CMD] Executing: {command}", "info")
         
+        # Check for incomplete/interactive commands
+        interactive_commands = {
+            'netsh': 'netsh wlan show profile\nnetsh interface show interface\nnetsh advfirewall show allprofiles',
+            'diskpart': 'Use: list disk, list volume (diskpart requires interactive mode)',
+            'wmic': 'wmic process list\nwmic os get caption\nwmic computersystem get model',
+            'powercfg': 'powercfg /list\npowercfg /query\npowercfg /batteryreport',
+            'reg': 'reg query HKLM\\Software\nreg query HKCU\\Software',
+            'sc': 'sc query\nsc queryex type=service state=all'
+        }
+        
+        # If command is just the tool name (no arguments), provide help
+        cmd_lower = command.strip().lower()
+        if cmd_lower in interactive_commands:
+            help_msg = f"ℹ️ '{command}' requires arguments.\n\nSuggested commands:\n{interactive_commands[cmd_lower]}\n\nTip: Type the full command on one line (e.g., 'netsh wlan show profile')"
+            log_message(f"[CMD] Interactive command detected: {command}", "info")
+            return help_msg
+        
         if platform.system() == "Windows":
             # SMART COMMAND DETECTION: Auto-translate Unix commands to Windows equivalents
             cmd_exe_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'cmd.exe')
