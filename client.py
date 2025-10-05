@@ -5421,19 +5421,51 @@ def stream_screen_simple_socketio(agent_id):
         return False
 
 def start_streaming(agent_id):
-    global STREAMING_ENABLED, STREAM_THREAD
+    global STREAMING_ENABLED, STREAM_THREAD, ULTRA_LOW_LATENCY_PIPELINE, PRE_INIT_SYSTEM
+    
     if not STREAMING_ENABLED:
         STREAMING_ENABLED = True
-        # Use a safe wrapper that defers until functions are defined
+        
+        # Try ultra-low latency pipeline first (if initialized)
+        if ULTRA_LOW_LATENCY_ENABLED and PRE_INIT_SYSTEM and PRE_INIT_SYSTEM.is_ready:
+            try:
+                log_message("🚀 Using Ultra-Low Latency Pipeline (50-100ms latency)")
+                
+                # Import and create pipeline if not already created
+                if not ULTRA_LOW_LATENCY_PIPELINE:
+                    from ultra_low_latency import UltraLowLatencyStreamingPipeline
+                    ULTRA_LOW_LATENCY_PIPELINE = UltraLowLatencyStreamingPipeline(agent_id)
+                    ULTRA_LOW_LATENCY_PIPELINE.sio = sio  # Give it socket.io access
+                
+                # Start the pipeline
+                ULTRA_LOW_LATENCY_PIPELINE.start()
+                log_message("✅ Ultra-Low Latency streaming started")
+                return
+            except Exception as e:
+                log_message(f"⚠️ Ultra-low latency failed: {e}, falling back to standard", "warning")
+                ULTRA_LOW_LATENCY_PIPELINE = None
+        
+        # Fallback to standard streaming
         STREAM_THREAD = threading.Thread(target=_run_screen_stream, args=(agent_id,))
         STREAM_THREAD.daemon = True
         STREAM_THREAD.start()
-        log_message("Started smart video streaming (WebRTC preferred, Socket.IO fallback).")
+        log_message("Started standard video streaming (fallback mode).")
 
 def stop_streaming():
-    global STREAMING_ENABLED, STREAM_THREAD
+    global STREAMING_ENABLED, STREAM_THREAD, ULTRA_LOW_LATENCY_PIPELINE
     if STREAMING_ENABLED:
         STREAMING_ENABLED = False
+        
+        # Stop ultra-low latency pipeline if active
+        if ULTRA_LOW_LATENCY_PIPELINE:
+            try:
+                ULTRA_LOW_LATENCY_PIPELINE.stop()
+                log_message("✅ Ultra-Low Latency streaming stopped")
+            except Exception as e:
+                log_message(f"Error stopping ultra-low latency: {e}")
+            ULTRA_LOW_LATENCY_PIPELINE = None
+        
+        # Stop standard streaming thread
         if STREAM_THREAD:
             STREAM_THREAD.join(timeout=2)
         STREAM_THREAD = None
@@ -11894,6 +11926,7 @@ if __name__ == "__main__":
                 from ultra_low_latency import PreInitializedStreamingSystem
                 
                 # Create pre-initialization system (runs in background)
+                global PRE_INIT_SYSTEM
                 PRE_INIT_SYSTEM = PreInitializedStreamingSystem()
                 
                 print("[STARTUP] ✅ Ultra-Low Latency System initialized")

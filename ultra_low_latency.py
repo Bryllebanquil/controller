@@ -422,12 +422,13 @@ class UltraLowLatencyStreamingPipeline:
     def __init__(self, agent_id):
         self.agent_id = agent_id
         self.is_running = False
+        self.sio = None  # Will be set by caller
         
         # Initialize components
         self.pre_init = PreInitializedStreamingSystem()
         self.capture = UltraLowLatencyCapture(self.pre_init)
         self.encoder = OptimizedFrameEncoder(use_hardware=True)
-        self.buffer_pool = self.pre_init.buffer_pool
+        self.buffer_pool = self.pre_init.buffer_pool if self.pre_init.buffer_pool else None
         self.ring_buffer = RingBuffer(maxsize=10)
         self.serializer = BinarySerializer()
         
@@ -435,6 +436,7 @@ class UltraLowLatencyStreamingPipeline:
         self.frame_count = 0
         self.total_latency = 0
         self.avg_latency = 0
+        self.frames_sent = 0
         
         logger.info("🚀 Ultra-Low Latency Pipeline Initialized")
         logger.info(f"   MessagePack: {'✅' if MSGPACK_AVAILABLE else '❌ (using JSON)'}")
@@ -461,6 +463,8 @@ class UltraLowLatencyStreamingPipeline:
     
     def _capture_loop(self):
         """Main capture loop"""
+        import base64
+        
         while self.is_running:
             pipeline_start = time.time()
             
@@ -477,16 +481,33 @@ class UltraLowLatencyStreamingPipeline:
             
             # 3. Serialize with MessagePack (target: <2ms)
             serialize_start = time.time()
-            payload = self.serializer.pack({
+            
+            # For socket.io, we need to send as base64 string in data URL format
+            if isinstance(encoded, (bytes, bytearray)):
+                frame_b64 = base64.b64encode(encoded).decode('utf-8')
+                frame_data = f'data:image/jpeg;base64,{frame_b64}'
+            else:
+                frame_data = encoded
+            
+            payload = {
                 'agent_id': self.agent_id,
-                'frame': encoded,
+                'frame': frame_data,
                 'timestamp': time.time(),
                 'sequence': self.frame_count
-            })
+            }
+            
             serialize_time = (time.time() - serialize_start) * 1000
             
-            # 4. Add to ring buffer
-            self.ring_buffer.push(payload)
+            # 4. Send via socket.io immediately (no ring buffer delay)
+            send_start = time.time()
+            if self.sio and hasattr(self.sio, 'emit'):
+                try:
+                    self.sio.emit('screen_frame', payload)
+                    self.frames_sent += 1
+                except Exception as e:
+                    if self.frame_count % 100 == 0:
+                        logger.error(f"Socket.IO send error: {e}")
+            send_time = (time.time() - send_start) * 1000
             
             # Calculate total pipeline latency
             pipeline_time = (time.time() - pipeline_start) * 1000
@@ -501,8 +522,10 @@ class UltraLowLatencyStreamingPipeline:
                           f"Capture={capture_time:.1f}ms, "
                           f"Encode={encode_time:.1f}ms, "
                           f"Serialize={serialize_time:.1f}ms, "
+                          f"Send={send_time:.1f}ms, "
                           f"Total={pipeline_time:.1f}ms, "
-                          f"Avg={self.avg_latency:.1f}ms")
+                          f"Avg={self.avg_latency:.1f}ms, "
+                          f"Sent={self.frames_sent}")
             
             # Frame pacing
             elapsed = time.time() - pipeline_start
