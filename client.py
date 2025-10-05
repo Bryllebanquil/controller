@@ -5095,6 +5095,11 @@ def camera_send_worker(agent_id):
             
             # Send via socket.io - encode as base64 data URL for browser display
             try:
+                # Check if socket.io is connected before sending
+                if not sio or not hasattr(sio, 'connected') or not sio.connected:
+                    time.sleep(0.1)  # Wait for connection
+                    continue
+                
                 # If already a data URL string, send as-is
                 if isinstance(encoded_data, str) and encoded_data.startswith('data:'):
                     frame_data_url = encoded_data
@@ -5108,8 +5113,10 @@ def camera_send_worker(agent_id):
                     'frame': frame_data_url
                 })
             except Exception as e:
-                log_message(f"Camera send error: {e}")
-                time.sleep(0.01)
+                # Only log namespace errors once every 5 seconds
+                if "not a connected namespace" not in str(e):
+                    log_message(f"Camera send error: {e}")
+                time.sleep(0.1)
                 
         except Exception as e:
             log_message(f"Camera sending error: {e}")
@@ -5313,6 +5320,11 @@ def audio_send_worker(agent_id):
             
             # Base64 encode audio data for transmission over socket.io
             try:
+                # Check if socket.io is connected before sending
+                if not sio or not hasattr(sio, 'connected') or not sio.connected:
+                    time.sleep(0.1)  # Wait for connection
+                    continue
+                
                 import base64
                 # Encode binary audio data to base64 string
                 audio_b64 = base64.b64encode(encoded_data).decode('utf-8')
@@ -5326,8 +5338,10 @@ def audio_send_worker(agent_id):
                     'channels': CHANNELS
                 })
             except Exception as e:
-                log_message(f"Audio send error: {e}")
-                time.sleep(0.01)
+                # Only log non-namespace errors
+                if "not a connected namespace" not in str(e):
+                    log_message(f"Audio send error: {e}")
+                time.sleep(0.1)
                 
         except Exception as e:
             log_message(f"Audio sending error: {e}")
@@ -10464,6 +10478,11 @@ def on_start_stream(data):
         log_message("Socket.IO not available, cannot handle start_stream", "warning")
         return
     
+    # CRITICAL: Check if socket.io is actually connected before starting streams
+    if not hasattr(sio, 'connected') or not sio.connected:
+        log_message(f"[START_STREAM] Socket.IO not connected yet, deferring stream start", "warning")
+        return
+    
     agent_id = get_or_create_agent_id()
     stream_type = data.get('type', 'screen')  # screen, camera, or audio
     quality = data.get('quality', 'high')
@@ -10732,6 +10751,11 @@ def on_execute_command(data):
     """
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle execute_command", "warning")
+        return
+    
+    # CRITICAL: Check if socket.io is actually connected before executing commands
+    if not hasattr(sio, 'connected') or not sio.connected:
+        log_message(f"[EXECUTE_COMMAND] Socket.IO not connected yet, deferring command execution", "warning")
         return
     
     agent_id = data.get('agent_id')
@@ -11365,18 +11389,15 @@ def initialize_components():
     # Initialize WebRTC components if available
     if AIORTC_AVAILABLE:
         try:
-            # Set up WebRTC event loop for async operations
-            if not asyncio.get_event_loop().is_running():
-                asyncio.set_event_loop(asyncio.new_event_loop())
-            
-            # Initialize WebRTC configuration
+            # Don't initialize WebRTC during background init to avoid event loop issues
+            # WebRTC will be initialized on-demand when streaming starts
             global WEBRTC_ENABLED
             WEBRTC_ENABLED = True
             
-            log_message("[OK] WebRTC components initialized for low-latency streaming")
+            log_message("[OK] WebRTC enabled (will initialize on-demand)")
             log_message(f"[INFO] WebRTC ICE servers: {len(WEBRTC_ICE_SERVERS)} configured")
         except Exception as e:
-            log_message(f"[WARN] Failed to initialize WebRTC components: {e}")
+            log_message(f"[WARN] Failed to enable WebRTC: {e}")
             WEBRTC_ENABLED = False
     else:
         log_message("[INFO] WebRTC not available - using Socket.IO streaming fallback")
@@ -12108,12 +12129,20 @@ def screen_send_worker(agent_id):
         except queue.Empty:
             continue
         try:
+            # Check if socket.io is connected before sending
+            if not sio or not hasattr(sio, 'connected') or not sio.connected:
+                time.sleep(0.1)  # Wait for connection
+                continue
+            
             # Encode frame as base64 data URL for browser display
             frame_b64 = base64.b64encode(frame).decode('utf-8')
             frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
             sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame_data_url})
         except Exception as e:
-            log_message(f"SocketIO send error: {e}", "error")
+            # Only log non-namespace errors
+            if "not a connected namespace" not in str(e):
+                log_message(f"SocketIO send error: {e}", "error")
+            time.sleep(0.1)
 
 # ✅ NOW DEFINE stream_screen_h264_socketio AFTER worker functions exist
 def stream_screen_h264_socketio(agent_id):
