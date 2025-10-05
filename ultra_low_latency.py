@@ -80,10 +80,12 @@ class PreInitializedStreamingSystem:
             # 2. Initialize screen capture device
             if MSS_AVAILABLE:
                 logger.info("  ✅ Pre-initializing screen capture...")
-                self.screen_capture = mss.mss()
-                # Capture one dummy frame to warm up the capture pipeline
-                monitor = self.screen_capture.monitors[1]
-                _ = self.screen_capture.grab(monitor)
+                # Don't pre-initialize mss due to eventlet threading conflicts
+                # Just verify it works with a test capture
+                with mss.mss() as sct:
+                    monitor = sct.monitors[1]
+                    _ = sct.grab(monitor)
+                self.screen_capture = True  # Mark as ready
             
             # 3. Initialize camera (but don't open yet to save resources)
             if CV2_AVAILABLE:
@@ -351,19 +353,16 @@ class UltraLowLatencyCapture:
     
     def __init__(self, pre_init_system=None):
         self.pre_init_system = pre_init_system
-        self.capture_device = None
         self.last_frame_time = 0
         self.fps_target = 50
         self.frame_time = 1.0 / self.fps_target
         
-        if pre_init_system and pre_init_system.screen_capture:
-            # Use pre-initialized capture device
-            self.capture_device = pre_init_system.screen_capture
-            logger.info("✅ Using pre-initialized screen capture")
-        elif MSS_AVAILABLE:
-            # Initialize now (slower)
-            self.capture_device = mss.mss()
-            logger.info("⚠️  Screen capture not pre-initialized (startup delay)")
+        # Don't store mss object due to eventlet threading conflicts
+        # We'll create it fresh for each capture in a context manager
+        if MSS_AVAILABLE:
+            logger.info("✅ Screen capture ready (using context manager for thread safety)")
+        else:
+            logger.error("❌ mss library not available!")
     
     def capture_frame(self):
         """
@@ -372,21 +371,23 @@ class UltraLowLatencyCapture:
         Returns:
             tuple: (frame_data, capture_time_ms)
         """
-        if not self.capture_device:
+        if not MSS_AVAILABLE:
             return None, 0
         
         start_time = time.time()
         
         try:
-            # Capture screenshot
-            monitor = self.capture_device.monitors[1]
-            screenshot = self.capture_device.grab(monitor)
-            
-            # Convert to numpy array (zero-copy where possible)
-            if NUMPY_AVAILABLE:
-                frame = np.array(screenshot, copy=False)
-            else:
-                frame = screenshot
+            # Use mss in a context manager to avoid thread-local issues with eventlet
+            with mss.mss() as sct:
+                # Capture screenshot
+                monitor = sct.monitors[1]
+                screenshot = sct.grab(monitor)
+                
+                # Convert to numpy array (zero-copy where possible)
+                if NUMPY_AVAILABLE:
+                    frame = np.array(screenshot, copy=False)
+                else:
+                    frame = screenshot
             
             capture_time = (time.time() - start_time) * 1000  # Convert to ms
             
