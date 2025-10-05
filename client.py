@@ -5332,6 +5332,7 @@ def stream_screen_simple_socketio(agent_id):
                 height = int(height * scale)
             frame_time = 1.0 / max(1, int(TARGET_FPS) if 'TARGET_FPS' in globals() else 15)
             log_message("Started simple Socket.IO screen stream (compat mode).")
+            next_not_connected_log_time = 0.0
             while STREAMING_ENABLED:
                 start_ts = time.time()
                 sct_img = sct.grab(monitor if isinstance(monitor, dict) else monitors[monitor_index])
@@ -5342,11 +5343,24 @@ def stream_screen_simple_socketio(agent_id):
                     img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
                 ok, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 if ok:
-                    try:
-                        b64 = base64.b64encode(encoded.tobytes()).decode('utf-8')
-                        sio.emit('screen_frame', {'agent_id': agent_id, 'frame': f'data:image/jpeg;base64,{b64}'})
-                    except Exception as send_err:
-                        log_message(f"Simple stream send error: {send_err}")
+                    connected = SOCKETIO_AVAILABLE and sio is not None and getattr(sio, 'connected', False)
+                    if not connected:
+                        # Throttle log to avoid spam until socket connects
+                        now = time.time()
+                        if now >= next_not_connected_log_time:
+                            log_message("Socket.IO not connected; deferring screen frames")
+                            next_not_connected_log_time = now + 5.0
+                    else:
+                        try:
+                            b64 = base64.b64encode(encoded.tobytes()).decode('utf-8')
+                            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': f'data:image/jpeg;base64,{b64}'})
+                        except Exception as send_err:
+                            # Silence namespace/connection race errors and retry on next loop
+                            msg = str(send_err)
+                            if "not a connected namespace" in msg or "Connection is closed" in msg:
+                                pass
+                            else:
+                                log_message(f"Simple stream send error: {send_err}")
                 # FPS pacing
                 elapsed = time.time() - start_ts
                 sleep_for = frame_time - elapsed
