@@ -5068,11 +5068,19 @@ def camera_send_worker(agent_id):
             except queue.Empty:
                 continue
             
-            # Send via socket.io (binary data is automatically detected)
+            # Send via socket.io - encode as base64 data URL for browser display
             try:
+                # If already a data URL string, send as-is
+                if isinstance(encoded_data, str) and encoded_data.startswith('data:'):
+                    frame_data_url = encoded_data
+                else:
+                    # Encode bytes as base64 data URL
+                    frame_b64 = base64.b64encode(encoded_data).decode('utf-8')
+                    frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
+                
                 sio.emit('camera_frame', {
                     'agent_id': agent_id,
-                    'frame': encoded_data
+                    'frame': frame_data_url
                 })
             except Exception as e:
                 log_message(f"Camera send error: {e}")
@@ -11846,7 +11854,10 @@ def screen_send_worker(agent_id):
         except queue.Empty:
             continue
         try:
-            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame})
+            # Encode frame as base64 data URL for browser display
+            frame_b64 = base64.b64encode(frame).decode('utf-8')
+            frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
+            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame_data_url})
         except Exception as e:
             log_message(f"SocketIO send error: {e}", "error")
 

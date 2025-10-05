@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useSocket } from './SocketProvider';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -13,9 +14,11 @@ import {
   Settings,
   Monitor,
   Camera,
-  Mic
+  Mic,
+  AlertCircle
 } from 'lucide-react';
 import { cn } from './ui/utils';
+import { toast } from 'sonner';
 
 interface StreamViewerProps {
   agentId: string | null;
@@ -24,10 +27,21 @@ interface StreamViewerProps {
 }
 
 export function StreamViewer({ agentId, type, title }: StreamViewerProps) {
+  const { sendCommand, socket } = useSocket();
   const [isStreaming, setIsStreaming] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [quality, setQuality] = useState('high');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [frameCount, setFrameCount] = useState(0);
+  const [lastFrameTime, setLastFrameTime] = useState<number>(0);
+  const [fps, setFps] = useState(0);
+  const [bandwidth, setBandwidth] = useState(0);
+  const [hasError, setHasError] = useState(false);
+  
+  const imgRef = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fpsIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const frameCountRef = useRef(0);
 
   const getStreamIcon = () => {
     switch (type) {
@@ -40,13 +54,165 @@ export function StreamViewer({ agentId, type, title }: StreamViewerProps) {
 
   const StreamIcon = getStreamIcon();
 
+  // Calculate FPS every second
+  useEffect(() => {
+    if (isStreaming) {
+      fpsIntervalRef.current = setInterval(() => {
+        setFps(frameCountRef.current);
+        frameCountRef.current = 0;
+      }, 1000);
+    } else {
+      if (fpsIntervalRef.current) {
+        clearInterval(fpsIntervalRef.current);
+        fpsIntervalRef.current = null;
+      }
+      setFps(0);
+      frameCountRef.current = 0;
+    }
+
+    return () => {
+      if (fpsIntervalRef.current) {
+        clearInterval(fpsIntervalRef.current);
+      }
+    };
+  }, [isStreaming]);
+
+  // Listen for frame events
+  useEffect(() => {
+    if (!isStreaming || !agentId) return;
+
+    const eventName = type === 'screen' ? 'screen_frame' : type === 'camera' ? 'camera_frame' : 'audio_frame';
+
+    const handleFrame = (event: any) => {
+      const data = event.detail;
+      
+      // Check if frame is for this agent
+      if (data.agent_id !== agentId) return;
+
+      setHasError(false);
+      
+      try {
+        const frame = data.frame;
+        
+        if (type === 'audio') {
+          // Audio handling (placeholder for now)
+          console.log('Audio frame received');
+        } else {
+          // Video frame handling
+          if (imgRef.current) {
+            // If frame is already a data URL, use it directly
+            if (typeof frame === 'string' && frame.startsWith('data:')) {
+              imgRef.current.src = frame;
+            } else {
+              // Otherwise, assume it's base64 encoded
+              imgRef.current.src = `data:image/jpeg;base64,${frame}`;
+            }
+            
+            // Update frame counter and stats
+            frameCountRef.current++;
+            setFrameCount(prev => prev + 1);
+            
+            const now = Date.now();
+            if (lastFrameTime > 0) {
+              const timeDiff = now - lastFrameTime;
+              if (timeDiff > 0) {
+                const currentFps = 1000 / timeDiff;
+                // Estimate bandwidth (assuming JPEG frame ~50KB average)
+                setBandwidth(Math.round((currentFps * 50) / 1024)); // MB/s
+              }
+            }
+            setLastFrameTime(now);
+          }
+        }
+      } catch (error) {
+        console.error(`Error displaying ${type} frame:`, error);
+        setHasError(true);
+      }
+    };
+
+    window.addEventListener(eventName, handleFrame);
+
+    return () => {
+      window.removeEventListener(eventName, handleFrame);
+    };
+  }, [isStreaming, agentId, type, lastFrameTime]);
+
   const handleStartStop = () => {
-    setIsStreaming(!isStreaming);
+    if (!agentId) {
+      toast.error('Please select an agent first');
+      return;
+    }
+
+    if (isStreaming) {
+      // Stop streaming
+      let command = '';
+      switch (type) {
+        case 'screen':
+          command = 'stop-stream';
+          break;
+        case 'camera':
+          command = 'stop-camera';
+          break;
+        case 'audio':
+          command = 'stop-audio';
+          break;
+      }
+      
+      sendCommand(agentId, command);
+      setIsStreaming(false);
+      setFrameCount(0);
+      setFps(0);
+      setBandwidth(0);
+      setHasError(false);
+      
+      if (imgRef.current) {
+        imgRef.current.src = '';
+      }
+      
+      toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} stream stopped`);
+    } else {
+      // Start streaming
+      let command = '';
+      switch (type) {
+        case 'screen':
+          command = 'start-stream';
+          break;
+        case 'camera':
+          command = 'start-camera';
+          break;
+        case 'audio':
+          command = 'start-audio';
+          break;
+      }
+      
+      sendCommand(agentId, command);
+      setIsStreaming(true);
+      setHasError(false);
+      toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} stream started`);
+    }
   };
 
   const handleQualityChange = (newQuality: string) => {
     setQuality(newQuality);
+    toast.info(`Quality set to ${newQuality}`);
   };
+
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen);
+  };
+
+  // Reset streaming state when agent changes
+  useEffect(() => {
+    if (isStreaming) {
+      setIsStreaming(false);
+      setFrameCount(0);
+      setFps(0);
+      setBandwidth(0);
+      if (imgRef.current) {
+        imgRef.current.src = '';
+      }
+    }
+  }, [agentId]);
 
   return (
     <Card className={cn("transition-all", isFullscreen && "fixed inset-4 z-50")}>
@@ -75,7 +241,7 @@ export function StreamViewer({ agentId, type, title }: StreamViewerProps) {
               </SelectContent>
             </Select>
             
-            <Button variant="ghost" size="sm" onClick={() => setIsFullscreen(!isFullscreen)}>
+            <Button variant="ghost" size="sm" onClick={toggleFullscreen}>
               <Maximize2 className="h-4 w-4" />
             </Button>
           </div>
@@ -115,12 +281,18 @@ export function StreamViewer({ agentId, type, title }: StreamViewerProps) {
           </div>
           
           <div className="flex items-center space-x-2 text-xs text-muted-foreground">
-            {isStreaming && (
+            {isStreaming && !hasError && (
               <>
-                <Badge variant="secondary">30 FPS</Badge>
-                <Badge variant="secondary">2.1 MB/s</Badge>
-                <Badge variant="secondary">12ms</Badge>
+                <Badge variant="secondary">{fps} FPS</Badge>
+                <Badge variant="secondary">{bandwidth.toFixed(1)} MB/s</Badge>
+                <Badge variant="secondary">{frameCount} frames</Badge>
               </>
+            )}
+            {hasError && (
+              <Badge variant="destructive" className="text-xs">
+                <AlertCircle className="h-3 w-3 mr-1" />
+                Error
+              </Badge>
             )}
           </div>
         </div>
@@ -139,22 +311,51 @@ export function StreamViewer({ agentId, type, title }: StreamViewerProps) {
               <p className="text-sm">Stream not active</p>
               <p className="text-xs mt-1">Click Start to begin streaming</p>
             </div>
-          ) : (
-            <div className="w-full h-full bg-gradient-to-br from-blue-900 to-purple-900 flex items-center justify-center">
+          ) : hasError ? (
+            <div className="text-center text-red-400">
+              <AlertCircle className="h-12 w-12 mx-auto mb-2" />
+              <p className="text-sm">Stream Error</p>
+              <p className="text-xs mt-1">No frames received</p>
+            </div>
+          ) : type === 'audio' ? (
+            <div className="w-full h-full bg-gradient-to-br from-purple-900 to-pink-900 flex items-center justify-center">
               <div className="text-white text-center">
-                <StreamIcon className="h-16 w-16 mx-auto mb-4 animate-pulse" />
-                <p className="text-lg font-medium">Live Stream</p>
+                <Mic className="h-16 w-16 mx-auto mb-4 animate-pulse" />
+                <p className="text-lg font-medium">Audio Stream Active</p>
                 <p className="text-sm opacity-80">Agent: {agentId.substring(0, 8)}</p>
-                <div className="mt-4 flex justify-center space-x-2">
-                  <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                  <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-                  <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                <div className="mt-4 flex justify-center space-x-1">
+                  {[...Array(10)].map((_, i) => (
+                    <div 
+                      key={i}
+                      className="w-1 bg-green-500 rounded-full animate-pulse"
+                      style={{ 
+                        height: `${Math.random() * 40 + 20}px`,
+                        animationDelay: `${i * 0.1}s`
+                      }}
+                    />
+                  ))}
                 </div>
               </div>
             </div>
+          ) : (
+            <>
+              <img 
+                ref={imgRef}
+                alt={`${type} stream`}
+                className="w-full h-full object-contain"
+                style={{ display: frameCount > 0 ? 'block' : 'none' }}
+              />
+              {frameCount === 0 && (
+                <div className="text-center text-muted-foreground">
+                  <StreamIcon className="h-12 w-12 mx-auto mb-2 animate-pulse" />
+                  <p className="text-sm">Waiting for frames...</p>
+                  <p className="text-xs mt-1">Connecting to agent</p>
+                </div>
+              )}
+            </>
           )}
           
-          {isStreaming && (
+          {isStreaming && frameCount > 0 && !hasError && (
             <div className="absolute top-2 left-2 flex items-center space-x-2">
               <div className="flex items-center space-x-1 bg-black/70 text-white px-2 py-1 rounded text-xs">
                 <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
@@ -163,15 +364,18 @@ export function StreamViewer({ agentId, type, title }: StreamViewerProps) {
               <div className="bg-black/70 text-white px-2 py-1 rounded text-xs">
                 {quality.toUpperCase()}
               </div>
+              <div className="bg-black/70 text-white px-2 py-1 rounded text-xs">
+                {fps} FPS
+              </div>
             </div>
           )}
         </div>
         
-        {isStreaming && (
+        {isStreaming && frameCount > 0 && !hasError && (
           <div className="mt-4 text-xs text-muted-foreground">
             <div className="flex justify-between items-center">
-              <span>Connection Quality: Excellent</span>
-              <span>Latency: 12ms</span>
+              <span>Status: Active • Frames: {frameCount}</span>
+              <span>Bandwidth: {bandwidth.toFixed(1)} MB/s</span>
             </div>
           </div>
         )}
