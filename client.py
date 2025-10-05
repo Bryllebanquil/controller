@@ -5285,11 +5285,7 @@ def audio_send_worker(agent_id):
     
     log_message("Audio sending stopped")
 
-def stream_screen_h264_socketio(agent_id):
-    """Modern H.264 screen streaming with SocketIO - moved to later in file after worker functions are defined."""
-    # This function is now defined after the worker functions (line ~11860)
-    # Placeholder to prevent errors - actual implementation is below
-    pass
+# stream_screen_h264_socketio() is defined later after worker functions (line ~11851)
 
 def start_streaming(agent_id):
     global STREAMING_ENABLED, STREAM_THREAD
