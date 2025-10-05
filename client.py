@@ -5318,9 +5318,14 @@ def stream_screen_simple_socketio(agent_id):
         with mss.mss() as sct:
             monitors = sct.monitors
             monitor_index = 1 if len(monitors) > 1 else 0
+            monitor = monitors[monitor_index]
             # Derive initial dimensions and apply downscale cap similar to worker path
-            width = monitors[monitor_index][2] - monitors[monitor_index][0]
-            height = monitors[monitor_index][3] - monitors[monitor_index][1]
+            width = int(monitor.get('width', 0) or (monitor['right'] - monitor['left'])) if isinstance(monitor, dict) else (
+                monitor[2] - monitor[0]
+            )
+            height = int(monitor.get('height', 0) or (monitor['bottom'] - monitor['top'])) if isinstance(monitor, dict) else (
+                monitor[3] - monitor[1]
+            )
             if width > 1280:
                 scale = 1280 / width
                 width = int(width * scale)
@@ -5329,7 +5334,7 @@ def stream_screen_simple_socketio(agent_id):
             log_message("Started simple Socket.IO screen stream (compat mode).")
             while STREAMING_ENABLED:
                 start_ts = time.time()
-                sct_img = sct.grab(monitors[monitor_index])
+                sct_img = sct.grab(monitor if isinstance(monitor, dict) else monitors[monitor_index])
                 img = np.array(sct_img)
                 if img.shape[1] != width or img.shape[0] != height:
                     img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
@@ -11838,9 +11843,16 @@ def screen_capture_worker(agent_id):
         return
     with mss.mss() as sct:
         monitors = sct.monitors
-        monitor_index = 1
-        width = monitors[monitor_index][2] - monitors[monitor_index][0]
-        height = monitors[monitor_index][3] - monitors[monitor_index][1]
+        monitor_index = 1 if len(monitors) > 1 else 0
+        monitor = monitors[monitor_index]
+        # mss returns monitor dicts with left/top/right/bottom; newer may include width/height
+        if isinstance(monitor, dict):
+            width = int(monitor.get('width', (monitor['right'] - monitor['left'])))
+            height = int(monitor.get('height', (monitor['bottom'] - monitor['top'])))
+        else:
+            # fallback tuple-style indexing
+            width = monitor[2] - monitor[0]
+            height = monitor[3] - monitor[1]
         if width > 1280:
             scale = 1280 / width
             width = int(width * scale)
@@ -11848,7 +11860,7 @@ def screen_capture_worker(agent_id):
         frame_time = 1.0 / TARGET_FPS
         while STREAMING_ENABLED:
             start = time.time()
-            sct_img = sct.grab(monitors[monitor_index])
+            sct_img = sct.grab(monitor if isinstance(monitor, dict) else monitors[monitor_index])
             img = np.array(sct_img)
             if img.shape[1] != width or img.shape[0] != height:
                 img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
