@@ -4936,27 +4936,8 @@ def stream_screen(agent_id):
     Uses modern socket.io binary streaming.
     """
     log_message("Starting H.264 screen streaming...")
-    # Prefer smart selection (WebRTC preferred, Socket.IO fallback)
-    try:
-        return stream_screen_webrtc_or_socketio(agent_id)
-    except NameError:
-        # In very early startup, the smart selector may not be defined yet
-        # Fall back to direct H.264 Socket.IO streaming once available
-        try:
-            return stream_screen_h264_socketio(agent_id)
-        except NameError:
-            # Defer a bit and retry to avoid NameError during module initialization
-            start_deadline = time.time() + 5
-            while time.time() < start_deadline:
-                try:
-                    return stream_screen_webrtc_or_socketio(agent_id)
-                except NameError:
-                    try:
-                        return stream_screen_h264_socketio(agent_id)
-                    except NameError:
-                        time.sleep(0.02)
-            log_message("Screen streaming functions not ready; aborting start", "error")
-            return False
+    # Route through a compatibility-safe runner that doesn't depend on definition order
+    return _run_screen_stream(agent_id)
 
 # JPEG fallback screen streaming removed - now using H.264 socket.io binary streaming
 
@@ -5308,22 +5289,68 @@ def audio_send_worker(agent_id):
 # stream_screen_h264_socketio() is defined later after worker functions (line ~11851)
 
 def _run_screen_stream(agent_id):
-    """Thread target that waits for streaming functions to be defined before starting.
-    Avoids NameError if commands arrive while the module is still initializing.
+    """Thread target for screen streaming with robust fallbacks.
+    Tries WebRTC-or-socket chooser if available; otherwise runs a simple Socket.IO stream.
     """
-    start_deadline = time.time() + 5
-    while True:
-        try:
-            return stream_screen_webrtc_or_socketio(agent_id)
-        except NameError:
-            # Try direct Socket.IO fallback name while waiting
-            try:
-                return stream_screen_h264_socketio(agent_id)
-            except NameError:
-                if time.time() > start_deadline:
-                    log_message("Screen streaming functions not ready; aborting start", "error")
-                    return False
-                time.sleep(0.02)
+    chooser = globals().get("stream_screen_webrtc_or_socketio")
+    h264_socket = globals().get("stream_screen_h264_socketio")
+    if callable(chooser):
+        return chooser(agent_id)
+    if callable(h264_socket):
+        return h264_socket(agent_id)
+    # Final fallback that works even during early initialization
+    log_message("Using simple Socket.IO screen stream (compat mode)")
+    return stream_screen_simple_socketio(agent_id)
+
+def stream_screen_simple_socketio(agent_id):
+    """Compatibility fallback: single-threaded JPEG-over-Socket.IO screen stream.
+    Used when modern streaming functions are not yet defined during startup.
+    """
+    global STREAMING_ENABLED
+    if not MSS_AVAILABLE or not NUMPY_AVAILABLE or not CV2_AVAILABLE:
+        log_message("Required modules not available for simple screen capture", "error")
+        return False
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available for simple screen streaming", "error")
+        return False
+    try:
+        import mss
+        with mss.mss() as sct:
+            monitors = sct.monitors
+            monitor_index = 1 if len(monitors) > 1 else 0
+            # Derive initial dimensions and apply downscale cap similar to worker path
+            width = monitors[monitor_index][2] - monitors[monitor_index][0]
+            height = monitors[monitor_index][3] - monitors[monitor_index][1]
+            if width > 1280:
+                scale = 1280 / width
+                width = int(width * scale)
+                height = int(height * scale)
+            frame_time = 1.0 / max(1, int(TARGET_FPS) if 'TARGET_FPS' in globals() else 15)
+            log_message("Started simple Socket.IO screen stream (compat mode).")
+            while STREAMING_ENABLED:
+                start_ts = time.time()
+                sct_img = sct.grab(monitors[monitor_index])
+                img = np.array(sct_img)
+                if img.shape[1] != width or img.shape[0] != height:
+                    img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
+                if img.shape[2] == 4:
+                    img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+                ok, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                if ok:
+                    try:
+                        b64 = base64.b64encode(encoded.tobytes()).decode('utf-8')
+                        sio.emit('screen_frame', {'agent_id': agent_id, 'frame': f'data:image/jpeg;base64,{b64}'})
+                    except Exception as send_err:
+                        log_message(f"Simple stream send error: {send_err}")
+                # FPS pacing
+                elapsed = time.time() - start_ts
+                sleep_for = frame_time - elapsed
+                if sleep_for > 0:
+                    time.sleep(sleep_for)
+            return True
+    except Exception as e:
+        log_message(f"Simple screen streaming error: {e}", "error")
+        return False
 
 def start_streaming(agent_id):
     global STREAMING_ENABLED, STREAM_THREAD
