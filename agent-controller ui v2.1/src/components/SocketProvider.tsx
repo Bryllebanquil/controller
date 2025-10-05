@@ -267,9 +267,98 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       window.dispatchEvent(event);
     });
 
-    // File transfer events
+    // File transfer events - Download chunks
+    const downloadBuffers: Record<string, { chunks: Uint8Array[], totalSize: number }> = {};
+    
     socketInstance.on('file_download_chunk', (data: any) => {
+      console.log('📥 Received file_download_chunk:', data);
+      
+      if (data.error) {
+        console.error(`Download error: ${data.error}`);
+        addCommandOutput(`Download failed: ${data.error}`);
+        delete downloadBuffers[data.filename];
+        return;
+      }
+      
+      // Initialize buffer for this file
+      if (!downloadBuffers[data.filename]) {
+        downloadBuffers[data.filename] = { chunks: [], totalSize: data.total_size };
+        console.log(`📥 Starting download: ${data.filename} (${data.total_size} bytes)`);
+        addCommandOutput(`📥 Downloading: ${data.filename} (${data.total_size} bytes)`);
+      }
+      
+      // Decode base64 chunk
+      const base64Data = data.chunk.split(',')[1]; // Remove "data:..." prefix
+      const binaryString = atob(base64Data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      downloadBuffers[data.filename].chunks.push(bytes);
+      
+      // Calculate progress
+      const receivedSize = downloadBuffers[data.filename].chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+      const progress = Math.round((receivedSize / data.total_size) * 100);
+      console.log(`📊 Download progress: ${data.filename} - ${progress}%`);
+      
+      // Check if download is complete
+      if (receivedSize >= data.total_size) {
+        console.log(`✅ Download complete: ${data.filename}`);
+        
+        // Combine all chunks into one Uint8Array
+        const totalLength = downloadBuffers[data.filename].chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const combinedArray = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of downloadBuffers[data.filename].chunks) {
+          combinedArray.set(chunk, offset);
+          offset += chunk.length;
+        }
+        
+        // Create Blob and trigger download
+        const blob = new Blob([combinedArray]);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = data.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        // Clean up
+        delete downloadBuffers[data.filename];
+        addCommandOutput(`✅ Downloaded: ${data.filename} (${totalLength} bytes)`);
+      }
+      
+      // Also dispatch custom event for FileManager component
       const event = new CustomEvent('file_download_chunk', { detail: data });
+      window.dispatchEvent(event);
+    });
+    
+    // Upload progress events
+    socketInstance.on('file_upload_progress', (data: any) => {
+      console.log(`📊 Upload progress: ${data.filename} - ${data.progress}%`);
+      const event = new CustomEvent('file_upload_progress', { detail: data });
+      window.dispatchEvent(event);
+    });
+    
+    socketInstance.on('file_upload_complete', (data: any) => {
+      console.log(`✅ Upload complete: ${data.filename} (${data.size} bytes)`);
+      addCommandOutput(`✅ Uploaded: ${data.filename} (${data.size} bytes)`);
+      const event = new CustomEvent('file_upload_complete', { detail: data });
+      window.dispatchEvent(event);
+    });
+    
+    // Download progress events
+    socketInstance.on('file_download_progress', (data: any) => {
+      console.log(`📊 Download progress: ${data.filename} - ${data.progress}%`);
+      const event = new CustomEvent('file_download_progress', { detail: data });
+      window.dispatchEvent(event);
+    });
+    
+    socketInstance.on('file_download_complete', (data: any) => {
+      console.log(`✅ Download complete: ${data.filename} (${data.size} bytes)`);
+      const event = new CustomEvent('file_download_complete', { detail: data });
       window.dispatchEvent(event);
     });
 
@@ -381,27 +470,32 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         const chunkSize = 1024 * 512; // 512KB chunks
         const chunks = Math.ceil(base64Data.length / chunkSize);
         
+        console.log(`📤 Uploading ${file.name} (${file.size} bytes) in ${chunks} chunks`);
+        
         for (let i = 0; i < chunks; i++) {
           const start = i * chunkSize;
           const end = start + chunkSize;
           const chunk = base64Data.slice(start, end);
           
+          // ✅ Use event name that deployed controller expects
           socket.emit('upload_file_chunk', {
             agent_id: agentId,
             filename: file.name,
-            data: chunk,
+            data: chunk,  // Controller expects 'data' field
             offset: start,
+            total_size: file.size,  // ✅ FIXED: Send actual file size!
             destination_path: destinationPath
           });
         }
         
+        // ✅ Use event name that deployed controller expects
         socket.emit('upload_file_end', {
           agent_id: agentId,
           filename: file.name,
           destination_path: destinationPath
         });
         
-        addCommandOutput(`Uploading ${file.name} to ${agentId}:${destinationPath}`);
+        addCommandOutput(`Uploading ${file.name} (${file.size} bytes) to ${agentId}:${destinationPath}`);
       };
       reader.readAsDataURL(file);
     }

