@@ -9987,6 +9987,7 @@ DASHBOARD_HTML = '''
 
         socket.on('screen_frame', function(data) {
             if (data.agent_id === selectedAgent && streamType === 'screen') {
+                // data.frame is raw bytes from server, base64 encode for img tag
                 updateStream(data.frame);
             }
         });
@@ -10039,6 +10040,7 @@ DASHBOARD_HTML = '''
 
         function updateStream(frameData) {
             const streamViewer = document.getElementById('stream-viewer');
+            // If server forwards raw bytes as base64 string, just set src
             streamViewer.innerHTML = `<img src="data:image/jpeg;base64,${frameData}" alt="Agent Stream">`;
         }
 
@@ -12020,11 +12022,9 @@ def screen_send_worker(agent_id):
                 # Drop silently until connected to prevent backpressure
                 time.sleep(0.05)
                 continue
-            # Encode frame as base64 data URL for browser display
-            frame_b64 = base64.b64encode(frame).decode('utf-8')
-            frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
+            # Send raw JPEG bytes to server; controller will forward to UI
             namespace = '/video' if hasattr(sio, 'namespaces') and '/video' in getattr(sio, 'namespaces', []) else None
-            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame_data_url}, namespace=namespace, compress=True)
+            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame}, namespace=namespace, compress=True)
         except Exception as e:
             log_message(f"SocketIO send error: {e}", "error")
 
