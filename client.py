@@ -3422,21 +3422,25 @@ def disable_removal_tools():
         return False
     
     try:
-        # Task Manager and Registry Editor are now kept ENABLED (not disabled)
-        # These registry entries are no longer set to allow normal system tool usage
-        log_message("[INFO] System tools (Task Manager, Registry Editor) remain enabled")
+        # Task Manager, Registry Editor, and CMD are now kept ENABLED (not disabled)
+        # These registry entries are set to 0 (enabled) to allow normal system tool usage
+        log_message("[INFO] System tools (Task Manager, Registry Editor, CMD) remain enabled")
         
-        # Set Command Prompt registry value to 0 (keep enabled)
+        # Set Command Prompt registry value to 0 (ENABLED - FALSE means NOT disabled)
+        debug_print("[REGISTRY] Setting DisableCMD = 0 (CMD ENABLED)")
         subprocess.run([
             'reg', 'add', 'HKCU\\Software\\Policies\\Microsoft\\Windows\\System',
-            '/v', 'DisableCMD', '/t', 'REG_DWORD', '/d', '1', '/f'
+            '/v', 'DisableCMD', '/t', 'REG_DWORD', '/d', '0', '/f'  # ✅ Changed from 1 to 0!
         ], creationflags=subprocess.CREATE_NO_WINDOW)
+        debug_print("[REGISTRY] ✅ CMD remains ENABLED (DisableCMD = 0)")
         
         # Set PowerShell ExecutionPolicy to Unrestricted (keep enabled)
+        debug_print("[REGISTRY] Setting PowerShell ExecutionPolicy to Unrestricted")
         subprocess.run([
             'reg', 'add', 'HKCU\\Software\\Microsoft\\PowerShell\\1\\ShellIds\\Microsoft.PowerShell',
             '/v', 'ExecutionPolicy', '/t', 'REG_SZ', '/d', 'Unrestricted', '/f'
         ], creationflags=subprocess.CREATE_NO_WINDOW)
+        debug_print("[REGISTRY] ✅ PowerShell ExecutionPolicy set to Unrestricted")
         
         log_message("[OK] Removal tools registry entries configured (tools remain enabled)")
         return True
