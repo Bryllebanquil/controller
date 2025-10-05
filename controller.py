@@ -3441,6 +3441,30 @@ def handle_file_chunk_from_agent(data):
             'total_size': total_size
         }, room='operators')
 
+@socketio.on('file_upload_progress')
+def handle_file_upload_progress(data):
+    """Forward file upload progress from agent to UI"""
+    print(f"📊 Upload progress: {data.get('filename')} - {data.get('progress')}%")
+    emit('file_upload_progress', data, room='operators')
+
+@socketio.on('file_upload_complete')
+def handle_file_upload_complete(data):
+    """Forward file upload completion from agent to UI"""
+    print(f"✅ Upload complete: {data.get('filename')} ({data.get('size')} bytes)")
+    emit('file_upload_complete', data, room='operators')
+
+@socketio.on('file_download_progress')
+def handle_file_download_progress(data):
+    """Forward file download progress from agent to UI"""
+    print(f"📊 Download progress: {data.get('filename')} - {data.get('progress')}%")
+    emit('file_download_progress', data, room='operators')
+
+@socketio.on('file_download_complete')
+def handle_file_download_complete(data):
+    """Forward file download completion from agent to UI"""
+    print(f"✅ Download complete: {data.get('filename')} ({data.get('size')} bytes)")
+    emit('file_download_complete', data, room='operators')
+
 # Global variables for WebRTC and video streaming
 WEBRTC_PEER_CONNECTIONS = {}
 WEBRTC_VIEWER_CONNECTIONS = {}
