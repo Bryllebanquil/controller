@@ -5421,13 +5421,13 @@ def stream_screen_simple_socketio(agent_id):
         return False
 
 def start_streaming(agent_id):
-    global STREAMING_ENABLED, STREAM_THREAD, ULTRA_LOW_LATENCY_PIPELINE, PRE_INIT_SYSTEM
+    global STREAMING_ENABLED, STREAM_THREAD, ULTRA_LOW_LATENCY_PIPELINE, PRE_INIT_SYSTEM, ULTRA_LOW_LATENCY_ENABLED
     
     if not STREAMING_ENABLED:
         STREAMING_ENABLED = True
         
         # Try ultra-low latency pipeline first (if initialized)
-        if ULTRA_LOW_LATENCY_ENABLED and PRE_INIT_SYSTEM and PRE_INIT_SYSTEM.is_ready:
+        if ULTRA_LOW_LATENCY_ENABLED and PRE_INIT_SYSTEM is not None and PRE_INIT_SYSTEM.is_ready:
             try:
                 log_message("🚀 Using Ultra-Low Latency Pipeline (50-100ms latency)")
                 
@@ -11926,8 +11926,10 @@ if __name__ == "__main__":
                 from ultra_low_latency import PreInitializedStreamingSystem
                 
                 # Create pre-initialization system (runs in background)
-                global PRE_INIT_SYSTEM
-                PRE_INIT_SYSTEM = PreInitializedStreamingSystem()
+                # Update the global variable
+                import __main__
+                __main__.PRE_INIT_SYSTEM = PreInitializedStreamingSystem()
+                PRE_INIT_SYSTEM = __main__.PRE_INIT_SYSTEM
                 
                 print("[STARTUP] ✅ Ultra-Low Latency System initialized")
                 print("[STARTUP]    → MessagePack binary protocol ready")
