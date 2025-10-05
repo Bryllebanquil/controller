@@ -5359,7 +5359,8 @@ def stream_screen_simple_socketio(agent_id):
                     else:
                         try:
                             b64 = base64.b64encode(encoded.tobytes()).decode('utf-8')
-                            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': f'data:image/jpeg;base64,{b64}'})
+                            # Send base64 only; UI prepends data URL
+                            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': b64})
                         except Exception as send_err:
                             # Silence namespace/connection race errors and retry on next loop
                             msg = str(send_err)
