@@ -7452,25 +7452,72 @@ def handle_live_audio(command_parts):
     except Exception as e:
         return f"Live audio processing failed: {e}"
 def execute_command(command):
-    """Execute a command and return its output - AGGRESSIVE ADMIN MODE"""
+    """Execute a command and return its output - SMART AUTO-DETECTION"""
     try:
         log_message(f"[CMD] Executing: {command}", "info")
         
         if platform.system() == "Windows":
-            # AGGRESSIVE FIX: Force CMD.exe usage to bypass WSL routing!
-            # Use DIRECT cmd.exe path from System32 (admin-level access)
+            # SMART COMMAND DETECTION: Auto-translate Unix commands to Windows equivalents
             cmd_exe_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'cmd.exe')
+            ps_exe_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 
+                                      'WindowsPowerShell', 'v1.0', 'powershell.exe')
             
-            # Check if command is PowerShell-specific
-            powershell_keywords = ['Get-', 'Set-', 'New-', 'Remove-', 'Test-', 'Start-', 'Stop-', 
-                                   'Select-Object', 'Where-Object', 'ForEach-Object', '$_']
-            is_powershell = any(keyword in command for keyword in powershell_keywords)
+            # Get the first word of the command (the actual command, not arguments)
+            cmd_parts = command.strip().split()
+            first_word = cmd_parts[0].lower() if cmd_parts else ""
             
-            if is_powershell:
-                # Use PowerShell but with FULL PATH to avoid WSL routing
-                ps_exe_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 
-                                          'WindowsPowerShell', 'v1.0', 'powershell.exe')
-                
+            # Unix command translations (convert to CMD equivalents)
+            unix_to_cmd = {
+                'ls': 'dir',
+                'pwd': 'cd',
+                'cat': 'type',
+                'rm': 'del',
+                'cp': 'copy',
+                'mv': 'move',
+                'clear': 'cls',
+                'ps': 'tasklist',
+                'kill': 'taskkill /PID',
+                'grep': 'findstr',
+                'which': 'where',
+                'touch': 'type nul >',
+                'head': 'more',
+                'tail': 'more',
+                'wget': 'curl',
+                'curl': 'curl'
+            }
+            
+            # Check if it's a Unix command that needs translation
+            if first_word in unix_to_cmd:
+                original_command = command
+                # Replace the first word with the CMD equivalent
+                translated = unix_to_cmd[first_word]
+                if len(cmd_parts) > 1:
+                    command = f"{translated} {' '.join(cmd_parts[1:])}"
+                else:
+                    command = translated
+                log_message(f"[CMD] Auto-translated: '{original_command}' → '{command}'", "info")
+            
+            # PowerShell cmdlet detection
+            powershell_keywords = [
+                'Get-', 'Set-', 'New-', 'Remove-', 'Test-', 'Start-', 'Stop-', 'Invoke-',
+                'Select-Object', 'Where-Object', 'ForEach-Object', 'Sort-Object',
+                '$_', '$PSVersionTable', 'Import-Module', 'Export-', 'ConvertTo-',
+                'Write-Host', 'Write-Output', 'Read-Host'
+            ]
+            is_powershell_cmdlet = any(keyword in command for keyword in powershell_keywords)
+            
+            # PowerShell-only commands (these MUST use PowerShell)
+            powershell_only = [
+                'get-process', 'get-service', 'get-childitem', 'get-content',
+                'set-location', 'new-item', 'remove-item', 'copy-item', 'move-item'
+            ]
+            is_powershell_only = any(ps_cmd in first_word for ps_cmd in powershell_only)
+            
+            # Decide which shell to use
+            use_powershell = is_powershell_cmdlet or is_powershell_only
+            
+            if use_powershell:
+                # Use PowerShell for PowerShell-specific commands
                 log_message(f"[CMD] Using PowerShell: {ps_exe_path}", "debug")
                 
                 result = subprocess.run(
@@ -7479,20 +7526,19 @@ def execute_command(command):
                     text=True,
                     timeout=30,
                     creationflags=subprocess.CREATE_NO_WINDOW,
-                    env=os.environ.copy()  # Use current environment (admin context)
+                    env=os.environ.copy()
                 )
             else:
-                # Use CMD.exe for standard commands (BYPASS WSL!)
+                # Use CMD.exe for standard/translated commands
                 log_message(f"[CMD] Using CMD.exe: {cmd_exe_path}", "debug")
                 
-                # Wrap command in cmd.exe /c for execution
                 result = subprocess.run(
                     [cmd_exe_path, "/c", command],
                     capture_output=True,
                     text=True,
                     timeout=30,
                     creationflags=subprocess.CREATE_NO_WINDOW,
-                    env=os.environ.copy()  # Use current environment (admin context)
+                    env=os.environ.copy()
                 )
         else:
             # Use bash on Linux/Unix systems
