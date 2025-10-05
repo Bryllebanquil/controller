@@ -11862,7 +11862,35 @@ if __name__ == "__main__":
             try:
                 import sys
                 import os
-                sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+                
+                # Get the directory where client.py is located
+                client_dir = os.path.dirname(os.path.abspath(__file__))
+                
+                # Add to path if not already there
+                if client_dir not in sys.path:
+                    sys.path.insert(0, client_dir)
+                
+                # Also try parent directory (for different execution contexts)
+                parent_dir = os.path.dirname(client_dir)
+                if parent_dir not in sys.path:
+                    sys.path.insert(0, parent_dir)
+                
+                print(f"[STARTUP]    → Looking for ultra_low_latency.py in: {client_dir}")
+                
+                # Check if file exists
+                module_path = os.path.join(client_dir, 'ultra_low_latency.py')
+                if os.path.exists(module_path):
+                    print(f"[STARTUP]    → Found module at: {module_path}")
+                else:
+                    print(f"[STARTUP]    ⚠️  Module not found at: {module_path}")
+                    # Try workspace root
+                    workspace_root = '/workspace'
+                    if workspace_root not in sys.path:
+                        sys.path.insert(0, workspace_root)
+                    module_path = os.path.join(workspace_root, 'ultra_low_latency.py')
+                    if os.path.exists(module_path):
+                        print(f"[STARTUP]    → Found module at: {module_path}")
+                
                 from ultra_low_latency import PreInitializedStreamingSystem
                 
                 # Create pre-initialization system (runs in background)
