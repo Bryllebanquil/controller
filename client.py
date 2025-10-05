@@ -270,6 +270,11 @@ def safe_import(module_name, feature_description=""):
 
 debug_print("[IMPORTS] Starting standard library imports...")
 
+# DEBUG: Check Python path
+debug_print(f"[IMPORTS] Python executable: {sys.executable}")
+debug_print(f"[IMPORTS] Python version: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+debug_print(f"[IMPORTS] sys.path has {len(sys.path)} entries")
+
 # Standard library imports (AFTER eventlet patch!)
 import time
 debug_print("[IMPORTS] ✅ time imported")
@@ -506,16 +511,73 @@ except ImportError:
     PYAUTOGUI_AVAILABLE = False
     log_message("pyautogui not available, GUI automation may not work", "warning")
 
-# Socket.IO imports
+# Socket.IO imports - CRITICAL FIX FOR PYTHON 3.13
 try:
-    debug_print("[IMPORTS] Importing socketio...")
-    import socketio
-    SOCKETIO_AVAILABLE = True
-    debug_print("[IMPORTS] ✅ socketio imported")
-except ImportError as e:
+    debug_print("[IMPORTS] Importing socketio (critical for controller connection)...")
+    
+    # Test if socketio package exists
+    debug_print("[IMPORTS] Testing package installation...")
+    test_result = subprocess.run(
+        [sys.executable, "-m", "pip", "show", "python-socketio"],
+        capture_output=True,
+        text=True
+    )
+    
+    if test_result.returncode == 0:
+        debug_print("[IMPORTS] ✅ python-socketio package IS installed")
+        # Show version
+        for line in test_result.stdout.split('\n'):
+            if line.startswith('Version:'):
+                debug_print(f"[IMPORTS]    {line.strip()}")
+                break
+    else:
+        debug_print("[IMPORTS] ❌ python-socketio package NOT found!")
+        debug_print("[IMPORTS] Installing now...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "python-socketio"])
+    
+    # Now try to import
+    debug_print("[IMPORTS] Attempting import...")
+    
+    # Method 1: Standard import
+    try:
+        import socketio
+        SOCKETIO_AVAILABLE = True
+        debug_print("[IMPORTS] ✅ socketio imported successfully!")
+    except ImportError as e1:
+        debug_print(f"[IMPORTS] ❌ Standard import failed: {e1}")
+        
+        # Method 2: Import from client
+        try:
+            debug_print("[IMPORTS] Trying socketio.Client...")
+            import socketio.client
+            socketio = socketio.client.Client
+            SOCKETIO_AVAILABLE = True
+            debug_print("[IMPORTS] ✅ socketio.Client imported!")
+        except ImportError as e2:
+            debug_print(f"[IMPORTS] ❌ socketio.Client import failed: {e2}")
+            
+            # Method 3: Check if it's an eventlet patching issue
+            debug_print("[IMPORTS] Checking for eventlet conflict...")
+            try:
+                # Try importing before eventlet patches it
+                import importlib
+                socketio_module = importlib.import_module('socketio')
+                socketio = socketio_module
+                SOCKETIO_AVAILABLE = True
+                debug_print("[IMPORTS] ✅ socketio imported via importlib!")
+            except Exception as e3:
+                SOCKETIO_AVAILABLE = False
+                debug_print(f"[IMPORTS] ❌ All import methods failed!")
+                debug_print(f"[IMPORTS]    Error 1: {e1}")
+                debug_print(f"[IMPORTS]    Error 2: {e2}")
+                debug_print(f"[IMPORTS]    Error 3: {e3}")
+                log_message("python-socketio not available, real-time communication may not work", "warning")
+            
+except Exception as e:
     SOCKETIO_AVAILABLE = False
-    debug_print(f"[IMPORTS] ❌ socketio import failed: {e}")
-    debug_print("[IMPORTS] To install: pip install python-socketio")
+    debug_print(f"[IMPORTS] ❌ Unexpected error with socketio: {e}")
+    import traceback
+    traceback.print_exc()
     log_message("python-socketio not available, real-time communication may not work", "warning")
 
 # WebRTC imports for low-latency streaming
