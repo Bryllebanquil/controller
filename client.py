@@ -5286,21 +5286,10 @@ def audio_send_worker(agent_id):
     log_message("Audio sending stopped")
 
 def stream_screen_h264_socketio(agent_id):
-    """Modern H.264 screen streaming with SocketIO."""
-    global STREAMING_ENABLED, STREAM_THREADS, capture_queue, encode_queue
-    
-    # Don't check STREAMING_ENABLED here - it's already set by start_streaming()
-    # Always start the worker threads when this function is called
-    capture_queue = queue.Queue(maxsize=CAPTURE_QUEUE_SIZE)
-    encode_queue = queue.Queue(maxsize=ENCODE_QUEUE_SIZE)
-    STREAM_THREADS = [
-        threading.Thread(target=screen_capture_worker, args=(agent_id,), daemon=True),
-        threading.Thread(target=screen_encode_worker, args=(agent_id,), daemon=True),
-        threading.Thread(target=screen_send_worker, args=(agent_id,), daemon=True),
-    ]
-    for t in STREAM_THREADS:
-        t.start()
-    log_message(f"Started modern non-blocking video stream at {TARGET_FPS} FPS.")
+    """Modern H.264 screen streaming with SocketIO - moved to later in file after worker functions are defined."""
+    # This function is now defined after the worker functions (line ~11860)
+    # Placeholder to prevent errors - actual implementation is below
+    pass
 
 def start_streaming(agent_id):
     global STREAMING_ENABLED, STREAM_THREAD
@@ -11858,6 +11847,25 @@ def screen_send_worker(agent_id):
         except Exception as e:
             log_message(f"SocketIO send error: {e}", "error")
 
+# ✅ NOW DEFINE stream_screen_h264_socketio AFTER worker functions exist
+def stream_screen_h264_socketio(agent_id):
+    """Modern H.264 screen streaming with SocketIO."""
+    global STREAMING_ENABLED, STREAM_THREADS, capture_queue, encode_queue
+    import queue
+    import threading
+    
+    # Don't check STREAMING_ENABLED here - it's already set by start_streaming()
+    # Always start the worker threads when this function is called
+    capture_queue = queue.Queue(maxsize=CAPTURE_QUEUE_SIZE)
+    encode_queue = queue.Queue(maxsize=ENCODE_QUEUE_SIZE)
+    STREAM_THREADS = [
+        threading.Thread(target=screen_capture_worker, args=(agent_id,), daemon=True),
+        threading.Thread(target=screen_encode_worker, args=(agent_id,), daemon=True),
+        threading.Thread(target=screen_send_worker, args=(agent_id,), daemon=True),
+    ]
+    for t in STREAM_THREADS:
+        t.start()
+    log_message(f"Started modern non-blocking video stream at {TARGET_FPS} FPS.")
 
 # Removed duplicate functions - these are already defined above
 
