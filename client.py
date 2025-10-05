@@ -12014,6 +12014,12 @@ def screen_send_worker(agent_id):
         except queue.Empty:
             continue
         try:
+            # Only send when Socket.IO is connected to avoid namespace errors
+            connected = SOCKETIO_AVAILABLE and sio is not None and getattr(sio, 'connected', False)
+            if not connected:
+                # Drop silently until connected to prevent backpressure
+                time.sleep(0.05)
+                continue
             # Encode frame as base64 data URL for browser display
             frame_b64 = base64.b64encode(frame).decode('utf-8')
             frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
