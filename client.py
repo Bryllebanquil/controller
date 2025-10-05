@@ -727,16 +727,16 @@ CHUNK = 1024
 CHANNELS = 1
 RATE = 44100
 
-    # WebRTC streaming variables
-    WEBRTC_ENABLED = False
-    WEBRTC_PEER_CONNECTIONS = {}  # agent_id -> RTCPeerConnection
-    WEBRTC_STREAMS = {}  # agent_id -> MediaStreamTrack
+# WebRTC streaming variables
+WEBRTC_ENABLED = False
+WEBRTC_PEER_CONNECTIONS = {}  # agent_id -> RTCPeerConnection
+WEBRTC_STREAMS = {}  # agent_id -> MediaStreamTrack
 WEBRTC_SIGNALING_QUEUE = queue.Queue()
 WEBRTC_ICE_SERVERS = [
     {"urls": ["stun:stun.l.google.com:19302"]},
     {"urls": ["stun:stun1.l.google.com:19302"]}
 ]
-    WEBRTC_CONFIG = {
+WEBRTC_CONFIG = {
         'enabled': AIORTC_AVAILABLE,
         'ice_servers': [
             {'urls': 'stun:stun.l.google.com:19302'},
@@ -5268,7 +5268,7 @@ def audio_send_worker(agent_id):
         return
     
     while AUDIO_STREAMING_ENABLED:
-            try:
+        try:
                 # Get encoded data from encode queue
                 try:
                     encoded_data = audio_encode_queue.get(timeout=0.1)
@@ -5285,7 +5285,6 @@ def audio_send_worker(agent_id):
                 except Exception as e:
                     log_message(f"Audio send error: {e}")
                     time.sleep(0.01)
-                
         except Exception as e:
             log_message(f"Audio sending error: {e}")
             time.sleep(0.01)
@@ -5734,7 +5733,7 @@ def start_webrtc_streaming(agent_id, enable_screen=True, enable_audio=True, enab
                 offer = await create_webrtc_offer(agent_id)
                 if offer:
                     # Send offer to controller via Socket.IO
-        if SOCKETIO_AVAILABLE:
+                    if SOCKETIO_AVAILABLE:
                         # Use distinct namespaces for audio/video if configured by controller
                         namespace = '/webrtc' if hasattr(sio, 'namespaces') and '/webrtc' in getattr(sio, 'namespaces', []) else None
                         sio.emit('webrtc_offer', {
