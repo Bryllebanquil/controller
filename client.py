@@ -5197,18 +5197,23 @@ def audio_encode_worker(agent_id):
         log_message("Error: Audio queues not initialized", "error")
         return
     
+    # Determine encoding format
+    use_opus = False
+    encoder = None
+    
     try:
         import opuslib
         # Create Opus encoder (48kHz, mono, 20ms frame size)
         encoder = opuslib.Encoder(48000, 1, opuslib.APPLICATION_AUDIO)
         encoder.bitrate = 64000  # 64 kbps for good quality
+        use_opus = True
         log_message("Opus encoder initialized")
     except ImportError:
         log_message("Warning: opuslib not available, using PCM", "warning")
-        encoder = None
+        use_opus = False
     except Exception as e:
-        log_message(f"Error initializing Opus encoder: {e}")
-        encoder = None
+        log_message(f"Error initializing Opus encoder: {e}, using PCM fallback")
+        use_opus = False
     
     while AUDIO_STREAMING_ENABLED:
         try:
@@ -5219,28 +5224,34 @@ def audio_encode_worker(agent_id):
                 continue
             
             # Encode with Opus if available, otherwise use PCM
-            if encoder:
+            audio_format = 'pcm'  # Default format
+            
+            if use_opus and encoder:
                 try:
                     # Convert PCM to Opus
                     if not NUMPY_AVAILABLE:
                         log_message("NumPy not available for audio processing", "warning")
                         encoded_data = pcm_data  # Fallback to PCM
-                        continue
-                    pcm_array = np.frombuffer(pcm_data, dtype=np.int16)
-                    encoded_data = encoder.encode(pcm_array.tobytes(), CHUNK)
+                        audio_format = 'pcm'
+                    else:
+                        pcm_array = np.frombuffer(pcm_data, dtype=np.int16)
+                        encoded_data = encoder.encode(pcm_array.tobytes(), CHUNK)
+                        audio_format = 'opus'
                 except Exception as e:
-                    log_message(f"Opus encoding error: {e}")
+                    log_message(f"Opus encoding error: {e}, falling back to PCM")
                     encoded_data = pcm_data  # Fallback to PCM
+                    audio_format = 'pcm'
             else:
                 encoded_data = pcm_data  # Use PCM
+                audio_format = 'pcm'
             
-            # Put in encode queue, drop oldest if full
+            # Put in encode queue with format indicator
             try:
-                audio_encode_queue.put_nowait(encoded_data)
+                audio_encode_queue.put_nowait((encoded_data, audio_format))
             except queue.Full:
                 try:
                     audio_encode_queue.get_nowait()  # Remove oldest
-                    audio_encode_queue.put_nowait(encoded_data)  # Add new
+                    audio_encode_queue.put_nowait((encoded_data, audio_format))  # Add new
                 except queue.Empty:
                     pass
                     
@@ -5264,17 +5275,31 @@ def audio_send_worker(agent_id):
     
     while AUDIO_STREAMING_ENABLED:
         try:
-            # Get encoded data from encode queue
+            # Get encoded data and format from encode queue
             try:
-                encoded_data = audio_encode_queue.get(timeout=0.1)
+                queue_item = audio_encode_queue.get(timeout=0.1)
+                # Handle both tuple (encoded_data, format) and raw data for backward compatibility
+                if isinstance(queue_item, tuple):
+                    encoded_data, audio_format = queue_item
+                else:
+                    encoded_data = queue_item
+                    audio_format = 'pcm'  # Default to PCM
             except queue.Empty:
                 continue
             
-            # Send via socket.io (binary data is automatically detected)
+            # Base64 encode audio data for transmission over socket.io
             try:
+                import base64
+                # Encode binary audio data to base64 string
+                audio_b64 = base64.b64encode(encoded_data).decode('utf-8')
+                
+                # Send via socket.io with base64 encoded data and format
                 sio.emit('audio_frame', {
                     'agent_id': agent_id,
-                    'frame': encoded_data
+                    'frame': audio_b64,
+                    'format': audio_format,  # Send actual format (pcm or opus)
+                    'sample_rate': RATE,
+                    'channels': CHANNELS
                 })
             except Exception as e:
                 log_message(f"Audio send error: {e}")

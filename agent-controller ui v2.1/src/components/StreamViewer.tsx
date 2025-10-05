@@ -40,6 +40,9 @@ export function StreamViewer({ agentId, type, title }: StreamViewerProps) {
   
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioQueueRef = useRef<Float32Array[]>([]);
+  const isPlayingAudioRef = useRef(false);
   const fpsIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const frameCountRef = useRef(0);
 
@@ -53,6 +56,95 @@ export function StreamViewer({ agentId, type, title }: StreamViewerProps) {
   };
 
   const StreamIcon = getStreamIcon();
+
+  // Initialize Audio Context
+  const initAudioContext = () => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
+        sampleRate: 44100,
+        latencyHint: 'interactive'
+      });
+    }
+    return audioContextRef.current;
+  };
+
+  // Play audio frame using Web Audio API
+  const playAudioFrame = async (base64Data: string) => {
+    try {
+      const audioContext = initAudioContext();
+      
+      // Decode base64 to binary
+      const binaryString = atob(base64Data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      
+      // For PCM audio (16-bit samples)
+      // Convert bytes to Float32Array for Web Audio API
+      const samples = new Int16Array(bytes.buffer);
+      const floatSamples = new Float32Array(samples.length);
+      for (let i = 0; i < samples.length; i++) {
+        floatSamples[i] = samples[i] / 32768.0; // Convert to -1.0 to 1.0 range
+      }
+      
+      // Add to audio queue
+      audioQueueRef.current.push(floatSamples);
+      
+      // Start playing if not already playing
+      if (!isPlayingAudioRef.current) {
+        isPlayingAudioRef.current = true;
+        scheduleAudioPlayback();
+      }
+    } catch (error) {
+      console.error('Error processing audio frame:', error);
+    }
+  };
+
+  // Schedule audio playback from queue
+  const scheduleAudioPlayback = () => {
+    const audioContext = audioContextRef.current;
+    if (!audioContext) return;
+
+    const playNextChunk = () => {
+      if (audioQueueRef.current.length === 0) {
+        isPlayingAudioRef.current = false;
+        return;
+      }
+
+      const samples = audioQueueRef.current.shift();
+      if (!samples) return;
+
+      // Create audio buffer
+      const audioBuffer = audioContext.createBuffer(1, samples.length, 44100);
+      const channelData = audioBuffer.getChannelData(0);
+      channelData.set(samples);
+
+      // Create buffer source and play
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContext.destination);
+      source.start();
+
+      // Schedule next chunk
+      const duration = samples.length / 44100;
+      setTimeout(playNextChunk, duration * 1000 * 0.9); // Slight overlap to prevent gaps
+    };
+
+    playNextChunk();
+  };
+
+  // Cleanup audio context on unmount
+  useEffect(() => {
+    return () => {
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
+      audioQueueRef.current = [];
+      isPlayingAudioRef.current = false;
+    };
+  }, []);
 
   // Calculate FPS every second
   useEffect(() => {
@@ -95,8 +187,14 @@ export function StreamViewer({ agentId, type, title }: StreamViewerProps) {
         const frame = data.frame;
         
         if (type === 'audio') {
-          // Audio handling (placeholder for now)
-          console.log('Audio frame received');
+          // Audio handling - decode and play
+          try {
+            playAudioFrame(frame);
+            frameCountRef.current++;
+            setFrameCount(prev => prev + 1);
+          } catch (audioError) {
+            console.error('Error playing audio frame:', audioError);
+          }
         } else {
           // Video frame handling
           if (imgRef.current) {
@@ -167,6 +265,14 @@ export function StreamViewer({ agentId, type, title }: StreamViewerProps) {
       
       if (imgRef.current) {
         imgRef.current.src = '';
+      }
+      
+      // Cleanup audio context for audio streams
+      if (type === 'audio' && audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+        audioQueueRef.current = [];
+        isPlayingAudioRef.current = false;
       }
       
       toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} stream stopped`);
@@ -268,16 +374,24 @@ export function StreamViewer({ agentId, type, title }: StreamViewerProps) {
               )}
             </Button>
             
-            {type !== 'audio' && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setIsMuted(!isMuted)}
-                disabled={!isStreaming}
-              >
-                {isMuted ? <VolumeX className="h-3 w-3" /> : <Volume2 className="h-3 w-3" />}
-              </Button>
-            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setIsMuted(!isMuted);
+                // Mute/unmute audio context if it's an audio stream
+                if (type === 'audio' && audioContextRef.current) {
+                  if (!isMuted) {
+                    audioContextRef.current.suspend();
+                  } else {
+                    audioContextRef.current.resume();
+                  }
+                }
+              }}
+              disabled={!isStreaming}
+            >
+              {isMuted ? <VolumeX className="h-3 w-3" /> : <Volume2 className="h-3 w-3" />}
+            </Button>
           </div>
           
           <div className="flex items-center space-x-2 text-xs text-muted-foreground">
