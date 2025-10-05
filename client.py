@@ -277,6 +277,7 @@ debug_print(f"[IMPORTS] sys.path has {len(sys.path)} entries")
 
 # Standard library imports (AFTER eventlet patch!)
 import time
+import queue
 debug_print("[IMPORTS] ✅ time imported")
 
 import warnings
