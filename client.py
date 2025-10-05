@@ -6350,14 +6350,7 @@ def switch_to_socketio_streaming(agent_id, stream_type='screen'):
 # ENHANCED STREAMING FUNCTIONS WITH WEBRTC INTEGRATION
 # ========================================================================================
 
-def stream_screen_webrtc_or_socketio(agent_id):
-    """Smart screen streaming that automatically chooses WebRTC or Socket.IO based on availability."""
-    if AIORTC_AVAILABLE and WEBRTC_ENABLED:
-        log_message("Using WebRTC for screen streaming (sub-second latency)")
-        return start_webrtc_screen_streaming(agent_id)
-    else:
-        log_message("Using Socket.IO for screen streaming (fallback mode)")
-        return stream_screen_h264_socketio(agent_id)
+# stream_screen_webrtc_or_socketio is defined later after stream_screen_h264_socketio (line ~11870)
 
 def stream_audio_webrtc_or_socketio(agent_id):
     """Smart audio streaming that automatically chooses WebRTC or Socket.IO based on availability."""
@@ -11862,6 +11855,16 @@ def stream_screen_h264_socketio(agent_id):
     for t in STREAM_THREADS:
         t.start()
     log_message(f"Started modern non-blocking video stream at {TARGET_FPS} FPS.")
+
+# ✅ NOW DEFINE stream_screen_webrtc_or_socketio AFTER stream_screen_h264_socketio
+def stream_screen_webrtc_or_socketio(agent_id):
+    """Smart screen streaming that automatically chooses WebRTC or Socket.IO based on availability."""
+    if AIORTC_AVAILABLE and WEBRTC_ENABLED:
+        log_message("Using WebRTC for screen streaming (sub-second latency)")
+        return start_webrtc_screen_streaming(agent_id)
+    else:
+        log_message("Using Socket.IO for screen streaming (fallback mode)")
+        return stream_screen_h264_socketio(agent_id)
 
 # Removed duplicate functions - these are already defined above
 
