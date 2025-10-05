@@ -1,0 +1,134 @@
+===============================================================================
+  QUICK REFERENCE - CMD AND POWERSHELL STATUS
+===============================================================================
+
+✅ BOTH CMD AND POWERSHELL ARE ENABLED!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  STATUS SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Tool                Registry Key              Value          Status
+────────────────────────────────────────────────────────────────────────────
+CMD                 DisableCMD                0              ✅ ENABLED
+PowerShell          ExecutionPolicy           Unrestricted   ✅ ENABLED
+Task Manager        DisableTaskMgr            (not set)      ✅ ENABLED
+Registry Editor     DisableRegistryTools      (not set)      ✅ ENABLED
+UAC                 EnableLUA                 0              ❌ DISABLED
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  WHAT WAS FIXED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. CMD DISABLE - FIXED ✅
+   Problem:  DisableCMD was set to 1 (disabled)
+   Fix:      Changed to 0 (enabled)
+   Location: Line 3433 in client.py
+   Result:   CMD now works!
+
+2. PowerShell - Already OK ✅
+   Status:   ExecutionPolicy = Unrestricted
+   Location: Line 3441 in client.py
+   Result:   PowerShell fully functional!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  QUICK TESTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Test CMD:
+  1. Press Win + R
+  2. Type: cmd
+  3. Press Enter
+  ✅ If it opens, CMD is ENABLED!
+
+Test PowerShell:
+  1. Press Win + R
+  2. Type: powershell
+  3. Press Enter
+  4. Run: Get-ExecutionPolicy -Scope CurrentUser
+  ✅ Should show: Unrestricted
+
+Run Full Test:
+  powershell -File TEST_CMD_AND_POWERSHELL.ps1
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  EMERGENCY FIX (If blocked)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Re-enable CMD:
+  reg add "HKCU\Software\Policies\Microsoft\Windows\System" /v DisableCMD /t REG_DWORD /d 0 /f
+
+  OR run:
+  EMERGENCY_ENABLE_CMD.bat
+
+Re-enable PowerShell:
+  Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Unrestricted -Force
+
+  OR via registry:
+  reg add "HKCU\Software\Microsoft\PowerShell\1\ShellIds\Microsoft.PowerShell" /v ExecutionPolicy /t REG_SZ /d Unrestricted /f
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  RUN THE AGENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Method 1: PowerShell Script
+  .\RUN_AGENT.ps1
+
+Method 2: Direct Run
+  python client.py
+
+Expected Output:
+  [REGISTRY] Setting DisableCMD = 0 (CMD ENABLED)
+  [REGISTRY] ✅ CMD remains ENABLED
+  [REGISTRY] ✅ PowerShell ExecutionPolicy set to Unrestricted
+  [INFO] ✅ CONNECTED TO CONTROLLER!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  FILES CREATED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. RUN_AGENT.ps1                    - Auto-run script
+2. EMERGENCY_ENABLE_CMD.bat         - Re-enable CMD
+3. TEST_CMD_AND_POWERSHELL.ps1      - Test both tools
+4. CMD_DISABLE_FIX.md               - CMD fix documentation
+5. POWERSHELL_STATUS.md             - PowerShell documentation
+6. CMD_AND_POWERSHELL_COMPLETE.md   - Complete reference
+7. QUICK_REFERENCE.txt              - This file
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  REGISTRY LOCATIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CMD:
+  HKCU\Software\Policies\Microsoft\Windows\System
+  Value: DisableCMD = 0 (ENABLED)
+
+PowerShell:
+  HKCU\Software\Microsoft\PowerShell\1\ShellIds\Microsoft.PowerShell
+  Value: ExecutionPolicy = Unrestricted
+
+Task Manager:
+  HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System
+  Value: DisableTaskMgr (not set = ENABLED)
+
+Registry Editor:
+  HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\System
+  Value: DisableRegistryTools (not set = ENABLED)
+
+UAC:
+  HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+  Value: EnableLUA = 0 (DISABLED)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ CMD - ENABLED (DisableCMD = 0)
+✅ PowerShell - ENABLED (ExecutionPolicy = Unrestricted)
+✅ Task Manager - ENABLED
+✅ Registry Editor - ENABLED
+❌ UAC - DISABLED (by design)
+
+🎉 BOTH CMD AND POWERSHELL WORK PERFECTLY! 🎉
+
+===============================================================================
