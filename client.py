@@ -5098,11 +5098,8 @@ def stream_camera_h264_socketio(agent_id):
     import queue
     import threading
     
-    if CAMERA_STREAMING_ENABLED:
-        log_message("Camera streaming already active")
-        return
-    
-    CAMERA_STREAMING_ENABLED = True
+    # Don't check CAMERA_STREAMING_ENABLED here - it's already set by start_camera_streaming()
+    # Always start the worker threads when this function is called
     
     # Initialize queues
     camera_capture_queue = queue.Queue(maxsize=CAMERA_CAPTURE_QUEUE_SIZE)
@@ -5292,18 +5289,18 @@ def stream_screen_h264_socketio(agent_id):
     """Modern H.264 screen streaming with SocketIO."""
     global STREAMING_ENABLED, STREAM_THREADS, capture_queue, encode_queue
     
-    if not STREAMING_ENABLED:
-        STREAMING_ENABLED = True
-        capture_queue = queue.Queue(maxsize=CAPTURE_QUEUE_SIZE)
-        encode_queue = queue.Queue(maxsize=ENCODE_QUEUE_SIZE)
-        STREAM_THREADS = [
-            threading.Thread(target=screen_capture_worker, args=(agent_id,), daemon=True),
-            threading.Thread(target=screen_encode_worker, args=(agent_id,), daemon=True),
-            threading.Thread(target=screen_send_worker, args=(agent_id,), daemon=True),
-        ]
-        for t in STREAM_THREADS:
-            t.start()
-        log_message(f"Started modern non-blocking video stream at {TARGET_FPS} FPS.")
+    # Don't check STREAMING_ENABLED here - it's already set by start_streaming()
+    # Always start the worker threads when this function is called
+    capture_queue = queue.Queue(maxsize=CAPTURE_QUEUE_SIZE)
+    encode_queue = queue.Queue(maxsize=ENCODE_QUEUE_SIZE)
+    STREAM_THREADS = [
+        threading.Thread(target=screen_capture_worker, args=(agent_id,), daemon=True),
+        threading.Thread(target=screen_encode_worker, args=(agent_id,), daemon=True),
+        threading.Thread(target=screen_send_worker, args=(agent_id,), daemon=True),
+    ]
+    for t in STREAM_THREADS:
+        t.start()
+    log_message(f"Started modern non-blocking video stream at {TARGET_FPS} FPS.")
 
 def start_streaming(agent_id):
     global STREAMING_ENABLED, STREAM_THREAD
