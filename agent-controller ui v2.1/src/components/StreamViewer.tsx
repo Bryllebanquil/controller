@@ -300,6 +300,29 @@ export function StreamViewer({ agentId, type, title }: StreamViewerProps) {
 
   const handleQualityChange = (newQuality: string) => {
     setQuality(newQuality);
+    
+    // Send quality change command to agent for FPS adjustment
+    if (agentId && isStreaming) {
+      let fpsCommand = '';
+      switch (newQuality) {
+        case 'low':
+          fpsCommand = 'set-fps:30';
+          break;
+        case 'medium':
+          fpsCommand = 'set-fps:50';
+          break;
+        case 'high':
+          fpsCommand = 'set-fps:60';
+          break;
+        case 'ultra':
+          fpsCommand = 'set-fps:60';
+          break;
+      }
+      if (fpsCommand) {
+        sendCommand(agentId, fpsCommand);
+      }
+    }
+    
     toast.info(`Quality set to ${newQuality}`);
   };
 
@@ -340,10 +363,10 @@ export function StreamViewer({ agentId, type, title }: StreamViewerProps) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="low">Low</SelectItem>
-                <SelectItem value="medium">Med</SelectItem>
-                <SelectItem value="high">High</SelectItem>
-                <SelectItem value="ultra">Ultra</SelectItem>
+                <SelectItem value="low">Low (30 FPS)</SelectItem>
+                <SelectItem value="medium">Med (50 FPS)</SelectItem>
+                <SelectItem value="high">High (60 FPS)</SelectItem>
+                <SelectItem value="ultra">Ultra (60 FPS)</SelectItem>
               </SelectContent>
             </Select>
             
