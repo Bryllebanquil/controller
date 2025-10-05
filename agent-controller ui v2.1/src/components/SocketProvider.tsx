@@ -477,19 +477,19 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           const end = start + chunkSize;
           const chunk = base64Data.slice(start, end);
           
-          // ✅ FIXED: Use correct event name expected by controller
-          socket.emit('file_chunk_from_operator', {
+          // ✅ Use event name that deployed controller expects
+          socket.emit('upload_file_chunk', {
             agent_id: agentId,
             filename: file.name,
-            chunk: chunk,  // Changed from 'data' to 'chunk'
+            data: chunk,  // Controller expects 'data' field
             offset: start,
             total_size: file.size,  // ✅ FIXED: Send actual file size!
             destination_path: destinationPath
           });
         }
         
-        // ✅ FIXED: Use correct event name expected by controller
-        socket.emit('file_upload_complete_from_operator', {
+        // ✅ Use event name that deployed controller expects
+        socket.emit('upload_file_end', {
           agent_id: agentId,
           filename: file.name,
           destination_path: destinationPath

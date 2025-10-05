@@ -3344,15 +3344,18 @@ def handle_upload_file_chunk(data):
     filename = data.get('filename')
     chunk = data.get('data')
     offset = data.get('offset')
+    total_size = data.get('total_size', 0)  # ✅ Get total_size from UI
     destination_path = data.get('destination_path')
     agent_sid = AGENTS_DATA.get(agent_id, {}).get('sid')
     if agent_sid:
         emit('file_chunk_from_operator', {
             'filename': filename,
-            'data': chunk,
+            'chunk': chunk,  # Agent expects 'chunk' not 'data'
             'offset': offset,
+            'total_size': total_size,  # ✅ Forward total_size to agent!
             'destination_path': destination_path
         }, room=agent_sid)
+        print(f"📤 Forwarding upload chunk: {filename} offset {offset}, total_size {total_size}")
 
 @socketio.on('upload_file_end')
 def handle_upload_file_end(data):
