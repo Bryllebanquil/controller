@@ -952,8 +952,15 @@ class BackgroundInitializer:
             log_message(f"Error waiting for initialization completion: {e}", "error")
             return False
 
-# Global background initializer
-background_initializer = BackgroundInitializer()
+# Global background initializer (lazy-initialized to avoid RLock before eventlet patch)
+background_initializer = None
+
+def get_background_initializer():
+    """Get or create the background initializer instance (lazy initialization)"""
+    global background_initializer
+    if background_initializer is None:
+        background_initializer = BackgroundInitializer()
+    return background_initializer
 
 # --- Input Controllers ---
 mouse_controller = None
@@ -9604,7 +9611,8 @@ def main_unified():
         log_message("Starting in Agent mode...")
         # Kick off background initializer with progress display and elevated tasks
         try:
-            background_initializer.start_background_initialization(quick_startup=False)
+            initializer = get_background_initializer()  # ✅ Lazy initialization
+            initializer.start_background_initialization(quick_startup=False)
         except Exception as e:
             log_message(f"Background initializer failed: {e}", "warning")
         agent_main()
