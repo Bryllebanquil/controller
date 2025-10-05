@@ -7524,6 +7524,8 @@ def execute_command(command):
                     [ps_exe_path, "-NoProfile", "-NonInteractive", "-Command", command],
                     capture_output=True,
                     text=True,
+                    encoding='utf-8',  # ✅ Force UTF-8 encoding
+                    errors='replace',  # ✅ Replace invalid characters instead of crashing
                     timeout=30,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                     env=os.environ.copy()
@@ -7536,6 +7538,8 @@ def execute_command(command):
                     [cmd_exe_path, "/c", command],
                     capture_output=True,
                     text=True,
+                    encoding='utf-8',  # ✅ Force UTF-8 encoding
+                    errors='replace',  # ✅ Replace invalid characters instead of crashing
                     timeout=30,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                     env=os.environ.copy()
@@ -7549,8 +7553,12 @@ def execute_command(command):
                 timeout=30
             )
         
-        output = result.stdout + result.stderr
-        if not output:
+        # Safely combine stdout and stderr (handle None values)
+        stdout = result.stdout if result.stdout else ""
+        stderr = result.stderr if result.stderr else ""
+        output = stdout + stderr
+        
+        if not output or output.strip() == "":
             output = "[No output from command]"
         
         log_message(f"[CMD] Output: {output[:200]}{'...' if len(output) > 200 else ''}", "success")
