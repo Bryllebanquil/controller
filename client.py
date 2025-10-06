@@ -5451,18 +5451,14 @@ def audio_send_worker(agent_id):
 # stream_screen_h264_socketio() is defined later after worker functions (line ~11851)
 
 def _run_screen_stream(agent_id):
-    """Thread target for screen streaming with robust fallbacks.
-    Tries WebRTC-or-socket chooser if available; otherwise runs a simple Socket.IO stream.
+    """Thread target for screen streaming - uses optimized multi-threaded pipeline.
+    
+    CRITICAL FIX: Direct function call instead of globals().get() to ensure
+    the optimized pipeline is always used!
     """
-    chooser = globals().get("stream_screen_webrtc_or_socketio")
-    h264_socket = globals().get("stream_screen_h264_socketio")
-    if callable(chooser):
-        return chooser(agent_id)
-    if callable(h264_socket):
-        return h264_socket(agent_id)
-    # Final fallback that works even during early initialization
-    log_message("Using simple Socket.IO screen stream (compat mode)")
-    return stream_screen_simple_socketio(agent_id)
+    # Just call the optimized function directly!
+    # It's defined later in the module, but Python has already loaded it
+    return stream_screen_webrtc_or_socketio(agent_id)
 
 def stream_screen_simple_socketio(agent_id):
     """Compatibility fallback: single-threaded JPEG-over-Socket.IO screen stream.
