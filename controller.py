@@ -4183,6 +4183,88 @@ def handle_stream_status(data):
             'status': 'success' if status in ['started', 'stopped'] else 'error'
         }, room='operators', broadcast=True)
 
+@socketio.on('stream_started')
+def handle_stream_started(data):
+    """Normalize agent 'stream_started' into unified stream_status_update for UI."""
+    agent_id = data.get('agent_id')
+    stream_type = data.get('type') or data.get('stream_type')
+    quality = data.get('quality', 'unknown')
+
+    emit('stream_status_update', {
+        'agent_id': agent_id,
+        'stream_type': stream_type,
+        'status': 'started',
+        'quality': quality,
+        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
+    }, room='operators', broadcast=True)
+
+    if agent_id in AGENTS_DATA:
+        emit('activity_update', {
+            'id': f'act_{int(time.time())}',
+            'type': 'stream',
+            'action': f'{(stream_type or "").title()} Stream Started',
+            'details': f'{(stream_type or "").title()} stream started on agent {agent_id}',
+            'agent_id': agent_id,
+            'agent_name': AGENTS_DATA[agent_id].get("name", f"Agent-{agent_id}"),
+            'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+            'status': 'success'
+        }, room='operators', broadcast=True)
+
+@socketio.on('stream_stopped')
+def handle_stream_stopped(data):
+    """Normalize agent 'stream_stopped' into unified stream_status_update for UI."""
+    agent_id = data.get('agent_id')
+    stream_type = data.get('type') or data.get('stream_type')
+    quality = data.get('quality', 'unknown')
+
+    emit('stream_status_update', {
+        'agent_id': agent_id,
+        'stream_type': stream_type,
+        'status': 'stopped',
+        'quality': quality,
+        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
+    }, room='operators', broadcast=True)
+
+    if agent_id in AGENTS_DATA:
+        emit('activity_update', {
+            'id': f'act_{int(time.time())}',
+            'type': 'stream',
+            'action': f'{(stream_type or "").title()} Stream Stopped',
+            'details': f'{(stream_type or "").title()} stream stopped on agent {agent_id}',
+            'agent_id': agent_id,
+            'agent_name': AGENTS_DATA[agent_id].get("name", f"Agent-{agent_id}"),
+            'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+            'status': 'success'
+        }, room='operators', broadcast=True)
+
+@socketio.on('stream_error')
+def handle_stream_error(data):
+    """Normalize agent 'stream_error' into unified stream_status_update for UI."""
+    agent_id = data.get('agent_id')
+    stream_type = data.get('type') or data.get('stream_type')
+    error_message = data.get('error') or data.get('message') or 'unknown error'
+
+    emit('stream_status_update', {
+        'agent_id': agent_id,
+        'stream_type': stream_type,
+        'status': 'error',
+        'quality': data.get('quality', 'unknown'),
+        'error': error_message,
+        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
+    }, room='operators', broadcast=True)
+
+    if agent_id in AGENTS_DATA:
+        emit('activity_update', {
+            'id': f'act_{int(time.time())}',
+            'type': 'stream',
+            'action': f'{(stream_type or "").title()} Stream Error',
+            'details': f'{(stream_type or "").title()} stream error on agent {agent_id}: {error_message}',
+            'agent_id': agent_id,
+            'agent_name': AGENTS_DATA[agent_id].get("name", f"Agent-{agent_id}"),
+            'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+            'status': 'error'
+        }, room='operators', broadcast=True)
+
 @socketio.on('file_operation_result')
 def handle_file_operation_result(data):
     """Handle file operation results from agents"""
