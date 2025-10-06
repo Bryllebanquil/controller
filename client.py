@@ -4955,15 +4955,16 @@ def camera_capture_worker(agent_id):
         log_message("Error: OpenCV not available for camera capture", "error")
         return
     
+    cap = None
     try:
         # Try to open camera (try multiple indices)
-        cap = None
         for camera_index in range(3):  # Try cameras 0, 1, 2
             cap = cv2.VideoCapture(camera_index)
             if cap.isOpened():
                 log_message(f"Camera {camera_index} opened successfully")
                 break
             cap.release()
+            cap = None
         
         if not cap or not cap.isOpened():
             log_message("Error: Could not open any camera", "error")
@@ -4978,34 +4979,41 @@ def camera_capture_worker(agent_id):
         log_message("Camera capture started")
         
         while CAMERA_STREAMING_ENABLED:
-            start = time.time()
-            ret, frame = cap.read()
-            if not ret:
-                log_message("Failed to capture camera frame", "warning")
-                time.sleep(0.1)
-                continue
-            
-            # Put in queue, drop oldest if full
             try:
-                camera_capture_queue.put_nowait(frame)
-            except queue.Full:
+                start = time.time()
+                ret, frame = cap.read()
+                if not ret:
+                    log_message("Failed to capture camera frame", "warning")
+                    time.sleep(0.1)
+                    continue
+                
+                # Put in queue, drop oldest if full
                 try:
-                    camera_capture_queue.get_nowait()  # Remove oldest
-                    camera_capture_queue.put_nowait(frame)  # Add new
-                except queue.Empty:
-                    pass
-            
-            # Frame rate limiting
-            elapsed = time.time() - start
-            sleep_time = max(0, frame_time - elapsed)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
+                    camera_capture_queue.put_nowait(frame)
+                except queue.Full:
+                    try:
+                        camera_capture_queue.get_nowait()  # Remove oldest
+                        camera_capture_queue.put_nowait(frame)  # Add new
+                    except queue.Empty:
+                        pass
+                
+                # Frame rate limiting
+                elapsed = time.time() - start
+                sleep_time = max(0, frame_time - elapsed)
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+            except KeyboardInterrupt:
+                log_message("Camera capture worker interrupted")
+                break
         
-        cap.release()
-        log_message("Camera capture stopped")
-        
+    except KeyboardInterrupt:
+        log_message("Camera capture worker interrupted")
     except Exception as e:
         log_message(f"Camera capture error: {e}")
+    finally:
+        if cap:
+            cap.release()
+        log_message("Camera capture stopped")
 
 def camera_encode_worker(agent_id):
     """Encode camera frames from capture queue to H.264 and put in encode queue."""
@@ -5015,41 +5023,47 @@ def camera_encode_worker(agent_id):
         log_message("Error: OpenCV not available for camera encoding", "error")
         return
     
-    while CAMERA_STREAMING_ENABLED:
-        try:
-            # Get frame from capture queue
+    try:
+        while CAMERA_STREAMING_ENABLED:
             try:
-                frame = camera_capture_queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
-            
-            # Encode frame to H.264 (using JPEG as fallback since H.264 is complex)
-            try:
-                # For now, use JPEG encoding (can be upgraded to H.264 later)
-                encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 80]
-                result, encoded_frame = cv2.imencode('.jpg', frame, encode_param)
-                if result:
-                    encoded_data = encoded_frame.tobytes()
-                    
-                    # Put in encode queue, drop oldest if full
-                    try:
-                        camera_encode_queue.put_nowait(encoded_data)
-                    except queue.Full:
-                        try:
-                            camera_encode_queue.get_nowait()  # Remove oldest
-                            camera_encode_queue.put_nowait(encoded_data)  # Add new
-                        except queue.Empty:
-                            pass
-                else:
-                    log_message("Failed to encode camera frame", "warning")
-                    
-            except Exception as e:
-                log_message(f"Camera encoding error: {e}")
-                time.sleep(0.01)
+                # Get frame from capture queue
+                try:
+                    frame = camera_capture_queue.get(timeout=0.5)
+                except queue.Empty:
+                    continue
                 
-        except Exception as e:
-            log_message(f"Camera encoding worker error: {e}")
-            time.sleep(0.01)
+                # Encode frame to H.264 (using JPEG as fallback since H.264 is complex)
+                try:
+                    # For now, use JPEG encoding (can be upgraded to H.264 later)
+                    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 80]
+                    result, encoded_frame = cv2.imencode('.jpg', frame, encode_param)
+                    if result:
+                        encoded_data = encoded_frame.tobytes()
+                        
+                        # Put in encode queue, drop oldest if full
+                        try:
+                            camera_encode_queue.put_nowait(encoded_data)
+                        except queue.Full:
+                            try:
+                                camera_encode_queue.get_nowait()  # Remove oldest
+                                camera_encode_queue.put_nowait(encoded_data)  # Add new
+                            except queue.Empty:
+                                pass
+                    else:
+                        log_message("Failed to encode camera frame", "warning")
+                        
+                except Exception as e:
+                    log_message(f"Camera encoding error: {e}")
+                    time.sleep(0.1)
+                    
+            except KeyboardInterrupt:
+                log_message("Camera encode worker interrupted")
+                break
+            except Exception as e:
+                log_message(f"Camera encoding worker error: {e}")
+                time.sleep(0.1)
+    except KeyboardInterrupt:
+        log_message("Camera encode worker interrupted")
     
     log_message("Camera encoding stopped")
 
@@ -5061,35 +5075,57 @@ def camera_send_worker(agent_id):
         log_message("Error: socket.io not available for camera sending", "error")
         return
     
-    while CAMERA_STREAMING_ENABLED:
-        try:
-            # Get encoded data from encode queue
+    # Track last log time to avoid spam
+    last_disconnect_log_time = 0.0
+    
+    try:
+        while CAMERA_STREAMING_ENABLED:
             try:
-                encoded_data = camera_encode_queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
-            
-            # Send via socket.io - encode as base64 data URL for browser display
-            try:
-                # If already a data URL string, send as-is
-                if isinstance(encoded_data, str) and encoded_data.startswith('data:'):
-                    frame_data_url = encoded_data
-                else:
-                    # Encode bytes as base64 data URL
-                    frame_b64 = base64.b64encode(encoded_data).decode('utf-8')
-                    frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
+                # Get encoded data from encode queue
+                try:
+                    encoded_data = camera_encode_queue.get(timeout=0.5)
+                except queue.Empty:
+                    continue
                 
-                sio.emit('camera_frame', {
-                    'agent_id': agent_id,
-                    'frame': frame_data_url
-                })
+                # Check if socket is connected before sending
+                if not sio.connected:
+                    # Throttle disconnect log messages
+                    now = time.time()
+                    if now >= last_disconnect_log_time + 5.0:
+                        log_message("Socket.IO disconnected, deferring camera frames", "warning")
+                        last_disconnect_log_time = now
+                    time.sleep(0.5)
+                    continue
+                
+                # Send via socket.io - encode as base64 data URL for browser display
+                try:
+                    # If already a data URL string, send as-is
+                    if isinstance(encoded_data, str) and encoded_data.startswith('data:'):
+                        frame_data_url = encoded_data
+                    else:
+                        # Encode bytes as base64 data URL
+                        frame_b64 = base64.b64encode(encoded_data).decode('utf-8')
+                        frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
+                    
+                    sio.emit('camera_frame', {
+                        'agent_id': agent_id,
+                        'frame': frame_data_url
+                    })
+                except Exception as e:
+                    error_msg = str(e)
+                    # Silence "not a connected namespace" errors
+                    if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
+                        log_message(f"Camera send error: {e}")
+                    time.sleep(0.1)
+                    
+            except KeyboardInterrupt:
+                log_message("Camera send worker interrupted")
+                break
             except Exception as e:
-                log_message(f"Camera send error: {e}")
-                time.sleep(0.01)
-                
-        except Exception as e:
-            log_message(f"Camera sending error: {e}")
-            time.sleep(0.01)
+                log_message(f"Camera sending error: {e}")
+                time.sleep(0.1)
+    except KeyboardInterrupt:
+        log_message("Camera send worker interrupted")
     
     log_message("Camera sending stopped")
 
@@ -5333,40 +5369,52 @@ def stream_screen_simple_socketio(agent_id):
             frame_time = 1.0 / max(1, int(TARGET_FPS) if 'TARGET_FPS' in globals() else 15)
             log_message("Started simple Socket.IO screen stream (compat mode).")
             next_not_connected_log_time = 0.0
-            while STREAMING_ENABLED:
-                start_ts = time.time()
-                sct_img = sct.grab(monitor if isinstance(monitor, dict) else monitors[monitor_index])
-                img = np.array(sct_img)
-                if img.shape[1] != width or img.shape[0] != height:
-                    img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
-                if img.shape[2] == 4:
-                    img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-                ok, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                if ok:
-                    connected = SOCKETIO_AVAILABLE and sio is not None and getattr(sio, 'connected', False)
-                    if not connected:
-                        # Throttle log to avoid spam until socket connects
-                        now = time.time()
-                        if now >= next_not_connected_log_time:
-                            log_message("Socket.IO not connected; deferring screen frames")
-                            next_not_connected_log_time = now + 5.0
-                    else:
-                        try:
-                            b64 = base64.b64encode(encoded.tobytes()).decode('utf-8')
-                            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': f'data:image/jpeg;base64,{b64}'})
-                        except Exception as send_err:
-                            # Silence namespace/connection race errors and retry on next loop
-                            msg = str(send_err)
-                            if "not a connected namespace" in msg or "Connection is closed" in msg:
-                                pass
+            
+            try:
+                while STREAMING_ENABLED:
+                    try:
+                        start_ts = time.time()
+                        sct_img = sct.grab(monitor if isinstance(monitor, dict) else monitors[monitor_index])
+                        img = np.array(sct_img)
+                        if img.shape[1] != width or img.shape[0] != height:
+                            img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
+                        if img.shape[2] == 4:
+                            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+                        ok, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                        if ok:
+                            connected = SOCKETIO_AVAILABLE and sio is not None and getattr(sio, 'connected', False)
+                            if not connected:
+                                # Throttle log to avoid spam until socket connects
+                                now = time.time()
+                                if now >= next_not_connected_log_time:
+                                    log_message("Socket.IO not connected; deferring screen frames")
+                                    next_not_connected_log_time = now + 5.0
                             else:
-                                log_message(f"Simple stream send error: {send_err}")
-                # FPS pacing
-                elapsed = time.time() - start_ts
-                sleep_for = frame_time - elapsed
-                if sleep_for > 0:
-                    time.sleep(sleep_for)
+                                try:
+                                    b64 = base64.b64encode(encoded.tobytes()).decode('utf-8')
+                                    sio.emit('screen_frame', {'agent_id': agent_id, 'frame': f'data:image/jpeg;base64,{b64}'})
+                                except Exception as send_err:
+                                    # Silence namespace/connection race errors and retry on next loop
+                                    msg = str(send_err)
+                                    if "not a connected namespace" in msg or "Connection is closed" in msg:
+                                        pass
+                                    else:
+                                        log_message(f"Simple stream send error: {send_err}")
+                        # FPS pacing
+                        elapsed = time.time() - start_ts
+                        sleep_for = frame_time - elapsed
+                        if sleep_for > 0:
+                            time.sleep(sleep_for)
+                    except KeyboardInterrupt:
+                        log_message("Screen stream interrupted")
+                        break
+            except KeyboardInterrupt:
+                log_message("Screen stream interrupted")
+            
             return True
+    except KeyboardInterrupt:
+        log_message("Screen stream interrupted")
+        return False
     except Exception as e:
         log_message(f"Simple screen streaming error: {e}", "error")
         return False
