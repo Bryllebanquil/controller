@@ -5325,7 +5325,6 @@ def audio_send_worker(agent_id):
                     time.sleep(0.1)  # Wait for connection
                     continue
                 
-                import base64
                 # Encode binary audio data to base64 string
                 audio_b64 = base64.b64encode(encoded_data).decode('utf-8')
                 
@@ -5443,12 +5442,13 @@ def start_streaming(agent_id):
         # Try ultra-low latency pipeline first (if initialized)
         if ULTRA_LOW_LATENCY_ENABLED and PRE_INIT_SYSTEM is not None and PRE_INIT_SYSTEM.is_ready:
             try:
-                log_message("🚀 Using Ultra-Low Latency Pipeline (50-100ms latency)")
+                log_message("🚀 Using Pre-Initialized Ultra-Low Latency Pipeline")
                 
                 # Import and create pipeline if not already created
                 if not ULTRA_LOW_LATENCY_PIPELINE:
                     from ultra_low_latency import UltraLowLatencyStreamingPipeline
-                    ULTRA_LOW_LATENCY_PIPELINE = UltraLowLatencyStreamingPipeline(agent_id)
+                    # Pass pre-initialized system (NO redundant initialization!)
+                    ULTRA_LOW_LATENCY_PIPELINE = UltraLowLatencyStreamingPipeline(agent_id, pre_init_system=PRE_INIT_SYSTEM)
                     ULTRA_LOW_LATENCY_PIPELINE.sio = sio  # Give it socket.io access
                 
                 # Start the pipeline
