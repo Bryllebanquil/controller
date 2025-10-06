@@ -4,7 +4,9 @@ services:
     env: python
     pythonVersion: 3.12.6
     plan: free
-    buildCommand: pip install -r requirements-controller.txt
+    buildCommand: |
+      pip install -r requirements-controller.txt
+      cd "agent-controller ui v2.1" && npm install && npm run build && cd ..
     startCommand: gunicorn -k gthread --threads 8 --worker-connections 1000 -w 1 controller:app --bind 0.0.0.0:$PORT
     autoDeploy: true
     envVars:
