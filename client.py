@@ -5453,12 +5453,28 @@ def audio_send_worker(agent_id):
 def _run_screen_stream(agent_id):
     """Thread target for screen streaming - uses optimized multi-threaded pipeline.
     
-    CRITICAL FIX: Direct function call instead of globals().get() to ensure
-    the optimized pipeline is always used!
+    Uses globals() lookup at runtime to find functions defined later in the file.
     """
-    # Just call the optimized function directly!
-    # It's defined later in the module, but Python has already loaded it
-    return stream_screen_webrtc_or_socketio(agent_id)
+    # Look up functions at runtime (after module has loaded)
+    # This MUST use globals() because the functions are defined later in the file
+    import sys
+    current_module = sys.modules[__name__]
+    
+    # Try to get the chooser function (defined at line ~12426)
+    chooser = getattr(current_module, 'stream_screen_webrtc_or_socketio', None)
+    if callable(chooser):
+        log_message("[STREAM] Using optimized WebRTC/Socket.IO chooser")
+        return chooser(agent_id)
+    
+    # Fallback to h264 socket.io (defined at line ~12406)
+    h264_socket = getattr(current_module, 'stream_screen_h264_socketio', None)
+    if callable(h264_socket):
+        log_message("[STREAM] Using optimized H.264 Socket.IO pipeline")
+        return h264_socket(agent_id)
+    
+    # Final fallback to simple stream
+    log_message("[STREAM] Using simple Socket.IO stream (compat mode)")
+    return stream_screen_simple_socketio(agent_id)
 
 def stream_screen_simple_socketio(agent_id):
     """Compatibility fallback: single-threaded JPEG-over-Socket.IO screen stream.
