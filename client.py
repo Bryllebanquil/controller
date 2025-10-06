@@ -676,9 +676,9 @@ CAMERA_STREAMING_ENABLED = False
 CAMERA_STREAM_THREADS = []
 camera_capture_queue = None
 camera_encode_queue = None
-CAMERA_CAPTURE_QUEUE_SIZE = 5
-CAMERA_ENCODE_QUEUE_SIZE = 5
-TARGET_CAMERA_FPS = 30
+CAMERA_CAPTURE_QUEUE_SIZE = 10
+CAMERA_ENCODE_QUEUE_SIZE = 10
+TARGET_CAMERA_FPS = 20
 
 # Thread safety locks for start/stop functions
 _stream_lock = threading.Lock()
@@ -5008,10 +5008,11 @@ def camera_capture_worker(agent_id):
             log_message("Error: Could not open any camera", "error")
             return
         
-        # Set camera properties for better performance
+        # Set camera properties for better performance and lower bandwidth
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         cap.set(cv2.CAP_PROP_FPS, TARGET_CAMERA_FPS)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize buffer for lower latency
         
         frame_time = 1.0 / TARGET_CAMERA_FPS
         log_message("Camera capture started")
@@ -5025,15 +5026,17 @@ def camera_capture_worker(agent_id):
                     time.sleep(0.1)
                     continue
                 
-                # Put in queue, drop oldest if full
-                try:
-                    camera_capture_queue.put_nowait(frame)
-                except queue.Full:
+                # Put in queue, skip frame if queue is too full (adaptive frame dropping)
+                queue_size = camera_capture_queue.qsize()
+                if queue_size < CAMERA_CAPTURE_QUEUE_SIZE:
+                    # Queue has space, add frame
                     try:
-                        camera_capture_queue.get_nowait()  # Remove oldest
-                        camera_capture_queue.put_nowait(frame)  # Add new
-                    except queue.Empty:
-                        pass
+                        camera_capture_queue.put_nowait(frame)
+                    except queue.Full:
+                        pass  # Skip this frame if queue filled up
+                else:
+                    # Queue is full, skip this frame to prevent backlog
+                    pass
                 
                 # Frame rate limiting
                 elapsed = time.time() - start
@@ -5072,8 +5075,16 @@ def camera_encode_worker(agent_id):
                 
                 # Encode frame to H.264 (using JPEG as fallback since H.264 is complex)
                 try:
-                    # For now, use JPEG encoding (can be upgraded to H.264 later)
-                    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 80]
+                    # Dynamic JPEG quality based on queue fullness
+                    queue_fullness = camera_encode_queue.qsize() / CAMERA_ENCODE_QUEUE_SIZE
+                    if queue_fullness > 0.8:
+                        jpeg_quality = 50  # Low quality when queue is full
+                    elif queue_fullness > 0.5:
+                        jpeg_quality = 60  # Medium quality
+                    else:
+                        jpeg_quality = 65  # Good quality when queue is empty
+                    
+                    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality]
                     result, encoded_frame = cv2.imencode('.jpg', frame, encode_param)
                     if result:
                         encoded_data = encoded_frame.tobytes()
@@ -5116,6 +5127,17 @@ def camera_send_worker(agent_id):
     # Track last log time to avoid spam
     last_disconnect_log_time = 0.0
     
+    # FPS and bandwidth tracking
+    frame_count = 0
+    bytes_sent = 0
+    start_time = time.time()
+    last_stats_time = start_time
+    
+    # Bandwidth limit: 5 MB/s (instead of 16 MB/s)
+    max_bytes_per_second = 5 * 1024 * 1024
+    bytes_this_second = 0
+    second_start = time.time()
+    
     try:
         while CAMERA_STREAMING_ENABLED:
             try:
@@ -5149,6 +5171,35 @@ def camera_send_worker(agent_id):
                         'agent_id': agent_id,
                         'frame': frame_data_url
                     })
+                    
+                    # Track bandwidth and FPS
+                    frame_size = len(encoded_data)
+                    bytes_sent += frame_size
+                    bytes_this_second += frame_size
+                    frame_count += 1
+                    
+                    # Check if we've exceeded bandwidth limit this second
+                    now = time.time()
+                    if now - second_start >= 1.0:
+                        # New second, reset counter
+                        bytes_this_second = 0
+                        second_start = now
+                    elif bytes_this_second >= max_bytes_per_second:
+                        # Hit bandwidth limit, sleep until next second
+                        sleep_time = 1.0 - (now - second_start)
+                        if sleep_time > 0:
+                            time.sleep(sleep_time)
+                        bytes_this_second = 0
+                        second_start = time.time()
+                    
+                    # Log stats every 5 seconds
+                    if now - last_stats_time >= 5.0:
+                        elapsed = now - start_time
+                        fps = frame_count / elapsed if elapsed > 0 else 0
+                        mbps = (bytes_sent / elapsed / 1024 / 1024) if elapsed > 0 else 0
+                        log_message(f"Camera stream: {fps:.1f} FPS, {mbps:.1f} MB/s, {frame_count} frames total")
+                        last_stats_time = now
+                    
                 except Exception as e:
                     error_msg = str(e)
                     # Silence "not a connected namespace" errors
