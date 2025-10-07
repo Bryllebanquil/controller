@@ -54,6 +54,10 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState("overview");
   const [agents, setAgents] = useState(liveAgents);
   const [networkActivity, setNetworkActivity] = useState("0.0");
+  // Sidebar open by default on desktop, closed on mobile
+  const [sidebarOpen, setSidebarOpen] = useState(
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
+  );
 
   useEffect(() => {
     setAgents(liveAgents);
@@ -191,6 +195,7 @@ function AppContent() {
           onTabChange={setActiveTab}
           onAgentSelect={handleAgentSelect}
           onAgentDeselect={handleAgentDeselect}
+          onMenuToggle={() => setSidebarOpen(!sidebarOpen)}
         />
       </ErrorBoundary>
 
@@ -198,8 +203,13 @@ function AppContent() {
         <ErrorBoundary>
           <Sidebar
             activeTab={activeTab}
-            onTabChange={setActiveTab}
+            onTabChange={(tab) => {
+              setActiveTab(tab);
+              setSidebarOpen(false); // Close sidebar on mobile after selection
+            }}
             agentCount={onlineAgents.length}
+            isOpen={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
           />
         </ErrorBoundary>
 
@@ -299,28 +309,30 @@ function AppContent() {
                 onValueChange={setActiveTab}
                 className="space-y-6"
               >
-                <TabsList className="grid w-full grid-cols-8">
-                  <TabsTrigger value="overview">
-                    Overview
-                  </TabsTrigger>
-                  <TabsTrigger value="agents">
-                    Agents
-                  </TabsTrigger>
-                  <TabsTrigger value="streaming">
-                    Streaming
-                  </TabsTrigger>
-                  <TabsTrigger value="commands">
-                    Commands
-                  </TabsTrigger>
-                  <TabsTrigger value="files">Files</TabsTrigger>
-                  <TabsTrigger value="voice">Voice</TabsTrigger>
-                  <TabsTrigger value="monitoring">
-                    Monitoring
-                  </TabsTrigger>
-                  <TabsTrigger value="webrtc">
-                    WebRTC Pro
-                  </TabsTrigger>
-                </TabsList>
+                <div className="overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+                  <TabsList className="inline-flex w-full sm:w-auto min-w-full sm:min-w-0">
+                    <TabsTrigger value="overview" className="flex-shrink-0">
+                      Overview
+                    </TabsTrigger>
+                    <TabsTrigger value="agents" className="flex-shrink-0">
+                      Agents
+                    </TabsTrigger>
+                    <TabsTrigger value="streaming" className="flex-shrink-0">
+                      Streaming
+                    </TabsTrigger>
+                    <TabsTrigger value="commands" className="flex-shrink-0">
+                      Commands
+                    </TabsTrigger>
+                    <TabsTrigger value="files" className="flex-shrink-0">Files</TabsTrigger>
+                    <TabsTrigger value="voice" className="flex-shrink-0">Voice</TabsTrigger>
+                    <TabsTrigger value="monitoring" className="flex-shrink-0">
+                      Monitoring
+                    </TabsTrigger>
+                    <TabsTrigger value="webrtc" className="flex-shrink-0">
+                      WebRTC Pro
+                    </TabsTrigger>
+                  </TabsList>
+                </div>
 
                 <TabsContent
                   value="overview"

@@ -168,6 +168,33 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+
+  /* Mobile responsive utilities */
+  @media (max-width: 1023px) {
+    /* Ensure body doesn't scroll when mobile menu is open */
+    body.menu-open {
+      overflow: hidden;
+    }
+  }
+
+  /* Smooth scrolling for tabs on mobile */
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .overflow-x-auto::-webkit-scrollbar {
+    height: 4px;
+  }
+
+  .overflow-x-auto::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .overflow-x-auto::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted));
+    border-radius: 2px;
+  }
 }
 
 /**
