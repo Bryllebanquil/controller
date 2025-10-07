@@ -192,7 +192,7 @@ function AppContent() {
         activeTab={activeTab}
         agentCount={onlineAgents.length}
       >
-        <main className="flex-1 overflow-auto relative z-0 bg-background">
+        <main className="relative z-0 bg-background min-h-full">
           <ErrorBoundary>
             <div className="p-4 sm:p-6 space-y-6">
 

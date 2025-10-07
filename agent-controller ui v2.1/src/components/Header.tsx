@@ -1,4 +1,5 @@
-import { Shield, User, Sun, Moon, Monitor, CheckCircle, LogOut, Settings, BarChart3, Terminal, Files, Activity, Users, Settings as SettingsIcon, HelpCircle, Zap, Mic } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Shield, User, Sun, Moon, Monitor, CheckCircle, LogOut, Settings, BarChart3, Terminal, Files, Activity, Users, Settings as SettingsIcon, HelpCircle, Zap, Mic, Menu, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from './ui/dropdown-menu';
@@ -38,6 +39,21 @@ export function Header({
 }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const { logout } = useSocket();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Close sidebar on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && sidebarOpen) {
+        setSidebarOpen(false);
+      }
+    };
+    
+    if (sidebarOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [sidebarOpen]);
 
   const handleLogout = async () => {
     try {
@@ -57,26 +73,53 @@ export function Header({
     if (onTabChange) {
       onTabChange(tab);
     }
+    // Close sidebar on mobile after selection
+    setSidebarOpen(false);
   };
 
   return (
     <div className="flex h-screen">
-      {/* Sidebar - Static and Always Visible */}
+      {/* Mobile Overlay */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar - Responsive with Media Queries */}
       <div 
         id="main-sidebar"
-        className="w-64 border-r bg-background flex-shrink-0 flex flex-col"
+        className={cn(
+          "w-64 border-r bg-background flex-shrink-0 flex flex-col z-50",
+          "fixed md:static inset-y-0 left-0",
+          "transition-transform duration-300 ease-in-out md:translate-x-0",
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        )}
       >
         {/* Sidebar Header/Logo */}
-        <div className="h-16 border-b flex items-center px-4">
-          <Shield className="h-6 w-6 text-primary flex-shrink-0 mr-2" />
-          <div className="min-w-0">
-            <h1 className="text-sm font-semibold truncate">Neural Control Hub</h1>
-            <p className="text-xs text-muted-foreground">v2.1</p>
+        <div className="h-16 border-b flex items-center px-4 justify-between">
+          <div className="flex items-center min-w-0">
+            <Shield className="h-6 w-6 text-primary flex-shrink-0 mr-2" />
+            <div className="min-w-0">
+              <h1 className="text-sm font-semibold truncate">Neural Control Hub</h1>
+              <p className="text-xs text-muted-foreground">v2.1</p>
+            </div>
           </div>
+          
+          {/* Close button - Mobile only */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden"
+            onClick={() => setSidebarOpen(false)}
+          >
+            <X className="h-5 w-5" />
+          </Button>
         </div>
 
-        {/* Sidebar Navigation */}
-        <div className="flex-1 overflow-auto p-4">
+        {/* Sidebar Navigation - Hidden on mobile */}
+        <div className="hidden md:block flex-1 overflow-auto p-4">
           <nav className="space-y-1" role="navigation" aria-label="Main navigation">
             {sidebarItems.map((item) => {
               const Icon = item.icon;
@@ -108,8 +151,8 @@ export function Header({
           </nav>
         </div>
         
-        {/* Sidebar Footer */}
-        <div className="border-t p-4 flex-shrink-0">
+        {/* Sidebar Footer - Hidden on mobile */}
+        <div className="hidden md:block border-t p-4 flex-shrink-0">
           <div className="space-y-1">
             <Button 
               variant={activeTab === 'settings' ? "secondary" : "ghost"} 
@@ -134,12 +177,24 @@ export function Header({
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Top Header Bar */}
-        <header className="sticky top-0 z-[100] w-full h-16 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <header className="sticky top-0 z-30 w-full h-16 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <div className="h-full flex items-center justify-between px-4 sm:px-6 gap-4">
             <div className="flex items-center space-x-2 sm:space-x-4 min-w-0 flex-1">
-              <Badge variant="secondary" className="text-xs">Neural Control Hub v2.1</Badge>
+              {/* Burger Menu - Mobile Only */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="md:hidden flex-shrink-0"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                aria-label="Toggle menu"
+              >
+                <Menu className="h-5 w-5" />
+              </Button>
+              
+              <Badge variant="secondary" className="text-xs hidden sm:inline-flex">Neural Control Hub v2.1</Badge>
+              <Badge variant="secondary" className="text-xs sm:hidden">NCH v2.1</Badge>
             </div>
 
             <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
@@ -218,8 +273,10 @@ export function Header({
           </div>
         </header>
 
-        {/* Main Content - Rendered as children */}
-        {children}
+        {/* Main Content - Rendered as children - Scrollable on mobile */}
+        <div className="flex-1 overflow-auto">
+          {children}
+        </div>
       </div>
     </div>
   );
