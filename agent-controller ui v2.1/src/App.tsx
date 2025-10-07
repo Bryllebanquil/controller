@@ -96,6 +96,17 @@ function AppContent() {
     "asc",
   );
 
+  // Close sidebar with Escape on mobile/tablet
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && sidebarOpen && typeof window !== 'undefined' && window.innerWidth < 1280) {
+        setSidebarOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [sidebarOpen]);
+
   // Show login screen if not authenticated
   if (!authenticated) {
     return <Login />;

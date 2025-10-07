@@ -1,4 +1,5 @@
 import { cn } from './ui/utils';
+import { useEffect, useRef } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { 
@@ -35,18 +36,44 @@ const sidebarItems = [
 ];
 
 export function Sidebar({ activeTab, onTabChange, agentCount, isOpen = true, onClose }: SidebarProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Click-outside to close (mobile/tablet only)
+  useEffect(() => {
+    const handlePointer = (e: MouseEvent | TouchEvent) => {
+      if (!isOpen) return;
+      if (typeof window !== 'undefined' && window.innerWidth >= 1280) return; // only below xl
+      const target = e.target as Node | null;
+      if (containerRef.current && target && !containerRef.current.contains(target)) {
+        onClose?.();
+      }
+    };
+    document.addEventListener('mousedown', handlePointer);
+    document.addEventListener('touchstart', handlePointer, { passive: true });
+    return () => {
+      document.removeEventListener('mousedown', handlePointer);
+      document.removeEventListener('touchstart', handlePointer as any);
+    };
+  }, [isOpen, onClose]);
+
   return (
     <>
       {/* Mobile/Laptop Overlay - Starts below header */}
       {isOpen && (
         <div 
           className="fixed inset-x-0 top-16 bottom-0 bg-black/50 z-[60] xl:hidden"
-          onClick={onClose}
+          role="button"
+          aria-label="Close menu overlay"
+          tabIndex={0}
+          onClick={() => onClose?.()}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') onClose?.();
+          }}
         />
       )}
       
       {/* Sidebar */}
-      <div className={cn(
+      <div ref={containerRef} className={cn(
         "fixed xl:static left-0 top-16 bottom-0 z-[70] w-64 border-r bg-background flex-shrink-0 transition-transform duration-300 ease-in-out xl:translate-x-0 xl:top-0 xl:bottom-auto xl:h-full",
         isOpen ? "translate-x-0" : "-translate-x-full"
       )}>

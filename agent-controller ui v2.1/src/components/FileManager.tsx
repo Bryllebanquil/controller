@@ -158,8 +158,13 @@ export function FileManager({ agentId }: FileManagerProps) {
         toast.error(`${data.op} failed: ${data.error || ''}`);
       }
     };
+    // Support both legacy and current event names
     socket.on('file_op_result', handler);
-    return () => { socket.off('file_op_result', handler); };
+    socket.on('file_operation_result', handler);
+    return () => {
+      socket.off('file_op_result', handler);
+      socket.off('file_operation_result', handler);
+    };
   }, [socket, agentId, files]);
 
   // Listen for file_list updates from agent and map to UI items
