@@ -249,12 +249,12 @@ function AppContent() {
 
         <main className="flex-1 overflow-auto relative z-0">
           <ErrorBoundary>
-            <div className="p-4 sm:p-6 space-y-6">
+            <div className="container mx-auto max-w-7xl p-4 sm:p-6 space-y-6">
 
             {/* Overview Stats - only show for overview tab */}
             {activeTab === "overview" &&
               !["settings", "about"].includes(activeTab) && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6 mb-6">
                   <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                       <CardTitle className="text-sm font-medium">
@@ -343,7 +343,7 @@ function AppContent() {
                 onValueChange={setActiveTab}
                 className="space-y-6"
               >
-                <div className="overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+                <div className="overflow-x-auto pb-2">
                   <TabsList className="inline-flex w-full sm:w-auto min-w-full sm:min-w-0">
                     <TabsTrigger value="overview" className="flex-shrink-0">
                       Overview

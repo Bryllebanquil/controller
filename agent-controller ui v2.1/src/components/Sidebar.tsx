@@ -74,7 +74,7 @@ export function Sidebar({ activeTab, onTabChange, agentCount, isOpen = true, onC
       
       {/* Sidebar */}
       <div ref={containerRef} className={cn(
-        "fixed xl:static left-0 top-16 bottom-0 z-[70] w-64 border-r bg-background flex-shrink-0 transition-transform duration-300 ease-in-out xl:translate-x-0 xl:top-0 xl:bottom-auto xl:h-full",
+        "fixed xl:sticky xl:top-16 left-0 top-16 bottom-0 z-[70] w-[260px] border-r bg-background flex-shrink-0 transition-transform duration-300 ease-in-out xl:translate-x-0 xl:bottom-auto xl:h-[calc(100vh-4rem)]",
         isOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="flex h-full flex-col">

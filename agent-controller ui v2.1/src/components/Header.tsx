@@ -34,7 +34,7 @@ export function Header({ onTabChange, onAgentSelect, onAgentDeselect, onMenuTogg
 
   return (
     <header className="sticky top-0 z-[100] w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="w-full flex h-16 items-center justify-between px-4 sm:px-6 gap-4 max-w-full">
+      <div className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-6 gap-4">
         <div className="flex items-center space-x-2 sm:space-x-4 min-w-0 flex-1">
           {/* Mobile Menu Button */}
           <Button

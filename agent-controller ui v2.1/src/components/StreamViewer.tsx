@@ -344,7 +344,7 @@ export function StreamViewer({ agentId, type, title }: StreamViewerProps) {
   }, [agentId]);
 
   return (
-    <Card className={cn("transition-all", isFullscreen && "fixed inset-4 z-50")}>
+    <Card className={cn("transition-all", isFullscreen ? "fixed inset-4 z-50" : "")}> 
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
