@@ -6,7 +6,6 @@ import { CommandPanel } from "./components/CommandPanel";
 import { SystemMonitor } from "./components/SystemMonitor";
 import { FileManager } from "./components/FileManager";
 import { Header } from "./components/Header";
-import { Sidebar } from "./components/Sidebar";
 import { SearchAndFilter } from "./components/SearchAndFilter";
 import { ActivityFeed } from "./components/ActivityFeed";
 import { QuickActions } from "./components/QuickActions";
@@ -245,31 +244,24 @@ function AppContent() {
     <div className="min-h-screen bg-background">
       <ErrorBoundary>
         <Header
-          onTabChange={setActiveTab}
+          onTabChange={(tab) => {
+            setActiveTab(tab);
+            // Close sidebar on mobile/tablet after selection
+            if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+              setSidebarOpen(false);
+            }
+          }}
           onAgentSelect={handleAgentSelect}
           onAgentDeselect={handleAgentDeselect}
           onMenuToggle={() => setSidebarOpen(!sidebarOpen)}
           sidebarOpen={sidebarOpen}
+          activeTab={activeTab}
+          agentCount={onlineAgents.length}
+          onSidebarClose={() => setSidebarOpen(false)}
         />
       </ErrorBoundary>
 
       <div className="flex min-h-[calc(100vh-4rem)]">
-        <ErrorBoundary>
-          <Sidebar
-            activeTab={activeTab}
-            onTabChange={(tab) => {
-              setActiveTab(tab);
-              // Close sidebar on mobile/tablet after selection
-              if (typeof window !== 'undefined' && window.innerWidth < 1024) {
-                setSidebarOpen(false);
-              }
-            }}
-            agentCount={onlineAgents.length}
-            isOpen={sidebarOpen}
-            onClose={() => setSidebarOpen(false)}
-          />
-        </ErrorBoundary>
-
         <main className="flex-1 overflow-auto relative z-0">
           <ErrorBoundary>
             <div className="p-4 sm:p-6 space-y-6">
