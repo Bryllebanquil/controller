@@ -231,22 +231,14 @@ function AppContent() {
           onAgentDeselect={handleAgentDeselect}
           onMenuToggle={() => setSidebarOpen(!sidebarOpen)}
           isMenuOpen={sidebarOpen}
+          activeTab={activeTab}
+          agentCount={onlineAgents.length}
         />
       </ErrorBoundary>
 
       <div className="flex min-h-[calc(100vh-4rem)]">
-        <ErrorBoundary>
-          <Sidebar
-            activeTab={activeTab}
-            onTabChange={(tab) => {
-              setActiveTab(tab);
-              setSidebarOpen(false); // Close sidebar on mobile after selection
-            }}
-            agentCount={onlineAgents.length}
-            isOpen={sidebarOpen}
-            onClose={() => setSidebarOpen(false)}
-          />
-        </ErrorBoundary>
+        {/* Sidebar is merged into Header; keep a11y space filler for layout on xl+ */}
+        <div className="hidden xl:block w-[260px] flex-shrink-0" aria-hidden="true" />
 
         <main className="flex-1 overflow-auto relative z-0">
           <ErrorBoundary>

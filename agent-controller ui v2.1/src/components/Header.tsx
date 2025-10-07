@@ -1,4 +1,4 @@
-import { Shield, User, Sun, Moon, Monitor, CheckCircle, LogOut, Settings, Menu, X } from 'lucide-react';
+import { Shield, User, Sun, Moon, Monitor, CheckCircle, LogOut, Settings, Menu, X, BarChart3, Terminal, Files, Activity, Users, HelpCircle, Zap, Mic } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from './ui/dropdown-menu';
@@ -13,9 +13,11 @@ interface HeaderProps {
   onAgentDeselect?: () => void;
   onMenuToggle?: () => void;
   isMenuOpen?: boolean;
+  activeTab?: string;
+  agentCount?: number;
 }
 
-export function Header({ onTabChange, onAgentSelect, onAgentDeselect, onMenuToggle, isMenuOpen }: HeaderProps) {
+export function Header({ onTabChange, onAgentSelect, onAgentDeselect, onMenuToggle, isMenuOpen, activeTab, agentCount = 0 }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const { logout } = useSocket();
 
@@ -33,9 +35,22 @@ export function Header({ onTabChange, onAgentSelect, onAgentDeselect, onMenuTogg
     }
   };
 
+  // Sidebar items (merged into this component)
+  const sidebarItems = [
+    { id: 'overview', label: 'Overview', icon: BarChart3 },
+    { id: 'agents', label: 'Agents', icon: Users },
+    { id: 'streaming', label: 'Streaming', icon: Monitor },
+    { id: 'commands', label: 'Commands', icon: Terminal },
+    { id: 'files', label: 'Files', icon: Files },
+    { id: 'voice', label: 'Voice Control', icon: Mic, badge: 'AI' },
+    { id: 'monitoring', label: 'Monitoring', icon: Activity },
+    { id: 'webrtc', label: 'WebRTC Pro', icon: Zap, badge: 'NEW' },
+  ] as const;
+
   return (
-    <header className="sticky top-0 z-[100] w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-6 gap-4">
+    <>
+      <header className="sticky top-0 z-[100] w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-6 gap-4">
         <div className="flex items-center space-x-2 sm:space-x-4 min-w-0 flex-1">
           {/* Mobile Menu Button */}
           <Button
@@ -137,7 +152,114 @@ export function Header({ onTabChange, onAgentSelect, onAgentDeselect, onMenuTogg
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+        </div>
+      </header>
+
+      {/* Overlay that does not block header (starts below header) */}
+      {isMenuOpen && (
+        <div
+          className="fixed inset-x-0 top-16 bottom-0 bg-black/50 z-[60]"
+          role="button"
+          aria-label="Close menu overlay"
+          tabIndex={0}
+          onClick={onMenuToggle}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') onMenuToggle?.();
+          }}
+        />
+      )}
+
+      {/* Integrated Sidebar (merged) */}
+      <div
+        id="app-sidebar"
+        aria-hidden={!isMenuOpen}
+        className={[
+          'fixed left-0 top-16 bottom-0 z-[70] w-[260px] border-r bg-background transition-transform duration-300 ease-in-out',
+          isMenuOpen ? 'translate-x-0' : '-translate-x-full xl:translate-x-0',
+          'xl:sticky xl:top-16 xl:h-[calc(100vh-4rem)]'
+        ].join(' ')}
+      >
+        <div className="flex h-full flex-col">
+          <div className="xl:hidden flex items-center justify-between p-4 border-b">
+            <h2 className="text-lg font-semibold">Menu</h2>
+            <Button variant="ghost" size="icon" onClick={onMenuToggle}>
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+
+          <div className="flex-1 overflow-auto p-4">
+            <nav className="space-y-1">
+              {sidebarItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <Button
+                    key={item.id}
+                    variant={isActive ? 'secondary' : 'ghost'}
+                    className={[
+                      'w-full justify-start h-10',
+                      isActive ? 'bg-secondary' : ''
+                    ].join(' ')}
+                    onClick={() => {
+                      onTabChange?.(item.id);
+                      // close on small screens
+                      if (typeof window !== 'undefined' && window.innerWidth < 1280) {
+                        onMenuToggle?.();
+                      }
+                    }}
+                  >
+                    <Icon className="mr-2 h-4 w-4 flex-shrink-0" />
+                    <span className="flex-1 text-left">{item.label}</span>
+                    {item.id === 'agents' && (
+                      <Badge variant="secondary" className="ml-2 h-5 text-xs">
+                        {agentCount}
+                      </Badge>
+                    )}
+                    {item.badge && (
+                      <Badge variant="default" className="ml-2 h-5 text-xs">
+                        {item.badge}
+                      </Badge>
+                    )}
+                  </Button>
+                );
+              })}
+            </nav>
+          </div>
+
+          <div className="border-t p-4 flex-shrink-0">
+            <div className="space-y-1">
+              <Button
+                variant={activeTab === 'settings' ? 'secondary' : 'ghost'}
+                className="w-full justify-start h-9"
+                size="sm"
+                onClick={() => {
+                  onTabChange?.('settings');
+                  if (typeof window !== 'undefined' && window.innerWidth < 1280) {
+                    onMenuToggle?.();
+                  }
+                }}
+              >
+                <Settings className="mr-2 h-4 w-4" />
+                Settings
+              </Button>
+              <Button
+                variant={activeTab === 'about' ? 'secondary' : 'ghost'}
+                className="w-full justify-start h-9"
+                size="sm"
+                onClick={() => {
+                  onTabChange?.('about');
+                  if (typeof window !== 'undefined' && window.innerWidth < 1280) {
+                    onMenuToggle?.();
+                  }
+                }}
+              >
+                <HelpCircle className="mr-2 h-4 w-4" />
+                About
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
-    </header>
+    </>
   );
 }
