@@ -4943,30 +4943,38 @@ LAST_CLIPBOARD_CONTENT = ""
 
 def get_or_create_agent_id():
     """
-    Gets a unique agent ID from config directory or creates it.
+    Gets agent ID using the computer's hostname (e.g., DESKTOP-8SOSPFT).
+    This makes it easy to identify agents by their computer name.
     """
+    # Use hostname as agent ID (e.g., DESKTOP-8SOSPFT)
+    agent_id = socket.gethostname()
+    
+    log_message(f"[AGENT ID] Using hostname as agent ID: {agent_id}")
+    
+    # Save to config file for consistency
     if WINDOWS_AVAILABLE:
         config_path = os.getenv('APPDATA')
     else:
         config_path = os.path.expanduser('~/.config')
         
-    os.makedirs(config_path, exist_ok=True)
-    id_file_path = os.path.join(config_path, 'agent_id.txt')
-    
-    if os.path.exists(id_file_path):
-        with open(id_file_path, 'r') as f:
-            return f.read().strip()
-    else:
-        agent_id = str(uuid.uuid4())
+    try:
+        os.makedirs(config_path, exist_ok=True)
+        id_file_path = os.path.join(config_path, 'agent_id.txt')
+        
+        # Save hostname to file
         with open(id_file_path, 'w') as f:
             f.write(agent_id)
+        
         # Hide the file on Windows
         if WINDOWS_AVAILABLE:
             try:
                 win32api.SetFileAttributes(id_file_path, win32con.FILE_ATTRIBUTE_HIDDEN)
             except:
                 pass
-        return agent_id
+    except Exception as e:
+        log_message(f"Could not save agent ID to file: {e}", "warning")
+    
+    return agent_id
 
 def stream_screen(agent_id):
     """
