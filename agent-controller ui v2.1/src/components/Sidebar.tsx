@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { cn } from './ui/utils';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -35,6 +36,20 @@ const sidebarItems = [
 ];
 
 export function Sidebar({ activeTab, onTabChange, agentCount, isOpen = true, onClose }: SidebarProps) {
+  // Close sidebar on Escape key press (mobile/tablet)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen && onClose) {
+        onClose();
+      }
+    };
+    
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [isOpen, onClose]);
+
   return (
     <>
       {/* Mobile/Tablet Overlay - Starts below header */}
@@ -46,11 +61,14 @@ export function Sidebar({ activeTab, onTabChange, agentCount, isOpen = true, onC
       )}
       
       {/* Sidebar */}
-      <div className={cn(
-        "fixed lg:static left-0 top-16 bottom-0 z-[70] w-64 border-r bg-background flex-shrink-0 transition-transform duration-300 ease-in-out lg:top-0 lg:bottom-auto lg:h-full",
-        isOpen ? "translate-x-0" : "-translate-x-full",
-        "lg:translate-x-0" // Always visible on desktop (lg+)
-      )}>
+      <div 
+        id="main-sidebar"
+        className={cn(
+          "fixed lg:static left-0 top-16 bottom-0 z-[70] w-64 border-r bg-background flex-shrink-0 transition-transform duration-300 ease-in-out lg:top-0 lg:bottom-auto lg:h-full",
+          isOpen ? "translate-x-0" : "-translate-x-full",
+          "lg:translate-x-0" // Always visible on desktop (lg+)
+        )}
+      >
         <div className="flex h-full flex-col">
           {/* Mobile/Tablet Close Button */}
           <div className="lg:hidden flex items-center justify-between p-4 border-b">
@@ -61,11 +79,12 @@ export function Sidebar({ activeTab, onTabChange, agentCount, isOpen = true, onC
               onClick={onClose}
             >
               <X className="h-5 w-5" />
+              <span className="sr-only">Close menu</span>
             </Button>
           </div>
           
           <div className="flex-1 overflow-auto p-4">
-            <nav className="space-y-1">
+            <nav className="space-y-1" role="navigation" aria-label="Main navigation">
               {sidebarItems.map((item) => {
                 const Icon = item.icon;
                 return (

@@ -60,10 +60,20 @@ function AppContent() {
   );
 
   // Lock body scroll when sidebar is open on mobile/tablet
+  // Also auto-close sidebar when resizing from desktop to mobile
   useEffect(() => {
     const updateBodyScroll = () => {
       if (typeof window !== 'undefined') {
-        if (sidebarOpen && window.innerWidth < 1024) {
+        const isMobileOrTablet = window.innerWidth < 1024;
+        
+        // Auto-close sidebar if resizing from desktop to mobile/tablet
+        if (isMobileOrTablet && sidebarOpen) {
+          // Only auto-close if we're actually on a small screen
+          // This prevents issues on initial load
+          setSidebarOpen(false);
+        }
+        
+        if (sidebarOpen && isMobileOrTablet) {
           document.body.style.overflow = 'hidden';
         } else {
           document.body.style.overflow = '';
@@ -71,11 +81,19 @@ function AppContent() {
       }
     };
 
+    // Debounce resize events for better performance
+    let resizeTimeout: NodeJS.Timeout;
+    const handleResize = () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(updateBodyScroll, 150);
+    };
+
     updateBodyScroll();
-    window.addEventListener('resize', updateBodyScroll);
+    window.addEventListener('resize', handleResize);
     
     return () => {
-      window.removeEventListener('resize', updateBodyScroll);
+      clearTimeout(resizeTimeout);
+      window.removeEventListener('resize', handleResize);
       if (typeof document !== 'undefined') {
         document.body.style.overflow = '';
       }
@@ -219,6 +237,7 @@ function AppContent() {
           onAgentSelect={handleAgentSelect}
           onAgentDeselect={handleAgentDeselect}
           onMenuToggle={() => setSidebarOpen(!sidebarOpen)}
+          sidebarOpen={sidebarOpen}
         />
       </ErrorBoundary>
 

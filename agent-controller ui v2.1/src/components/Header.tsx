@@ -12,9 +12,10 @@ interface HeaderProps {
   onAgentSelect?: () => void;
   onAgentDeselect?: () => void;
   onMenuToggle?: () => void;
+  sidebarOpen?: boolean;
 }
 
-export function Header({ onTabChange, onAgentSelect, onAgentDeselect, onMenuToggle }: HeaderProps) {
+export function Header({ onTabChange, onAgentSelect, onAgentDeselect, onMenuToggle, sidebarOpen = false }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const { logout } = useSocket();
 
@@ -43,6 +44,8 @@ export function Header({ onTabChange, onAgentSelect, onAgentDeselect, onMenuTogg
             className="lg:hidden flex-shrink-0"
             onClick={onMenuToggle}
             aria-label="Toggle menu"
+            aria-expanded={sidebarOpen}
+            aria-controls="main-sidebar"
           >
             <Menu className="h-5 w-5" />
             <span className="sr-only">Toggle menu</span>
