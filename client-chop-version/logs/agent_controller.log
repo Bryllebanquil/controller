@@ -1,0 +1,3 @@
+2025-10-02 23:27:39,602 - agent_controller - INFO - logging_utils:159 - Testing enhanced logging system
+2025-10-02 23:27:39,604 - agent_controller - WARNING - logging_utils:114 - [SECURITY] Security event test - Details: {'test': True}
+2025-10-02 23:27:39,604 - agent_controller - WARNING - logging_utils:126 - [UAC_BYPASS] Method: Test Method - Status: SUCCESS
