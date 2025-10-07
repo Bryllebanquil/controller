@@ -73,7 +73,7 @@ export function Sidebar({ activeTab, onTabChange, agentCount, isOpen = true, onC
       )}
       
       {/* Sidebar */}
-      <div ref={containerRef} className={cn(
+      <div id="app-sidebar" aria-hidden={!isOpen} ref={containerRef} className={cn(
         "fixed xl:sticky xl:top-16 left-0 top-16 bottom-0 z-[70] w-[260px] border-r bg-background flex-shrink-0 transition-transform duration-300 ease-in-out xl:translate-x-0 xl:bottom-auto xl:h-[calc(100vh-4rem)]",
         isOpen ? "translate-x-0" : "-translate-x-full"
       )}>

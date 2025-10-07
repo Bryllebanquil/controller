@@ -1,4 +1,4 @@
-import { Shield, User, Sun, Moon, Monitor, CheckCircle, LogOut, Settings, Menu } from 'lucide-react';
+import { Shield, User, Sun, Moon, Monitor, CheckCircle, LogOut, Settings, Menu, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from './ui/dropdown-menu';
@@ -12,9 +12,10 @@ interface HeaderProps {
   onAgentSelect?: () => void;
   onAgentDeselect?: () => void;
   onMenuToggle?: () => void;
+  isMenuOpen?: boolean;
 }
 
-export function Header({ onTabChange, onAgentSelect, onAgentDeselect, onMenuToggle }: HeaderProps) {
+export function Header({ onTabChange, onAgentSelect, onAgentDeselect, onMenuToggle, isMenuOpen }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const { logout } = useSocket();
 
@@ -42,9 +43,16 @@ export function Header({ onTabChange, onAgentSelect, onAgentDeselect, onMenuTogg
             size="icon"
             className="xl:hidden flex-shrink-0"
             onClick={onMenuToggle}
+            aria-expanded={!!isMenuOpen}
+            aria-controls="app-sidebar"
+            aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
           >
-            <Menu className="h-5 w-5" />
-            <span className="sr-only">Toggle menu</span>
+            {isMenuOpen ? (
+              <X className="h-5 w-5" />
+            ) : (
+              <Menu className="h-5 w-5" />
+            )}
+            <span className="sr-only">{isMenuOpen ? 'Close menu' : 'Open menu'}</span>
           </Button>
           
           <div className="flex items-center space-x-2 min-w-0">

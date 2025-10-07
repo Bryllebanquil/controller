@@ -230,6 +230,7 @@ function AppContent() {
           onAgentSelect={handleAgentSelect}
           onAgentDeselect={handleAgentDeselect}
           onMenuToggle={() => setSidebarOpen(!sidebarOpen)}
+          isMenuOpen={sidebarOpen}
         />
       </ErrorBoundary>
 
