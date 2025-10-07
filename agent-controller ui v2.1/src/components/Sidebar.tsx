@@ -52,7 +52,7 @@ export function Sidebar({ activeTab, onTabChange, agentCount, isOpen = true, onC
       )}>
         <div className="flex h-full flex-col">
           {/* Mobile Close Button */}
-          <div className="lg:hidden flex items-center justify-between p-4 border-b">
+          <div className="xl:hidden flex items-center justify-between p-4 border-b">
             <h2 className="text-lg font-semibold">Menu</h2>
             <Button
               variant="ghost"

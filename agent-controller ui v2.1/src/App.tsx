@@ -54,10 +54,33 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState("overview");
   const [agents, setAgents] = useState(liveAgents);
   const [networkActivity, setNetworkActivity] = useState("0.0");
-  // Sidebar open by default on desktop, closed on mobile
+  // Sidebar open by default on desktop (xl: 1280px+), closed on mobile/tablet
   const [sidebarOpen, setSidebarOpen] = useState(
-    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
+    typeof window !== 'undefined' ? window.innerWidth >= 1280 : true
   );
+
+  // Lock body scroll when sidebar is open on mobile/tablet
+  useEffect(() => {
+    const updateBodyScroll = () => {
+      if (typeof window !== 'undefined') {
+        if (sidebarOpen && window.innerWidth < 1280) {
+          document.body.style.overflow = 'hidden';
+        } else {
+          document.body.style.overflow = '';
+        }
+      }
+    };
+
+    updateBodyScroll();
+    window.addEventListener('resize', updateBodyScroll);
+    
+    return () => {
+      window.removeEventListener('resize', updateBodyScroll);
+      if (typeof document !== 'undefined') {
+        document.body.style.overflow = '';
+      }
+    };
+  }, [sidebarOpen]);
 
   useEffect(() => {
     setAgents(liveAgents);
@@ -213,7 +236,7 @@ function AppContent() {
           />
         </ErrorBoundary>
 
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 overflow-auto relative z-0">
           <ErrorBoundary>
             <div className="p-4 sm:p-6 space-y-6">
 
