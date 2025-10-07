@@ -61,7 +61,7 @@ export function Sidebar({ activeTab, onTabChange, agentCount, isOpen = true, onC
       {/* Mobile/Laptop Overlay - Covers header when open */}
       {isOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-[200] xl:hidden"
+          className="fixed inset-0 bg-black/50 z-[200]"
           role="button"
           aria-label="Close menu overlay"
           tabIndex={0}
@@ -74,8 +74,8 @@ export function Sidebar({ activeTab, onTabChange, agentCount, isOpen = true, onC
       
       {/* Sidebar */}
       <div id="app-sidebar" aria-hidden={!isOpen} ref={containerRef} className={cn(
-        "fixed xl:sticky xl:top-16 left-0 top-0 bottom-0 z-[210] w-[260px] border-r bg-background flex-shrink-0 transition-transform duration-300 ease-in-out xl:translate-x-0 xl:bottom-auto xl:h-[calc(100vh-4rem)]",
-        isOpen ? "translate-x-0" : "-translate-x-full"
+        "fixed left-0 top-0 bottom-0 z-[210] w-[260px] border-r bg-background flex-shrink-0 transition-transform duration-300 ease-in-out xl:top-16 xl:h-[calc(100vh-4rem)]",
+        isOpen ? "translate-x-0" : "-translate-x-full xl:translate-x-0"
       )}>
         <div className="flex h-full flex-col">
           {/* Mobile Close Button */}

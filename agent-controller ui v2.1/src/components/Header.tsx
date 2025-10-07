@@ -41,7 +41,7 @@ export function Header({ onTabChange, onAgentSelect, onAgentDeselect, onMenuTogg
           <Button
             variant="ghost"
             size="icon"
-            className="xl:hidden flex-shrink-0"
+            className="flex-shrink-0"
             onClick={onMenuToggle}
             aria-expanded={!!isMenuOpen}
             aria-controls="app-sidebar"
