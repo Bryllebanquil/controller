@@ -91,10 +91,13 @@ export function Header({
       <div 
         id="main-sidebar"
         className={cn(
-          "w-64 border-r bg-background flex-shrink-0 flex flex-col z-50",
-          "fixed md:static inset-y-0 left-0",
-          "transition-transform duration-300 ease-in-out md:translate-x-0",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          "w-64 border-r bg-background flex-shrink-0 flex flex-col",
+          // Mobile: fixed position with slide animation
+          "fixed md:static inset-y-0 left-0 z-50",
+          // Mobile: transition for slide animation
+          "transition-transform duration-300 ease-in-out",
+          // Mobile: translate based on state, Desktop: always visible
+          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >
         {/* Sidebar Header/Logo */}
