@@ -1,5 +1,4 @@
-import { useEffect } from 'react';
-import { Shield, User, Sun, Moon, Monitor, CheckCircle, LogOut, Settings, Menu, X, BarChart3, Terminal, Files, Activity, Users, Settings as SettingsIcon, HelpCircle, Zap, Mic } from 'lucide-react';
+import { Shield, User, Sun, Moon, Monitor, CheckCircle, LogOut, Settings, BarChart3, Terminal, Files, Activity, Users, Settings as SettingsIcon, HelpCircle, Zap, Mic } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from './ui/dropdown-menu';
@@ -13,11 +12,9 @@ interface HeaderProps {
   onTabChange?: (tab: string) => void;
   onAgentSelect?: () => void;
   onAgentDeselect?: () => void;
-  onMenuToggle?: () => void;
-  sidebarOpen?: boolean;
   activeTab?: string;
   agentCount?: number;
-  onSidebarClose?: () => void;
+  children?: React.ReactNode;
 }
 
 const sidebarItems = [
@@ -35,28 +32,12 @@ export function Header({
   onTabChange, 
   onAgentSelect, 
   onAgentDeselect, 
-  onMenuToggle, 
-  sidebarOpen = false,
   activeTab = 'overview',
   agentCount = 0,
-  onSidebarClose
+  children
 }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const { logout } = useSocket();
-
-  // Close sidebar on Escape key press (mobile/tablet)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && sidebarOpen && onSidebarClose) {
-        onSidebarClose();
-      }
-    };
-    
-    if (sidebarOpen) {
-      window.addEventListener('keydown', handleKeyDown);
-      return () => window.removeEventListener('keydown', handleKeyDown);
-    }
-  }, [sidebarOpen, onSidebarClose]);
 
   const handleLogout = async () => {
     try {
@@ -79,42 +60,89 @@ export function Header({
   };
 
   return (
-    <>
-      {/* Mobile/Tablet Overlay - Starts below header */}
-      {sidebarOpen && (
-        <div 
-          className="fixed inset-x-0 top-16 bottom-0 bg-black/50 z-[60] lg:hidden"
-          onClick={onSidebarClose}
-        />
-      )}
-
-      <header className="sticky top-0 z-[100] w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="w-full flex h-16 items-center justify-between px-4 sm:px-6 gap-4 max-w-full">
-          <div className="flex items-center space-x-2 sm:space-x-4 min-w-0 flex-1">
-            {/* Mobile/Tablet Menu Button */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="lg:hidden flex-shrink-0"
-              onClick={onMenuToggle}
-              aria-label="Toggle menu"
-              aria-expanded={sidebarOpen}
-              aria-controls="main-sidebar"
-            >
-              <Menu className="h-5 w-5" />
-              <span className="sr-only">Toggle menu</span>
-            </Button>
-            
-            <div className="flex items-center space-x-2 min-w-0">
-              <Shield className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
-              <div className="min-w-0">
-                <h1 className="text-sm sm:text-lg font-semibold truncate">Neural Control Hub</h1>
-                <p className="text-xs text-muted-foreground hidden sm:block">Advanced Agent Management</p>
-              </div>
-            </div>
+    <div className="flex h-screen">
+      {/* Sidebar - Static and Always Visible */}
+      <div 
+        id="main-sidebar"
+        className="w-64 border-r bg-background flex-shrink-0 flex flex-col"
+      >
+        {/* Sidebar Header/Logo */}
+        <div className="h-16 border-b flex items-center px-4">
+          <Shield className="h-6 w-6 text-primary flex-shrink-0 mr-2" />
+          <div className="min-w-0">
+            <h1 className="text-sm font-semibold truncate">Neural Control Hub</h1>
+            <p className="text-xs text-muted-foreground">v2.1</p>
           </div>
+        </div>
 
-          <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
+        {/* Sidebar Navigation */}
+        <div className="flex-1 overflow-auto p-4">
+          <nav className="space-y-1" role="navigation" aria-label="Main navigation">
+            {sidebarItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Button
+                  key={item.id}
+                  variant={activeTab === item.id ? "secondary" : "ghost"}
+                  className={cn(
+                    "w-full justify-start h-10",
+                    activeTab === item.id && "bg-secondary"
+                  )}
+                  onClick={() => handleTabChange(item.id)}
+                >
+                  <Icon className="mr-2 h-4 w-4 flex-shrink-0" />
+                  <span className="flex-1 text-left">{item.label}</span>
+                  {item.id === 'agents' && (
+                    <Badge variant="secondary" className="ml-2 h-5 text-xs">
+                      {agentCount}
+                    </Badge>
+                  )}
+                  {item.badge && (
+                    <Badge variant="default" className="ml-2 h-5 text-xs">
+                      {item.badge}
+                    </Badge>
+                  )}
+                </Button>
+              );
+            })}
+          </nav>
+        </div>
+        
+        {/* Sidebar Footer */}
+        <div className="border-t p-4 flex-shrink-0">
+          <div className="space-y-1">
+            <Button 
+              variant={activeTab === 'settings' ? "secondary" : "ghost"} 
+              className="w-full justify-start h-9" 
+              size="sm"
+              onClick={() => handleTabChange('settings')}
+            >
+              <SettingsIcon className="mr-2 h-4 w-4" />
+              Settings
+            </Button>
+            <Button 
+              variant={activeTab === 'about' ? "secondary" : "ghost"} 
+              className="w-full justify-start h-9" 
+              size="sm"
+              onClick={() => handleTabChange('about')}
+            >
+              <HelpCircle className="mr-2 h-4 w-4" />
+              About
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col">
+        {/* Top Header Bar */}
+        <header className="sticky top-0 z-[100] w-full h-16 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="h-full flex items-center justify-between px-4 sm:px-6 gap-4">
+            <div className="flex items-center space-x-2 sm:space-x-4 min-w-0 flex-1">
+              <Badge variant="secondary" className="text-xs">Neural Control Hub v2.1</Badge>
+            </div>
+
+            <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
             
             <div className="hidden md:flex items-center space-x-2">
               <Badge variant="secondary" className="text-xs">v2.1</Badge>
@@ -186,89 +214,13 @@ export function Header({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            </div>
           </div>
-        </div>
+        </header>
 
-        {/* Sidebar - Now part of Header */}
-        <div 
-          id="main-sidebar"
-          className={cn(
-            "fixed lg:static left-0 top-16 bottom-0 z-[70] w-64 border-r bg-background flex-shrink-0 transition-transform duration-300 ease-in-out lg:top-0 lg:bottom-auto lg:h-full",
-            sidebarOpen ? "translate-x-0" : "-translate-x-full",
-            "lg:translate-x-0" // Always visible on desktop (lg+)
-          )}
-        >
-          <div className="flex h-full flex-col">
-            {/* Mobile/Tablet Close Button */}
-            <div className="lg:hidden flex items-center justify-between p-4 border-b">
-              <h2 className="text-lg font-semibold">Menu</h2>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onSidebarClose}
-              >
-                <X className="h-5 w-5" />
-                <span className="sr-only">Close menu</span>
-              </Button>
-            </div>
-            
-            <div className="flex-1 overflow-auto p-4">
-              <nav className="space-y-1" role="navigation" aria-label="Main navigation">
-                {sidebarItems.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <Button
-                      key={item.id}
-                      variant={activeTab === item.id ? "secondary" : "ghost"}
-                      className={cn(
-                        "w-full justify-start h-10",
-                        activeTab === item.id && "bg-secondary"
-                      )}
-                      onClick={() => handleTabChange(item.id)}
-                    >
-                      <Icon className="mr-2 h-4 w-4 flex-shrink-0" />
-                      <span className="flex-1 text-left">{item.label}</span>
-                      {item.id === 'agents' && (
-                        <Badge variant="secondary" className="ml-2 h-5 text-xs">
-                          {agentCount}
-                        </Badge>
-                      )}
-                      {item.badge && (
-                        <Badge variant="default" className="ml-2 h-5 text-xs">
-                          {item.badge}
-                        </Badge>
-                      )}
-                    </Button>
-                  );
-                })}
-              </nav>
-            </div>
-            
-            <div className="border-t p-4 flex-shrink-0">
-              <div className="space-y-1">
-                <Button 
-                  variant={activeTab === 'settings' ? "secondary" : "ghost"} 
-                  className="w-full justify-start h-9" 
-                  size="sm"
-                  onClick={() => handleTabChange('settings')}
-                >
-                  <SettingsIcon className="mr-2 h-4 w-4" />
-                  Settings
-                </Button>
-                <Button 
-                  variant={activeTab === 'about' ? "secondary" : "ghost"} 
-                  className="w-full justify-start h-9" 
-                  size="sm"
-                  onClick={() => handleTabChange('about')}
-                >
-                  <HelpCircle className="mr-2 h-4 w-4" />
-                  About
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
-    </>
+        {/* Main Content - Rendered as children */}
+        {children}
+      </div>
+    </div>
   );
 }

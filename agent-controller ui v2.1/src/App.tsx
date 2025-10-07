@@ -53,63 +53,6 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState("overview");
   const [agents, setAgents] = useState(liveAgents);
   const [networkActivity, setNetworkActivity] = useState("0.0");
-  // Sidebar open by default on desktop (lg: 1024px+), closed on mobile/tablet
-  const [sidebarOpen, setSidebarOpen] = useState(
-    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
-  );
-
-  // Lock body scroll when sidebar is open on mobile/tablet
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const isMobileOrTablet = window.innerWidth < 1024;
-      
-      if (sidebarOpen && isMobileOrTablet) {
-        document.body.style.overflow = 'hidden';
-      } else {
-        document.body.style.overflow = '';
-      }
-    }
-    
-    return () => {
-      if (typeof document !== 'undefined') {
-        document.body.style.overflow = '';
-      }
-    };
-  }, [sidebarOpen]);
-
-  // Auto-close sidebar when resizing from desktop to mobile/tablet
-  useEffect(() => {
-    let previousWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
-    
-    const handleResize = () => {
-      if (typeof window !== 'undefined') {
-        const currentWidth = window.innerWidth;
-        const wasDesktop = previousWidth >= 1024;
-        const isMobile = currentWidth < 1024;
-        
-        // Only auto-close if transitioning from desktop to mobile
-        if (wasDesktop && isMobile && sidebarOpen) {
-          setSidebarOpen(false);
-        }
-        
-        previousWidth = currentWidth;
-      }
-    };
-
-    // Debounce resize events for better performance
-    let resizeTimeout: NodeJS.Timeout;
-    const debouncedResize = () => {
-      clearTimeout(resizeTimeout);
-      resizeTimeout = setTimeout(handleResize, 150);
-    };
-
-    window.addEventListener('resize', debouncedResize);
-    
-    return () => {
-      clearTimeout(resizeTimeout);
-      window.removeEventListener('resize', debouncedResize);
-    };
-  }, [sidebarOpen]);
 
   useEffect(() => {
     setAgents(liveAgents);
@@ -241,28 +184,15 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <ErrorBoundary>
-        <Header
-          onTabChange={(tab) => {
-            setActiveTab(tab);
-            // Close sidebar on mobile/tablet after selection
-            if (typeof window !== 'undefined' && window.innerWidth < 1024) {
-              setSidebarOpen(false);
-            }
-          }}
-          onAgentSelect={handleAgentSelect}
-          onAgentDeselect={handleAgentDeselect}
-          onMenuToggle={() => setSidebarOpen(!sidebarOpen)}
-          sidebarOpen={sidebarOpen}
-          activeTab={activeTab}
-          agentCount={onlineAgents.length}
-          onSidebarClose={() => setSidebarOpen(false)}
-        />
-      </ErrorBoundary>
-
-      <div className="flex min-h-[calc(100vh-4rem)]">
-        <main className="flex-1 overflow-auto relative z-0">
+    <ErrorBoundary>
+      <Header
+        onTabChange={setActiveTab}
+        onAgentSelect={handleAgentSelect}
+        onAgentDeselect={handleAgentDeselect}
+        activeTab={activeTab}
+        agentCount={onlineAgents.length}
+      >
+        <main className="flex-1 overflow-auto relative z-0 bg-background">
           <ErrorBoundary>
             <div className="p-4 sm:p-6 space-y-6">
 
@@ -547,8 +477,8 @@ function AppContent() {
             </div>
           </ErrorBoundary>
         </main>
-      </div>
-    </div>
+      </Header>
+    </ErrorBoundary>
   );
 }
 
