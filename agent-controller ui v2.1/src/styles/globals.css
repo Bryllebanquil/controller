@@ -169,11 +169,31 @@
     overflow: hidden;
   }
 
-  /* Mobile responsive utilities */
-  @media (max-width: 1023px) {
-    /* Ensure body doesn't scroll when mobile menu is open */
+  /* Mobile/Laptop/Tablet responsive utilities */
+  @media (max-width: 1279px) {
+    /* Ensure body doesn't scroll when menu is open */
     body.menu-open {
       overflow: hidden;
+    }
+    
+    /* Improve touch scrolling */
+    * {
+      -webkit-tap-highlight-color: transparent;
+    }
+  }
+  
+  /* Tablet optimizations */
+  @media (min-width: 768px) and (max-width: 1279px) {
+    .p-4 {
+      padding: 1.25rem;
+    }
+  }
+  
+  /* Small laptop optimizations */
+  @media (min-width: 1024px) and (max-width: 1279px) {
+    /* Ensure proper spacing on smaller laptops */
+    .space-y-6 > * + * {
+      margin-top: 1.25rem;
     }
   }
 

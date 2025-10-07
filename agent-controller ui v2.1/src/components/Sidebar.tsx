@@ -37,17 +37,17 @@ const sidebarItems = [
 export function Sidebar({ activeTab, onTabChange, agentCount, isOpen = true, onClose }: SidebarProps) {
   return (
     <>
-      {/* Mobile Overlay */}
+      {/* Mobile/Laptop Overlay - Starts below header */}
       {isOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          className="fixed inset-x-0 top-16 bottom-0 bg-black/50 z-[60] xl:hidden"
           onClick={onClose}
         />
       )}
       
       {/* Sidebar */}
       <div className={cn(
-        "fixed lg:static inset-y-0 left-0 z-50 w-64 border-r bg-background flex-shrink-0 transition-transform duration-300 ease-in-out lg:translate-x-0",
+        "fixed xl:static left-0 top-16 bottom-0 z-[70] w-64 border-r bg-background flex-shrink-0 transition-transform duration-300 ease-in-out xl:translate-x-0 xl:top-0 xl:bottom-auto xl:h-full",
         isOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="flex h-full flex-col">
