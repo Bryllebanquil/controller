@@ -154,8 +154,8 @@ export function Header({
           </nav>
         </div>
         
-        {/* Sidebar Footer - Hidden on mobile */}
-        <div className="hidden md:block border-t p-4 flex-shrink-0">
+        {/* Sidebar Footer */}
+        <div className="border-t p-4 flex-shrink-0">
           <div className="space-y-1">
             <Button 
               variant={activeTab === 'settings' ? "secondary" : "ghost"} 
