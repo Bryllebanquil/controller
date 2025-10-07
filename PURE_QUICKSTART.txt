@@ -1,0 +1,298 @@
+================================================================================
+                    PURE AGENT-CONTROLLER QUICK START
+================================================================================
+
+Simple, clean remote control system - No UAC, No Persistence, Pure Communication
+
+================================================================================
+                            INSTALLATION
+================================================================================
+
+Step 1: Install Dependencies
+----------------------------
+pip install -r requirements-pure.txt
+
+Requirements:
+  - python-socketio
+  - Flask
+  - Flask-SocketIO
+  - psutil
+  - eventlet
+
+================================================================================
+                              USAGE
+================================================================================
+
+Step 1: Start Controller
+-------------------------
+Terminal 1:
+
+    python pure_controller.py
+
+Output:
+    Starting server...
+    * Running on http://0.0.0.0:8080
+
+Step 2: Start Agent
+--------------------
+Terminal 2:
+
+    python pure_agent.py
+
+Output:
+    [INFO] Connected to controller at ...
+    Agent ID: abc123...
+
+Step 3: Open Web UI
+--------------------
+Browser:
+
+    http://localhost:8080
+
+You'll see:
+    - Connected agents on the left
+    - Control panel on the right
+    - Command terminal at the bottom
+
+Step 4: Control Agent
+----------------------
+1. Click on an agent (left panel)
+2. Click buttons to get info:
+   - System Info
+   - Processes
+   - Network
+   - Files
+3. Type commands in terminal
+4. Press Enter or click Execute
+
+================================================================================
+                          EXAMPLE COMMANDS
+================================================================================
+
+Windows:
+--------
+dir                         # List files
+ipconfig                    # Network config
+tasklist                    # Running processes
+systeminfo                  # System information
+netstat -an                 # Network connections
+whoami                      # Current user
+
+Linux:
+------
+ls -la                      # List files
+ifconfig                    # Network config
+ps aux                      # Running processes
+uname -a                    # System information
+netstat -tulpn              # Network connections
+whoami                      # Current user
+
+================================================================================
+                            FEATURES
+================================================================================
+
+What It Does:
+-------------
+  ✓ Command execution
+  ✓ Process management
+  ✓ File browsing
+  ✓ Network monitoring
+  ✓ System information
+  ✓ Real-time communication
+
+What It Does NOT Do:
+--------------------
+  X NO UAC bypasses
+  X NO privilege escalation
+  X NO persistence
+  X NO registry modifications
+  X NO stealth/hiding
+  X NO Windows Defender disabling
+
+================================================================================
+                          CONFIGURATION
+================================================================================
+
+Connect to Local Controller:
+-----------------------------
+Edit pure_agent.py:
+
+    SERVER_URL = "http://localhost:8080"
+
+Connect to Remote Controller:
+------------------------------
+Edit pure_agent.py:
+
+    SERVER_URL = "https://your-server.com"
+
+Change Controller Port:
+-----------------------
+Edit pure_controller.py:
+
+    PORT = 8081  # Or any port you want
+
+================================================================================
+                         TROUBLESHOOTING
+================================================================================
+
+Agent Won't Connect:
+--------------------
+1. Is controller running?
+   → Check Terminal 1 for "Running on..."
+
+2. Is SERVER_URL correct?
+   → Check pure_agent.py line 18
+
+3. Firewall blocking?
+   → Allow port 8080 in firewall
+
+Commands Not Working:
+---------------------
+1. Agent selected?
+   → Click agent in left panel (turns purple)
+
+2. Command timeout?
+   → Commands timeout after 30 seconds
+
+3. Need admin privileges?
+   → This system runs as normal user
+   → Can't access admin-only resources
+
+Web UI Not Loading:
+-------------------
+1. Correct URL?
+   → http://localhost:8080 (NOT https)
+
+2. Port in use?
+   → Change PORT in pure_controller.py
+
+================================================================================
+                          STOPPING
+================================================================================
+
+Stop Agent:
+-----------
+1. Click "Shutdown" button in Web UI
+   OR
+2. Press Ctrl+C in agent terminal
+
+Stop Controller:
+----------------
+Press Ctrl+C in controller terminal
+
+Clean Exit:
+-----------
+No cleanup needed!
+  - No registry entries
+  - No scheduled tasks
+  - No files created
+  - No persistence
+Just close and done!
+
+================================================================================
+                       DIFFERENCES FROM client.py
+================================================================================
+
+client.py (Original):              pure_agent.py (This):
+----------------------             ----------------------
+✓ 18 UAC bypass methods            X No UAC bypasses
+✓ Privilege escalation             X Runs as normal user
+✓ Persistence (registry, tasks)    X No persistence
+✓ Registry modifications           X No registry changes
+✓ Stealth/hiding                   X Fully visible
+✓ Disables Windows Defender        X Respects security
+✓ Requires admin                   X Normal user OK
+✓ Needs restore.bat to clean       X No cleanup needed
+
+================================================================================
+                          USE CASES
+================================================================================
+
+Legitimate Uses:
+----------------
+✓ IT Support - Remote help desk
+✓ System Admin - Manage servers
+✓ Lab Environments - Test machines
+✓ Education - Learn remote control
+✓ Home Automation - Your own PCs
+
+NOT For:
+--------
+X Unauthorized access
+X Malicious purposes
+X Bypassing security
+X Stealth operations
+
+================================================================================
+                            FILES
+================================================================================
+
+pure_agent.py           - Agent application (run on target)
+pure_controller.py      - Controller application (run on your PC)
+requirements-pure.txt   - Python dependencies
+PURE_README.md         - Full documentation
+PURE_QUICKSTART.txt    - This file
+
+================================================================================
+                         QUICK REFERENCE
+================================================================================
+
+Start Everything:
+-----------------
+Terminal 1: python pure_controller.py
+Terminal 2: python pure_agent.py
+Browser:    http://localhost:8080
+
+Common Tasks:
+-------------
+Get system info:      Click "System Info" button
+List processes:       Click "Processes" button
+Browse files:         Click "Files" button
+Execute command:      Type in terminal + Enter
+Shutdown agent:       Click "Shutdown" button
+
+Keyboard Shortcuts:
+-------------------
+Ctrl+Shift+Esc       - Task Manager (see agent running)
+Ctrl+C              - Stop agent/controller
+Enter               - Execute command in terminal
+
+================================================================================
+                          SUPPORT
+================================================================================
+
+Documentation:
+--------------
+Full docs: PURE_README.md
+This guide: PURE_QUICKSTART.txt
+
+Need Help?
+----------
+1. Check PURE_README.md troubleshooting section
+2. Verify requirements installed: pip list
+3. Check firewall settings
+4. Test with simple commands first (dir, ls)
+
+================================================================================
+                           SUMMARY
+================================================================================
+
+Pure Agent-Controller is a SIMPLE, CLEAN, ETHICAL remote control system:
+
+✓ No UAC bypasses - Respects security
+✓ No persistence - Clean exit
+✓ No registry changes - No trace
+✓ Runs as normal user - No escalation
+✓ Fully visible - No hiding
+✓ Socket.IO only - Pure communication
+
+Perfect for learning, IT support, and authorized administration!
+
+Start now:
+    python pure_controller.py
+    python pure_agent.py
+    Open http://localhost:8080
+
+Enjoy!
+
+================================================================================

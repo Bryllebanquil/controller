@@ -1,0 +1,42 @@
+================================================================================
+ADD THIS MISSING FUNCTION TO YOUR client.py FILE
+================================================================================
+
+The function 'stream_screen_webrtc_or_socketio' is missing from your client.py.
+
+ADD THESE LINES after line 11840 (after the stream_screen_h264_socketio function):
+
+
+# ✅ NOW DEFINE stream_screen_webrtc_or_socketio AFTER stream_screen_h264_socketio
+def stream_screen_webrtc_or_socketio(agent_id):
+    """Smart screen streaming that automatically chooses WebRTC or Socket.IO based on availability."""
+    if AIORTC_AVAILABLE and WEBRTC_ENABLED:
+        log_message("Using WebRTC for screen streaming (sub-second latency)")
+        return start_webrtc_screen_streaming(agent_id)
+    else:
+        log_message("Using Socket.IO for screen streaming (fallback mode)")
+        return stream_screen_h264_socketio(agent_id)
+
+
+================================================================================
+WHERE TO ADD IT:
+================================================================================
+
+1. Open client.py in a text editor
+2. Search for: "def stream_screen_h264_socketio"
+3. Scroll to the END of that function
+4. ADD the above function definition right after it
+5. Save the file
+
+================================================================================
+OR USE GIT (EASIER):
+================================================================================
+
+cd "C:\Users\Brylle\render deploy\controller"
+git pull origin cursor/debug-ui-download-upload-visibility-72a5
+
+Then:
+pip install numpy opencv-python mss
+python client.py
+
+================================================================================
