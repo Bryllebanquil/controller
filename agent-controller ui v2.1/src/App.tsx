@@ -60,43 +60,55 @@ function AppContent() {
   );
 
   // Lock body scroll when sidebar is open on mobile/tablet
-  // Also auto-close sidebar when resizing from desktop to mobile
   useEffect(() => {
-    const updateBodyScroll = () => {
+    if (typeof window !== 'undefined') {
+      const isMobileOrTablet = window.innerWidth < 1024;
+      
+      if (sidebarOpen && isMobileOrTablet) {
+        document.body.style.overflow = 'hidden';
+      } else {
+        document.body.style.overflow = '';
+      }
+    }
+    
+    return () => {
+      if (typeof document !== 'undefined') {
+        document.body.style.overflow = '';
+      }
+    };
+  }, [sidebarOpen]);
+
+  // Auto-close sidebar when resizing from desktop to mobile/tablet
+  useEffect(() => {
+    let previousWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    
+    const handleResize = () => {
       if (typeof window !== 'undefined') {
-        const isMobileOrTablet = window.innerWidth < 1024;
+        const currentWidth = window.innerWidth;
+        const wasDesktop = previousWidth >= 1024;
+        const isMobile = currentWidth < 1024;
         
-        // Auto-close sidebar if resizing from desktop to mobile/tablet
-        if (isMobileOrTablet && sidebarOpen) {
-          // Only auto-close if we're actually on a small screen
-          // This prevents issues on initial load
+        // Only auto-close if transitioning from desktop to mobile
+        if (wasDesktop && isMobile && sidebarOpen) {
           setSidebarOpen(false);
         }
         
-        if (sidebarOpen && isMobileOrTablet) {
-          document.body.style.overflow = 'hidden';
-        } else {
-          document.body.style.overflow = '';
-        }
+        previousWidth = currentWidth;
       }
     };
 
     // Debounce resize events for better performance
     let resizeTimeout: NodeJS.Timeout;
-    const handleResize = () => {
+    const debouncedResize = () => {
       clearTimeout(resizeTimeout);
-      resizeTimeout = setTimeout(updateBodyScroll, 150);
+      resizeTimeout = setTimeout(handleResize, 150);
     };
 
-    updateBodyScroll();
-    window.addEventListener('resize', handleResize);
+    window.addEventListener('resize', debouncedResize);
     
     return () => {
       clearTimeout(resizeTimeout);
-      window.removeEventListener('resize', handleResize);
-      if (typeof document !== 'undefined') {
-        document.body.style.overflow = '';
-      }
+      window.removeEventListener('resize', debouncedResize);
     };
   }, [sidebarOpen]);
 
