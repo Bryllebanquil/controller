@@ -37,22 +37,23 @@ const sidebarItems = [
 export function Sidebar({ activeTab, onTabChange, agentCount, isOpen = true, onClose }: SidebarProps) {
   return (
     <>
-      {/* Mobile/Laptop Overlay - Starts below header */}
+      {/* Mobile/Tablet Overlay - Starts below header */}
       {isOpen && (
         <div 
-          className="fixed inset-x-0 top-16 bottom-0 bg-black/50 z-[60] xl:hidden"
+          className="fixed inset-x-0 top-16 bottom-0 bg-black/50 z-[60] lg:hidden"
           onClick={onClose}
         />
       )}
       
       {/* Sidebar */}
       <div className={cn(
-        "fixed xl:static left-0 top-16 bottom-0 z-[70] w-64 border-r bg-background flex-shrink-0 transition-transform duration-300 ease-in-out xl:translate-x-0 xl:top-0 xl:bottom-auto xl:h-full",
-        isOpen ? "translate-x-0" : "-translate-x-full"
+        "fixed lg:static left-0 top-16 bottom-0 z-[70] w-64 border-r bg-background flex-shrink-0 transition-transform duration-300 ease-in-out lg:top-0 lg:bottom-auto lg:h-full",
+        isOpen ? "translate-x-0" : "-translate-x-full",
+        "lg:translate-x-0" // Always visible on desktop (lg+)
       )}>
         <div className="flex h-full flex-col">
-          {/* Mobile Close Button */}
-          <div className="xl:hidden flex items-center justify-between p-4 border-b">
+          {/* Mobile/Tablet Close Button */}
+          <div className="lg:hidden flex items-center justify-between p-4 border-b">
             <h2 className="text-lg font-semibold">Menu</h2>
             <Button
               variant="ghost"

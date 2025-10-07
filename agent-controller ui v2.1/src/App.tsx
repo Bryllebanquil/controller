@@ -54,16 +54,16 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState("overview");
   const [agents, setAgents] = useState(liveAgents);
   const [networkActivity, setNetworkActivity] = useState("0.0");
-  // Sidebar open by default on desktop (xl: 1280px+), closed on mobile/tablet
+  // Sidebar open by default on desktop (lg: 1024px+), closed on mobile/tablet
   const [sidebarOpen, setSidebarOpen] = useState(
-    typeof window !== 'undefined' ? window.innerWidth >= 1280 : true
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
   );
 
   // Lock body scroll when sidebar is open on mobile/tablet
   useEffect(() => {
     const updateBodyScroll = () => {
       if (typeof window !== 'undefined') {
-        if (sidebarOpen && window.innerWidth < 1280) {
+        if (sidebarOpen && window.innerWidth < 1024) {
           document.body.style.overflow = 'hidden';
         } else {
           document.body.style.overflow = '';
@@ -228,7 +228,10 @@ function AppContent() {
             activeTab={activeTab}
             onTabChange={(tab) => {
               setActiveTab(tab);
-              setSidebarOpen(false); // Close sidebar on mobile after selection
+              // Close sidebar on mobile/tablet after selection
+              if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                setSidebarOpen(false);
+              }
             }}
             agentCount={onlineAgents.length}
             isOpen={sidebarOpen}
