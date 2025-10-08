@@ -221,7 +221,7 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="bg-black text-green-400 p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto">
+                <div className="bg-black text-green-400 p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto whitespace-pre-wrap break-words">
                   {output || 'No output yet. Execute a command to see results.'}
                   {isExecuting && (
                     <div className="text-yellow-400 animate-pulse">
@@ -261,7 +261,7 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                           </span>
                         </div>
                       </div>
-                      <div className="text-xs text-muted-foreground bg-muted p-2 rounded font-mono">
+                      <div className="text-xs text-muted-foreground bg-muted p-2 rounded font-mono whitespace-pre-wrap break-words">
                         {entry.output.substring(0, 100)}
                         {entry.output.length > 100 && '...'}
                       </div>
