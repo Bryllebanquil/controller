@@ -8642,6 +8642,193 @@ def format_command_output(output):
     formatted = f"<pre style='font-family: Consolas, Monaco, \"Courier New\", monospace; white-space: pre; overflow-x: auto;'>{output}</pre>"
     return formatted
 
+def format_tasklist_output(raw_output):
+    """Format tasklist output into a clean, organized table"""
+    try:
+        lines = raw_output.strip().split('\n')
+        if not lines:
+            return raw_output
+        
+        # Find the header line (contains "Image Name", "PID", etc.)
+        header_line = None
+        header_index = -1
+        for i, line in enumerate(lines):
+            if 'Image Name' in line and 'PID' in line and 'Memory Usage' in line:
+                header_line = line
+                header_index = i
+                break
+        
+        if header_line is None:
+            return raw_output  # Return original if we can't find header
+        
+        # Parse header to find column positions
+        header_parts = header_line.split()
+        if len(header_parts) < 4:
+            return raw_output
+        
+        # Find column positions by looking for key words
+        image_name_pos = header_line.find('Image Name')
+        pid_pos = header_line.find('PID')
+        session_name_pos = header_line.find('Session Name')
+        session_num_pos = header_line.find('Session#')
+        mem_usage_pos = header_line.find('Mem Usage')
+        
+        if image_name_pos == -1 or pid_pos == -1 or mem_usage_pos == -1:
+            return raw_output
+        
+        # Process data lines (skip header and separator lines)
+        data_lines = []
+        for i in range(header_index + 1, len(lines)):
+            line = lines[i].strip()
+            if not line or line.startswith('=') or line.startswith('-'):
+                continue
+            
+            # Use regex to parse the tasklist format more accurately
+            import re
+            
+            # Pattern to match: Image Name (spaces) PID (spaces) Session Name (spaces) Session# (spaces) Memory
+            # The PID is always numeric, and memory always ends with 'K'
+            pattern = r'^(.+?)\s+(\d+)\s+(\w+)\s+(\d+)\s+([\d,]+ K)$'
+            match = re.match(pattern, line)
+            
+            if match:
+                image_name = match.group(1).strip()
+                pid = match.group(2)
+                session_name = match.group(3)
+                session_num = match.group(4)
+                memory = match.group(5)
+                
+                data_lines.append({
+                    'image_name': image_name,
+                    'pid': pid,
+                    'memory': memory
+                })
+            else:
+                # Fallback: try to parse manually if regex fails
+                parts = line.split()
+                if len(parts) >= 4:
+                    # Find the memory usage (last column, contains 'K')
+                    mem_usage = None
+                    mem_index = -1
+                    for j, part in enumerate(parts):
+                        if 'K' in part and part.replace(',', '').replace('K', '').isdigit():
+                            mem_usage = part
+                            mem_index = j
+                            break
+                    
+                    if mem_usage and mem_index > 0:
+                        # Image name is everything before the PID
+                        # PID is the first numeric part
+                        image_name = ''
+                        pid = ''
+                        
+                        # Find the first numeric part (PID)
+                        for j, part in enumerate(parts):
+                            if part.isdigit():
+                                pid = part
+                                # Image name is everything before the PID
+                                image_name = ' '.join(parts[:j])
+                                break
+                        
+                        if image_name and pid and mem_usage:
+                            data_lines.append({
+                                'image_name': image_name,
+                                'pid': pid,
+                                'memory': mem_usage
+                            })
+        
+        if not data_lines:
+            return raw_output
+        
+        # Group processes by name and calculate memory ranges
+        process_groups = {}
+        for item in data_lines:
+            name = item['image_name']
+            pid = item['pid']
+            memory = item['memory']
+            
+            if name not in process_groups:
+                process_groups[name] = {
+                    'pids': [],
+                    'memories': [],
+                    'memory_values': []
+                }
+            
+            process_groups[name]['pids'].append(pid)
+            process_groups[name]['memories'].append(memory)
+            
+            # Extract numeric value for sorting
+            try:
+                mem_value = int(memory.replace(' K', '').replace(',', ''))
+                process_groups[name]['memory_values'].append(mem_value)
+            except:
+                process_groups[name]['memory_values'].append(0)
+        
+        # Sort processes by total memory usage
+        sorted_processes = sorted(process_groups.items(), 
+                                key=lambda x: sum(x[1]['memory_values']), 
+                                reverse=True)
+        
+        # Format output
+        output_lines = []
+        output_lines.append("🖥️ SYSTEM PROCESSES")
+        output_lines.append("=" * 80)
+        output_lines.append(f"{'Image Name':<30} {'PID':<10} {'Memory Usage':<15}")
+        output_lines.append("-" * 80)
+        
+        # Add system processes (services)
+        system_processes = []
+        user_processes = []
+        
+        for name, data in sorted_processes:
+            if any(keyword in name.lower() for keyword in ['system', 'svchost', 'wininit', 'csrss', 'lsass', 'services', 'registry', 'smss']):
+                system_processes.append((name, data))
+            else:
+                user_processes.append((name, data))
+        
+        # Add system processes
+        for name, data in system_processes:
+            if len(data['pids']) == 1:
+                output_lines.append(f"{name:<30} {data['pids'][0]:<10} {data['memories'][0]:<15}")
+            else:
+                pids_str = ' / '.join(data['pids'][:3]) + ('...' if len(data['pids']) > 3 else '')
+                memories_str = ' / '.join(data['memories'][:3]) + ('...' if len(data['memories']) > 3 else '')
+                output_lines.append(f"{name:<30} {pids_str:<10} {memories_str:<15}")
+        
+        output_lines.append("")
+        output_lines.append("💻 USER PROCESSES")
+        output_lines.append("=" * 80)
+        output_lines.append(f"{'Image Name':<30} {'PID':<10} {'Memory Usage':<15}")
+        output_lines.append("-" * 80)
+        
+        # Add user processes
+        for name, data in user_processes:
+            if len(data['pids']) == 1:
+                output_lines.append(f"{name:<30} {data['pids'][0]:<10} {data['memories'][0]:<15}")
+            else:
+                pids_str = ' / '.join(data['pids'][:3]) + ('...' if len(data['pids']) > 3 else '')
+                memories_str = ' / '.join(data['memories'][:3]) + ('...' if len(data['memories']) > 3 else '')
+                output_lines.append(f"{name:<30} {pids_str:<10} {memories_str:<15}")
+        
+        # Add top memory consumers
+        output_lines.append("")
+        output_lines.append("🧠 TOP MEMORY CONSUMERS")
+        output_lines.append("=" * 50)
+        output_lines.append(f"{'Process':<25} {'Memory Usage':<15}")
+        output_lines.append("-" * 50)
+        
+        top_consumers = sorted(sorted_processes, key=lambda x: max(x[1]['memory_values']), reverse=True)[:10]
+        for name, data in top_consumers:
+            max_memory = max(data['memory_values'])
+            max_memory_str = data['memories'][data['memory_values'].index(max_memory)]
+            output_lines.append(f"{name:<25} {max_memory_str:<15}")
+        
+        return '\n'.join(output_lines)
+        
+    except Exception as e:
+        log_message(f"[FORMAT] Error formatting tasklist output: {e}", "error")
+        return raw_output
+
 def execute_command(command):
     """Execute a command and return its output - SMART AUTO-DETECTION with PRESERVED FORMATTING"""
     try:
@@ -8812,6 +8999,11 @@ def execute_command(command):
         
         if not output or output.strip() == "":
             output = "[No output from command]"
+        
+        # Special formatting for tasklist command
+        if command.strip().lower() == 'tasklist' or command.strip().lower() == 'ps':
+            log_message(f"[CMD] Applying tasklist formatting", "info")
+            output = format_tasklist_output(output)
         
         log_message(f"[CMD] Output: {output[:200]}{'...' if len(output) > 200 else ''}", "success")
         return output
