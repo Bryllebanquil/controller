@@ -75,6 +75,6 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=None,
-    uac_admin=False,
+    uac_admin=True,  # Request admin privileges properly
     uac_uiaccess=False,
 )

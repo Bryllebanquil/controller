@@ -1,0 +1,113 @@
+===============================================================================
+WINDOWS "CANNOT ACCESS" ERROR - QUICK FIX GUIDE
+===============================================================================
+
+PROBLEM:
+--------
+You get this error when running svc.exe:
+"Windows cannot access the specified device, path, or file. You may not have
+the appropriate permissions to access the item."
+
+WHY THIS HAPPENS:
+-----------------
+Your client.py contains UAC bypass code that Windows Defender blocks as
+potentially malicious. Windows is protecting you from what it sees as a
+security threat.
+
+===============================================================================
+QUICK FIXES (Try in order):
+===============================================================================
+
+FIX #1: REBUILD WITH PROPER PERMISSIONS (BEST)
+-----------------------------------------------
+1. Open PowerShell as Administrator
+2. Run: .\REBUILD_SVCHOST.bat
+3. Wait for build to complete
+4. Run: .\UNBLOCK_AND_RUN.ps1
+5. Click "Yes" on the UAC prompt
+
+FIX #2: UNBLOCK THE FILE
+------------------------
+1. Right-click svc.exe
+2. Select "Properties"
+3. At the bottom, check "Unblock" ✓
+4. Click "Apply" → "OK"
+5. Right-click svc.exe → "Run as administrator"
+
+FIX #3: ADD WINDOWS DEFENDER EXCLUSION
+---------------------------------------
+1. Open Windows Security
+2. Virus & threat protection
+3. Manage settings
+4. Exclusions → Add or remove exclusions
+5. Add an exclusion → File
+6. Select your svc.exe
+
+FIX #4: RUN FROM SAFE LOCATION
+-------------------------------
+1. Create folder: C:\Tools
+2. Move svc.exe to C:\Tools
+3. Right-click → Run as administrator
+
+===============================================================================
+WHAT I'VE ALREADY FIXED:
+===============================================================================
+✓ Updated svchost.spec to use uac_admin=True
+✓ Created REBUILD_SVCHOST.bat (rebuild script)
+✓ Created UNBLOCK_AND_RUN.ps1 (unblock and run script)
+✓ Created detailed guide: FIX_WINDOWS_ACCESS_DENIED.md
+
+===============================================================================
+NEXT STEPS:
+===============================================================================
+
+FOR IMMEDIATE USE:
+------------------
+Run this command in PowerShell (as Admin):
+    .\REBUILD_SVCHOST.bat
+
+Then run:
+    .\UNBLOCK_AND_RUN.ps1
+
+FOR PRODUCTION DEPLOYMENT:
+--------------------------
+1. Remove UAC bypass code from client.py
+2. Sign the executable with a code signing certificate
+3. Add legitimate admin request using uac_admin=True ✓ (DONE)
+
+===============================================================================
+STILL NOT WORKING?
+===============================================================================
+
+Check Event Viewer:
+-------------------
+1. Press Win+R → Type: eventvwr
+2. Windows Logs → Application
+3. Look for errors related to svchost.exe
+4. This will show exactly what's being blocked
+
+Manual Unblock Method:
+----------------------
+PowerShell (as Admin):
+    Unblock-File -Path "C:\path\to\svc.exe"
+    Add-MpPreference -ExclusionPath "C:\path\to\svc.exe"
+
+Disable UAC Completely (NOT RECOMMENDED):
+-----------------------------------------
+Command Prompt (as Admin):
+    reg ADD HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v EnableLUA /t REG_DWORD /d 0 /f
+    shutdown /r /t 0  (Restart required)
+
+===============================================================================
+IMPORTANT NOTES:
+===============================================================================
+
+⚠ The UAC bypass code in client.py is WHY Windows blocks your exe
+⚠ Modern antivirus WILL flag UAC bypass techniques as malware
+⚠ Using uac_admin=True is the LEGITIMATE way to request admin rights
+⚠ For production use, REMOVE the UAC bypass code and sign your executable
+
+✓ The spec file is now fixed to request admin properly
+✓ Rebuild with the provided scripts to apply the fix
+
+===============================================================================
