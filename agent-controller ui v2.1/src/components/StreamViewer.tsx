@@ -194,32 +194,38 @@ export function StreamViewer({ agentId, type, title }: StreamViewerProps) {
             setFrameCount(prev => prev + 1);
           } catch (audioError) {
             console.error('Error playing audio frame:', audioError);
+            setHasError(true);
           }
         } else {
           // Video frame handling
-          if (imgRef.current) {
-            // If frame is already a data URL, use it directly
-            if (typeof frame === 'string' && frame.startsWith('data:')) {
-              imgRef.current.src = frame;
-            } else {
-              // Otherwise, assume it's base64 encoded
-              imgRef.current.src = `data:image/jpeg;base64,${frame}`;
-            }
-            
-            // Update frame counter and stats
-            frameCountRef.current++;
-            setFrameCount(prev => prev + 1);
-            
-            const now = Date.now();
-            if (lastFrameTime > 0) {
-              const timeDiff = now - lastFrameTime;
-              if (timeDiff > 0) {
-                const currentFps = 1000 / timeDiff;
-                // Estimate bandwidth (assuming JPEG frame ~50KB average)
-                setBandwidth(Math.round((currentFps * 50) / 1024)); // MB/s
+          if (imgRef.current && frame) {
+            try {
+              // If frame is already a data URL, use it directly
+              if (typeof frame === 'string' && frame.startsWith('data:')) {
+                imgRef.current.src = frame;
+              } else if (typeof frame === 'string') {
+                // Otherwise, assume it's base64 encoded
+                imgRef.current.src = `data:image/jpeg;base64,${frame}`;
               }
+              
+              // Update frame counter and stats
+              frameCountRef.current++;
+              setFrameCount(prev => prev + 1);
+              
+              const now = Date.now();
+              if (lastFrameTime > 0) {
+                const timeDiff = now - lastFrameTime;
+                if (timeDiff > 0) {
+                  const currentFps = 1000 / timeDiff;
+                  // Estimate bandwidth (assuming JPEG frame ~50KB average)
+                  setBandwidth(Math.round((currentFps * 50) / 1024)); // MB/s
+                }
+              }
+              setLastFrameTime(now);
+            } catch (imgError) {
+              console.error('Error setting image source:', imgError);
+              setHasError(true);
             }
-            setLastFrameTime(now);
           }
         }
       } catch (error) {

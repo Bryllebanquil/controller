@@ -49,10 +49,15 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [agentMetrics, setAgentMetrics] = useState<Record<string, { cpu: number; memory: number; network: number }>>({});
 
   const addCommandOutput = useCallback((output: string) => {
-    console.log('🔍 SocketProvider: addCommandOutput called with:', output);
+    if (!output || !output.trim()) return;
+    
     setCommandOutput(prev => {
-      const newOutput = [...prev.slice(-99), output]; // Keep last 100 lines
-      console.log('🔍 SocketProvider: Updated commandOutput array length:', newOutput.length);
+      // Avoid duplicate consecutive outputs
+      if (prev.length > 0 && prev[prev.length - 1] === output.trim()) {
+        return prev;
+      }
+      
+      const newOutput = [...prev.slice(-99), output.trim()]; // Keep last 100 lines
       return newOutput;
     });
   }, []);
@@ -95,13 +100,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Add debug event listener to see all events
+    // Add debug event listener to see all events (reduced logging)
     socketInstance.onAny((eventName, ...args) => {
-      console.log(`🔍 SocketProvider: Received event '${eventName}':`, args);
       if (eventName === 'command_result') {
-        console.log('🔍 SocketProvider: COMMAND_RESULT EVENT RECEIVED!', args);
-        console.log('🔍 SocketProvider: Event data type:', typeof args[0]);
-        console.log('🔍 SocketProvider: Event data keys:', Object.keys(args[0] || {}));
+        console.log('🔍 SocketProvider: Command result received');
       }
     });
 
@@ -196,31 +198,23 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     // Command result events
     socketInstance.on('command_result', (data: { agent_id: string; output: string; command?: string; success?: boolean; execution_id?: string; timestamp?: string }) => {
-      console.log('🔍 SocketProvider: Command result received:', data);
-      console.log('🔍 SocketProvider: Command result handler called!');
-      console.log('🔍 SocketProvider: Data type:', typeof data);
-      console.log('🔍 SocketProvider: Data keys:', Object.keys(data || {}));
-      
       if (!data || typeof data !== 'object') {
-        console.error('🔍 SocketProvider: Invalid command result data:', data);
+        console.error('Invalid command result data:', data);
         return;
       }
       
       const { agent_id, output, command, success, execution_id, timestamp } = data;
       
       if (!output) {
-        console.warn('🔍 SocketProvider: No output in command result');
+        console.warn('No output in command result');
         return;
       }
       
       // Create a clean terminal-like output
       const resultText = output.trim();
-      console.log('🔍 SocketProvider: Adding command output:', resultText);
-      console.log('🔍 SocketProvider: Current commandOutput length:', commandOutput.length);
       
       // Add command output immediately
       addCommandOutput(resultText);
-      console.log('🔍 SocketProvider: Command output added successfully');
     });
 
     // Legacy command output events (for backward compatibility)

@@ -53,11 +53,19 @@ function AppContent() {
   >(null);
   const [activeTab, setActiveTab] = useState("overview");
   const [agents, setAgents] = useState(liveAgents);
-  const [networkActivity, setNetworkActivity] = useState("0.0");
+  const [networkActivity, setNetworkActivity] = useState(0);
 
   useEffect(() => {
     setAgents(liveAgents);
   }, [liveAgents]);
+
+  // Calculate network activity from agents
+  useEffect(() => {
+    const totalNetworkActivity = agents.reduce((total, agent) => {
+      return total + (agent.performance?.network || 0);
+    }, 0);
+    setNetworkActivity(totalNetworkActivity);
+  }, [agents]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filters, setFilters] = useState({
     status: [],
@@ -81,6 +89,7 @@ function AppContent() {
         <div className="text-center space-y-4">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
           <p className="text-muted-foreground">Connecting to Neural Control Hub...</p>
+          <p className="text-xs text-muted-foreground">Please ensure the backend server is running</p>
         </div>
       </div>
     );
@@ -255,9 +264,11 @@ function AppContent() {
                       <Terminal className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                      <div className="text-2xl font-bold">0</div>
+                      <div className="text-2xl font-bold">
+                        {agents.reduce((total, agent) => total + (agent.performance?.network || 0), 0)}
+                      </div>
                       <p className="text-xs text-muted-foreground">
-                        +12 from last hour
+                        Total across all agents
                       </p>
                     </CardContent>
                   </Card>
@@ -271,7 +282,7 @@ function AppContent() {
                     </CardHeader>
                     <CardContent>
                       <div className="text-2xl font-bold">
-                        {networkActivity} MB/s
+                        {networkActivity.toFixed(1)} MB/s
                       </div>
                       <p className="text-xs text-muted-foreground">
                         Data transferred
@@ -359,18 +370,33 @@ function AppContent() {
                   value="agents"
                   className="space-y-6"
                 >
-                  <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {filteredAgents.map((agent) => (
-                      <AgentCard
-                        key={agent.id}
-                        agent={agent}
-                        isSelected={selectedAgent === agent.id}
-                        onSelect={() =>
-                          setSelectedAgent(agent.id)
-                        }
-                      />
-                    ))}
-                  </div>
+                  {filteredAgents.length === 0 ? (
+                    <Card>
+                      <CardContent className="flex flex-col items-center justify-center py-12">
+                        <Users className="h-12 w-12 text-muted-foreground mb-4" />
+                        <h3 className="text-lg font-semibold mb-2">No Agents Found</h3>
+                        <p className="text-muted-foreground text-center max-w-md">
+                          {agents.length === 0 
+                            ? "No agents are currently connected. Please ensure agents are running and connected to the server."
+                            : "No agents match your current search criteria. Try adjusting your filters."
+                          }
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                      {filteredAgents.map((agent) => (
+                        <AgentCard
+                          key={agent.id}
+                          agent={agent}
+                          isSelected={selectedAgent === agent.id}
+                          onSelect={() =>
+                            setSelectedAgent(agent.id)
+                          }
+                        />
+                      ))}
+                    </div>
+                  )}
                 </TabsContent>
 
                 <TabsContent

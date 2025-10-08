@@ -68,8 +68,14 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
       };
       setHistory(prev => [entry, ...prev]);
       
-      // Don't reset isExecuting here - let the command result handler do it
-      // This ensures we show "Executing..." until we get the actual result
+      // Set a timeout to reset executing state if no response comes back
+      setTimeout(() => {
+        if (isExecuting) {
+          setIsExecuting(false);
+          setOutput(prev => prev + 'Command timeout - no response received\n');
+        }
+      }, 30000); // 30 second timeout
+      
     } catch (error) {
       console.error('Error executing command:', error);
       setOutput(prev => prev + `Error: ${error}\n`);
@@ -96,19 +102,18 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
 
   useEffect(() => {
     // Update output window as new lines come in
-    console.log('🔍 CommandPanel: commandOutput changed, length:', commandOutput.length);
-    console.log('🔍 CommandPanel: commandOutput array:', commandOutput);
-    
     if (commandOutput.length > 0) {
       // Get the latest output line
       const latestOutput = commandOutput[commandOutput.length - 1];
-      console.log('🔍 CommandPanel: latest output:', latestOutput);
       
       if (latestOutput && latestOutput.trim()) {
         // Add the latest output to the display
         setOutput(prev => {
+          // Avoid duplicate output by checking if it's already there
+          if (prev.includes(latestOutput)) {
+            return prev;
+          }
           const newOutput = prev + (prev.endsWith('\n') ? '' : '\n') + latestOutput + '\n';
-          console.log('🔍 CommandPanel: setting new output:', newOutput);
           return newOutput;
         });
       }
@@ -221,7 +226,7 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="bg-black text-green-400 p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto">
+                <div className="bg-black text-green-400 p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto whitespace-pre-wrap">
                   {output || 'No output yet. Execute a command to see results.'}
                   {isExecuting && (
                     <div className="text-yellow-400 animate-pulse">

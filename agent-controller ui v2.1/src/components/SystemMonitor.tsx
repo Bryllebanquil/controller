@@ -11,10 +11,16 @@ export function SystemMonitor() {
   const metrics = useMemo(() => {
     const current = agents.find(a => a.id === selectedAgent);
     const live = selectedAgent ? agentMetrics[selectedAgent] : undefined;
+    
+    // Use live metrics if available, otherwise fall back to static performance data
+    const cpuUsage = live?.cpu ?? current?.performance.cpu ?? 0;
+    const memoryUsage = live?.memory ?? current?.performance.memory ?? 0;
+    const networkThroughput = live?.network ?? current?.performance.network ?? 0;
+    
     return {
-      cpu: { usage: live?.cpu ?? current?.performance.cpu ?? 0 },
-      memory: { used: live?.memory ?? current?.performance.memory ?? 0 },
-      network: { throughput: live?.network ?? current?.performance.network ?? 0 },
+      cpu: { usage: Math.max(0, Math.min(100, cpuUsage)) }, // Clamp between 0-100
+      memory: { used: Math.max(0, Math.min(100, memoryUsage)) }, // Clamp between 0-100
+      network: { throughput: Math.max(0, networkThroughput) }, // Ensure non-negative
     };
   }, [agents, selectedAgent, agentMetrics]);
 
