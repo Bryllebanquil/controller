@@ -31,7 +31,21 @@ hiddenimports = [
     'shutil',
     'threading',
     'time',
-    # Eventlet modules (CRITICAL for Socket.IO!)
+    # Socket.IO and dependencies (CRITICAL!)
+    'socketio',
+    'socketio.client',
+    'socketio.packet',
+    'socketio.namespace',
+    'socketio.exceptions',
+    'engineio',
+    'engineio.client',
+    'engineio.packet',
+    'engineio.payload',
+    'engineio.socket',
+    'engineio.server',
+    'engineio.async_client',
+    'engineio.async_server',
+    # Eventlet modules (OPTIONAL)
     'eventlet',
     'eventlet.hubs',
     'eventlet.hubs.hub',
@@ -47,6 +61,15 @@ hiddenimports = [
     'eventlet.green.threading',
     'eventlet.green.select',
     'eventlet.green.ssl',
+    # Additional imports
+    'requests',
+    'urllib3',
+    'certifi',
+    'ssl',
+    'http',
+    'http.client',
+    'websocket',
+    '_websocket',
 ]
 
 a = Analysis(
