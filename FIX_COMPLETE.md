@@ -127,6 +127,9 @@ Expected output:
 | Premature exit | Check ShellExecuteW return | Only exit on success |
 | Aggressive UAC prompts | Graceful failure handling | Continue on failure |
 | Critical errors | Non-critical error handling | Never exit on config failures |
+| **Duplicate instances** | **Exit check after UAC bypass** | **Only one instance runs** |
+
+**⚠️ UPDATE: Recheck found and fixed Bug #5 (duplicate instances). See RECHECK_COMPLETE.md for details.**
 
 ## ✅ Verification
 
