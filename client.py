@@ -22,58 +22,60 @@ debug_print(f"Python version: {sys.version}")
 debug_print(f"Platform: {sys.platform}")
 debug_print("=" * 80)
 
-# Step 1: Import eventlet and patch IMMEDIATELY
+# Step 1: Import eventlet and patch IMMEDIATELY (OPTIONAL)
 debug_print("Step 1: Importing eventlet...")
+EVENTLET_AVAILABLE = False
 try:
     import eventlet
     debug_print("✅ eventlet imported successfully")
+    EVENTLET_AVAILABLE = True
 except ImportError as e:
-    debug_print(f"❌ eventlet import FAILED: {e}")
-    debug_print("Installing eventlet: pip install eventlet")
-    sys.exit(1)
+    debug_print(f"⚠️ eventlet import FAILED: {e}")
+    debug_print("⚠️ Continuing WITHOUT eventlet (some async features may not work)")
+    debug_print("⚠️ To enable eventlet: pip install eventlet")
+    eventlet = None  # Set to None for later checks
 
-debug_print("Step 2: Running eventlet.monkey_patch()...")
-try:
-    # CRITICAL: Suppress the RLock warning by redirecting stderr temporarily
-    import io as _io
-    old_stderr = sys.stderr
-    sys.stderr = _io.StringIO()  # Capture stderr
-    
-    # Patch threading BEFORE any other imports!
-    eventlet.monkey_patch(all=True, thread=True, time=True, socket=True, select=True)
-    
-    # Restore stderr
-    captured_stderr = sys.stderr.getvalue()
-    sys.stderr = old_stderr
-    
-    # Check if there was an RLock warning
-    if "RLock" in captured_stderr:
-        debug_print("⚠️ RLock warning detected (Python created locks before eventlet patch)")
-        debug_print("   This is EXPECTED and can be ignored - eventlet will patch future locks")
-    
-    debug_print("✅ eventlet.monkey_patch() SUCCESS!")
-    debug_print("   - all=True")
-    debug_print("   - thread=True (threading patched)")
-    debug_print("   - time=True")
-    debug_print("   - socket=True")
-    debug_print("   - select=True")
-    EVENTLET_PATCHED = True
-except Exception as e:
-    # Restore stderr if exception occurred
+if EVENTLET_AVAILABLE:
+    debug_print("Step 2: Running eventlet.monkey_patch()...")
     try:
+        # CRITICAL: Suppress the RLock warning by redirecting stderr temporarily
+        import io as _io
+        old_stderr = sys.stderr
+        sys.stderr = _io.StringIO()  # Capture stderr
+        
+        # Patch threading BEFORE any other imports!
+        eventlet.monkey_patch(all=True, thread=True, time=True, socket=True, select=True)
+        
+        # Restore stderr
+        captured_stderr = sys.stderr.getvalue()
         sys.stderr = old_stderr
-    except:
-        pass
-    
-    debug_print(f"❌ eventlet.monkey_patch() FAILED: {e}")
-    debug_print("Trying basic monkey_patch()...")
-    try:
-        eventlet.monkey_patch()
-        debug_print("✅ Basic monkey_patch() SUCCESS!")
+        
+        # Check if there was an RLock warning
+        if "RLock" in captured_stderr:
+            debug_print("⚠️ RLock warning detected (Python created locks before eventlet patch)")
+            debug_print("   This is EXPECTED and can be ignored - eventlet will patch future locks")
+        
+        debug_print("✅ eventlet.monkey_patch() SUCCESS!")
+        debug_print("   - all=True")
+        debug_print("   - thread=True (threading patched)")
+        debug_print("   - time=True")
+        debug_print("   - socket=True")
+        debug_print("   - select=True")
         EVENTLET_PATCHED = True
-    except Exception as e2:
-        debug_print(f"❌ Basic monkey_patch() FAILED: {e2}")
+    except Exception as e:
+        # Restore stderr if exception occurred
+        try:
+            sys.stderr = old_stderr
+        except:
+            pass
+        
+        debug_print(f"⚠️ eventlet.monkey_patch() FAILED: {e}")
+        debug_print("⚠️ Continuing without monkey patching")
         EVENTLET_PATCHED = False
+        EVENTLET_AVAILABLE = False
+else:
+    debug_print("Step 2: Skipping eventlet.monkey_patch() (eventlet not available)")
+    EVENTLET_PATCHED = False
 
 debug_print("Step 3: Testing threading after monkey_patch()...")
 try:
@@ -85,7 +87,10 @@ except Exception as e:
     debug_print(f"❌ threading.RLock() test FAILED: {e}")
 
 debug_print("=" * 80)
-debug_print("EVENTLET SETUP COMPLETE - NOW IMPORTING OTHER MODULES")
+if EVENTLET_AVAILABLE:
+    debug_print("EVENTLET SETUP COMPLETE - NOW IMPORTING OTHER MODULES")
+else:
+    debug_print("EVENTLET SKIPPED - CONTINUING WITHOUT IT")
 debug_print("=" * 80)
 
 # Suppress warnings AFTER eventlet patch
