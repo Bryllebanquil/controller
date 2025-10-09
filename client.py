@@ -13075,26 +13075,36 @@ def agent_main():
         
         log_message("Initializing connection to server...")
         
+        # Register Socket.IO event handlers ONCE before connection loop
+        # This ensures handlers persist across all reconnections
+        if sio is not None and SOCKETIO_AVAILABLE:
+            log_message("Registering Socket.IO event handlers...")
+            try:
+                register_socketio_handlers()
+                log_message("[OK] Socket.IO event handlers registered (will persist across reconnections)")
+            except Exception as handler_error:
+                log_message(f"[ERROR] Failed to register Socket.IO handlers: {handler_error}")
+                log_message("Cannot continue without event handlers!")
+                return
+        else:
+            log_message("Socket.IO not available - running in offline mode", "warning")
+            log_message("Agent running in offline mode - no server communication")
+            try:
+                while True:
+                    time.sleep(60)  # Keep alive in offline mode
+            except KeyboardInterrupt:
+                log_message("Offline mode interrupted")
+            return
+        
         # Main connection loop with improved error handling
         connection_attempts = 0
+        max_retry_delay = 60  # Maximum retry delay in seconds
         while True:
             try:
                 connection_attempts += 1
-                log_message(f"Connecting to server at {SERVER_URL} (attempt {connection_attempts})...")
-                if sio is None or not SOCKETIO_AVAILABLE:
-                    log_message("Socket.IO not available - running in offline mode", "warning")
-                    # Continue running in offline mode
-                    log_message("Agent running in offline mode - no server communication")
-                    try:
-                        while True:
-                            time.sleep(60)  # Keep alive in offline mode
-                            # Could implement local functionality here
-                    except KeyboardInterrupt:
-                        log_message("Offline mode interrupted")
-                    return
+                retry_delay = min(connection_attempts * 5, max_retry_delay)  # Progressive backoff
                 
-                # Add connection timeout and better error handling
-                log_message(f"Attempting to connect to {SERVER_URL}...")
+                log_message(f"Connecting to server at {SERVER_URL} (attempt {connection_attempts})...")
                 
                 # Test if controller is reachable first
                 if REQUESTS_AVAILABLE:
@@ -13104,10 +13114,14 @@ def agent_main():
                         log_message(f"[OK] Controller is reachable (HTTP {test_response.status_code})")
                     except Exception as e:
                         log_message(f"[WARN] Controller may not be reachable: {e}")
-                        log_message(f"[INFO] Controller should be running at: {SERVER_URL}")
+                        log_message(f"[INFO] Will retry in {retry_delay} seconds...")
                 
                 sio.connect(SERVER_URL, wait_timeout=10)
                 log_message("[OK] Connected to server successfully!")
+                
+                # Reset connection attempts on successful connection
+                connection_attempts = 0
+                
                 # Email notify once when agent comes online
                 global EMAIL_SENT_ONLINE
                 if not EMAIL_SENT_ONLINE:
@@ -13124,12 +13138,8 @@ def agent_main():
                         EMAIL_SENT_ONLINE = True
                         log_message("Email notification sent: agent online")
                 
-                # Register Socket.IO event handlers after successful connection
-                try:
-                    register_socketio_handlers()
-                    log_message("[OK] Socket.IO event handlers registered successfully")
-                except Exception as handler_error:
-                    log_message(f"[WARN] Failed to register Socket.IO handlers: {handler_error}")
+                # Handlers are already registered - no need to register again
+                log_message("[INFO] Event handlers already registered and active")
                 
                 # Manually register agent with controller
                 try:
@@ -13211,10 +13221,14 @@ def agent_main():
                 heartbeat_thread.start()
                 log_message("[OK] Heartbeat started")
                 
+                # Keep connection alive and wait for events
                 sio.wait()
-            except socketio.exceptions.ConnectionError:
-                log_message(f"[WARN] Connection failed (attempt {connection_attempts}). Retrying in 10 seconds...")
-                time.sleep(10)
+                
+            except socketio.exceptions.ConnectionError as conn_err:
+                retry_delay = min(connection_attempts * 5, max_retry_delay)
+                log_message(f"[WARN] Connection failed (attempt {connection_attempts}): {conn_err}")
+                log_message(f"[INFO] Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
             except KeyboardInterrupt:
                 log_message("\n[INFO] Received interrupt signal. Shutting down gracefully...")
                 break
