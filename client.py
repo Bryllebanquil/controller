@@ -13231,6 +13231,12 @@ def agent_main():
                 log_message(f"[ERROR] Failed to register Socket.IO handlers: {handler_error}")
                 log_message("Cannot continue without event handlers!")
                 return
+            
+            # Start connection health monitor
+            log_message("Starting connection health monitor...")
+            health_monitor_thread = threading.Thread(target=connection_health_monitor, daemon=True, name="ConnectionHealthMonitor")
+            health_monitor_thread.start()
+            log_message("[OK] Connection health monitor started (checks every 1 second)")
         else:
             log_message("Socket.IO not available - running in offline mode", "warning")
             log_message("Agent running in offline mode - no server communication")
@@ -13264,8 +13270,12 @@ def agent_main():
                 sio.connect(SERVER_URL, wait_timeout=10)
                 log_message("[OK] Connected to server successfully!")
                 
-                # Reset connection attempts on successful connection
+                # Reset connection attempts and state on successful connection
                 connection_attempts = 0
+                CONNECTION_STATE['connected'] = True
+                CONNECTION_STATE['consecutive_failures'] = 0
+                CONNECTION_STATE['reconnect_needed'] = False
+                CONNECTION_STATE['force_reconnect'] = False
                 
                 # Email notify once when agent comes online
                 global EMAIL_SENT_ONLINE
