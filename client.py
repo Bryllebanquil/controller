@@ -13,7 +13,13 @@ UAC_DEBUG = True  # Set to True to see detailed UAC/privilege debugging
 def debug_print(msg):
     """Print debug messages directly (bypasses all logging systems)"""
     if UAC_DEBUG:
-        print(f"[DEBUG] {msg}", flush=True)
+        # Fix encoding issues - replace emojis with ASCII for Windows console
+        msg = str(msg).replace('✅', '[OK]').replace('❌', '[X]').replace('⚠️', '[!]')
+        try:
+            print(f"[DEBUG] {msg}", flush=True)
+        except UnicodeEncodeError:
+            # Fallback: encode to ASCII, ignore unicode errors
+            print(f"[DEBUG] {msg.encode('ascii', 'ignore').decode('ascii')}", flush=True)
 
 debug_print("=" * 80)
 debug_print("PYTHON AGENT STARTUP - UAC PRIVILEGE DEBUGGER ENABLED")
