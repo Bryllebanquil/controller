@@ -221,8 +221,8 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="bg-black text-green-400 p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto">
-                  {output || 'No output yet. Execute a command to see results.'}
+                <div className="bg-[#012456] text-white p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto whitespace-pre-wrap">
+                  {output || 'Windows PowerShell\nCopyright (C) Microsoft Corporation. All rights reserved.\n\nInstall the latest PowerShell for new features and improvements! https://aka.ms/PSWindows\n\nPS C:\\> '}
                   {isExecuting && (
                     <div className="text-yellow-400 animate-pulse">
                       Executing command... <span className="animate-pulse">▋</span>
