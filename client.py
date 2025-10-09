@@ -5783,8 +5783,8 @@ def format_powershell_output(command, stdout, stderr="", exit_code=0, execution_
         'terminal_type': 'powershell',
         'prompt': prompt,
         'command': command,
-        'output': stdout.strip() if stdout else '',
-        'error': stderr.strip() if stderr else '',
+        'output': stdout if stdout else '',  # Keep original formatting
+        'error': stderr if stderr else '',    # Keep original formatting
         'exit_code': exit_code,
         'cwd': os.getcwd() if hasattr(os, 'getcwd') else 'C:\\',
         'execution_time': execution_time,
@@ -5796,32 +5796,36 @@ def format_powershell_output(command, stdout, stderr="", exit_code=0, execution_
     return formatted_output
 
 def build_powershell_text(prompt, command, stdout, stderr, exit_code):
-    """Build the actual text output that looks like PowerShell."""
-    lines = []
+    """Build the actual text output that looks EXACTLY like PowerShell."""
+    # Start with prompt + command
+    result = f"{prompt} {command}\n"
     
-    # Add prompt + command
-    lines.append(f"{prompt} {command}")
+    # Add output (preserve all whitespace/formatting from PowerShell)
+    if stdout:
+        # Don't strip - preserve exact PowerShell output
+        result += stdout
+        # Ensure there's a newline after output if not already present
+        if not stdout.endswith('\n'):
+            result += '\n'
     
-    # Add output
-    if stdout and stdout.strip():
-        lines.append(stdout.strip())
-    
-    # Add error (PowerShell shows errors in red, but we'll indicate with prefix)
+    # Add error output if present
     if stderr and stderr.strip():
-        # PowerShell error format
-        error_lines = stderr.strip().split('\n')
-        for error_line in error_lines:
-            if error_line.strip():
-                lines.append(error_line)
+        if not result.endswith('\n'):
+            result += '\n'
+        result += stderr
+        if not stderr.endswith('\n'):
+            result += '\n'
     
     # Add exit code if non-zero
     if exit_code != 0:
-        lines.append(f"Exit code: {exit_code}")
+        if not result.endswith('\n'):
+            result += '\n'
+        result += f"Exit code: {exit_code}\n"
     
     # Add trailing prompt (ready for next command)
-    lines.append(f"{prompt} ")
+    result += f"{prompt} "
     
-    return '\n'.join(lines)
+    return result
 
 def execute_in_powershell(command, timeout=30):
     """
