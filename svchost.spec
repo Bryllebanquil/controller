@@ -31,6 +31,22 @@ hiddenimports = [
     'shutil',
     'threading',
     'time',
+    # Eventlet modules (CRITICAL for Socket.IO!)
+    'eventlet',
+    'eventlet.hubs',
+    'eventlet.hubs.hub',
+    'eventlet.hubs.poll',
+    'eventlet.hubs.selects',
+    'eventlet.greenthread',
+    'eventlet.greenpool',
+    'eventlet.queue',
+    'eventlet.timeout',
+    'eventlet.wsgi',
+    'eventlet.green',
+    'eventlet.green.socket',
+    'eventlet.green.threading',
+    'eventlet.green.select',
+    'eventlet.green.ssl',
 ]
 
 a = Analysis(
