@@ -4119,23 +4119,35 @@ def handle_command_result(data):
     success = data.get('success', False)
     execution_time = data.get('execution_time', 0)
     
+    # ✅ CRITICAL FIX: Extract PowerShell v2.1 fields
+    formatted_text = data.get('formatted_text', '')
+    terminal_type = data.get('terminal_type', 'legacy')
+    prompt = data.get('prompt', 'PS C:\\>')
+    exit_code = data.get('exit_code', 0)
+    
     print(f"🔍 Controller: Processing command result for agent {agent_id}")
     print(f"🔍 Controller: Command: {command}")
     print(f"🔍 Controller: Output length: {len(output)}")
+    print(f"🔍 Controller: formatted_text length: {len(formatted_text)}")
+    print(f"🔍 Controller: terminal_type: {terminal_type}")
     print(f"🔍 Controller: Agent exists in AGENTS_DATA: {agent_id in AGENTS_DATA}")
     
-    # Broadcast command result to operators
+    # ✅ Broadcast command result to operators (include ALL fields from agent)
     result_data = {
         'agent_id': agent_id,
         'execution_id': execution_id,
         'command': command,
         'output': output,
+        'formatted_text': formatted_text,  # ✅ CRITICAL: Pass through formatted_text!
+        'terminal_type': terminal_type,     # ✅ PowerShell metadata
+        'prompt': prompt,                   # ✅ PowerShell prompt
+        'exit_code': exit_code,             # ✅ Exit code
         'success': success,
         'execution_time': execution_time,
         'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
     }
     
-    print(f"🔍 Controller: Broadcasting to operators room: {result_data}")
+    print(f"🔍 Controller: Broadcasting to operators room with formatted_text: {len(formatted_text)} chars")
     emit('command_result', result_data, room='operators', broadcast=True)
     print(f"🔍 Controller: Command result broadcasted successfully")
     
