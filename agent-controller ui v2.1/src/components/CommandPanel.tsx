@@ -220,7 +220,10 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="bg-[#012456] text-white p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto whitespace-pre-wrap">
+                <div 
+                  className="bg-[#012456] text-white p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto"
+                  style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word', overflowWrap: 'break-word' }}
+                >
                   {output || 'Windows PowerShell\nCopyright (C) Microsoft Corporation. All rights reserved.\n\nInstall the latest PowerShell for new features and improvements! https://aka.ms/PSWindows\n\nPS C:\\> '}
                   {isExecuting && (
                     <div className="text-yellow-400 animate-pulse">
