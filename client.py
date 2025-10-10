@@ -12267,10 +12267,19 @@ def on_command(data):
             # For UI v2.1: Send PowerShell-formatted output
             if isinstance(output, dict) and 'terminal_type' in output:
                 # Already formatted by execute_in_powershell
-                safe_emit('command_result', {
+                # Make sure formatted_text is included
+                result_data = {
                     'agent_id': agent_id,
-                    **output  # Spread PowerShell formatting data
-                })
+                    'output': output.get('output', ''),
+                    'formatted_text': output.get('formatted_text', ''),
+                    'terminal_type': output.get('terminal_type', 'powershell'),
+                    'prompt': output.get('prompt', 'PS C:\\>'),
+                    'command': output.get('command', ''),
+                    'exit_code': output.get('exit_code', 0),
+                    'execution_time': output.get('execution_time', 0),
+                    'timestamp': output.get('timestamp', int(time.time() * 1000))
+                }
+                safe_emit('command_result', result_data)
             else:
                 # Legacy format (plain string output)
                 safe_emit('command_result', {
