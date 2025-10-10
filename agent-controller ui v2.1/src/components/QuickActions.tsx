@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { cn } from './ui/utils';
 import { toast } from 'sonner';
+import apiClient from '../services/api';
 
 interface QuickAction {
   id: string;
@@ -128,15 +129,19 @@ export function QuickActions({ agentCount, selectedAgent }: QuickActionsProps) {
 
     setExecutingAction(action.id);
     try {
-      const res = await fetch('/api/actions/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: action.id, agent_ids: [] })
-      });
-      const data = await res.json();
-      if (!res.ok || data.success === false) throw new Error(data.message || 'Action failed');
-      toast.success(`${action.label} sent to ${data.total_agents} agent(s)`);
+      console.log(`🔍 QuickActions: Executing action: ${action.id}`);
+      const response = await apiClient.executeBulkAction(action.id, []);
+      
+      console.log(`🔍 QuickActions: Response:`, response);
+      
+      if (!response.success || response.error) {
+        throw new Error(response.error || 'Action failed');
+      }
+      
+      const totalAgents = response.data?.total_agents || 0;
+      toast.success(`${action.label} sent to ${totalAgents} agent(s)`);
     } catch (e: any) {
+      console.error('🔍 QuickActions: Error:', e);
       toast.error(e.message || 'Failed to execute action');
     } finally {
       setExecutingAction(null);
@@ -147,15 +152,19 @@ export function QuickActions({ agentCount, selectedAgent }: QuickActionsProps) {
     setConfirmAction(null);
     setExecutingAction(action.id);
     try {
-      const res = await fetch('/api/actions/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: action.id, agent_ids: [] })
-      });
-      const data = await res.json();
-      if (!res.ok || data.success === false) throw new Error(data.message || 'Action failed');
-      toast.success(`${action.label} sent to ${data.total_agents} agent(s)`);
+      console.log(`🔍 QuickActions: Executing confirmed action: ${action.id}`);
+      const response = await apiClient.executeBulkAction(action.id, []);
+      
+      console.log(`🔍 QuickActions: Response:`, response);
+      
+      if (!response.success || response.error) {
+        throw new Error(response.error || 'Action failed');
+      }
+      
+      const totalAgents = response.data?.total_agents || 0;
+      toast.success(`${action.label} sent to ${totalAgents} agent(s)`);
     } catch (e: any) {
+      console.error('🔍 QuickActions: Error:', e);
       toast.error(e.message || 'Failed to execute action');
     } finally {
       setExecutingAction(null);

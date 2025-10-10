@@ -1,158 +1,130 @@
-# Agent Client Requirements
-# Comprehensive dependencies for client.py functionality
+# ============================================================================
+# Complete Requirements for client.py - All Dependencies
+# ============================================================================
+# Installation: pip install -r requirements-client.txt
+# Or with pre-release versions: pip install --pre -r requirements-client.txt
+# ============================================================================
 
-# =============================================================================
-# CORE DEPENDENCIES (Required for basic functionality)
-# =============================================================================
+# Core networking & Socket.IO (CRITICAL for controller connection)
+--pre python-socketio>=5.0.0
+--pre python-engineio>=4.0.0
+--pre requests>=2.31.0
+--pre urllib3>=2.0.0
+--pre certifi>=2024.0.0
+--pre websocket-client>=1.6.0
+--pre websockets>=12.0
 
-# WebSocket and real-time communication
-python-socketio>=5.13.0
-websockets>=10.4
-requests>=2.32.4
-urllib3>=2.0.0
+# Async & Event handling
+--pre eventlet>=0.33.0
 
-# Async and threading support
-eventlet>=0.33.3
-aiofiles>=23.1.0
-aiohttp>=3.8.0
+# DNS resolution
+--pre dnspython>=2.0.0
 
-# =============================================================================
-# SCREEN CAPTURE & MEDIA PROCESSING
-# =============================================================================
+# Windows-specific libraries (pywin32)
+--pre pywin32>=306
+--pre comtypes>=1.2.0
 
-# Cross-platform screen capture
-mss>=10.0.0
+# Computer Vision & Image Processing
+--pre opencv-python>=4.8.0
+--pre numpy>=1.24.0
+--pre Pillow>=10.0.0
+--pre mss>=9.0.0
 
-# Windows-specific high-performance screen capture
-dxcam>=0.0.5; sys_platform == "win32"
+# GUI Automation & Input Control
+--pre pyautogui>=0.9.54
+--pre pynput>=1.7.6
+--pre pygame>=2.5.0
 
-# Video processing and computer vision
-opencv-python>=4.7.0.72
-numpy>=1.24.4
+# Audio Processing
+--pre pyaudio>=0.2.13
+--pre SpeechRecognition>=3.10.0
+--pre gTTS>=2.5.0
 
-# Image processing
-pillow>=9.5.0
-PyTurboJPEG>=1.7.0
+# System Monitoring
+--pre psutil>=5.9.0
 
-# =============================================================================
-# AUDIO PROCESSING
-# =============================================================================
+# WebRTC & Video Streaming
+--pre aiortc>=1.6.0
+--pre av>=11.0.0
 
-# Audio capture and processing
-pyaudio>=0.2.11; sys_platform == "win32"
-sounddevice>=0.5.2; sys_platform != "win32"
+# Cryptography & Security
+--pre cryptography>=41.0.0
 
-# Speech recognition
-SpeechRecognition>=3.14.0
+# Web Framework (for controller mode)
+--pre Flask>=3.0.0
+--pre Flask-SocketIO>=5.3.0
 
-# =============================================================================
-# INPUT CONTROL & AUTOMATION
-# =============================================================================
+# Machine Learning & AI (optional but used in code)
+--pre tensorflow>=2.15.0
+--pre torch>=2.1.0
+--pre torchvision>=0.16.0
 
-# Cross-platform input monitoring and control
-pynput>=1.8.1
-keyboard>=0.13.5
-pyautogui>=0.9.54
+# Additional utilities
+--pre lxml>=4.9.0
+--pre beautifulsoup4>=4.12.0
+--pre selenium>=4.15.0
+--pre pyppeteer>=2.0.0
 
-# GUI framework
-pygame>=2.6.1
+# HTTP/Web scraping
+--pre httpx>=0.25.0
+--pre aiohttp>=3.9.0
 
-# =============================================================================
-# SYSTEM MONITORING & UTILITIES
-# =============================================================================
+# Data handling
+--pre pandas>=2.1.0
+--pre openpyxl>=3.1.0
 
-# System information and process management
-psutil>=5.9.5
-py-cpuinfo>=9.0.0
+# Compression
+--pre lz4>=4.3.0
 
-# Windows-specific system access
-pywin32>=306; sys_platform == "win32"
+# JSON/Data validation
+--pre jsonschema>=4.20.0
+--pre pydantic>=2.5.0
 
-# =============================================================================
-# WEBRTC & STREAMING
-# =============================================================================
+# Misc utilities
+--pre python-dateutil>=2.8.0
+--pre pytz>=2024.1
+--pre colorama>=0.4.6
+--pre tqdm>=4.66.0
 
-# WebRTC for low-latency streaming
-aiortc>=1.13.0
+# Database (if needed)
+--pre pymongo>=4.6.0
+--pre redis>=5.0.0
 
-# =============================================================================
-# PERFORMANCE & COMPRESSION
-# =============================================================================
+# Cloud services
+--pre google-cloud-storage>=2.14.0
+--pre boto3>=1.34.0
 
-# Fast serialization
-msgpack>=1.0.5
+# Jupyter/IPython (for interactive features)
+--pre ipython>=8.18.0
+--pre jupyter>=1.0.0
 
-# Compression algorithms
-lz4>=4.3.2
-zstandard>=0.21.0
-xxhash>=3.2.0
+# Networking tools
+--pre paramiko>=3.4.0
+--pre scapy>=2.5.0
 
-# Performance optimization (Linux/macOS only)
-uvloop>=0.17.0; sys_platform != "win32"
+# Protocol buffers & RPC
+--pre protobuf>=4.25.0
+--pre grpcio>=1.60.0
 
-# =============================================================================
-# SECURITY & CRYPTOGRAPHY
-# =============================================================================
+# Image manipulation
+--pre imageio>=2.33.0
+--pre scikit-image>=0.22.0
 
-# Cryptographic functions
-cryptography>=41.0.3
+# PyInstaller (for compilation)
+--pre pyinstaller>=6.0.0
 
-# =============================================================================
-# DEVELOPMENT & BUILD TOOLS
-# =============================================================================
-
-# Build and compilation
-Cython>=3.0.0
-setuptools>=65.0.0
-
-# =============================================================================
-# OPTIONAL DEPENDENCIES (For enhanced features)
-# =============================================================================
-
-# Email notifications (optional)
-# smtplib is built-in to Python
-
-# Additional audio codecs (optional)
-# These may be needed for specific audio formats
-# ffmpeg-python>=0.2.0
-
-# =============================================================================
-# PLATFORM-SPECIFIC NOTES
-# =============================================================================
-
-# Windows:
-# - dxcam: High-performance screen capture
-# - pyaudio: Audio capture
-# - pywin32: Windows API access
-# - keyboard: Global hotkey support
-
-# Linux/macOS:
-# - sounddevice: Audio capture
-# - uvloop: Performance optimization
-# - pynput: Input monitoring (may require additional system packages)
-
-# =============================================================================
-# INSTALLATION NOTES
-# =============================================================================
-
-# For Windows:
-# pip install -r requirements-client.txt
-
-# For Linux (Ubuntu/Debian):
-# sudo apt-get install portaudio19-dev python3-pyaudio
-# pip install -r requirements-client.txt
-
-# For macOS:
-# brew install portaudio
-# pip install -r requirements-client.txt
-
-# =============================================================================
-# MINIMAL INSTALLATION (Core functionality only)
-# =============================================================================
-
-# If you only need basic functionality, install these core packages:
-# python-socketio>=5.13.0
-# requests>=2.32.4
-# mss>=10.0.0
-# psutil>=5.9.5
-# cryptography>=41.0.3
+# ============================================================================
+# INSTALLATION COMMANDS
+# ============================================================================
+#
+# Install all packages (recommended):
+#   pip install --pre -r requirements-client.txt
+#
+# Install minimal required packages only:
+#   pip install --pre python-socketio python-engineio requests urllib3 certifi
+#   pip install --pre pywin32 opencv-python numpy Pillow psutil pynput pyautogui
+#
+# Install for compilation:
+#   pip install --pre pyinstaller
+#
+# ============================================================================

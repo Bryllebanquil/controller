@@ -53,9 +53,8 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
 
     setIsExecuting(true);
     
-    // Add the command to output immediately (like a real terminal)
-    const commandLine = `$ ${commandToExecute}`;
-    setOutput(prev => prev + (prev ? '\n' : '') + commandLine + '\n');
+    // Don't add command to output here - let the formatted result from agent handle it
+    // This prevents duplicate command echoes and preserves PowerShell formatting
     
     try {
       sendCommand(agentId, commandToExecute);
@@ -103,14 +102,14 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
       // Get the latest output line
       const latestOutput = commandOutput[commandOutput.length - 1];
       console.log('🔍 CommandPanel: latest output:', latestOutput);
+      console.log('🔍 CommandPanel: latest output length:', latestOutput?.length);
+      console.log('🔍 CommandPanel: has newlines:', latestOutput?.includes('\n'));
       
-      if (latestOutput && latestOutput.trim()) {
-        // Add the latest output to the display
-        setOutput(prev => {
-          const newOutput = prev + (prev.endsWith('\n') ? '' : '\n') + latestOutput + '\n';
-          console.log('🔍 CommandPanel: setting new output:', newOutput);
-          return newOutput;
-        });
+      if (latestOutput) {
+        // Replace the entire output with the latest formatted result
+        // This preserves all PowerShell formatting including line breaks
+        setOutput(latestOutput);
+        console.log('🔍 CommandPanel: output replaced with formatted text');
       }
       
       // Reset executing state when we receive command output
@@ -221,14 +220,17 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="bg-black text-green-400 p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto">
-                  {output || 'No output yet. Execute a command to see results.'}
+                <pre 
+                  className="bg-[#012456] text-white p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto m-0"
+                  style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word', overflowWrap: 'break-word' }}
+                >
+                  {output || 'Windows PowerShell\nCopyright (C) Microsoft Corporation. All rights reserved.\n\nInstall the latest PowerShell for new features and improvements! https://aka.ms/PSWindows\n\nPS C:\\> '}
                   {isExecuting && (
                     <div className="text-yellow-400 animate-pulse">
                       Executing command... <span className="animate-pulse">▋</span>
                     </div>
                   )}
-                </div>
+                </pre>
               </CardContent>
             </Card>
           )}
