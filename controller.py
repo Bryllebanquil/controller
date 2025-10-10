@@ -2321,11 +2321,20 @@ def get_agent_details(agent_id):
 @require_auth
 def bulk_action():
     """Execute a bulk action on all or selected agents"""
+    print("\n" + "="*80)
+    print("🔍 BULK ACTION REQUEST RECEIVED")
+    print("="*80)
+    
     data = request.json
     action = data.get('action')
     agent_ids = data.get('agent_ids', [])  # Empty list = all agents
     
+    print(f"🔍 Action requested: {action}")
+    print(f"🔍 Agent IDs filter: {agent_ids}")
+    print(f"🔍 Current AGENTS_DATA: {list(AGENTS_DATA.keys())}")
+    
     if not action:
+        print("❌ Error: No action provided")
         return jsonify({'success': False, 'error': 'Action required'}), 400
     
     # Get target agents
@@ -2333,14 +2342,17 @@ def bulk_action():
     if agent_ids:
         # Specific agents
         target_agents = [aid for aid in agent_ids if aid in AGENTS_DATA]
+        print(f"🔍 Using specific agents: {target_agents}")
     else:
         # All online agents
         target_agents = [
             aid for aid, agent in AGENTS_DATA.items() 
             if agent.get('status') == 'online'
         ]
+        print(f"🔍 Using all online agents: {target_agents}")
     
     if not target_agents:
+        print("❌ Error: No agents available")
         return jsonify({'success': False, 'error': 'No agents available'}), 400
     
     # Map actions to commands
@@ -2356,18 +2368,27 @@ def bulk_action():
     }
     
     command = action_map.get(action)
+    print(f"🔍 Mapped action '{action}' to command '{command}'")
+    
     if not command:
+        print(f"❌ Error: Invalid action '{action}'")
         return jsonify({'success': False, 'error': 'Invalid action'}), 400
     
     # Execute command on all target agents
     results = []
     for agent_id in target_agents:
         try:
+            agent_sid = AGENTS_DATA[agent_id].get('sid')
+            print(f"🔍 Sending to agent {agent_id} (SID: {agent_sid})")
+            print(f"   Command: {command}")
+            
             socketio.emit('execute_command', {
                 'agent_id': agent_id,
                 'command': command,
                 'execution_id': f'bulk_{action}_{int(time.time())}'
-            }, room=AGENTS_DATA[agent_id].get('sid'))
+            }, room=agent_sid)
+            
+            print(f"✅ Command sent to {agent_id}")
             
             results.append({
                 'agent_id': agent_id,
@@ -2387,11 +2408,15 @@ def bulk_action():
             }, room='operators', broadcast=True)
             
         except Exception as e:
+            print(f"❌ Error sending to {agent_id}: {e}")
             results.append({
                 'agent_id': agent_id,
                 'status': 'failed',
                 'error': str(e)
             })
+    
+    print(f"✅ Bulk action complete: {len(results)} commands sent")
+    print("="*80)
     
     return jsonify({
         'success': True,

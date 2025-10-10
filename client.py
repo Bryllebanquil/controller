@@ -12413,6 +12413,11 @@ def on_execute_command(data):
     
     CRITICAL: Runs in separate thread to prevent blocking Socket.IO!
     """
+    print("\n" + "="*80)
+    print("🔍 CLIENT: execute_command EVENT RECEIVED")
+    print("="*80)
+    print(f"🔍 Data received: {data}")
+    
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle execute_command", "warning")
         return
@@ -12421,11 +12426,19 @@ def on_execute_command(data):
     command = data.get('command')
     execution_id = data.get('execution_id')
     
+    print(f"🔍 Agent ID in event: {agent_id}")
+    print(f"🔍 Command: {command}")
+    print(f"🔍 Execution ID: {execution_id}")
+    
     # Verify this command is for us
     our_agent_id = get_or_create_agent_id()
+    print(f"🔍 Our agent ID: {our_agent_id}")
+    
     if agent_id != our_agent_id:
+        print(f"❌ Command not for us (expected {our_agent_id}, got {agent_id})")
         return  # Not for this agent
     
+    print(f"✅ Command is for us, proceeding to execute: {command}")
     log_message(f"[EXECUTE_COMMAND] Received: {command} (execution_id: {execution_id})")
     
     # Run command in separate thread to prevent blocking Socket.IO!
