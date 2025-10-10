@@ -220,8 +220,8 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                 </div>
               </CardHeader>
               <CardContent>
-                <div 
-                  className="bg-[#012456] text-white p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto"
+                <pre 
+                  className="bg-[#012456] text-white p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto m-0"
                   style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word', overflowWrap: 'break-word' }}
                 >
                   {output || 'Windows PowerShell\nCopyright (C) Microsoft Corporation. All rights reserved.\n\nInstall the latest PowerShell for new features and improvements! https://aka.ms/PSWindows\n\nPS C:\\> '}
@@ -230,7 +230,7 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                       Executing command... <span className="animate-pulse">▋</span>
                     </div>
                   )}
-                </div>
+                </pre>
               </CardContent>
             </Card>
           )}
