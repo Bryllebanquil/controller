@@ -176,7 +176,7 @@ export function StreamViewer({ agentId, type, title }: StreamViewerProps) {
 
     const eventName = type === 'screen' ? 'screen_frame' : type === 'camera' ? 'camera_frame' : 'audio_frame';
 
-    const handleFrame = (event: any) => {
+    const handleFrame = (event: Record<string, unknown>) => {
       const data = event.detail;
       
       // Check if frame is for this agent

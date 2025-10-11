@@ -149,7 +149,7 @@ export function NotificationCenter() {
   useEffect(() => {
     if (!socket) return;
 
-    const handleNotification = (notification: any) => {
+    const handleNotification = (notification: Record<string, unknown>) => {
       const newNotification: Notification = {
         ...notification,
         timestamp: new Date(notification.timestamp),

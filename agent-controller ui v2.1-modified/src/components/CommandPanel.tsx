@@ -78,7 +78,7 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
     if (!cmd) setCommand('');
   };
 
-  const handleKeyPress = (e: any) => {
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       executeCommand();
