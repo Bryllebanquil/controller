@@ -27,3 +27,4 @@ services:
       - key: LOGIN_TIMEOUT
         value: "300"
 
+# Force UI rebuild Sat Oct 11 11:06:44 PM UTC 2025
