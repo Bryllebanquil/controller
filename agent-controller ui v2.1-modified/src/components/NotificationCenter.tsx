@@ -150,12 +150,28 @@ export function NotificationCenter() {
     if (!socket) return;
 
     const handleNotification = (notification: Record<string, unknown>) => {
+      console.log('🔔 NotificationCenter received notification:', notification);
       const newNotification: Notification = {
-        ...notification,
-        timestamp: new Date(notification.timestamp),
-        read: false
+        id: notification.id as string || `notif-${Date.now()}`,
+        type: notification.type as ('success' | 'warning' | 'error' | 'info') || 'info',
+        title: notification.title as string || 'Notification',
+        message: notification.message as string || '',
+        timestamp: new Date(notification.timestamp as string || Date.now()),
+        agentId: (notification.agent_id as string) || (notification.agentId as string),
+        read: false,
+        category: notification.category as ('agent' | 'system' | 'security' | 'command') || 'agent'
       };
+      console.log('✅ Parsed notification:', newNotification);
       setNotifications(prev => [newNotification, ...prev]);
+      
+      // Also show a browser notification if permission granted
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(newNotification.title, {
+          body: newNotification.message,
+          icon: '/favicon.ico',
+          tag: newNotification.id
+        });
+      }
     };
 
     socket.on('notification', handleNotification);
