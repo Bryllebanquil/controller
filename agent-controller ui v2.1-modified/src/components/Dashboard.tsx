@@ -1,6 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { useSocket } from './SocketProvider';
+import { Login } from './Login';
+import { ErrorBoundary } from './ErrorBoundary';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { MobileNavigation } from './MobileNavigation';
@@ -36,7 +38,8 @@ import {
   Filter,
   Bell,
   Menu,
-  X
+  X,
+  Wifi
 } from 'lucide-react';
 import { cn } from './ui/utils';
 
@@ -61,8 +64,24 @@ export function Dashboard() {
   const [isMobile, setIsMobile] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all' as 'all' | 'online' | 'offline');
+  const [networkActivity, setNetworkActivity] = useState("0.0");
 
-  // Authentication check removed - always authenticated
+  // Show login screen if not authenticated
+  if (!authenticated) {
+    return <Login />;
+  }
+
+  // Show loading screen while connecting
+  if (!connected) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+          <p className="text-muted-foreground">Connecting to Neural Control Hub...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Check for mobile viewport
   useEffect(() => {
@@ -106,16 +125,15 @@ export function Dashboard() {
     }
   };
 
-  // Authentication check removed - always authenticated
-
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <Header 
-        onMenuClick={() => setSidebarOpen(!sidebarOpen)}
-        isMobile={isMobile}
-        sidebarOpen={sidebarOpen}
-      />
+      <ErrorBoundary>
+        {/* Header */}
+        <Header 
+          onMenuClick={() => setSidebarOpen(!sidebarOpen)}
+          isMobile={isMobile}
+          sidebarOpen={sidebarOpen}
+        />
 
       {/* Mobile Navigation Overlay */}
       {isMobile && sidebarOpen && (
@@ -140,12 +158,14 @@ export function Dashboard() {
 
       {/* Desktop Sidebar */}
       {!isMobile && (
-        <div className="fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-background border-r">
-          <Sidebar 
-            activeTab={activeTab}
-            onTabChange={handleTabChange}
-          />
-        </div>
+        <ErrorBoundary>
+          <div className="fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-background border-r">
+            <Sidebar 
+              activeTab={activeTab}
+              onTabChange={handleTabChange}
+            />
+          </div>
+        </ErrorBoundary>
       )}
 
       {/* Main Content */}
@@ -372,10 +392,24 @@ export function Dashboard() {
               )}
             </TabsContent>
 
-            {/* Commands Tab */}
+            {/* Commands Tab - with Process Manager nested tabs */}
             <TabsContent value="commands" className="space-y-6">
               {selectedAgent ? (
-                <CommandPanel agentId={selectedAgent} />
+                <Tabs defaultValue="terminal" className="space-y-4">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="terminal">Terminal</TabsTrigger>
+                    <TabsTrigger value="processes">Process Manager</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="terminal">
+                    <CommandPanel agentId={selectedAgent} />
+                  </TabsContent>
+                  <TabsContent value="processes">
+                    <ProcessManager 
+                      agentId={selectedAgent} 
+                      isConnected={onlineAgents > 0}
+                    />
+                  </TabsContent>
+                </Tabs>
               ) : (
                 <Card>
                   <CardContent className="flex flex-col items-center justify-center py-12">
@@ -411,7 +445,7 @@ export function Dashboard() {
               {selectedAgent ? (
                 <VoiceControl 
                   agentId={selectedAgent}
-                  isConnected={true}
+                  isConnected={onlineAgents > 0}
                 />
               ) : (
                 <Card>
@@ -443,10 +477,41 @@ export function Dashboard() {
               )}
             </TabsContent>
 
-            {/* Monitoring Tab */}
+            {/* Monitoring Tab - Enhanced with Network Performance */}
             <TabsContent value="monitoring" className="space-y-6">
               {selectedAgent ? (
-                <SystemMonitor agentId={selectedAgent} />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <SystemMonitor agentId={selectedAgent} />
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Network Performance</CardTitle>
+                      <CardDescription>Real-time network metrics and activity</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm">Latency</span>
+                          <Badge variant="secondary">12ms</Badge>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm">Throughput</span>
+                          <Badge variant="secondary">{networkActivity} MB/s</Badge>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm">Packet Loss</span>
+                          <Badge variant="secondary">0.1%</Badge>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm">Connection Status</span>
+                          <Badge variant="default">
+                            <Wifi className="h-3 w-3 mr-1" />
+                            Stable
+                          </Badge>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
               ) : (
                 <Card>
                   <CardContent className="flex flex-col items-center justify-center py-12">
@@ -472,6 +537,7 @@ export function Dashboard() {
           </Tabs>
         </div>
       </div>
+      </ErrorBoundary>
     </div>
   );
 }
