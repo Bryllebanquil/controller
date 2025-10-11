@@ -17,7 +17,9 @@ import {
   Download,
   Trash2,
   PowerOff,
-  RefreshCw
+  RefreshCw,
+  Users,
+  Loader2
 } from 'lucide-react';
 
 interface CommandPanelProps {
@@ -41,10 +43,12 @@ const commandHistory = [
 ];
 
 export function CommandPanel({ agentId }: CommandPanelProps) {
-  const { sendCommand, commandOutput } = useSocket();
+  const { sendCommand, commandOutput, socket } = useSocket();
   const [command, setCommand] = useState('');
   const [output, setOutput] = useState('');
   const [isExecuting, setIsExecuting] = useState(false);
+  const [isBulkExecuting, setIsBulkExecuting] = useState(false);
+  const [bulkResults, setBulkResults] = useState<Record<string, any>>({});
   const [history, setHistory] = useState(commandHistory);
 
   const executeCommand = async (cmd?: string) => {
@@ -93,6 +97,30 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
     setOutput('');
   };
 
+  const executeOnAllAgents = async () => {
+    if (!command.trim()) return;
+    
+    setIsBulkExecuting(true);
+    setBulkResults({});
+    
+    try {
+      // Send bulk command request to controller
+      socket?.emit('execute_bulk_command', {
+        command: command.trim()
+      });
+      
+      // Add to output
+      setOutput(prev => prev + `\n\n[BULK EXECUTION] Executing on all agents: ${command}\n${'='.repeat(60)}\n`);
+      
+      // Clear command input
+      setCommand('');
+    } catch (error) {
+      console.error('Error executing bulk command:', error);
+      setOutput(prev => prev + `\nError: ${error}\n`);
+      setIsBulkExecuting(false);
+    }
+  };
+
   useEffect(() => {
     // Update output window as new lines come in
     console.log('🔍 CommandPanel: commandOutput changed, length:', commandOutput.length);
@@ -116,6 +144,44 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
       setIsExecuting(false);
     }
   }, [commandOutput]);
+
+  // Listen for bulk command results
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleBulkResult = (data: Record<string, unknown>) => {
+      console.log('📢 Bulk command result received:', data);
+      const agentId = data.agent_id as string;
+      const output = data.output as string;
+      const success = data.success as boolean;
+      
+      setBulkResults(prev => ({
+        ...prev,
+        [agentId]: { output, success }
+      }));
+      
+      // Append to output window
+      setOutput(prev => prev + `\\n[${agentId}] ${success ? '✅' : '❌'}\\n${output}\\n${'─'.repeat(60)}\\n`);
+    };
+
+    const handleBulkComplete = (data: Record<string, unknown>) => {
+      console.log('✅ Bulk command complete:', data);
+      const total = data.total as number;
+      const successful = data.successful as number;
+      const failed = data.failed as number;
+      
+      setOutput(prev => prev + `\\n${'='.repeat(60)}\\n[BULK EXECUTION COMPLETE]\\nTotal: ${total} | Success: ${successful} | Failed: ${failed}\\n`);
+      setIsBulkExecuting(false);
+    };
+
+    socket.on('bulk_command_result', handleBulkResult);
+    socket.on('bulk_command_complete', handleBulkComplete);
+
+    return () => {
+      socket.off('bulk_command_result', handleBulkResult);
+      socket.off('bulk_command_complete', handleBulkComplete);
+    };
+  }, [socket]);
 
   return (
     <div className="space-y-6">
@@ -173,23 +239,43 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                   value={command}
                   onChange={(e) => setCommand(e.target.value)}
                   onKeyPress={handleKeyPress}
-                  disabled={!agentId || isExecuting}
+                  disabled={(!agentId && !isBulkExecuting) || isExecuting}
                   className="font-mono"
                 />
                 {React.createElement(Button, {
                   onClick: () => executeCommand(),
-                  disabled: !agentId || !command.trim() || isExecuting,
-                  size: "sm"
+                  disabled: !agentId || !command.trim() || isExecuting || isBulkExecuting,
+                  size: "sm",
+                  title: "Execute on selected agent"
                 }, isExecuting ? (
                   React.createElement(RefreshCw, { className: "h-4 w-4 animate-spin" })
                 ) : (
                   React.createElement(Send, { className: "h-4 w-4" })
                 ))}
+                {React.createElement(Button, {
+                  onClick: executeOnAllAgents,
+                  disabled: !command.trim() || isExecuting || isBulkExecuting,
+                  size: "sm",
+                  variant: "secondary",
+                  title: "Execute on ALL agents",
+                  className: "gap-1"
+                }, isBulkExecuting ? (
+                  React.createElement(Loader2, { className: "h-4 w-4 animate-spin" })
+                ) : (
+                  React.createElement(Users, { className: "h-4 w-4" })
+                ), React.createElement("span", { className: "text-xs" }, "All"))}
               </div>
 
-              {!agentId && (
+              {!agentId && !isBulkExecuting && (
                 <div className="text-center text-muted-foreground text-sm py-4">
-                  Select an agent to execute commands
+                  Select an agent to execute commands, or use "All" button to execute on all agents
+                </div>
+              )}
+              
+              {isBulkExecuting && (
+                <div className="flex items-center justify-center space-x-2 text-sm py-2">
+                  {React.createElement(Loader2, { className: "h-4 w-4 animate-spin" })}
+                  <span>Executing on all agents...</span>
                 </div>
               )}
             </CardContent>

