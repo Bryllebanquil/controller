@@ -2176,7 +2176,12 @@ def dashboard():
 # Serve static assets for the UI v2.1
 @app.route('/assets/<path:filename>')
 def serve_assets(filename):
-    return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'assets', filename))
+    # Try modified version first, then fall back to original
+    base_dir = os.path.dirname(__file__)
+    modified_path = os.path.join(base_dir, 'agent-controller ui v2.1-modified', 'build', 'assets', filename)
+    if os.path.exists(modified_path):
+        return send_file(modified_path)
+    return send_file(os.path.join(base_dir, 'agent-controller ui v2.1', 'build', 'assets', filename))
 
 # --- Real-time Streaming Endpoints (COMMENTED OUT - REPLACED WITH OVERVIEW) ---
 # 
@@ -3424,6 +3429,43 @@ def get_notification_stats():
                 'by_category': category_counts,
                 'by_type': type_counts
             }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/test/notification', methods=['POST'])
+@require_auth
+def test_notification():
+    """Trigger a test notification for debugging and testing the notification system"""
+    try:
+        data = request.json or {}
+        notif_type = data.get('type', 'info')
+        title = data.get('title', 'Test Notification')
+        message = data.get('message', 'This is a test notification')
+        category = data.get('category', 'system')
+        agent_id = data.get('agent_id')
+        
+        # Validate notification type
+        if notif_type not in ['success', 'warning', 'error', 'info']:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid notification type. Must be one of: success, warning, error, info'
+            }), 400
+        
+        # Validate category
+        if category not in ['agent', 'system', 'security', 'command']:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid category. Must be one of: agent, system, security, command'
+            }), 400
+        
+        # Send the notification
+        notification_id = emit_notification(notif_type, title, message, category, agent_id)
+        
+        return jsonify({
+            'success': True,
+            'notification_id': notification_id,
+            'message': 'Test notification sent successfully'
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

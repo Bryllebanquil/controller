@@ -20,6 +20,7 @@ import {
 import { cn } from './ui/utils';
 import { useSocket } from './SocketProvider';
 import { apiClient } from '../services/api';
+import { toast } from 'sonner';
 
 interface Notification {
   id: string;
@@ -62,8 +63,11 @@ export function NotificationCenter() {
     return notification.category === filter;
   });
 
+  // Track the last notification ID to detect new ones
+  const [lastNotificationId, setLastNotificationId] = React.useState<string | null>(null);
+  
   // Load notifications from API
-  const loadNotifications = async () => {
+  const loadNotifications = async (showNewToasts = false) => {
     try {
       setLoading(true);
       // Use fetch directly since apiClient doesn't have generic get method
@@ -78,6 +82,28 @@ export function NotificationCenter() {
           timestamp: new Date(n.timestamp),
           read: n.read || false
         }));
+        
+        // If this is a refresh and we want to show new toasts
+        if (showNewToasts && lastNotificationId) {
+          // Find notifications that are newer than the last one we saw
+          const newNotifications = apiNotifications.filter((n: Notification) => {
+            return n.id !== lastNotificationId && 
+                   notifications.findIndex(existing => existing.id === n.id) === -1;
+          });
+          
+          // Show toasts for new notifications
+          newNotifications.forEach((n: Notification) => {
+            if (!n.read) {
+              showToast(n);
+            }
+          });
+        }
+        
+        // Update last notification ID
+        if (apiNotifications.length > 0) {
+          setLastNotificationId(apiNotifications[0].id);
+        }
+        
         setNotifications(apiNotifications);
       }
     } catch (error) {
@@ -131,19 +157,30 @@ export function NotificationCenter() {
   // Load notifications on mount
   useEffect(() => {
     loadNotifications();
+    
+    // Poll for new notifications every 5 seconds as backup
+    const pollInterval = setInterval(() => {
+      loadNotifications(true); // Show toasts for new ones
+    }, 5000);
+    
+    return () => clearInterval(pollInterval);
   }, []);
 
-  // Listen for real-time notifications
+  // Listen for real-time notifications via Socket.IO
   useEffect(() => {
     if (!socket) return;
 
     const handleNotification = (notification: any) => {
+      console.log('🔔 NotificationCenter: Received notification via socket:', notification);
       const newNotification: Notification = {
         ...notification,
         timestamp: new Date(notification.timestamp),
         read: false
       };
       setNotifications(prev => [newNotification, ...prev]);
+      
+      // Show popup toast notification
+      showToast(newNotification);
     };
 
     socket.on('notification', handleNotification);
@@ -152,6 +189,44 @@ export function NotificationCenter() {
       socket.off('notification', handleNotification);
     };
   }, [socket]);
+
+  // Also listen via custom window event as backup
+  // Build timestamp: 2025-10-11T06:30:00Z - Force new hash
+  useEffect(() => {
+    console.log('🔔 NotificationCenter: Setting up window event listener');
+    console.log('🔔 NotificationCenter: Build version - Oct 11 2025 06:30 UTC');
+    
+    const handleWindowNotification = (event: any) => {
+      console.log('🔔 NotificationCenter: Received notification via window event:', event.detail);
+      const notification = event.detail;
+      
+      if (!notification || !notification.id) {
+        console.error('🔔 NotificationCenter: Invalid notification received:', notification);
+        return;
+      }
+      
+      const newNotification: Notification = {
+        ...notification,
+        timestamp: new Date(notification.timestamp),
+        read: false
+      };
+      
+      console.log('🔔 NotificationCenter: Adding notification to list:', newNotification);
+      setNotifications(prev => [newNotification, ...prev]);
+      
+      // Show popup toast notification
+      console.log('🔔 NotificationCenter: Calling showToast...');
+      showToast(newNotification);
+    };
+
+    window.addEventListener('socket_notification', handleWindowNotification);
+    console.log('🔔 NotificationCenter: Window event listener added');
+    
+    return () => {
+      window.removeEventListener('socket_notification', handleWindowNotification);
+      console.log('🔔 NotificationCenter: Window event listener removed');
+    };
+  }, []);
 
   return React.createElement(Sheet, null,
     React.createElement(SheetTrigger, { asChild: true },
