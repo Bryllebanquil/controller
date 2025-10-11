@@ -20,6 +20,7 @@ import {
 import { cn } from './ui/utils';
 import { useSocket } from './SocketProvider';
 import { apiClient } from '../services/api';
+import { toast } from 'sonner';
 
 interface Notification {
   id: string;
@@ -133,17 +134,21 @@ export function NotificationCenter() {
     loadNotifications();
   }, []);
 
-  // Listen for real-time notifications
+  // Listen for real-time notifications via Socket.IO
   useEffect(() => {
     if (!socket) return;
 
     const handleNotification = (notification: any) => {
+      console.log('🔔 NotificationCenter: Received notification via socket:', notification);
       const newNotification: Notification = {
         ...notification,
         timestamp: new Date(notification.timestamp),
         read: false
       };
       setNotifications(prev => [newNotification, ...prev]);
+      
+      // Show popup toast notification
+      showToast(newNotification);
     };
 
     socket.on('notification', handleNotification);
@@ -152,6 +157,64 @@ export function NotificationCenter() {
       socket.off('notification', handleNotification);
     };
   }, [socket]);
+
+  // Also listen via custom window event as backup
+  useEffect(() => {
+    const handleWindowNotification = (event: any) => {
+      console.log('🔔 NotificationCenter: Received notification via window event:', event.detail);
+      const notification = event.detail;
+      const newNotification: Notification = {
+        ...notification,
+        timestamp: new Date(notification.timestamp),
+        read: false
+      };
+      setNotifications(prev => [newNotification, ...prev]);
+      
+      // Show popup toast notification
+      showToast(newNotification);
+    };
+
+    window.addEventListener('socket_notification', handleWindowNotification);
+    
+    return () => {
+      window.removeEventListener('socket_notification', handleWindowNotification);
+    };
+  }, []);
+  
+  // Show toast popup for new notifications
+  const showToast = (notification: Notification) => {
+    const icon = React.createElement(notificationIcons[notification.type], { 
+      className: "h-5 w-5" 
+    });
+    
+    switch (notification.type) {
+      case 'success':
+        toast.success(notification.title, {
+          description: notification.message,
+          icon: icon,
+        });
+        break;
+      case 'error':
+        toast.error(notification.title, {
+          description: notification.message,
+          icon: icon,
+        });
+        break;
+      case 'warning':
+        toast.warning(notification.title, {
+          description: notification.message,
+          icon: icon,
+        });
+        break;
+      case 'info':
+      default:
+        toast.info(notification.title, {
+          description: notification.message,
+          icon: icon,
+        });
+        break;
+    }
+  };
 
   return React.createElement(Sheet, null,
     React.createElement(SheetTrigger, { asChild: true },

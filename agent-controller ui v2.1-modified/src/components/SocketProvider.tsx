@@ -382,6 +382,14 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       addCommandOutput(`WebRTC Error: ${data.message}`);
     });
 
+    // Notification events - Forward to window for NotificationCenter
+    socketInstance.on('notification', (notification: any) => {
+      console.log('🔔 SocketProvider: Received notification event:', notification);
+      // Dispatch custom event so NotificationCenter can pick it up
+      const event = new CustomEvent('socket_notification', { detail: notification });
+      window.dispatchEvent(event);
+    });
+
     return () => {
       socketInstance.disconnect();
     };
