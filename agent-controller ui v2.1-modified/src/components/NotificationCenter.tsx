@@ -63,8 +63,11 @@ export function NotificationCenter() {
     return notification.category === filter;
   });
 
+  // Track the last notification ID to detect new ones
+  const [lastNotificationId, setLastNotificationId] = React.useState<string | null>(null);
+  
   // Load notifications from API
-  const loadNotifications = async () => {
+  const loadNotifications = async (showNewToasts = false) => {
     try {
       setLoading(true);
       // Use fetch directly since apiClient doesn't have generic get method
@@ -79,6 +82,28 @@ export function NotificationCenter() {
           timestamp: new Date(n.timestamp),
           read: n.read || false
         }));
+        
+        // If this is a refresh and we want to show new toasts
+        if (showNewToasts && lastNotificationId) {
+          // Find notifications that are newer than the last one we saw
+          const newNotifications = apiNotifications.filter((n: Notification) => {
+            return n.id !== lastNotificationId && 
+                   notifications.findIndex(existing => existing.id === n.id) === -1;
+          });
+          
+          // Show toasts for new notifications
+          newNotifications.forEach((n: Notification) => {
+            if (!n.read) {
+              showToast(n);
+            }
+          });
+        }
+        
+        // Update last notification ID
+        if (apiNotifications.length > 0) {
+          setLastNotificationId(apiNotifications[0].id);
+        }
+        
         setNotifications(apiNotifications);
       }
     } catch (error) {
@@ -132,6 +157,13 @@ export function NotificationCenter() {
   // Load notifications on mount
   useEffect(() => {
     loadNotifications();
+    
+    // Poll for new notifications every 5 seconds as backup
+    const pollInterval = setInterval(() => {
+      loadNotifications(true); // Show toasts for new ones
+    }, 5000);
+    
+    return () => clearInterval(pollInterval);
   }, []);
 
   // Listen for real-time notifications via Socket.IO
@@ -180,41 +212,6 @@ export function NotificationCenter() {
       window.removeEventListener('socket_notification', handleWindowNotification);
     };
   }, []);
-  
-  // Show toast popup for new notifications
-  const showToast = (notification: Notification) => {
-    const icon = React.createElement(notificationIcons[notification.type], { 
-      className: "h-5 w-5" 
-    });
-    
-    switch (notification.type) {
-      case 'success':
-        toast.success(notification.title, {
-          description: notification.message,
-          icon: icon,
-        });
-        break;
-      case 'error':
-        toast.error(notification.title, {
-          description: notification.message,
-          icon: icon,
-        });
-        break;
-      case 'warning':
-        toast.warning(notification.title, {
-          description: notification.message,
-          icon: icon,
-        });
-        break;
-      case 'info':
-      default:
-        toast.info(notification.title, {
-          description: notification.message,
-          icon: icon,
-        });
-        break;
-    }
-  };
 
   return React.createElement(Sheet, null,
     React.createElement(SheetTrigger, { asChild: true },
