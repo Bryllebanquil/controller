@@ -907,10 +907,10 @@ def assess_production_readiness():
         elif current_viewers > (PRODUCTION_SCALE['scalability_limits']['aiorttc_max_viewers'] * 0.8):
             readiness_report['recommendations'].append('Approaching aiortc limits, plan mediasoup migration')
         
-        if readiness_report['performance_metrics'].get('latency_target_met') == False:
+        if readiness_report['performance_metrics'].get('latency_target_met') is False:
             readiness_report['recommendations'].append('Optimize network configuration to meet latency targets')
         
-        if readiness_report['performance_metrics'].get('bitrate_target_met') == False:
+        if readiness_report['performance_metrics'].get('bitrate_target_met') is False:
             readiness_report['recommendations'].append('Check bandwidth allocation and codec settings')
         
         return readiness_report
