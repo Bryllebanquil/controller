@@ -128,6 +128,18 @@ export function NotificationCenter() {
     }
   };
 
+  const showToast = (notification: Notification) => {
+    const toastFn = notification.type === 'error' ? toast.error :
+                   notification.type === 'warning' ? toast.warning :
+                   notification.type === 'success' ? toast.success :
+                   toast.info;
+    
+    toastFn(notification.message, {
+      description: notification.title,
+      duration: notification.type === 'error' ? 10000 : 5000,
+    });
+  };
+
   // Load notifications on mount
   useEffect(() => {
     loadNotifications();
