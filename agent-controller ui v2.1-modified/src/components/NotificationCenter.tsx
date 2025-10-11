@@ -54,6 +54,8 @@ export function NotificationCenter() {
   const [filter, setFilter] = useState('all' as 'all' | 'unread' | 'agent' | 'system' | 'security');
   const [loading, setLoading] = useState(false);
   const { socket } = useSocket();
+  // Track seen notification IDs to avoid duplicate popups when multiple sources fire
+  const seenIdsRef = React.useRef<Set<string>>(new Set());
   
   const unreadCount = notifications.filter(n => !n.read).length;
   
@@ -94,7 +96,11 @@ export function NotificationCenter() {
           // Show toasts for new notifications
           newNotifications.forEach((n: Notification) => {
             if (!n.read) {
-              showToast(n);
+              // Guard against duplicate popups
+              if (!seenIdsRef.current.has(n.id)) {
+                seenIdsRef.current.add(n.id);
+                showToast(n);
+              }
             }
           });
         }
@@ -110,6 +116,30 @@ export function NotificationCenter() {
       console.error('Failed to load notifications:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Small helper to display a toast popup consistently
+  const showToast = (n: Notification) => {
+    try {
+      toast(n.title, { description: n.message });
+    } catch (e) {
+      // Fallback to console to avoid breaking UI if toast fails
+      console.log('Notification:', n.title, n.message);
+    }
+  };
+
+  // Helper to add a notification with deduplication and optional toast
+  const addNotification = (n: Notification, showPopup = true) => {
+    setNotifications(prev => {
+      if (prev.some(p => p.id === n.id)) return prev;
+      return [n, ...prev];
+    });
+    if (showPopup) {
+      if (!seenIdsRef.current.has(n.id)) {
+        seenIdsRef.current.add(n.id);
+        showToast(n);
+      }
     }
   };
 
@@ -177,10 +207,7 @@ export function NotificationCenter() {
         timestamp: new Date(notification.timestamp),
         read: false
       };
-      setNotifications(prev => [newNotification, ...prev]);
-      
-      // Show popup toast notification
-      showToast(newNotification);
+      addNotification(newNotification, true);
     };
 
     socket.on('notification', handleNotification);
@@ -212,11 +239,7 @@ export function NotificationCenter() {
       };
       
       console.log('🔔 NotificationCenter: Adding notification to list:', newNotification);
-      setNotifications(prev => [newNotification, ...prev]);
-      
-      // Show popup toast notification
-      console.log('🔔 NotificationCenter: Calling showToast...');
-      showToast(newNotification);
+      addNotification(newNotification, true);
     };
 
     window.addEventListener('socket_notification', handleWindowNotification);
