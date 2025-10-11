@@ -191,8 +191,10 @@ export function NotificationCenter() {
   }, [socket]);
 
   // Also listen via custom window event as backup
+  // Build timestamp: 2025-10-11T06:30:00Z - Force new hash
   useEffect(() => {
     console.log('🔔 NotificationCenter: Setting up window event listener');
+    console.log('🔔 NotificationCenter: Build version - Oct 11 2025 06:30 UTC');
     
     const handleWindowNotification = (event: any) => {
       console.log('🔔 NotificationCenter: Received notification via window event:', event.detail);
