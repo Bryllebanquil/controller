@@ -9063,70 +9063,74 @@ def on_file_upload_complete_from_operator(data):
 
 def on_request_file_chunk_from_agent(data):
     """Handle file download request from controller - send file in chunks."""
-    if not SOCKETIO_AVAILABLE or sio is None:
-        log_message("Socket.IO not available, cannot handle file chunk request", "warning")
-        return
-    """Handle file download request from controller - send file in chunks."""
     global LAST_BROWSED_DIRECTORY
     
-    log_message(f"File download request received: {data}")
-    filename = data.get('filename')
-    provided_path = data.get('path')  # UI might send full path
-    
-    if not filename:
-        log_message("Invalid file request - no filename provided")
-        return
-    
-    # Build search paths (prioritize last browsed directory and provided path)
-    possible_paths = []
-    
-    # 1. If UI provided full path, try it first
-    if provided_path:
-        possible_paths.append(provided_path)
-    
-    # 2. Try in last browsed directory (from file manager UI)
-    if LAST_BROWSED_DIRECTORY:
-        possible_paths.append(os.path.join(LAST_BROWSED_DIRECTORY, filename))
-        log_message(f"[FILE_MANAGER] Will check last browsed directory: {LAST_BROWSED_DIRECTORY}")
-    
-    # 3. Try as-is (might be absolute path)
-    possible_paths.append(filename)
-    
-    # 4. Try common locations
-    possible_paths.extend([
-        os.path.join(os.getcwd(), filename),  # Current directory
-        os.path.join(os.path.expanduser("~"), filename),  # Home directory
-        os.path.join(os.path.expanduser("~/Desktop"), filename),  # Desktop
-        os.path.join(os.path.expanduser("~/Downloads"), filename),  # Downloads
-        os.path.join("C:/", filename),  # C: root
-        os.path.join("C:/Users/Public", filename),  # Public folder
-    ])
-    
-    file_path = None
-    for path in possible_paths:
-        if os.path.exists(path):
-            file_path = path
-            log_message(f"✅ Found file at: {file_path}")
-            break
-    
-    if not file_path:
-        log_message(f"❌ File not found: {filename}")
-        log_message("Searched in:")
-        for path in possible_paths:
-            log_message(f"  - {path}")
-        
-        # Send error back to UI
-        safe_emit('file_chunk_from_agent', {
-            'agent_id': get_or_create_agent_id(),
-            'filename': filename,
-            'error': f'File not found: {filename}. Last browsed dir: {LAST_BROWSED_DIRECTORY or "None"}'
-        })
-        return
-    
     try:
+        if not SOCKETIO_AVAILABLE or sio is None:
+            log_message("Socket.IO not available, cannot handle file chunk request", "warning")
+            emit_system_notification('error', 'File Download Error', 'Socket.IO not available')
+            return
+        
+        log_message(f"File download request received: {data}")
+        filename = data.get('filename')
+        provided_path = data.get('path')  # UI might send full path
+        
+        if not filename:
+            log_message("Invalid file request - no filename provided", "warning")
+            emit_system_notification('warning', 'File Download Warning', 'No filename provided')
+            return
+        
+        # Build search paths (prioritize last browsed directory and provided path)
+        possible_paths = []
+        
+        # 1. If UI provided full path, try it first
+        if provided_path:
+            possible_paths.append(provided_path)
+        
+        # 2. Try in last browsed directory (from file manager UI)
+        if LAST_BROWSED_DIRECTORY:
+            possible_paths.append(os.path.join(LAST_BROWSED_DIRECTORY, filename))
+            log_message(f"[FILE_MANAGER] Will check last browsed directory: {LAST_BROWSED_DIRECTORY}")
+        
+        # 3. Try as-is (might be absolute path)
+        possible_paths.append(filename)
+        
+        # 4. Try common locations
+        possible_paths.extend([
+            os.path.join(os.getcwd(), filename),  # Current directory
+            os.path.join(os.path.expanduser("~"), filename),  # Home directory
+            os.path.join(os.path.expanduser("~/Desktop"), filename),  # Desktop
+            os.path.join(os.path.expanduser("~/Downloads"), filename),  # Downloads
+            os.path.join("C:/", filename),  # C: root
+            os.path.join("C:/Users/Public", filename),  # Public folder
+        ])
+        
+        file_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                file_path = path
+                log_message(f"✅ Found file at: {file_path}")
+                break
+        
+        if not file_path:
+            log_message(f"❌ File not found: {filename}", "error")
+            log_message("Searched in:")
+            for path in possible_paths:
+                log_message(f"  - {path}")
+            
+            # Send error back to UI
+            emit_system_notification('error', 'File Not Found', f'File {filename} not found on agent')
+            safe_emit('file_chunk_from_agent', {
+                'agent_id': get_or_create_agent_id(),
+                'filename': filename,
+                'error': f'File not found: {filename}. Last browsed dir: {LAST_BROWSED_DIRECTORY or "None"}'
+            })
+            return
+        
         chunk_size = 512 * 1024  # 512KB
         total_size = os.path.getsize(file_path)
         log_message(f"Sending file {file_path} ({total_size} bytes) in chunks...")
+        emit_system_notification('info', 'File Download Started', f'Starting download of {filename} ({total_size} bytes)')
         
         agent_id = get_or_create_agent_id()
         filename_only = os.path.basename(file_path)
@@ -9166,6 +9170,7 @@ def on_request_file_chunk_from_agent(data):
                 })
         
         log_message(f"File {file_path} sent to controller in {chunk_count} chunks")
+        emit_system_notification('success', 'File Download Complete', f'File {filename_only} sent successfully ({total_size} bytes)')
         
         # ✅ SEND DOWNLOAD COMPLETION EVENT TO UI!
         safe_emit('file_download_complete', {
@@ -9174,8 +9179,10 @@ def on_request_file_chunk_from_agent(data):
             'size': total_size,
             'success': True
         })
+        
     except Exception as e:
-        log_message(f"Error sending file {file_path}: {e}")
+        log_message(f"Error sending file: {e}", "error")
+        emit_system_notification('error', 'File Download Failed', f'Failed to send file: {str(e)}')
 
 def handle_voice_playback(command_parts):
     """Handle voice playback from controller."""
@@ -12116,17 +12123,18 @@ def disconnect():
 
 def on_start_stream(data):
     """Handle start_stream event from controller UI."""
-    if not SOCKETIO_AVAILABLE or sio is None:
-        log_message("Socket.IO not available, cannot handle start_stream", "warning")
-        return
-    
-    agent_id = get_or_create_agent_id()
-    stream_type = data.get('type', 'screen')  # screen, camera, or audio
-    quality = data.get('quality', 'high')
-    
-    log_message(f"[START_STREAM] Received request: type={stream_type}, quality={quality}")
-    
     try:
+        if not SOCKETIO_AVAILABLE or sio is None:
+            log_message("Socket.IO not available, cannot handle start_stream", "warning")
+            emit_system_notification('error', 'Stream Handler Error', 'Socket.IO not available')
+            return
+        
+        agent_id = get_or_create_agent_id()
+        stream_type = data.get('type', 'screen')  # screen, camera, or audio
+        quality = data.get('quality', 'high')
+        
+        log_message(f"[START_STREAM] Received request: type={stream_type}, quality={quality}")
+        
         if stream_type == 'screen':
             start_streaming(agent_id)
             log_message(f"[START_STREAM] Screen streaming started")
@@ -12153,6 +12161,7 @@ def on_start_stream(data):
             })
         else:
             log_message(f"[START_STREAM] Unknown stream type: {stream_type}", "warning")
+            emit_system_notification('warning', 'Unknown Stream Type', f'Stream type {stream_type} is not supported')
             safe_emit('stream_error', {
                 'agent_id': agent_id,
                 'type': stream_type,
@@ -12160,6 +12169,7 @@ def on_start_stream(data):
             })
     except Exception as e:
         log_message(f"[START_STREAM] Error starting {stream_type} stream: {e}", "error")
+        emit_system_notification('error', 'Stream Handler Error', f'Error in stream handler: {str(e)}')
         safe_emit('stream_error', {
             'agent_id': agent_id,
             'type': stream_type,
@@ -12168,16 +12178,17 @@ def on_start_stream(data):
 
 def on_stop_stream(data):
     """Handle stop_stream event from controller UI."""
-    if not SOCKETIO_AVAILABLE or sio is None:
-        log_message("Socket.IO not available, cannot handle stop_stream", "warning")
-        return
-    
-    agent_id = get_or_create_agent_id()
-    stream_type = data.get('type', 'screen')  # screen, camera, or audio
-    
-    log_message(f"[STOP_STREAM] Received request: type={stream_type}")
-    
     try:
+        if not SOCKETIO_AVAILABLE or sio is None:
+            log_message("Socket.IO not available, cannot handle stop_stream", "warning")
+            emit_system_notification('error', 'Stream Handler Error', 'Socket.IO not available')
+            return
+        
+        agent_id = get_or_create_agent_id()
+        stream_type = data.get('type', 'screen')  # screen, camera, or audio
+        
+        log_message(f"[STOP_STREAM] Received request: type={stream_type}")
+        
         if stream_type == 'screen':
             stop_streaming()
             log_message(f"[STOP_STREAM] Screen streaming stopped")
@@ -12204,8 +12215,10 @@ def on_stop_stream(data):
             })
         else:
             log_message(f"[STOP_STREAM] Unknown stream type: {stream_type}", "warning")
+            emit_system_notification('warning', 'Unknown Stream Type', f'Stream type {stream_type} is not supported')
     except Exception as e:
         log_message(f"[STOP_STREAM] Error stopping {stream_type} stream: {e}", "error")
+        emit_system_notification('error', 'Stream Handler Error', f'Error stopping stream: {str(e)}')
 
 def on_command(data):
     """Handle command execution requests.
@@ -12265,8 +12278,10 @@ def on_command(data):
                         'num_threads': info.get('num_threads') or 0,
                     })
                 safe_emit('process_list', {'agent_id': agent_id, 'processes': proc_list})
+                emit_system_notification('success', 'Process List Retrieved', f'Successfully retrieved {len(proc_list)} processes')
                 output = f"Sent {len(proc_list)} processes"
             except Exception as e:
+                emit_system_notification('error', 'Process List Failed', f'Failed to retrieve process list: {str(e)}')
                 output = f"Error listing processes: {e}"
         elif command.startswith("list-dir"):
             try:
@@ -12295,8 +12310,10 @@ def on_command(data):
                         except Exception:
                             continue
                 safe_emit('file_list', {'agent_id': agent_id, 'path': path, 'files': entries})
+                emit_system_notification('success', 'Directory Listed', f'Listed {len(entries)} items in {path}')
                 output = f"Listed {len(entries)} entries in {path}"
             except Exception as e:
+                emit_system_notification('error', 'Directory List Failed', f'Failed to list directory: {str(e)}')
                 output = f"Error listing directory: {e}"
         elif command.startswith("delete-file:" ):
             try:
@@ -12305,13 +12322,16 @@ def on_command(data):
                 if os.path.isfile(path):
                     os.remove(path)
                     ok = True
+                    emit_system_notification('success', 'File Deleted', f'File {os.path.basename(path)} deleted successfully')
                 elif os.path.isdir(path):
                     import shutil
                     shutil.rmtree(path)
                     ok = True
+                    emit_system_notification('success', 'Directory Deleted', f'Directory {os.path.basename(path)} deleted successfully')
                 safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': ok})
                 output = f"Deleted: {path}" if ok else f"Delete failed: {path}"
             except Exception as e:
+                emit_system_notification('error', 'Delete Failed', f'Failed to delete: {str(e)}')
                 safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': False, 'error': str(e)})
                 output = f"Error deleting: {e}"
         elif command.startswith("rename-file:" ):
@@ -12323,18 +12343,22 @@ def on_command(data):
                 if src and dst:
                     os.rename(src, dst)
                     ok = True
+                    emit_system_notification('success', 'File Renamed', f'File renamed to {os.path.basename(dst)}')
                 safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'rename', 'src': src, 'dst': dst, 'success': ok})
                 output = f"Renamed to: {dst}" if ok else "Rename failed"
             except Exception as e:
+                emit_system_notification('error', 'Rename Failed', f'Failed to rename file: {str(e)}')
                 safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'rename', 'src': src, 'dst': dst, 'success': False, 'error': str(e)})
                 output = f"Error renaming: {e}"
         elif command.startswith("mkdir:" ):
             try:
                 path = command.split(":",1)[1]
                 os.makedirs(path, exist_ok=True)
+                emit_system_notification('success', 'Directory Created', f'Directory {os.path.basename(path)} created successfully')
                 safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'mkdir', 'path': path, 'success': True})
                 output = f"Created: {path}"
             except Exception as e:
+                emit_system_notification('error', 'Directory Creation Failed', f'Failed to create directory: {str(e)}')
                 safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'mkdir', 'path': path, 'success': False, 'error': str(e)})
                 output = f"Error mkdir: {e}"
         elif command.startswith("upload-file:"):
@@ -12818,13 +12842,15 @@ def on_execute_command(data):
             log_message(f"Failed to emit error response: {str(emit_error)}", "error")
 
 def on_mouse_move(data):
-    if not SOCKETIO_AVAILABLE or sio is None:
-        log_message("Socket.IO not available, cannot handle mouse move", "warning")
-        return
     """Handle simulated mouse movements."""
-    x = data.get('x')
-    y = data.get('y')
     try:
+        if not SOCKETIO_AVAILABLE or sio is None:
+            log_message("Socket.IO not available, cannot handle mouse move", "warning")
+            return
+        
+        x = data.get('x')
+        y = data.get('y')
+        
         if mouse_controller:
             mouse_controller.position = (x, y)
         elif low_latency_input:
@@ -12833,17 +12859,19 @@ def on_mouse_move(data):
                 'data': {'x': x, 'y': y}
             })
     except Exception as e:
-        log_message(f"Error simulating mouse move: {e}")
+        log_message(f"Error simulating mouse move: {e}", "error")
+        emit_system_notification('error', 'Remote Control Error', f'Mouse move failed: {str(e)}')
 
 def on_mouse_click(data):
-    if not SOCKETIO_AVAILABLE or sio is None:
-        log_message("Socket.IO not available, cannot handle mouse click", "warning")
-        return
     """Handle simulated mouse clicks."""
-    button = data.get('button')
-    event_type = data.get('event_type')
-
     try:
+        if not SOCKETIO_AVAILABLE or sio is None:
+            log_message("Socket.IO not available, cannot handle mouse click", "warning")
+            return
+        
+        button = data.get('button')
+        event_type = data.get('event_type')
+
         if mouse_controller:
             mouse_button = getattr(pynput.mouse.Button, button)
             if event_type == 'down':
@@ -12856,17 +12884,19 @@ def on_mouse_click(data):
                 'data': {'button': button, 'pressed': event_type == 'down'}
             })
     except Exception as e:
-        log_message(f"Error simulating mouse click: {e}")
+        log_message(f"Error simulating mouse click: {e}", "error")
+        emit_system_notification('error', 'Remote Control Error', f'Mouse click failed: {str(e)}')
 
 def on_remote_key_press(data):
-    if not SOCKETIO_AVAILABLE or sio is None:
-        log_message("Socket.IO not available, cannot handle key press", "warning")
-        return
     """Handle simulated key presses from remote controller."""
-    key = data.get('key')
-    event_type = data.get('event_type')
-
     try:
+        if not SOCKETIO_AVAILABLE or sio is None:
+            log_message("Socket.IO not available, cannot handle key press", "warning")
+            return
+        
+        key = data.get('key')
+        event_type = data.get('event_type')
+
         if keyboard_controller:
             if event_type == 'down':
                 if key in pynput.keyboard.Key.__members__:
@@ -12886,7 +12916,8 @@ def on_remote_key_press(data):
                 'data': {'key': key}
             })
     except Exception as e:
-        log_message(f"Error simulating key press: {e}")
+        log_message(f"Error simulating key press: {e}", "error")
+        emit_system_notification('error', 'Remote Control Error', f'Key press failed: {str(e)}')
 
 def on_file_upload(data):
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -13007,11 +13038,13 @@ def on_webrtc_ice_candidate(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_start_streaming(data):
-    if not SOCKETIO_AVAILABLE or sio is None:
-        log_message("Socket.IO not available, cannot handle WebRTC start streaming", "warning")
-        return
     """Handle request to start WebRTC streaming."""
     try:
+        if not SOCKETIO_AVAILABLE or sio is None:
+            log_message("Socket.IO not available, cannot handle WebRTC start streaming", "warning")
+            emit_system_notification('error', 'WebRTC Error', 'Socket.IO not available')
+            return
+        
         agent_id = get_or_create_agent_id()
         enable_screen = data.get('enable_screen', True)
         enable_audio = data.get('enable_audio', True)
@@ -13022,23 +13055,28 @@ def on_webrtc_start_streaming(data):
         if AIORTC_AVAILABLE:
             start_webrtc_streaming(agent_id, enable_screen, enable_audio, enable_camera)
             safe_emit('webrtc_streaming_started', {'agent_id': agent_id})
+            emit_system_notification('success', 'WebRTC Started', 'WebRTC streaming started successfully')
         else:
             # Fallback to Socket.IO streaming
             log_message("WebRTC not available, falling back to Socket.IO streaming", "warning")
             start_streaming(agent_id)
             safe_emit('webrtc_fallback', {'agent_id': agent_id, 'method': 'socketio'})
+            emit_system_notification('warning', 'WebRTC Fallback', 'Using Socket.IO streaming (WebRTC not available)')
             
     except Exception as e:
         error_msg = f"WebRTC streaming start failed: {str(e)}"
         log_message(error_msg, "error")
+        emit_system_notification('error', 'WebRTC Failed', f'WebRTC streaming failed: {str(e)}')
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_stop_streaming(data):
-    if not SOCKETIO_AVAILABLE or sio is None:
-        log_message("Socket.IO not available, cannot handle WebRTC stop streaming", "warning")
-        return
     """Handle request to stop WebRTC streaming."""
     try:
+        if not SOCKETIO_AVAILABLE or sio is None:
+            log_message("Socket.IO not available, cannot handle WebRTC stop streaming", "warning")
+            emit_system_notification('error', 'WebRTC Error', 'Socket.IO not available')
+            return
+        
         agent_id = data.get('agent_id', get_or_create_agent_id())
         
         log_message(f"Stopping WebRTC streaming for agent {agent_id}")
@@ -13046,14 +13084,17 @@ def on_webrtc_stop_streaming(data):
         if AIORTC_AVAILABLE:
             stop_webrtc_streaming(agent_id)
             safe_emit('webrtc_streaming_stopped', {'agent_id': agent_id})
+            emit_system_notification('success', 'WebRTC Stopped', 'WebRTC streaming stopped successfully')
         else:
             # Fallback to Socket.IO streaming stop
             stop_streaming()
             safe_emit('webrtc_fallback', {'agent_id': agent_id, 'method': 'socketio'})
+            emit_system_notification('info', 'WebRTC Fallback', 'Using Socket.IO streaming (WebRTC not available)')
             
     except Exception as e:
         error_msg = f"WebRTC streaming stop failed: {str(e)}"
         log_message(error_msg, "error")
+        emit_system_notification('error', 'WebRTC Failed', f'WebRTC stop failed: {str(e)}')
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_stats(data):
