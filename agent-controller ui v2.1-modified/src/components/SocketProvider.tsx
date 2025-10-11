@@ -103,6 +103,16 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         console.log('🔍 SocketProvider: Event data type:', typeof args[0]);
         console.log('🔍 SocketProvider: Event data keys:', Object.keys(args[0] || {}));
       }
+      
+      // Handle notifications here since specific listener doesn't work
+      if (eventName === 'notification') {
+        console.log('🔔 SocketProvider: Processing notification:', args[0]);
+        const notification = args[0];
+        // Dispatch custom event so NotificationCenter can pick it up
+        const event = new CustomEvent('socket_notification', { detail: notification });
+        window.dispatchEvent(event);
+        console.log('🔔 SocketProvider: Dispatched socket_notification event');
+      }
     });
 
     // Connection events
@@ -382,13 +392,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       addCommandOutput(`WebRTC Error: ${data.message}`);
     });
 
-    // Notification events - Forward to window for NotificationCenter
-    socketInstance.on('notification', (notification: any) => {
-      console.log('🔔 SocketProvider: Received notification event:', notification);
-      // Dispatch custom event so NotificationCenter can pick it up
-      const event = new CustomEvent('socket_notification', { detail: notification });
-      window.dispatchEvent(event);
-    });
+    // Notification events - Handle in onAny since direct listener doesn't work
+    // The notification will be caught by onAny and we'll dispatch it there
 
     return () => {
       socketInstance.disconnect();

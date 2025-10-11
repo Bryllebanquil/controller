@@ -192,24 +192,37 @@ export function NotificationCenter() {
 
   // Also listen via custom window event as backup
   useEffect(() => {
+    console.log('🔔 NotificationCenter: Setting up window event listener');
+    
     const handleWindowNotification = (event: any) => {
       console.log('🔔 NotificationCenter: Received notification via window event:', event.detail);
       const notification = event.detail;
+      
+      if (!notification || !notification.id) {
+        console.error('🔔 NotificationCenter: Invalid notification received:', notification);
+        return;
+      }
+      
       const newNotification: Notification = {
         ...notification,
         timestamp: new Date(notification.timestamp),
         read: false
       };
+      
+      console.log('🔔 NotificationCenter: Adding notification to list:', newNotification);
       setNotifications(prev => [newNotification, ...prev]);
       
       // Show popup toast notification
+      console.log('🔔 NotificationCenter: Calling showToast...');
       showToast(newNotification);
     };
 
     window.addEventListener('socket_notification', handleWindowNotification);
+    console.log('🔔 NotificationCenter: Window event listener added');
     
     return () => {
       window.removeEventListener('socket_notification', handleWindowNotification);
+      console.log('🔔 NotificationCenter: Window event listener removed');
     };
   }, []);
 
