@@ -121,7 +121,7 @@ export function FileManager({ agentId }: FileManagerProps) {
     downloadFile(agentId!, selectedFiles[0]);
   };
 
-  const handleUpload = (e?: any) => {
+  const handleUpload = (e?: React.ChangeEvent<HTMLInputElement>) => {
     const file = e?.target?.files?.[0];
     if (!file || !agentId) return;
     setUploadProgress(0);
@@ -150,7 +150,7 @@ export function FileManager({ agentId }: FileManagerProps) {
   // Listen to operation results
   useEffect(() => {
     if (!socket) return;
-    const handler = (data: any) => {
+    const handler = (data: Record<string, unknown>) => {
       if (!agentId || data.agent_id !== agentId) return;
       if (data.success) {
         toast.success(`${data.op} ok: ${data.path || data.dst || ''}`);
@@ -166,7 +166,7 @@ export function FileManager({ agentId }: FileManagerProps) {
   // Listen for file_list updates from agent and map to UI items
   useEffect(() => {
     if (!socket) return;
-    const handler = (data: any) => {
+    const handler = (data: Record<string, unknown>) => {
       if (!agentId || data.agent_id !== agentId) return;
       setCurrentPath(data.path || '/');
       const mapped = (data.files || []).map((f: any) => ({

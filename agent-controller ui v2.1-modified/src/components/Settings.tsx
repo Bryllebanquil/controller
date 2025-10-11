@@ -184,7 +184,7 @@ export function Settings() {
   const [saved, setSaved] = useState(false);
   const [activeTab, setActiveTab] = useState("server");
 
-  const updateSetting = (category: keyof C2Settings, key: string, value: any) => {
+  const updateSetting = (category: keyof C2Settings, key: string, value: string | number | boolean) => {
     setSettings(prev => ({
       ...prev,
       [category]: {
@@ -209,8 +209,9 @@ export function Settings() {
       setSaved(true);
       toast.success(data.message || 'Settings saved successfully');
       setTimeout(() => setSaved(false), 3000);
-    } catch (e: any) {
-      toast.error(e.message || 'Failed to save settings');
+    } catch (e: unknown) {
+      const error = e as Error;
+      toast.error(error.message || 'Failed to save settings');
     }
   };
 
@@ -269,8 +270,9 @@ export function Settings() {
             ...data?.security,
           },
         }));
-      } catch (e: any) {
-        toast.error(e.message || 'Failed to load settings');
+      } catch (e: unknown) {
+        const error = e as Error;
+        toast.error(error.message || 'Failed to load settings');
       }
     };
     load();

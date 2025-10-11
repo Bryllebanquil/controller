@@ -112,7 +112,7 @@ export function WebRTCMonitoring({ selectedAgent }: WebRTCMonitoringProps) {
   // Listen to backend WebRTC events
   useEffect(() => {
     if (!socket || !selectedAgent) return;
-    const handleStats = (data: any) => {
+    const handleStats = (data: Record<string, unknown>) => {
       setStats({
         connection_state: data.connection_state || 'unknown',
         ice_connection_state: data.ice_connection_state || 'unknown',
@@ -128,7 +128,7 @@ export function WebRTCMonitoring({ selectedAgent }: WebRTCMonitoringProps) {
         });
       }
     };
-    const handleError = (data: any) => {
+    const handleError = (data: Record<string, unknown>) => {
       console.error('WebRTC error:', data);
     };
     socket.on('webrtc_stats', handleStats);

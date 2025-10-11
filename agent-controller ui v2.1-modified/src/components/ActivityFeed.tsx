@@ -62,7 +62,7 @@ export function ActivityFeed() {
   // Wire real-time activities
   useEffect(() => {
     if (!socket || !isLive) return;
-    const handleStatusUpdate = (data: any) => {
+    const handleStatusUpdate = (data: Record<string, unknown>) => {
       const newActivity: ActivityEvent = {
         id: `act-${Date.now()}`,
         type: 'system',
@@ -75,7 +75,7 @@ export function ActivityFeed() {
       };
       setActivities(prev => [newActivity, ...prev.slice(0, 49)]);
     };
-    const handleActivity = (data: any) => {
+    const handleActivity = (data: Record<string, unknown>) => {
       const newActivity: ActivityEvent = {
         id: `act-${Date.now()}`,
         type: (data.category || 'system') as ActivityEvent['type'],

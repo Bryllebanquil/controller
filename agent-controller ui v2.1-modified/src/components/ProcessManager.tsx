@@ -265,7 +265,7 @@ export function ProcessManager({ agentId, isConnected }: ProcessManagerProps) {
   const { socket } = useSocket();
   useEffect(() => {
     if (!socket) return;
-    const handler = (data: any) => {
+    const handler = (data: Record<string, unknown>) => {
       if (!agentId || data.agent_id !== agentId) return;
       const mapped: Process[] = (data.processes || []).map((p: any) => ({
         pid: p.pid,
