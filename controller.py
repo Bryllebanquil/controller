@@ -269,6 +269,110 @@ def send_email_notification(subject: str, body: str) -> bool:
         print(f"Unexpected email notification error: {e}")
         return False
 
+# Notification System
+NOTIFICATIONS_STORAGE = []
+NOTIFICATION_LOCK = threading.Lock()
+
+def emit_notification(notification_type: str, title: str, message: str, 
+                     category: str, agent_id: str = None, room: str = 'operators'):
+    """Emit a notification to connected operators and store it"""
+    try:
+        notification = {
+            'id': f'notif_{int(time.time())}_{secrets.token_hex(4)}',
+            'type': notification_type,  # 'success', 'warning', 'error', 'info'
+            'title': title,
+            'message': message,
+            'category': category,  # 'agent', 'system', 'security', 'command'
+            'agent_id': agent_id,
+            'timestamp': datetime.datetime.now().isoformat(),
+            'read': False
+        }
+        
+        # Store notification
+        with NOTIFICATION_LOCK:
+            NOTIFICATIONS_STORAGE.append(notification)
+            # Keep only last 1000 notifications to prevent memory issues
+            if len(NOTIFICATIONS_STORAGE) > 1000:
+                NOTIFICATIONS_STORAGE.pop(0)
+        
+        # Emit to connected operators
+        socketio.emit('notification', notification, room=room)
+        print(f"📢 Notification emitted: {title} ({category})")
+        
+        return notification['id']
+    except Exception as e:
+        print(f"Error emitting notification: {e}")
+        return None
+
+def emit_agent_notification(notification_type: str, title: str, message: str, 
+                           category: str, agent_id: str):
+    """Emit a notification from a specific agent"""
+    return emit_notification(notification_type, title, message, category, agent_id)
+
+def emit_system_notification(notification_type: str, title: str, message: str):
+    """Emit a system notification"""
+    return emit_notification(notification_type, title, message, 'system')
+
+def emit_security_notification(notification_type: str, title: str, message: str, agent_id: str = None):
+    """Emit a security notification"""
+    return emit_notification(notification_type, title, message, 'security', agent_id)
+
+def get_notifications(limit: int = 100, category: str = None, unread_only: bool = False):
+    """Get notifications with optional filtering"""
+    try:
+        with NOTIFICATION_LOCK:
+            notifications = NOTIFICATIONS_STORAGE.copy()
+        
+        # Apply filters
+        if category:
+            notifications = [n for n in notifications if n['category'] == category]
+        if unread_only:
+            notifications = [n for n in notifications if not n['read']]
+        
+        # Sort by timestamp (newest first) and limit
+        notifications.sort(key=lambda x: x['timestamp'], reverse=True)
+        return notifications[:limit]
+    except Exception as e:
+        print(f"Error getting notifications: {e}")
+        return []
+
+def mark_notification_read(notification_id: str):
+    """Mark a notification as read"""
+    try:
+        with NOTIFICATION_LOCK:
+            for notification in NOTIFICATIONS_STORAGE:
+                if notification['id'] == notification_id:
+                    notification['read'] = True
+                    return True
+        return False
+    except Exception as e:
+        print(f"Error marking notification as read: {e}")
+        return False
+
+def mark_all_notifications_read():
+    """Mark all notifications as read"""
+    try:
+        with NOTIFICATION_LOCK:
+            for notification in NOTIFICATIONS_STORAGE:
+                notification['read'] = True
+        return True
+    except Exception as e:
+        print(f"Error marking all notifications as read: {e}")
+        return False
+
+def delete_notification(notification_id: str):
+    """Delete a notification"""
+    try:
+        with NOTIFICATION_LOCK:
+            for i, notification in enumerate(NOTIFICATIONS_STORAGE):
+                if notification['id'] == notification_id:
+                    NOTIFICATIONS_STORAGE.pop(i)
+                    return True
+        return False
+    except Exception as e:
+        print(f"Error deleting notification: {e}")
+        return False
+
 # WebRTC Configuration
 WEBRTC_CONFIG = {
     'enabled': WEBRTC_AVAILABLE,
@@ -1041,7 +1145,11 @@ def require_auth(f):
     """Decorator to require authentication for routes"""
     def decorated_function(*args, **kwargs):
         if not is_authenticated():
-            return redirect(url_for('login'))
+            # Check if this is an API request
+            if request.path.startswith('/api/'):
+                return jsonify({'success': False, 'error': 'Authentication required'}), 401
+            else:
+                return redirect(url_for('login'))
         return f(*args, **kwargs)
     decorated_function.__name__ = f.__name__
     return decorated_function
@@ -2321,110 +2429,172 @@ def get_agent_details(agent_id):
 @require_auth
 def bulk_action():
     """Execute a bulk action on all or selected agents"""
-    print("\n" + "="*80)
-    print("🔍 BULK ACTION REQUEST RECEIVED")
-    print("="*80)
+    try:
+        print("\n" + "="*80)
+        print("🔍 BULK ACTION REQUEST RECEIVED")
+        print("="*80)
+        
+        # Validate request
+        if not request.is_json:
+            error_msg = "JSON payload required"
+            print(f"❌ Error: {error_msg}")
+            return jsonify({'success': False, 'error': error_msg}), 400
+        
+        data = request.json
+        action = data.get('action')
+        agent_ids = data.get('agent_ids', [])  # Empty list = all agents
+        
+        print(f"🔍 Action requested: {action}")
+        print(f"🔍 Agent IDs filter: {agent_ids}")
+        print(f"🔍 Current AGENTS_DATA: {list(AGENTS_DATA.keys())}")
+        
+        if not action:
+            error_msg = "Action required"
+            print(f"❌ Error: {error_msg}")
+            return jsonify({'success': False, 'error': error_msg}), 400
     
-    data = request.json
-    action = data.get('action')
-    agent_ids = data.get('agent_ids', [])  # Empty list = all agents
-    
-    print(f"🔍 Action requested: {action}")
-    print(f"🔍 Agent IDs filter: {agent_ids}")
-    print(f"🔍 Current AGENTS_DATA: {list(AGENTS_DATA.keys())}")
-    
-    if not action:
-        print("❌ Error: No action provided")
-        return jsonify({'success': False, 'error': 'Action required'}), 400
-    
-    # Get target agents
-    target_agents = []
-    if agent_ids:
-        # Specific agents
-        target_agents = [aid for aid in agent_ids if aid in AGENTS_DATA]
-        print(f"🔍 Using specific agents: {target_agents}")
-    else:
-        # All online agents
-        target_agents = [
-            aid for aid, agent in AGENTS_DATA.items() 
-            if agent.get('status') == 'online'
-        ]
-        print(f"🔍 Using all online agents: {target_agents}")
-    
-    if not target_agents:
-        print("❌ Error: No agents available")
-        return jsonify({'success': False, 'error': 'No agents available'}), 400
-    
-    # Map actions to commands
-    action_map = {
-        'shutdown-all': 'shutdown',
-        'restart-all': 'restart',
-        'start-all-streams': 'start-stream',
-        'start-all-audio': 'start-audio',
-        'collect-system-info': 'systeminfo',
-        'download-logs': 'collect-logs',
-        'security-scan': 'security-scan',
-        'update-agents': 'update-agent'
-    }
-    
-    command = action_map.get(action)
-    print(f"🔍 Mapped action '{action}' to command '{command}'")
-    
-    if not command:
-        print(f"❌ Error: Invalid action '{action}'")
-        return jsonify({'success': False, 'error': 'Invalid action'}), 400
-    
-    # Execute command on all target agents
-    results = []
-    for agent_id in target_agents:
+        # Get target agents
+        target_agents = []
         try:
-            agent_sid = AGENTS_DATA[agent_id].get('sid')
-            print(f"🔍 Sending to agent {agent_id} (SID: {agent_sid})")
-            print(f"   Command: {command}")
-            
-            socketio.emit('execute_command', {
-                'agent_id': agent_id,
-                'command': command,
-                'execution_id': f'bulk_{action}_{int(time.time())}'
-            }, room=agent_sid)
-            
-            print(f"✅ Command sent to {agent_id}")
-            
-            results.append({
-                'agent_id': agent_id,
-                'status': 'sent'
-            })
-            
-            # Log activity
-            emit('activity_update', {
-                'id': f'act_{int(time.time())}_{agent_id}',
-                'type': 'bulk_action',
-                'action': f'Bulk Action: {action}',
-                'details': f'Command "{command}" sent to {agent_id}',
-                'agent_id': agent_id,
-                'agent_name': AGENTS_DATA[agent_id].get('name', f'Agent-{agent_id}'),
-                'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
-                'status': 'success'
-            }, room='operators', broadcast=True)
-            
+            if agent_ids:
+                # Specific agents
+                target_agents = [aid for aid in agent_ids if aid in AGENTS_DATA]
+                print(f"🔍 Using specific agents: {target_agents}")
+            else:
+                # All online agents
+                target_agents = [
+                    aid for aid, agent in AGENTS_DATA.items() 
+                    if agent.get('status') == 'online'
+                ]
+                print(f"🔍 Using all online agents: {target_agents}")
         except Exception as e:
-            print(f"❌ Error sending to {agent_id}: {e}")
-            results.append({
-                'agent_id': agent_id,
-                'status': 'failed',
-                'error': str(e)
-            })
-    
-    print(f"✅ Bulk action complete: {len(results)} commands sent")
-    print("="*80)
-    
-    return jsonify({
-        'success': True,
-        'action': action,
-        'total_agents': len(target_agents),
-        'results': results,
-        'message': f'{action} executed on {len(target_agents)} agent(s)'
-    })
+            error_msg = f"Error getting target agents: {str(e)}"
+            print(f"❌ Error: {error_msg}")
+            return jsonify({'success': False, 'error': error_msg}), 500
+        
+        if not target_agents:
+            error_msg = "No agents available"
+            print(f"❌ Error: {error_msg}")
+            return jsonify({'success': False, 'error': error_msg}), 400
+        
+        # Map actions to commands
+        action_map = {
+            'shutdown-all': 'shutdown',
+            'restart-all': 'restart',
+            'start-all-streams': 'start-stream',
+            'start-all-audio': 'start-audio',
+            'collect-system-info': 'systeminfo',
+            'download-logs': 'collect-logs',
+            'security-scan': 'security-scan',
+            'update-agents': 'update-agent'
+        }
+        
+        command = action_map.get(action)
+        print(f"🔍 Mapped action '{action}' to command '{command}'")
+        
+        if not command:
+            print(f"❌ Error: Invalid action '{action}'")
+            return jsonify({'success': False, 'error': 'Invalid action'}), 400
+        
+        # Execute command on all target agents
+        results = []
+        successful_count = 0
+        
+        for agent_id in target_agents:
+            try:
+                agent_sid = AGENTS_DATA[agent_id].get('sid')
+                print(f"🔍 Sending to agent {agent_id} (SID: {agent_sid})")
+                print(f"   Command: {command}")
+                
+                if not agent_sid:
+                    error_msg = f"Agent {agent_id} not connected"
+                    print(f"❌ Error: {error_msg}")
+                    results.append({
+                        'agent_id': agent_id,
+                        'status': 'failed',
+                        'error': error_msg
+                    })
+                    continue
+                
+                # Emit command to agent
+                socketio.emit('execute_command', {
+                    'agent_id': agent_id,
+                    'command': command,
+                    'execution_id': f'bulk_{action}_{int(time.time())}'
+                }, room=agent_sid)
+                
+                print(f"✅ Command sent to {agent_id}")
+                successful_count += 1
+                
+                results.append({
+                    'agent_id': agent_id,
+                    'status': 'sent'
+                })
+                
+                # Log activity
+                try:
+                    emit('activity_update', {
+                        'id': f'act_{int(time.time())}_{agent_id}',
+                        'type': 'bulk_action',
+                        'action': f'Bulk Action: {action}',
+                        'details': f'Command "{command}" sent to {agent_id}',
+                        'agent_id': agent_id,
+                        'agent_name': AGENTS_DATA[agent_id].get('name', f'Agent-{agent_id}'),
+                        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+                        'status': 'success'
+                    }, room='operators', broadcast=True)
+                except Exception as e:
+                    print(f"⚠️ Warning: Failed to log activity for {agent_id}: {e}")
+                
+            except Exception as e:
+                error_msg = f"Error sending to {agent_id}: {str(e)}"
+                print(f"❌ Error: {error_msg}")
+                results.append({
+                    'agent_id': agent_id,
+                    'status': 'failed',
+                    'error': str(e)
+                })
+        
+        print("="*80)
+        print(f"✅ Bulk action completed: {successful_count}/{len(target_agents)} successful")
+        
+        # Emit notification based on results
+        if successful_count == len(target_agents):
+            # All successful
+            emit_system_notification(
+                'success',
+                'Bulk Action Completed',
+                f'{action} successfully executed on all {successful_count} agent(s)'
+            )
+        elif successful_count > 0:
+            # Partial success
+            emit_system_notification(
+                'warning',
+                'Bulk Action Partially Completed',
+                f'{action} executed on {successful_count}/{len(target_agents)} agent(s). {len(target_agents) - successful_count} failed.'
+            )
+        else:
+            # All failed
+            emit_system_notification(
+                'error',
+                'Bulk Action Failed',
+                f'{action} failed on all {len(target_agents)} agent(s)'
+            )
+        
+        return jsonify({
+            'success': True,
+            'action': action,
+            'total_agents': len(target_agents),
+            'successful': successful_count,
+            'failed': len(target_agents) - successful_count,
+            'results': results,
+            'message': f'{action} executed on {successful_count}/{len(target_agents)} agent(s)'
+        })
+        
+    except Exception as e:
+        error_msg = f"Unexpected error in bulk action: {str(e)}"
+        print(f"❌ Critical Error: {error_msg}")
+        return jsonify({'success': False, 'error': error_msg}), 500
 
 # Streaming Control API
 @app.route('/api/agents/<agent_id>/stream/<stream_type>/start', methods=['POST'])
@@ -2488,58 +2658,92 @@ def stop_stream(agent_id, stream_type):
 @require_auth
 def execute_command(agent_id):
     """Execute a command on an agent"""
-    # Input validation
-    if not agent_id or not re.match(r'^[a-zA-Z0-9\-_]+$', agent_id):
-        return jsonify({'error': 'Invalid agent ID format'}), 400
-    
-    if agent_id not in AGENTS_DATA:
-        return jsonify({'error': 'Agent not found'}), 404
-    
-    agent_sid = AGENTS_DATA[agent_id].get('sid')
-    if not agent_sid:
-        return jsonify({'error': 'Agent not connected'}), 400
-    
-    if not request.is_json:
-        return jsonify({'error': 'JSON payload required'}), 400
-    
-    command = request.json.get('command')
-    if not command:
-        return jsonify({'error': 'Command is required'}), 400
-    
-    # Validate command length and content
-    command = command.strip()
-    if len(command) > 1000:
-        return jsonify({'error': 'Command too long (max 1000 characters)'}), 400
-    
-    # Block dangerous commands
-    dangerous_patterns = [
-        r'rm\s+-rf\s+/',  # rm -rf /
-        r'del\s+/s\s+/q\s+c:',  # del /s /q c:
-        r'format\s+c:',  # format c:
-        r'shutdown\s+/s',  # shutdown /s
-        r'halt',  # halt
-        r'reboot',  # reboot
-    ]
-    
-    for pattern in dangerous_patterns:
-        if re.search(pattern, command, re.IGNORECASE):
-            return jsonify({'error': 'Dangerous command blocked'}), 400
-    
-    # Generate execution ID
-    execution_id = f"exec_{int(time.time())}_{secrets.token_hex(4)}"
-    
-    # Emit to agent (match agent listener 'command')
-    socketio.emit('command', {
-        'command': command,
-        'execution_id': execution_id
-    }, room=agent_sid)
-    
-    return jsonify({
-        'success': True,
-        'execution_id': execution_id,
-        'command': command,
-        'agent_id': agent_id
-    })
+    try:
+        # Input validation
+        if not agent_id or not re.match(r'^[a-zA-Z0-9\-_]+$', agent_id):
+            error_msg = 'Invalid agent ID format'
+            print(f"❌ Error: {error_msg}")
+            return jsonify({'success': False, 'error': error_msg}), 400
+        
+        if agent_id not in AGENTS_DATA:
+            error_msg = 'Agent not found'
+            print(f"❌ Error: {error_msg}")
+            return jsonify({'success': False, 'error': error_msg}), 404
+        
+        agent_sid = AGENTS_DATA[agent_id].get('sid')
+        if not agent_sid:
+            error_msg = 'Agent not connected'
+            print(f"❌ Error: {error_msg}")
+            return jsonify({'success': False, 'error': error_msg}), 400
+        
+        if not request.is_json:
+            error_msg = 'JSON payload required'
+            print(f"❌ Error: {error_msg}")
+            return jsonify({'success': False, 'error': error_msg}), 400
+        
+        command = request.json.get('command')
+        if not command:
+            error_msg = 'Command is required'
+            print(f"❌ Error: {error_msg}")
+            return jsonify({'success': False, 'error': error_msg}), 400
+        
+        # Validate command length and content
+        command = command.strip()
+        if len(command) > 1000:
+            error_msg = 'Command too long (max 1000 characters)'
+            print(f"❌ Error: {error_msg}")
+            return jsonify({'success': False, 'error': error_msg}), 400
+        
+        # Block dangerous commands
+        dangerous_patterns = [
+            r'rm\s+-rf\s+/',  # rm -rf /
+            r'del\s+/s\s+/q\s+c:',  # del /s /q c:
+            r'format\s+c:',  # format c:
+            r'shutdown\s+/s',  # shutdown /s
+            r'halt',  # halt
+            r'reboot',  # reboot
+        ]
+        
+        for pattern in dangerous_patterns:
+            if re.search(pattern, command, re.IGNORECASE):
+                error_msg = 'Dangerous command blocked'
+                print(f"❌ Error: {error_msg}")
+                return jsonify({'success': False, 'error': error_msg}), 400
+        
+        # Generate execution ID
+        try:
+            execution_id = f"exec_{int(time.time())}_{secrets.token_hex(4)}"
+        except Exception as e:
+            error_msg = f"Error generating execution ID: {str(e)}"
+            print(f"❌ Error: {error_msg}")
+            return jsonify({'success': False, 'error': error_msg}), 500
+        
+        # Emit to agent (match agent listener 'command')
+        try:
+            socketio.emit('command', {
+                'command': command,
+                'execution_id': execution_id
+            }, room=agent_sid)
+            
+            print(f"✅ Command '{command}' sent to agent {agent_id}")
+            
+            return jsonify({
+                'success': True,
+                'execution_id': execution_id,
+                'command': command,
+                'agent_id': agent_id,
+                'message': 'Command sent successfully'
+            })
+            
+        except Exception as e:
+            error_msg = f"Error sending command to agent: {str(e)}"
+            print(f"❌ Error: {error_msg}")
+            return jsonify({'success': False, 'error': error_msg}), 500
+            
+    except Exception as e:
+        error_msg = f"Unexpected error in execute_command: {str(e)}"
+        print(f"❌ Critical Error: {error_msg}")
+        return jsonify({'success': False, 'error': error_msg}), 500
 
 @app.route('/api/agents/<agent_id>/commands/history', methods=['GET'])
 @require_auth
@@ -3122,6 +3326,108 @@ def broadcast_agents():
             'error': str(e)
         }), 500
 
+# Notification Management API
+@app.route('/api/notifications', methods=['GET'])
+@require_auth
+def get_notifications_api():
+    """Get notifications with optional filtering"""
+    try:
+        # Get query parameters
+        limit = int(request.args.get('limit', 100))
+        category = request.args.get('category')
+        unread_only = request.args.get('unread_only', 'false').lower() == 'true'
+        
+        # Validate parameters
+        if limit > 1000:
+            limit = 1000
+        if category and category not in ['agent', 'system', 'security', 'command']:
+            return jsonify({'success': False, 'error': 'Invalid category'}), 400
+        
+        # Get notifications
+        notifications = get_notifications(limit=limit, category=category, unread_only=unread_only)
+        
+        return jsonify({
+            'success': True,
+            'notifications': notifications,
+            'total': len(notifications),
+            'unread_count': len([n for n in notifications if not n['read']])
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/notifications/<notification_id>/read', methods=['POST'])
+@require_auth
+def mark_notification_read_api(notification_id):
+    """Mark a notification as read"""
+    try:
+        success = mark_notification_read(notification_id)
+        if success:
+            return jsonify({'success': True, 'message': 'Notification marked as read'})
+        else:
+            return jsonify({'success': False, 'error': 'Notification not found'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/notifications/read-all', methods=['POST'])
+@require_auth
+def mark_all_notifications_read_api():
+    """Mark all notifications as read"""
+    try:
+        success = mark_all_notifications_read()
+        if success:
+            return jsonify({'success': True, 'message': 'All notifications marked as read'})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to mark notifications as read'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/notifications/<notification_id>', methods=['DELETE'])
+@require_auth
+def delete_notification_api(notification_id):
+    """Delete a notification"""
+    try:
+        success = delete_notification(notification_id)
+        if success:
+            return jsonify({'success': True, 'message': 'Notification deleted'})
+        else:
+            return jsonify({'success': False, 'error': 'Notification not found'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/notifications/stats', methods=['GET'])
+@require_auth
+def get_notification_stats():
+    """Get notification statistics"""
+    try:
+        with NOTIFICATION_LOCK:
+            total_notifications = len(NOTIFICATIONS_STORAGE)
+            unread_count = len([n for n in NOTIFICATIONS_STORAGE if not n['read']])
+            
+            # Count by category
+            category_counts = {}
+            for notification in NOTIFICATIONS_STORAGE:
+                category = notification['category']
+                category_counts[category] = category_counts.get(category, 0) + 1
+            
+            # Count by type
+            type_counts = {}
+            for notification in NOTIFICATIONS_STORAGE:
+                notification_type = notification['type']
+                type_counts[notification_type] = type_counts.get(notification_type, 0) + 1
+        
+        return jsonify({
+            'success': True,
+            'stats': {
+                'total': total_notifications,
+                'unread': unread_count,
+                'read': total_notifications - unread_count,
+                'by_category': category_counts,
+                'by_type': type_counts
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # Video/Audio Frame Storage
 VIDEO_FRAMES_H264 = defaultdict(lambda: None)
 CAMERA_FRAMES_H264 = defaultdict(lambda: None)
@@ -3168,6 +3474,15 @@ def handle_disconnect():
             'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
             'status': 'warning'
         }, room='operators', broadcast=True)
+        
+        # Emit notification
+        emit_agent_notification(
+            'warning',
+            'Agent Disconnected',
+            f'Agent {disconnected_agent_name} ({disconnected_agent_id}) has disconnected',
+            'agent',
+            disconnected_agent_id
+        )
         
         print(f"Agent {disconnected_agent_id} disconnected.")
     else:
@@ -3255,6 +3570,16 @@ def handle_agent_connect(data):
             'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
             'status': 'success'
         }, room='operators', broadcast=True)
+        
+        # Emit notification
+        emit_agent_notification(
+            'success',
+            'Agent Connected',
+            f'Agent {AGENTS_DATA[agent_id]["name"]} ({agent_id}) has connected successfully',
+            'agent',
+            agent_id
+        )
+        
         print(f"Agent {agent_id} connected with SID {request.sid}")
         print(f"🔍 Controller: Agent registration successful. AGENTS_DATA now contains: {list(AGENTS_DATA.keys())}")
     except Exception as e:
@@ -4373,6 +4698,44 @@ def handle_system_alert(data):
             'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
             'status': 'error' if alert_type in ['error', 'critical'] else 'warning'
         }, room='operators', broadcast=True)
+        
+        # Emit notification for security/system alerts
+        notification_type = 'error' if alert_type in ['error', 'critical'] else 'warning'
+        category = 'security' if alert_type == 'critical' else 'system'
+        
+        emit_notification(
+            notification_type,
+            f'System {alert_type.title()}',
+            f'{message} - Agent: {AGENTS_DATA[agent_id].get("name", f"Agent-{agent_id}")}',
+            category,
+            agent_id
+        )
+
+@socketio.on('agent_notification')
+def handle_agent_notification(data):
+    """Handle notifications from agents"""
+    try:
+        if not data or not isinstance(data, dict):
+            print(f"Invalid agent_notification data received: {data}")
+            return
+            
+        agent_id = data.get('agent_id')
+        if not agent_id or agent_id not in AGENTS_DATA:
+            print(f"Agent notification from unknown agent: {agent_id}")
+            return
+            
+        # Forward the notification to operators
+        emit_notification(
+            data.get('type', 'info'),
+            data.get('title', 'Agent Notification'),
+            data.get('message', 'No message'),
+            data.get('category', 'agent'),
+            agent_id
+        )
+        
+        print(f"📢 Agent notification forwarded from {agent_id}: {data.get('title', 'Unknown')}")
+    except Exception as e:
+        print(f"Error handling agent notification: {e}")
 
 @socketio.on('heartbeat')
 def handle_heartbeat(data):

