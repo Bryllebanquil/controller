@@ -2176,7 +2176,12 @@ def dashboard():
 # Serve static assets for the UI v2.1
 @app.route('/assets/<path:filename>')
 def serve_assets(filename):
-    return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'assets', filename))
+    # Try modified version first, then fall back to original
+    base_dir = os.path.dirname(__file__)
+    modified_path = os.path.join(base_dir, 'agent-controller ui v2.1-modified', 'build', 'assets', filename)
+    if os.path.exists(modified_path):
+        return send_file(modified_path)
+    return send_file(os.path.join(base_dir, 'agent-controller ui v2.1', 'build', 'assets', filename))
 
 # --- Real-time Streaming Endpoints (COMMENTED OUT - REPLACED WITH OVERVIEW) ---
 # 
