@@ -3428,6 +3428,43 @@ def get_notification_stats():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/test/notification', methods=['POST'])
+@require_auth
+def test_notification():
+    """Trigger a test notification for debugging and testing the notification system"""
+    try:
+        data = request.json or {}
+        notif_type = data.get('type', 'info')
+        title = data.get('title', 'Test Notification')
+        message = data.get('message', 'This is a test notification')
+        category = data.get('category', 'system')
+        agent_id = data.get('agent_id')
+        
+        # Validate notification type
+        if notif_type not in ['success', 'warning', 'error', 'info']:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid notification type. Must be one of: success, warning, error, info'
+            }), 400
+        
+        # Validate category
+        if category not in ['agent', 'system', 'security', 'command']:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid category. Must be one of: agent, system, security, command'
+            }), 400
+        
+        # Send the notification
+        notification_id = emit_notification(notif_type, title, message, category, agent_id)
+        
+        return jsonify({
+            'success': True,
+            'notification_id': notification_id,
+            'message': 'Test notification sent successfully'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # Video/Audio Frame Storage
 VIDEO_FRAMES_H264 = defaultdict(lambda: None)
 CAMERA_FRAMES_H264 = defaultdict(lambda: None)
