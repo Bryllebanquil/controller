@@ -27,4 +27,4 @@ services:
       - key: LOGIN_TIMEOUT
         value: "300"
 
-# Force UI rebuild Sat Oct 11 11:06:44 PM UTC 2025
+# Force UI rebuild - Hide scrollbars fix Sun Oct 12 14:14:31 UTC 2025
