@@ -83,10 +83,17 @@ export function Dashboard() {
     );
   }
 
-  // Check for mobile viewport
+  // Check for mobile viewport (account for zoom levels)
   useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
+      // Use 1024px breakpoint to better handle zoom levels
+      const isMobileView = window.innerWidth < 1024;
+      setIsMobile(isMobileView);
+      
+      // Close sidebar if switching to mobile
+      if (isMobileView) {
+        setSidebarOpen(false);
+      }
     };
     
     checkMobile();
@@ -138,7 +145,7 @@ export function Dashboard() {
       {/* Mobile Navigation Overlay */}
       {isMobile && sidebarOpen && (
         <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setSidebarOpen(false)}>
-          <div className="fixed left-0 top-0 h-full w-80 bg-background border-r shadow-lg">
+          <div className="fixed left-0 top-0 h-full w-80 bg-background border-r shadow-lg" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Navigation</h2>
               {React.createElement(Button, {
@@ -350,10 +357,12 @@ export function Dashboard() {
                   <ActivityFeed />
                 </CardContent>
               </Card>
-            </TabsContent>
+            </div>
+            )}
 
             {/* Agents Tab */}
-            <TabsContent value="agents" className="space-y-6">
+            {activeTab === 'agents' && (
+            <div className="space-y-6">
               <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
                 <div className="flex-1 min-w-0">
                   <SearchAndFilter
@@ -424,10 +433,12 @@ export function Dashboard() {
                   </CardContent>
                 </Card>
               )}
-            </TabsContent>
+            </div>
+            )}
 
             {/* Commands Tab - with Process Manager nested tabs */}
-            <TabsContent value="commands" className="space-y-6">
+            {activeTab === 'commands' && (
+            <div className="space-y-6">
               {selectedAgent ? (
                 <Tabs defaultValue="terminal" className="space-y-4">
                   <TabsList className="grid w-full grid-cols-2">
@@ -515,10 +526,12 @@ export function Dashboard() {
                   </CardContent>
                 </Card>
               )}
-            </TabsContent>
+            </div>
+            )}
 
             {/* Monitoring Tab - Enhanced with Network Performance */}
-            <TabsContent value="monitoring" className="space-y-6">
+            {activeTab === 'monitoring' && (
+            <div className="space-y-6">
               {selectedAgent ? (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <SystemMonitor agentId={selectedAgent} />
@@ -580,17 +593,6 @@ export function Dashboard() {
               </div>
             )}
           </div>
-        </div>
-      </div>
-      </ErrorBoundary>
-    </div>
-  );
-}
-}
-        <TabsContent value="about" className="space-y-6">
-              <About />
-            </TabsContent>
-          </Tabs>
         </div>
       </div>
       </ErrorBoundary>

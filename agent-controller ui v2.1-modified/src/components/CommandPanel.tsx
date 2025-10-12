@@ -74,7 +74,7 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
       // Don't reset isExecuting here - let the command result handler do it
       // This ensures we show "Executing..." until we get the actual result
     } catch (error) {
-      console.error('Error executing command:', error);
+      console.error('Error executing command:', error); // Keep for debugging
       setOutput(prev => prev + `Error: ${error}\n`);
       setIsExecuting(false);
     }
