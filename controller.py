@@ -229,7 +229,8 @@ def add_security_headers(response):
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' wss: ws:;"
+    # ✅ FIX: Updated CSP to match HTML meta tag and allow Google Fonts
+    response.headers['Content-Security-Policy'] = "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' https: wss: ws:; img-src 'self' data: https:; media-src 'self' data: https:;"
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
     return response
@@ -2356,7 +2357,34 @@ def serve_assets(filename):
     for ui_dir in ui_dirs:
         asset_path = os.path.join(base_dir, ui_dir, 'build', 'assets', filename)
         if os.path.exists(asset_path):
-            return send_file(asset_path)
+            # ✅ FIX: Set proper MIME types for CSS and JS files
+            response = None
+            if filename.endswith('.css'):
+                response = send_file(asset_path, mimetype='text/css')
+            elif filename.endswith('.js'):
+                response = send_file(asset_path, mimetype='application/javascript')
+            elif filename.endswith('.json'):
+                response = send_file(asset_path, mimetype='application/json')
+            elif filename.endswith('.svg'):
+                response = send_file(asset_path, mimetype='image/svg+xml')
+            elif filename.endswith('.png'):
+                response = send_file(asset_path, mimetype='image/png')
+            elif filename.endswith('.jpg') or filename.endswith('.jpeg'):
+                response = send_file(asset_path, mimetype='image/jpeg')
+            elif filename.endswith('.woff') or filename.endswith('.woff2'):
+                response = send_file(asset_path, mimetype='font/woff2')
+            elif filename.endswith('.ttf'):
+                response = send_file(asset_path, mimetype='font/ttf')
+            else:
+                response = send_file(asset_path)
+            
+            # ✅ Add cache headers for static assets (1 year for immutable assets with hash in filename)
+            if response and '-' in filename:  # Hashed filename like index-D4kl1UU7.js
+                response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+            elif response:
+                response.headers['Cache-Control'] = 'public, max-age=3600'
+            
+            return response
     
     # If asset not found, return 404
     return Response(f"Asset not found: {filename}", status=404)
