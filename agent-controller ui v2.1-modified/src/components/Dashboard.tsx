@@ -145,7 +145,7 @@ export function Dashboard() {
       {/* Mobile Navigation Overlay */}
       {isMobile && sidebarOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 animate-in fade-in duration-200" onClick={() => setSidebarOpen(false)}>
-          <div className="fixed left-0 top-0 h-full w-80 bg-background border-r shadow-lg animate-in slide-in-from-left duration-300" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed left-0 top-0 h-full w-80 bg-background border-r shadow-lg animate-in slide-in-from-left duration-300 z-50" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Navigation</h2>
               {React.createElement(Button, {
@@ -166,7 +166,7 @@ export function Dashboard() {
       {/* Desktop Sidebar */}
       {!isMobile && (
         <ErrorBoundary>
-          <div className="fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-background border-r shadow-sm transition-all duration-300 hover:shadow-md">
+          <div className="fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-background border-r shadow-sm transition-all duration-300 hover:shadow-md z-30">
             <Sidebar 
               activeTab={activeTab}
               onTabChange={handleTabChange}
@@ -177,7 +177,7 @@ export function Dashboard() {
 
       {/* Main Content */}
       <div className={cn(
-        "pt-16 transition-all duration-300 ease-in-out min-h-screen",
+        "pt-16 transition-all duration-300 ease-in-out min-h-screen relative z-0",
         !isMobile && "ml-64",
         isMobile && "ml-0"
       )}>
