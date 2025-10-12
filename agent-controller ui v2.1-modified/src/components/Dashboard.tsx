@@ -144,8 +144,8 @@ export function Dashboard() {
 
       {/* Mobile Navigation Overlay */}
       {isMobile && sidebarOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setSidebarOpen(false)}>
-          <div className="fixed left-0 top-0 h-full w-80 bg-background border-r shadow-lg" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 bg-black/50 animate-in fade-in duration-200" onClick={() => setSidebarOpen(false)}>
+          <div className="fixed left-0 top-0 h-full w-80 bg-background border-r shadow-lg animate-in slide-in-from-left duration-300" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Navigation</h2>
               {React.createElement(Button, {
@@ -166,7 +166,7 @@ export function Dashboard() {
       {/* Desktop Sidebar */}
       {!isMobile && (
         <ErrorBoundary>
-          <div className="fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-background border-r">
+          <div className="fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-background border-r shadow-sm transition-all duration-300 hover:shadow-md">
             <Sidebar 
               activeTab={activeTab}
               onTabChange={handleTabChange}
@@ -177,15 +177,15 @@ export function Dashboard() {
 
       {/* Main Content */}
       <div className={cn(
-        "pt-16 transition-all duration-300 min-h-screen",
+        "pt-16 transition-all duration-300 ease-in-out min-h-screen",
         !isMobile && "ml-64",
         isMobile && "ml-0"
       )}>
-        <div className="p-4 md:p-6 w-full">
+        <div className="p-3 sm:p-4 md:p-6 lg:p-8 w-full max-w-[2000px] mx-auto">
           {/* Mobile Tab Navigation - Scrollable */}
           {isMobile && (
-            <div className="mb-4 -mx-4 px-4 overflow-x-auto">
-              <div className="flex space-x-2 pb-2 min-w-max">
+            <div className="mb-4 -mx-3 sm:-mx-4 px-3 sm:px-4 overflow-x-auto scrollbar-hide">
+              <div className="flex space-x-2 pb-2 min-w-max animate-in fade-in slide-in-from-top-2 duration-500">
                 {[
                   { id: 'overview', label: 'Overview', icon: Activity },
                   { id: 'agents', label: 'Agents', icon: Users },
@@ -205,12 +205,13 @@ export function Dashboard() {
                       variant: activeTab === item.id ? "default" : "outline",
                       size: "sm",
                       className: cn(
-                        "flex-shrink-0 h-9",
-                        activeTab === item.id && "shadow-sm"
+                        "flex-shrink-0 h-9 transition-all duration-200 ease-in-out",
+                        activeTab === item.id && "shadow-md scale-105",
+                        activeTab !== item.id && "hover:scale-105 hover:shadow-sm hover:border-primary/50"
                       ),
                       onClick: () => handleTabChange(item.id)
                     },
-                      React.createElement(Icon, { className: "h-4 w-4 mr-2" }),
+                      React.createElement(Icon, { className: "h-4 w-4 mr-2 transition-transform duration-200" }),
                       item.label
                     )
                   );
@@ -220,11 +221,11 @@ export function Dashboard() {
           )}
 
           {/* Page Header with Current Tab */}
-          <div className="mb-6 flex items-center justify-between">
-            <div className="flex items-center space-x-3">
+          <div className="mb-4 sm:mb-6 flex items-center justify-between animate-in fade-in slide-in-from-top-4 duration-500">
+            <div className="flex items-center space-x-2 sm:space-x-3">
               <div className={cn(
-                "w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center",
-                isMobile && "w-8 h-8"
+                "rounded-lg bg-primary/10 flex items-center justify-center transition-all duration-300 hover:bg-primary/20 hover:scale-110",
+                isMobile ? "w-8 h-8" : "w-10 h-10 sm:w-12 sm:h-12"
               )}>
                 {React.createElement(
                   activeTab === 'overview' ? Activity :
@@ -240,10 +241,10 @@ export function Dashboard() {
                   { className: isMobile ? "h-4 w-4 text-primary" : "h-5 w-5 text-primary" }
                 )}
               </div>
-              <div>
+              <div className="min-w-0">
                 <h2 className={cn(
-                  "font-bold capitalize",
-                  isMobile ? "text-lg" : "text-2xl"
+                  "font-bold capitalize transition-all duration-300",
+                  isMobile ? "text-base sm:text-lg" : "text-xl sm:text-2xl lg:text-3xl"
                 )}>
                   {activeTab === 'video' ? 'Video RTC' : activeTab}
                 </h2>
@@ -266,13 +267,13 @@ export function Dashboard() {
           </div>
 
           {/* Tab Content */}
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6">
             {/* Overview Tab */}
             {activeTab === 'overview' && (
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
               {/* System Overview Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <Card className="transition-all duration-300 hover:shadow-lg hover:scale-[1.02] hover:-translate-y-1 cursor-default">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Connected Agents</CardTitle>
                     <Users className="h-4 w-4 text-muted-foreground" />
@@ -285,10 +286,10 @@ export function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="transition-all duration-300 hover:shadow-lg hover:scale-[1.02] hover:-translate-y-1 cursor-default">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">System Status</CardTitle>
-                    <Activity className="h-4 w-4 text-muted-foreground" />
+                    <Activity className="h-4 w-4 text-muted-foreground transition-transform duration-200 hover:scale-125" />
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">
@@ -385,19 +386,20 @@ export function Dashboard() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {filteredAgents.map((agent) => {
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
+                {filteredAgents.map((agent, index) => {
                   return React.createElement(AgentCard, {
                     key: agent.id,
                     agent: agent,
                     isSelected: selectedAgent === agent.id,
-                    onSelect: () => handleAgentSelect(agent.id)
+                    onSelect: () => handleAgentSelect(agent.id),
+                    style: { animationDelay: `${index * 50}ms` }
                   });
                 })}
               </div>
 
               {filteredAgents.length === 0 && (
-                <Card>
+                <Card className="animate-in fade-in zoom-in-95 duration-500">
                   <CardContent className="flex flex-col items-center justify-center py-12">
                     <Users className="h-12 w-12 text-muted-foreground mb-4" />
                     <h3 className="text-lg font-semibold mb-2">No agents found</h3>

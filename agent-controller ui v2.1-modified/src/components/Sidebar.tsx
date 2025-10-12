@@ -36,23 +36,33 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
     <div className="flex w-full h-full flex-col">
       <div className="flex-1 overflow-auto p-4">
         <nav className="space-y-1">
-          {sidebarItems.map((item) => {
+          {sidebarItems.map((item, index) => {
             const Icon = item.icon;
             return (
               React.createElement(Button, {
                 key: item.id,
                 variant: activeTab === item.id ? "secondary" : "ghost",
                 className: cn(
-                  "w-full justify-start h-10",
-                  activeTab === item.id && "bg-secondary"
+                  "w-full justify-start h-10 transition-all duration-200 ease-in-out group",
+                  activeTab === item.id && "bg-secondary shadow-sm scale-[1.02]",
+                  activeTab !== item.id && "hover:bg-secondary/50 hover:scale-[1.02] hover:shadow-sm hover:translate-x-1"
                 ),
-                onClick: () => onTabChange(item.id)
+                onClick: () => onTabChange(item.id),
+                style: { animationDelay: `${index * 50}ms` }
               },
-                React.createElement(Icon, { className: "mr-2 h-4 w-4 flex-shrink-0" }),
-                React.createElement("span", { className: "flex-1 text-left" }, item.label),
+                React.createElement(Icon, { 
+                  className: cn(
+                    "mr-2 h-4 w-4 flex-shrink-0 transition-all duration-200",
+                    activeTab === item.id && "text-primary",
+                    activeTab !== item.id && "group-hover:text-primary group-hover:scale-110"
+                  )
+                }),
+                React.createElement("span", { 
+                  className: "flex-1 text-left transition-all duration-200"
+                }, item.label),
                 item.badge && React.createElement(Badge, {
                   variant: "default",
-                  className: "ml-2 h-5 text-xs"
+                  className: "ml-2 h-5 text-xs animate-pulse"
                 }, item.badge)
               )
             );
@@ -60,24 +70,42 @@ export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
         </nav>
       </div>
       
-      <div className="border-t p-4 flex-shrink-0">
+      <div className="border-t p-4 flex-shrink-0 bg-muted/20">
         <div className="space-y-1">
           {React.createElement(Button, {
             variant: activeTab === 'settings' ? "secondary" : "ghost",
-            className: "w-full justify-start h-9",
+            className: cn(
+              "w-full justify-start h-9 transition-all duration-200 ease-in-out group",
+              activeTab === 'settings' && "shadow-sm",
+              activeTab !== 'settings' && "hover:bg-secondary/50 hover:translate-x-1 hover:shadow-sm"
+            ),
             size: "sm",
             onClick: () => onTabChange('settings')
           },
-            React.createElement(SettingsIcon, { className: "mr-2 h-4 w-4" }),
+            React.createElement(SettingsIcon, { 
+              className: cn(
+                "mr-2 h-4 w-4 transition-all duration-200",
+                activeTab !== 'settings' && "group-hover:rotate-90 group-hover:scale-110"
+              )
+            }),
             "Settings"
           )}
           {React.createElement(Button, {
             variant: activeTab === 'about' ? "secondary" : "ghost",
-            className: "w-full justify-start h-9",
+            className: cn(
+              "w-full justify-start h-9 transition-all duration-200 ease-in-out group",
+              activeTab === 'about' && "shadow-sm",
+              activeTab !== 'about' && "hover:bg-secondary/50 hover:translate-x-1 hover:shadow-sm"
+            ),
             size: "sm",
             onClick: () => onTabChange('about')
           },
-            React.createElement(HelpCircle, { className: "mr-2 h-4 w-4" }),
+            React.createElement(HelpCircle, { 
+              className: cn(
+                "mr-2 h-4 w-4 transition-all duration-200",
+                activeTab !== 'about' && "group-hover:scale-110"
+              )
+            }),
             "About"
           )}
         </div>

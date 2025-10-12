@@ -63,13 +63,13 @@ export function AgentCard({ agent, isSelected, onSelect }: AgentCardProps) {
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             {isOnline ? (
-              <Wifi className="h-4 w-4 text-green-500" />
+              <Wifi className="h-4 w-4 text-green-500 animate-pulse" />
             ) : (
               <WifiOff className="h-4 w-4 text-red-500" />
             )}
-            <CardTitle className="text-sm">{agent.name}</CardTitle>
+            <CardTitle className="text-sm transition-colors duration-200 group-hover:text-primary">{agent.name}</CardTitle>
           </div>
-          <Button variant="ghost" size="sm">
+          <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 hover:bg-primary/10">
             <MoreVertical className="h-4 w-4" />
           </Button>
         </div>
@@ -111,7 +111,7 @@ export function AgentCard({ agent, isSelected, onSelect }: AgentCardProps) {
                 </div>
                 <span>{agent.performance.cpu}%</span>
               </div>
-              <Progress value={agent.performance.cpu} className="h-1" />
+              <Progress value={agent.performance.cpu} className="h-1 transition-all duration-500" />
               
               <div className="flex items-center justify-between text-xs">
                 <div className="flex items-center space-x-1">
@@ -120,7 +120,7 @@ export function AgentCard({ agent, isSelected, onSelect }: AgentCardProps) {
                 </div>
                 <span>{agent.performance.memory}%</span>
               </div>
-              <Progress value={agent.performance.memory} className="h-1" />
+              <Progress value={agent.performance.memory} className="h-1 transition-all duration-500" />
               
               <div className="flex items-center justify-between text-xs">
                 <div className="flex items-center space-x-1">
