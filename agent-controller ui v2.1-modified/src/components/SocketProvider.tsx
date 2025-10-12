@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { io, Socket } from 'socket.io-client';
 import apiClient from '../services/api';
 
@@ -554,7 +554,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   }, [socket, clearCommandOutput]);
 
-  const value: SocketContextType = {
+  const value: SocketContextType = useMemo(() => ({
     socket,
     connected,
     authenticated,
@@ -572,7 +572,24 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     login,
     logout,
     agentMetrics,
-  };
+  }), [
+    socket,
+    connected,
+    authenticated,
+    agents,
+    selectedAgent,
+    sendCommand,
+    startStream,
+    stopStream,
+    uploadFile,
+    downloadFile,
+    commandOutput,
+    addCommandOutput,
+    clearCommandOutput,
+    login,
+    logout,
+    agentMetrics,
+  ]);
 
   return (
     <SocketContext.Provider value={value}>
