@@ -259,9 +259,10 @@ export function Dashboard() {
           </div>
 
           {/* Tab Content */}
-          <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as TabType)}>
+          <div className="space-y-6">
             {/* Overview Tab */}
-            <TabsContent value="overview" className="space-y-6">
+            {activeTab === 'overview' && (
+            <div className="space-y-6">
               {/* System Overview Cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Card>
@@ -400,10 +401,12 @@ export function Dashboard() {
                   </CardContent>
                 </Card>
               )}
-            </TabsContent>
+            </div>
+            )}
 
             {/* Streaming Tab */}
-            <TabsContent value="streaming" className="space-y-6">
+            {activeTab === 'streaming' && (
+            <div className="space-y-6">
               {selectedAgent ? (
                 <StreamViewer 
                   agentId={selectedAgent}
@@ -452,10 +455,12 @@ export function Dashboard() {
                   </CardContent>
                 </Card>
               )}
-            </TabsContent>
+            </div>
+            )}
 
             {/* Files Tab */}
-            <TabsContent value="files" className="space-y-6">
+            {activeTab === 'files' && (
+            <div className="space-y-6">
               {selectedAgent ? (
                 <FileManager agentId={selectedAgent} />
               ) : (
@@ -469,10 +474,12 @@ export function Dashboard() {
                   </CardContent>
                 </Card>
               )}
-            </TabsContent>
+            </div>
+            )}
 
             {/* Voice Tab */}
-            <TabsContent value="voice" className="space-y-6">
+            {activeTab === 'voice' && (
+            <div className="space-y-6">
               {selectedAgent ? (
                 <VoiceControl 
                   agentId={selectedAgent}
@@ -489,10 +496,12 @@ export function Dashboard() {
                   </CardContent>
                 </Card>
               )}
-            </TabsContent>
+            </div>
+            )}
 
             {/* Video RTC Tab */}
-            <TabsContent value="video" className="space-y-6">
+            {activeTab === 'video' && (
+            <div className="space-y-6">
               {selectedAgent ? (
                 <WebRTCMonitoring selectedAgent={selectedAgent} />
               ) : (
@@ -554,18 +563,23 @@ export function Dashboard() {
                   </CardContent>
                 </Card>
               )}
-            </TabsContent>
+            </div>
+            )}
 
             {/* Settings Tab */}
-            <TabsContent value="settings" className="space-y-6">
-              <Settings />
-            </TabsContent>
+            {activeTab === 'settings' && (
+              <div className="space-y-6">
+                <Settings />
+              </div>
+            )}
 
             {/* About Tab */}
-            <TabsContent value="about" className="space-y-6">
-              <About />
-            </TabsContent>
-          </Tabs>
+            {activeTab === 'about' && (
+              <div className="space-y-6">
+                <About />
+              </div>
+            )}
+          </div>
         </div>
       </div>
       </ErrorBoundary>
