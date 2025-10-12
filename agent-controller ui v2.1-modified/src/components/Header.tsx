@@ -22,51 +22,49 @@ export function Header({ onMenuClick, isMobile = false, sidebarOpen = false }: H
     try {
       await logout();
     } catch (error) {
-      console.error('Logout failed:', error);
+      console.error('Logout failed:', error); // Keep for debugging auth issues
     }
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="flex h-16 items-center justify-between px-4 sm:px-6 gap-4">
+    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm transition-shadow duration-300 hover:shadow-md">
+      <div className="flex h-14 sm:h-16 items-center justify-between px-3 sm:px-4 md:px-6 lg:px-8 gap-2 sm:gap-4 max-w-[2000px] mx-auto">
         {/* Left side - Logo and Mobile Menu */}
-        <div className="flex items-center space-x-2 sm:space-x-4 min-w-0 flex-1">
-          {/* Mobile Menu Button */}
-          {isMobile && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onMenuClick}
-              className="p-2"
-            >
-              <Menu className="h-5 w-5" />
-            </Button>
-          )}
+        <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 flex-1">
+          {/* Mobile Menu Button - Always show at < 1024px */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onMenuClick}
+            className="p-2 lg:hidden flex-shrink-0 transition-all duration-200 hover:bg-primary/10 hover:scale-110 active:scale-95"
+          >
+            <Menu className="h-5 w-5 transition-transform duration-200 hover:rotate-90" />
+          </Button>
           
-          <div className="flex items-center space-x-2 min-w-0">
-            <Shield className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
-            <div className="min-w-0">
-              <h1 className="text-sm sm:text-lg font-semibold truncate">Neural Control Hub</h1>
-              <p className="text-xs text-muted-foreground hidden sm:block">Advanced Agent Management</p>
+          <div className="flex items-center space-x-2 min-w-0 group">
+            <Shield className="h-5 w-5 sm:h-6 sm:w-6 md:h-8 md:w-8 text-primary flex-shrink-0 transition-all duration-300 group-hover:scale-110 group-hover:rotate-12 group-hover:text-primary" />
+            <div className="min-w-0 hidden sm:block">
+              <h1 className="text-sm md:text-base lg:text-lg font-semibold truncate transition-colors duration-200 group-hover:text-primary">Neural Control Hub</h1>
+              <p className="text-xs text-muted-foreground hidden md:block transition-colors duration-200 group-hover:text-foreground">Advanced Agent Management</p>
             </div>
           </div>
         </div>
 
         {/* Right side - Actions */}
         <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
-          {/* Version Badge - Hidden on mobile */}
-          <div className="hidden md:flex items-center space-x-2">
-            <Badge variant="secondary" className="text-xs">v2.1</Badge>
+          {/* Version Badge - Hidden on small screens */}
+          <div className="hidden lg:flex items-center space-x-2">
+            <Badge variant="secondary" className="text-xs transition-all duration-200 hover:scale-110 hover:shadow-sm cursor-default">v2.1</Badge>
           </div>
           
-          {/* Theme Toggle */}
+          {/* Theme Toggle - Compact on mobile */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="relative px-2 sm:px-3 py-2 h-9">
-                {theme === 'light' && <Sun className="h-4 w-4" />}
-                {theme === 'dark' && <Moon className="h-4 w-4" />}
-                {theme === 'system' && <Monitor className="h-4 w-4" />}
-                <span className="hidden sm:inline ml-2">
+              <Button variant="outline" size="sm" className="relative px-2 sm:px-3 py-2 h-8 sm:h-9 transition-all duration-200 hover:scale-110 hover:shadow-md hover:border-primary/50 active:scale-95">
+                {theme === 'light' && <Sun className="h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform duration-200 hover:rotate-45" />}
+                {theme === 'dark' && <Moon className="h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform duration-200 hover:-rotate-12" />}
+                {theme === 'system' && <Monitor className="h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform duration-200 hover:scale-110" />}
+                <span className="hidden md:inline ml-2 text-xs">
                   {theme === 'light' && 'Light'}
                   {theme === 'dark' && 'Dark'}
                   {theme === 'system' && 'Auto'}

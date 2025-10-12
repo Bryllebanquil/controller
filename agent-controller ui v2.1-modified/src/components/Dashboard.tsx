@@ -83,10 +83,17 @@ export function Dashboard() {
     );
   }
 
-  // Check for mobile viewport
+  // Check for mobile viewport (account for zoom levels)
   useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
+      // Use 1024px breakpoint to better handle zoom levels
+      const isMobileView = window.innerWidth < 1024;
+      setIsMobile(isMobileView);
+      
+      // Close sidebar if switching to mobile
+      if (isMobileView) {
+        setSidebarOpen(false);
+      }
     };
     
     checkMobile();
@@ -137,8 +144,8 @@ export function Dashboard() {
 
       {/* Mobile Navigation Overlay */}
       {isMobile && sidebarOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50" onClick={() => setSidebarOpen(false)}>
-          <div className="fixed left-0 top-0 h-full w-80 bg-background border-r shadow-lg">
+        <div className="fixed inset-0 z-50 bg-black/50 animate-in fade-in duration-200" onClick={() => setSidebarOpen(false)}>
+          <div className="fixed left-0 top-0 h-full w-80 bg-background border-r shadow-lg animate-in slide-in-from-left duration-300 z-50" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b">
               <h2 className="text-lg font-semibold">Navigation</h2>
               {React.createElement(Button, {
@@ -159,7 +166,7 @@ export function Dashboard() {
       {/* Desktop Sidebar */}
       {!isMobile && (
         <ErrorBoundary>
-          <div className="fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-background border-r">
+          <div className="fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-background border-r shadow-sm transition-all duration-300 hover:shadow-md z-30">
             <Sidebar 
               activeTab={activeTab}
               onTabChange={handleTabChange}
@@ -170,73 +177,106 @@ export function Dashboard() {
 
       {/* Main Content */}
       <div className={cn(
-        "pt-16 transition-all duration-300",
-        !isMobile && "ml-64"
+        "pt-16 transition-all duration-300 ease-in-out min-h-screen relative z-0",
+        !isMobile && "ml-64",
+        isMobile && "ml-0"
       )}>
-        <div className="p-4 md:p-6">
-          {/* Mobile Tab Navigation */}
+        <div className="p-3 sm:p-4 md:p-6 lg:p-8 w-full max-w-[2000px] mx-auto">
+          {/* Mobile Tab Navigation - Scrollable */}
           {isMobile && (
-            <div className="mb-4">
-              <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as TabType)}>
-                <TabsList className="grid w-full grid-cols-3 lg:grid-cols-6">
-                  <TabsTrigger value="overview" className="text-xs">
-                    <Activity className="h-3 w-3 mr-1" />
-                    <span className="hidden sm:inline">Overview</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="agents" className="text-xs">
-                    <Users className="h-3 w-3 mr-1" />
-                    <span className="hidden sm:inline">Agents</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="streaming" className="text-xs">
-                    <Monitor className="h-3 w-3 mr-1" />
-                    <span className="hidden sm:inline">Stream</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="commands" className="text-xs">
-                    <Terminal className="h-3 w-3 mr-1" />
-                    <span className="hidden sm:inline">Cmd</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="files" className="text-xs">
-                    <Files className="h-3 w-3 mr-1" />
-                    <span className="hidden sm:inline">Files</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="monitoring" className="text-xs">
-                    <Activity className="h-3 w-3 mr-1" />
-                    <span className="hidden sm:inline">Monitor</span>
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
+            <div className="mb-4 -mx-3 sm:-mx-4 px-3 sm:px-4 overflow-x-auto scrollbar-hide">
+              <div className="flex space-x-2 pb-2 min-w-max animate-in fade-in slide-in-from-top-2 duration-500">
+                {[
+                  { id: 'overview', label: 'Overview', icon: Activity },
+                  { id: 'agents', label: 'Agents', icon: Users },
+                  { id: 'streaming', label: 'Streaming', icon: Monitor },
+                  { id: 'commands', label: 'Commands', icon: Terminal },
+                  { id: 'files', label: 'Files', icon: Files },
+                  { id: 'voice', label: 'Voice', icon: Mic },
+                  { id: 'video', label: 'Video RTC', icon: Video },
+                  { id: 'monitoring', label: 'Monitoring', icon: Activity },
+                  { id: 'settings', label: 'Settings', icon: SettingsIcon },
+                  { id: 'about', label: 'About', icon: Info },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    React.createElement(Button, {
+                      key: item.id,
+                      variant: activeTab === item.id ? "default" : "outline",
+                      size: "sm",
+                      className: cn(
+                        "flex-shrink-0 h-9 transition-all duration-200 ease-in-out",
+                        activeTab === item.id && "shadow-md scale-105",
+                        activeTab !== item.id && "hover:scale-105 hover:shadow-sm hover:border-primary/50"
+                      ),
+                      onClick: () => handleTabChange(item.id)
+                    },
+                      React.createElement(Icon, { className: "h-4 w-4 mr-2 transition-transform duration-200" }),
+                      item.label
+                    )
+                  );
+                })}
+              </div>
             </div>
           )}
 
-          {/* Desktop Tab Navigation */}
-          {!isMobile && (
-            <div className="mb-6">
-              <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as TabType)}>
-                <TabsList className="grid w-full grid-cols-6 lg:grid-cols-9">
-                  <TabsTrigger value="overview">Overview</TabsTrigger>
-                  <TabsTrigger value="agents">Agents</TabsTrigger>
-                  <TabsTrigger value="streaming">Streaming</TabsTrigger>
-                  <TabsTrigger value="commands">Commands</TabsTrigger>
-                  <TabsTrigger value="files">Files</TabsTrigger>
-                  <TabsTrigger value="voice">Voice</TabsTrigger>
-                  <TabsTrigger value="video">Video RTC</TabsTrigger>
-                  <TabsTrigger value="monitoring">Monitoring</TabsTrigger>
-                  <TabsTrigger value="settings">Settings</TabsTrigger>
-                </TabsList>
-              </Tabs>
+          {/* Page Header with Current Tab */}
+          <div className="mb-4 sm:mb-6 flex items-center justify-between animate-in fade-in slide-in-from-top-4 duration-500">
+            <div className="flex items-center space-x-2 sm:space-x-3">
+              <div className={cn(
+                "rounded-lg bg-primary/10 flex items-center justify-center transition-all duration-300 hover:bg-primary/20 hover:scale-110",
+                isMobile ? "w-8 h-8" : "w-10 h-10 sm:w-12 sm:h-12"
+              )}>
+                {React.createElement(
+                  activeTab === 'overview' ? Activity :
+                  activeTab === 'agents' ? Users :
+                  activeTab === 'streaming' ? Monitor :
+                  activeTab === 'commands' ? Terminal :
+                  activeTab === 'files' ? Files :
+                  activeTab === 'voice' ? Mic :
+                  activeTab === 'video' ? Video :
+                  activeTab === 'monitoring' ? Activity :
+                  activeTab === 'settings' ? SettingsIcon :
+                  Info,
+                  { className: isMobile ? "h-4 w-4 text-primary" : "h-5 w-5 text-primary" }
+                )}
+              </div>
+              <div className="min-w-0">
+                <h2 className={cn(
+                  "font-bold capitalize transition-all duration-300",
+                  isMobile ? "text-base sm:text-lg" : "text-xl sm:text-2xl lg:text-3xl"
+                )}>
+                  {activeTab === 'video' ? 'Video RTC' : activeTab}
+                </h2>
+                {!isMobile && (
+                  <p className="text-sm text-muted-foreground">
+                    {activeTab === 'overview' && 'System overview and agent status'}
+                    {activeTab === 'agents' && 'Manage connected agents'}
+                    {activeTab === 'streaming' && 'View agent streams'}
+                    {activeTab === 'commands' && 'Execute commands on agents'}
+                    {activeTab === 'files' && 'Browse and transfer files'}
+                    {activeTab === 'voice' && 'Voice control interface'}
+                    {activeTab === 'video' && 'Video RTC streaming'}
+                    {activeTab === 'monitoring' && 'System monitoring and metrics'}
+                    {activeTab === 'settings' && 'Application settings'}
+                    {activeTab === 'about' && 'About Neural Control Hub'}
+                  </p>
+                )}
+              </div>
             </div>
-          )}
+          </div>
 
           {/* Tab Content */}
-          <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as TabType)}>
+          <div className="space-y-4 sm:space-y-6">
             {/* Overview Tab */}
-            <TabsContent value="overview" className="space-y-6">
+            {activeTab === 'overview' && (
+            <div className="space-y-4 sm:space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
               {/* System Overview Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <Card className="transition-all duration-300 hover:shadow-lg hover:scale-[1.02] hover:-translate-y-1 cursor-default">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Connected Agents</CardTitle>
-                    <Users className="h-4 w-4 text-muted-foreground" />
+                    <Users className="h-4 w-4 text-muted-foreground transition-transform duration-200 hover:scale-125" />
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">{onlineAgents}</div>
@@ -246,10 +286,10 @@ export function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="transition-all duration-300 hover:shadow-lg hover:scale-[1.02] hover:-translate-y-1 cursor-default">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">System Status</CardTitle>
-                    <Activity className="h-4 w-4 text-muted-foreground" />
+                    <Activity className="h-4 w-4 text-muted-foreground transition-transform duration-200 hover:scale-125" />
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">
@@ -276,10 +316,10 @@ export function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="transition-all duration-300 hover:shadow-lg hover:scale-[1.02] hover:-translate-y-1 cursor-default">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Commands Executed</CardTitle>
-                    <Terminal className="h-4 w-4 text-muted-foreground" />
+                    <Terminal className="h-4 w-4 text-muted-foreground transition-transform duration-200 hover:scale-125" />
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">{commandOutput.length}</div>
@@ -318,10 +358,12 @@ export function Dashboard() {
                   <ActivityFeed />
                 </CardContent>
               </Card>
-            </TabsContent>
+            </div>
+            )}
 
             {/* Agents Tab */}
-            <TabsContent value="agents" className="space-y-6">
+            {activeTab === 'agents' && (
+            <div className="space-y-6">
               <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
                 <div className="flex-1 min-w-0">
                   <SearchAndFilter
@@ -344,19 +386,20 @@ export function Dashboard() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {filteredAgents.map((agent) => {
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-4">
+                {filteredAgents.map((agent, index) => {
                   return React.createElement(AgentCard, {
                     key: agent.id,
                     agent: agent,
                     isSelected: selectedAgent === agent.id,
-                    onSelect: () => handleAgentSelect(agent.id)
+                    onSelect: () => handleAgentSelect(agent.id),
+                    style: { animationDelay: `${index * 50}ms` }
                   });
                 })}
               </div>
 
               {filteredAgents.length === 0 && (
-                <Card>
+                <Card className="animate-in fade-in zoom-in-95 duration-500">
                   <CardContent className="flex flex-col items-center justify-center py-12">
                     <Users className="h-12 w-12 text-muted-foreground mb-4" />
                     <h3 className="text-lg font-semibold mb-2">No agents found</h3>
@@ -369,10 +412,12 @@ export function Dashboard() {
                   </CardContent>
                 </Card>
               )}
-            </TabsContent>
+            </div>
+            )}
 
             {/* Streaming Tab */}
-            <TabsContent value="streaming" className="space-y-6">
+            {activeTab === 'streaming' && (
+            <div className="space-y-6">
               {selectedAgent ? (
                 <StreamViewer 
                   agentId={selectedAgent}
@@ -390,10 +435,12 @@ export function Dashboard() {
                   </CardContent>
                 </Card>
               )}
-            </TabsContent>
+            </div>
+            )}
 
             {/* Commands Tab - with Process Manager nested tabs */}
-            <TabsContent value="commands" className="space-y-6">
+            {activeTab === 'commands' && (
+            <div className="space-y-6">
               {selectedAgent ? (
                 <Tabs defaultValue="terminal" className="space-y-4">
                   <TabsList className="grid w-full grid-cols-2">
@@ -421,10 +468,12 @@ export function Dashboard() {
                   </CardContent>
                 </Card>
               )}
-            </TabsContent>
+            </div>
+            )}
 
             {/* Files Tab */}
-            <TabsContent value="files" className="space-y-6">
+            {activeTab === 'files' && (
+            <div className="space-y-6">
               {selectedAgent ? (
                 <FileManager agentId={selectedAgent} />
               ) : (
@@ -438,10 +487,12 @@ export function Dashboard() {
                   </CardContent>
                 </Card>
               )}
-            </TabsContent>
+            </div>
+            )}
 
             {/* Voice Tab */}
-            <TabsContent value="voice" className="space-y-6">
+            {activeTab === 'voice' && (
+            <div className="space-y-6">
               {selectedAgent ? (
                 <VoiceControl 
                   agentId={selectedAgent}
@@ -458,10 +509,12 @@ export function Dashboard() {
                   </CardContent>
                 </Card>
               )}
-            </TabsContent>
+            </div>
+            )}
 
             {/* Video RTC Tab */}
-            <TabsContent value="video" className="space-y-6">
+            {activeTab === 'video' && (
+            <div className="space-y-6">
               {selectedAgent ? (
                 <WebRTCMonitoring selectedAgent={selectedAgent} />
               ) : (
@@ -475,10 +528,12 @@ export function Dashboard() {
                   </CardContent>
                 </Card>
               )}
-            </TabsContent>
+            </div>
+            )}
 
             {/* Monitoring Tab - Enhanced with Network Performance */}
-            <TabsContent value="monitoring" className="space-y-6">
+            {activeTab === 'monitoring' && (
+            <div className="space-y-6">
               {selectedAgent ? (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <SystemMonitor agentId={selectedAgent} />
@@ -523,18 +578,23 @@ export function Dashboard() {
                   </CardContent>
                 </Card>
               )}
-            </TabsContent>
+            </div>
+            )}
 
             {/* Settings Tab */}
-            <TabsContent value="settings" className="space-y-6">
-              <Settings />
-            </TabsContent>
+            {activeTab === 'settings' && (
+              <div className="space-y-6">
+                <Settings />
+              </div>
+            )}
 
             {/* About Tab */}
-            <TabsContent value="about" className="space-y-6">
-              <About />
-            </TabsContent>
-          </Tabs>
+            {activeTab === 'about' && (
+              <div className="space-y-6">
+                <About />
+              </div>
+            )}
+          </div>
         </div>
       </div>
       </ErrorBoundary>

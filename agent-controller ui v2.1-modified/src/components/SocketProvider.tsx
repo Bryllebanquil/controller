@@ -49,10 +49,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [agentMetrics, setAgentMetrics] = useState<Record<string, { cpu: number; memory: number; network: number }>>({});
 
   const addCommandOutput = useCallback((output: string) => {
-    console.log('🔍 SocketProvider: addCommandOutput called with:', output);
     setCommandOutput(prev => {
       const newOutput = [...prev.slice(-99), output]; // Keep last 100 lines
-      console.log('🔍 SocketProvider: Updated commandOutput array length:', newOutput.length);
       return newOutput;
     });
   }, []);
@@ -74,8 +72,6 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       // Development: use environment variable or default to localhost
       socketUrl = (import.meta as any)?.env?.VITE_SOCKET_URL || (window as any)?.__SOCKET_URL__ || 'http://localhost:8080';
     }
-    
-    console.log('Connecting to Socket.IO server:', socketUrl);
     
     let socketInstance: Socket;
     
@@ -123,7 +119,6 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     socketInstance.on('disconnect', (reason) => {
       setConnected(false);
-      console.log('Disconnected from Neural Control Hub:', reason);
       addCommandOutput(`Disconnected: ${reason}`);
     });
 
@@ -592,4 +587,4 @@ export function useSocket() {
     throw new Error('useSocket must be used within a SocketProvider');
   }
   return context;
-}
+}}

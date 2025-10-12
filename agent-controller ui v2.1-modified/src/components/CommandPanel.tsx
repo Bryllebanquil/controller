@@ -74,7 +74,7 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
       // Don't reset isExecuting here - let the command result handler do it
       // This ensures we show "Executing..." until we get the actual result
     } catch (error) {
-      console.error('Error executing command:', error);
+      console.error('Error executing command:', error); // Keep for debugging
       setOutput(prev => prev + `Error: ${error}\n`);
       setIsExecuting(false);
     }
@@ -150,7 +150,6 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
     if (!socket) return;
 
     const handleBulkResult = (data: Record<string, unknown>) => {
-      console.log('📢 Bulk command result received:', data);
       const agentId = data.agent_id as string;
       const output = data.output as string;
       const success = data.success as boolean;
@@ -165,7 +164,6 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
     };
 
     const handleBulkComplete = (data: Record<string, unknown>) => {
-      console.log('✅ Bulk command complete:', data);
       const total = data.total as number;
       const successful = data.successful as number;
       const failed = data.failed as number;

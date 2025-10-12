@@ -309,10 +309,10 @@ export function QuickActions({ agentCount, selectedAgent }: QuickActionsProps) {
             const CategoryIcon = categoryIcons[category as keyof typeof categoryIcons];
             
             return (
-              <div key={category}>
+              <div key={category} className="animate-in fade-in slide-in-from-bottom-2 duration-500">
                 <div className="flex items-center space-x-2 mb-2">
-                  <CategoryIcon className="h-3 w-3 text-muted-foreground" />
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  <CategoryIcon className="h-3 w-3 text-muted-foreground transition-transform duration-200 hover:scale-125" />
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide transition-colors duration-200 hover:text-foreground">
                     {category}
                   </span>
                 </div>
@@ -354,7 +354,7 @@ export function QuickActions({ agentCount, selectedAgent }: QuickActionsProps) {
                             isExecuting ? (
                               React.createElement(RefreshCw, { className: "h-4 w-4 animate-spin" })
                             ) : (
-                              React.createElement(Icon, { className: "h-4 w-4" })
+                              React.createElement(Icon, { className: "h-4 w-4 transition-all duration-200 group-hover:scale-110 group-hover:text-primary" })
                             ),
                             getStatusIcon()
                           ),
@@ -533,6 +533,13 @@ export function QuickActions({ agentCount, selectedAgent }: QuickActionsProps) {
                   onClick: () => setShowStatusDialog(false)
                 }, "Close")
               )
+            )
+          )
+        )
+      )}
+    </>
+  );
+}   )
             )
           )
         )
