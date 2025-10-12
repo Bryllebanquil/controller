@@ -587,4 +587,4 @@ export function useSocket() {
     throw new Error('useSocket must be used within a SocketProvider');
   }
   return context;
-}}
+}

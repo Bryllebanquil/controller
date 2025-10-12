@@ -34,7 +34,7 @@ const sidebarItems = [
 export function Sidebar({ activeTab, onTabChange }: SidebarProps) {
   return (
     <div className="flex w-full h-full flex-col">
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 overflow-auto scrollbar-hide p-4">
         <nav className="space-y-1">
           {sidebarItems.map((item, index) => {
             const Icon = item.icon;

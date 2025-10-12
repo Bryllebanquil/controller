@@ -539,11 +539,4 @@ export function QuickActions({ agentCount, selectedAgent }: QuickActionsProps) {
       )}
     </>
   );
-}   )
-            )
-          )
-        )
-      )}
-    </>
-  );
 }

@@ -56,7 +56,7 @@ export function MobileNavigation({ activeTab, onTabChange, onClose }: MobileNavi
       </div>
 
       {/* Navigation */}
-      <div className="flex-1 overflow-auto p-4 scrollbar-thin">
+      <div className="flex-1 overflow-auto p-4 scrollbar-hide">
         <nav className="space-y-1">
           {sidebarItems.map((item, index) => {
             const Icon = item.icon;
