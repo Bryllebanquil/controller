@@ -19,6 +19,9 @@ import smtplib
 from email.mime.text import MIMEText
 import json
 import re
+import subprocess
+import shutil
+import sys
 
 # WebRTC imports for SFU functionality
 try:
@@ -65,6 +68,154 @@ class Config:
     # Password Security Settings
     SALT_LENGTH = 32  # Length of salt in bytes
     HASH_ITERATIONS = 100000  # Number of iterations for PBKDF2
+
+# -----------------------------
+# UI Build Management
+# -----------------------------
+UI_DIR_NAME = 'agent-controller ui v2.1-modified'
+UI_BUILD_DIR = os.path.join(os.path.dirname(__file__), UI_DIR_NAME, 'build')
+
+def cleanup_old_ui_builds():
+    """
+    Remove old UI build directories to ensure fresh builds.
+    Cleans up build artifacts from all UI directories.
+    """
+    base_dir = os.path.dirname(__file__)
+    ui_dirs = [
+        'agent-controller ui',
+        'agent-controller ui v2.1',
+        'agent-controller ui v2.1-modified'
+    ]
+    
+    for ui_dir in ui_dirs:
+        build_path = os.path.join(base_dir, ui_dir, 'build')
+        try:
+            if os.path.exists(build_path):
+                print(f"🧹 Cleaning old build: {build_path}")
+                shutil.rmtree(build_path)
+                print(f"✅ Removed old build: {build_path}")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not remove old build at {build_path}: {e}")
+
+def build_ui():
+    """
+    Build the agent-controller UI v2.1-modified with robust error handling.
+    This function:
+    1. Cleans up old builds
+    2. Installs npm dependencies
+    3. Builds the UI using vite
+    4. Validates the build output
+    
+    Returns:
+        bool: True if build was successful, False otherwise
+    """
+    ui_dir = os.path.join(os.path.dirname(__file__), UI_DIR_NAME)
+    build_dir = os.path.join(ui_dir, 'build')
+    
+    print("=" * 80)
+    print(f"🚀 Building Agent Controller UI ({UI_DIR_NAME})")
+    print("=" * 80)
+    
+    # Step 1: Cleanup old builds
+    try:
+        print("\n📦 Step 1: Cleaning up old builds...")
+        cleanup_old_ui_builds()
+        print("✅ Cleanup completed")
+    except Exception as e:
+        print(f"⚠️  Warning during cleanup: {e}")
+    
+    # Step 2: Check if UI directory exists
+    if not os.path.exists(ui_dir):
+        print(f"❌ ERROR: UI directory not found: {ui_dir}")
+        print(f"   Please ensure '{UI_DIR_NAME}' exists in the project root.")
+        return False
+    
+    # Step 3: Check for package.json
+    package_json = os.path.join(ui_dir, 'package.json')
+    if not os.path.exists(package_json):
+        print(f"❌ ERROR: package.json not found in {ui_dir}")
+        return False
+    
+    # Step 4: Install dependencies
+    print("\n📦 Step 2: Installing npm dependencies...")
+    try:
+        install_result = subprocess.run(
+            ['npm', 'install'],
+            cwd=ui_dir,
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 minute timeout
+        )
+        
+        if install_result.returncode != 0:
+            print(f"❌ ERROR: npm install failed")
+            print(f"   STDOUT: {install_result.stdout}")
+            print(f"   STDERR: {install_result.stderr}")
+            return False
+        
+        print("✅ Dependencies installed successfully")
+        
+    except subprocess.TimeoutExpired:
+        print("❌ ERROR: npm install timed out after 5 minutes")
+        return False
+    except FileNotFoundError:
+        print("❌ ERROR: npm not found. Please install Node.js and npm.")
+        print("   Visit: https://nodejs.org/")
+        return False
+    except Exception as e:
+        print(f"❌ ERROR during npm install: {e}")
+        return False
+    
+    # Step 5: Build the UI
+    print("\n🔨 Step 3: Building UI with Vite...")
+    try:
+        build_result = subprocess.run(
+            ['npm', 'run', 'build'],
+            cwd=ui_dir,
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 minute timeout
+        )
+        
+        if build_result.returncode != 0:
+            print(f"❌ ERROR: npm run build failed")
+            print(f"   STDOUT: {build_result.stdout}")
+            print(f"   STDERR: {build_result.stderr}")
+            return False
+        
+        print("✅ Build completed successfully")
+        
+    except subprocess.TimeoutExpired:
+        print("❌ ERROR: npm run build timed out after 5 minutes")
+        return False
+    except Exception as e:
+        print(f"❌ ERROR during npm run build: {e}")
+        return False
+    
+    # Step 6: Validate build output
+    print("\n🔍 Step 4: Validating build output...")
+    if not os.path.exists(build_dir):
+        print(f"❌ ERROR: Build directory not created: {build_dir}")
+        return False
+    
+    index_html = os.path.join(build_dir, 'index.html')
+    if not os.path.exists(index_html):
+        print(f"❌ ERROR: index.html not found in build directory")
+        return False
+    
+    assets_dir = os.path.join(build_dir, 'assets')
+    if not os.path.exists(assets_dir):
+        print(f"⚠️  Warning: assets directory not found (may be normal for some builds)")
+    else:
+        asset_files = os.listdir(assets_dir)
+        print(f"✅ Found {len(asset_files)} asset files")
+    
+    print("\n" + "=" * 80)
+    print("✅ UI BUILD SUCCESSFUL!")
+    print(f"   Build location: {build_dir}")
+    print("=" * 80 + "\n")
+    
+    return True
 
 # Initialize Flask app with configuration
 app = Flask(__name__)
@@ -2135,6 +2286,7 @@ def dashboard():
 
         base_dir = os.path.dirname(__file__)
         assets_dirs = [
+            os.path.join(base_dir, UI_DIR_NAME, 'build', 'assets'),
             os.path.join(base_dir, 'agent-controller ui v2.1', 'build', 'assets'),
             os.path.join(base_dir, 'agent-controller ui', 'build', 'assets'),
         ]
@@ -2178,15 +2330,36 @@ def dashboard():
     except Exception as e:
         print(f"Failed to inline dashboard, falling back to static file: {e}")
         # Fallback to static file if inline fails
-        build_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui', 'build', 'index.html')
+        build_path = os.path.join(os.path.dirname(__file__), UI_DIR_NAME, 'build', 'index.html')
         if not os.path.exists(build_path):
             build_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html')
-        return send_file(build_path)
+            if not os.path.exists(build_path):
+                build_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui', 'build', 'index.html')
+        if os.path.exists(build_path):
+            return send_file(build_path)
+        else:
+            return Response("UI not built. Please run build_ui() first.", status=500)
 
-# Serve static assets for the UI v2.1
+# Serve static assets for the UI
 @app.route('/assets/<path:filename>')
 def serve_assets(filename):
-    return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'assets', filename))
+    """Serve static assets from the latest UI build"""
+    base_dir = os.path.dirname(__file__)
+    
+    # Try UI directories in order of preference
+    ui_dirs = [
+        UI_DIR_NAME,
+        'agent-controller ui v2.1',
+        'agent-controller ui'
+    ]
+    
+    for ui_dir in ui_dirs:
+        asset_path = os.path.join(base_dir, ui_dir, 'build', 'assets', filename)
+        if os.path.exists(asset_path):
+            return send_file(asset_path)
+    
+    # If asset not found, return 404
+    return Response(f"Asset not found: {filename}", status=404)
 
 # --- Real-time Streaming Endpoints (COMMENTED OUT - REPLACED WITH OVERVIEW) ---
 # 
@@ -5042,4 +5215,21 @@ if __name__ == "__main__":
         print(f"Performance tuning: Bandwidth estimation, Adaptive bitrate, Frame dropping")
         print(f"Production scale: Current={PRODUCTION_SCALE['current_implementation']}, Target={PRODUCTION_SCALE['target_implementation']}")
         print(f"Scalability limits: aiortc={PRODUCTION_SCALE['scalability_limits']['aiorttc_max_viewers']}, mediasoup={PRODUCTION_SCALE['scalability_limits']['mediasoup_max_viewers']}")
+    
+    # Build UI on startup (can be disabled with SKIP_UI_BUILD=1 environment variable)
+    skip_build = os.environ.get('SKIP_UI_BUILD', '0') == '1'
+    if skip_build:
+        print("\n⚠️  Skipping UI build (SKIP_UI_BUILD=1)")
+        print(f"   Make sure UI is pre-built at: {UI_BUILD_DIR}")
+        if not os.path.exists(UI_BUILD_DIR):
+            print(f"   ❌ WARNING: UI build directory not found!")
+    else:
+        print("\n")
+        # Build the UI with cleanup and error handling
+        build_success = build_ui()
+        if not build_success:
+            print("\n⚠️  UI build failed! The controller will start but the dashboard may not work.")
+            print("   You can set SKIP_UI_BUILD=1 to skip building and use a pre-built UI.")
+            print("   The server will continue starting...\n")
+    
     socketio.run(app, host=Config.HOST, port=Config.PORT, debug=False)
