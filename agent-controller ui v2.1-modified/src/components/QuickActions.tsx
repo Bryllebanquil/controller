@@ -493,7 +493,7 @@ export function QuickActions({ agentCount, selectedAgent }: QuickActionsProps) {
                     currentStatus.details.results && (
                       React.createElement("div", { className: "mt-3" },
                         React.createElement("div", { className: "text-sm font-medium mb-2" }, "Agent Results:"),
-                        React.createElement("div", { className: "max-h-32 overflow-y-auto space-y-1" },
+                        React.createElement("div", { className: "max-h-32 overflow-y-auto scrollbar-hide space-y-1" },
                           currentStatus.details.results.map((result: any, index: number) => (
                             React.createElement("div", {
                               key: index,

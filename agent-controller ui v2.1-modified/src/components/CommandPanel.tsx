@@ -308,7 +308,7 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
               </CardHeader>
               <CardContent>
                 <pre
-                  className="bg-[#012456] text-white p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto m-0"
+                  className="bg-[#012456] text-white p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto scrollbar-hide m-0"
                   style={{
                     whiteSpace: 'pre',          // preserve exact spacing and line breaks
                     wordBreak: 'normal',        // do not break words

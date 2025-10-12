@@ -146,7 +146,7 @@ export function KeyboardShortcuts({ onTabChange, onAgentSelect, onAgentDeselect 
       </DialogTrigger>
       
       {React.createElement(DialogContent, {
-        className: "max-w-2xl max-h-[80vh] overflow-y-auto"
+        className: "max-w-2xl max-h-[80vh] overflow-y-auto scrollbar-hide"
       },
         React.createElement(DialogHeader, null,
           React.createElement(DialogTitle, null, "Keyboard Shortcuts"),
