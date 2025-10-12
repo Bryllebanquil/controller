@@ -53,9 +53,11 @@ export function AgentCard({ agent, isSelected, onSelect }: AgentCardProps) {
   return (
     <Card 
       className={cn(
-        "cursor-pointer transition-all hover:shadow-md",
-        isSelected && "ring-2 ring-primary",
-        !isOnline && "opacity-75"
+        "cursor-pointer transition-all duration-300 ease-in-out group",
+        "hover:shadow-lg hover:scale-[1.02] hover:-translate-y-1",
+        isSelected && "ring-2 ring-primary shadow-lg scale-[1.01]",
+        !isOnline && "opacity-75 hover:opacity-90",
+        "animate-in fade-in zoom-in-95 duration-500"
       )}
       onClick={onSelect}
     >
@@ -74,8 +76,8 @@ export function AgentCard({ agent, isSelected, onSelect }: AgentCardProps) {
           </Button>
         </div>
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>{agent.platform}</span>
-          <Badge variant={isOnline ? "default" : "secondary"}>
+          <span className="transition-colors duration-200 group-hover:text-foreground">{agent.platform}</span>
+          <Badge variant={isOnline ? "default" : "secondary"} className="transition-all duration-200 group-hover:scale-105">
             {agent.status}
           </Badge>
         </div>
@@ -89,8 +91,8 @@ export function AgentCard({ agent, isSelected, onSelect }: AgentCardProps) {
             {agent.capabilities.map((capability) => {
               const Icon = capabilityIcons[capability as keyof typeof capabilityIcons];
               return Icon ? (
-                <div key={capability} className="flex items-center space-x-1 bg-muted px-2 py-1 rounded text-xs">
-                  <Icon className="h-3 w-3" />
+                <div key={capability} className="flex items-center space-x-1 bg-muted px-2 py-1 rounded text-xs transition-all duration-200 hover:bg-primary/10 hover:scale-105 cursor-default">
+                  <Icon className="h-3 w-3 transition-transform duration-200 hover:rotate-12" />
                   <span>{capability}</span>
                 </div>
               ) : null;

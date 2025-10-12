@@ -276,7 +276,7 @@ export function Dashboard() {
                 <Card className="transition-all duration-300 hover:shadow-lg hover:scale-[1.02] hover:-translate-y-1 cursor-default">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Connected Agents</CardTitle>
-                    <Users className="h-4 w-4 text-muted-foreground" />
+                    <Users className="h-4 w-4 text-muted-foreground transition-transform duration-200 hover:scale-125" />
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">{onlineAgents}</div>
@@ -316,10 +316,10 @@ export function Dashboard() {
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="transition-all duration-300 hover:shadow-lg hover:scale-[1.02] hover:-translate-y-1 cursor-default">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Commands Executed</CardTitle>
-                    <Terminal className="h-4 w-4 text-muted-foreground" />
+                    <Terminal className="h-4 w-4 text-muted-foreground transition-transform duration-200 hover:scale-125" />
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">{commandOutput.length}</div>
