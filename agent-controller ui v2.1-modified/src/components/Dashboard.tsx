@@ -170,62 +170,93 @@ export function Dashboard() {
 
       {/* Main Content */}
       <div className={cn(
-        "pt-16 transition-all duration-300",
-        !isMobile && "ml-64"
+        "pt-16 transition-all duration-300 min-h-screen",
+        !isMobile && "ml-64",
+        isMobile && "ml-0"
       )}>
-        <div className="p-4 md:p-6">
-          {/* Mobile Tab Navigation */}
+        <div className="p-4 md:p-6 w-full">
+          {/* Mobile Tab Navigation - Scrollable */}
           {isMobile && (
-            <div className="mb-4">
-              <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as TabType)}>
-                <TabsList className="grid w-full grid-cols-3 lg:grid-cols-6">
-                  <TabsTrigger value="overview" className="text-xs">
-                    <Activity className="h-3 w-3 mr-1" />
-                    <span className="hidden sm:inline">Overview</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="agents" className="text-xs">
-                    <Users className="h-3 w-3 mr-1" />
-                    <span className="hidden sm:inline">Agents</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="streaming" className="text-xs">
-                    <Monitor className="h-3 w-3 mr-1" />
-                    <span className="hidden sm:inline">Stream</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="commands" className="text-xs">
-                    <Terminal className="h-3 w-3 mr-1" />
-                    <span className="hidden sm:inline">Cmd</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="files" className="text-xs">
-                    <Files className="h-3 w-3 mr-1" />
-                    <span className="hidden sm:inline">Files</span>
-                  </TabsTrigger>
-                  <TabsTrigger value="monitoring" className="text-xs">
-                    <Activity className="h-3 w-3 mr-1" />
-                    <span className="hidden sm:inline">Monitor</span>
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
+            <div className="mb-4 -mx-4 px-4 overflow-x-auto">
+              <div className="flex space-x-2 pb-2 min-w-max">
+                {[
+                  { id: 'overview', label: 'Overview', icon: Activity },
+                  { id: 'agents', label: 'Agents', icon: Users },
+                  { id: 'streaming', label: 'Streaming', icon: Monitor },
+                  { id: 'commands', label: 'Commands', icon: Terminal },
+                  { id: 'files', label: 'Files', icon: Files },
+                  { id: 'voice', label: 'Voice', icon: Mic },
+                  { id: 'video', label: 'Video RTC', icon: Video },
+                  { id: 'monitoring', label: 'Monitoring', icon: Activity },
+                  { id: 'settings', label: 'Settings', icon: SettingsIcon },
+                  { id: 'about', label: 'About', icon: Info },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    React.createElement(Button, {
+                      key: item.id,
+                      variant: activeTab === item.id ? "default" : "outline",
+                      size: "sm",
+                      className: cn(
+                        "flex-shrink-0 h-9",
+                        activeTab === item.id && "shadow-sm"
+                      ),
+                      onClick: () => handleTabChange(item.id)
+                    },
+                      React.createElement(Icon, { className: "h-4 w-4 mr-2" }),
+                      item.label
+                    )
+                  );
+                })}
+              </div>
             </div>
           )}
 
-          {/* Desktop Tab Navigation */}
-          {!isMobile && (
-            <div className="mb-6">
-              <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as TabType)}>
-                <TabsList className="grid w-full grid-cols-6 lg:grid-cols-9">
-                  <TabsTrigger value="overview">Overview</TabsTrigger>
-                  <TabsTrigger value="agents">Agents</TabsTrigger>
-                  <TabsTrigger value="streaming">Streaming</TabsTrigger>
-                  <TabsTrigger value="commands">Commands</TabsTrigger>
-                  <TabsTrigger value="files">Files</TabsTrigger>
-                  <TabsTrigger value="voice">Voice</TabsTrigger>
-                  <TabsTrigger value="video">Video RTC</TabsTrigger>
-                  <TabsTrigger value="monitoring">Monitoring</TabsTrigger>
-                  <TabsTrigger value="settings">Settings</TabsTrigger>
-                </TabsList>
-              </Tabs>
+          {/* Page Header with Current Tab */}
+          <div className="mb-6 flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className={cn(
+                "w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center",
+                isMobile && "w-8 h-8"
+              )}>
+                {React.createElement(
+                  activeTab === 'overview' ? Activity :
+                  activeTab === 'agents' ? Users :
+                  activeTab === 'streaming' ? Monitor :
+                  activeTab === 'commands' ? Terminal :
+                  activeTab === 'files' ? Files :
+                  activeTab === 'voice' ? Mic :
+                  activeTab === 'video' ? Video :
+                  activeTab === 'monitoring' ? Activity :
+                  activeTab === 'settings' ? SettingsIcon :
+                  Info,
+                  { className: isMobile ? "h-4 w-4 text-primary" : "h-5 w-5 text-primary" }
+                )}
+              </div>
+              <div>
+                <h2 className={cn(
+                  "font-bold capitalize",
+                  isMobile ? "text-lg" : "text-2xl"
+                )}>
+                  {activeTab === 'video' ? 'Video RTC' : activeTab}
+                </h2>
+                {!isMobile && (
+                  <p className="text-sm text-muted-foreground">
+                    {activeTab === 'overview' && 'System overview and agent status'}
+                    {activeTab === 'agents' && 'Manage connected agents'}
+                    {activeTab === 'streaming' && 'View agent streams'}
+                    {activeTab === 'commands' && 'Execute commands on agents'}
+                    {activeTab === 'files' && 'Browse and transfer files'}
+                    {activeTab === 'voice' && 'Voice control interface'}
+                    {activeTab === 'video' && 'Video RTC streaming'}
+                    {activeTab === 'monitoring' && 'System monitoring and metrics'}
+                    {activeTab === 'settings' && 'Application settings'}
+                    {activeTab === 'about' && 'About Neural Control Hub'}
+                  </p>
+                )}
+              </div>
             </div>
-          )}
+          </div>
 
           {/* Tab Content */}
           <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as TabType)}>
@@ -532,6 +563,17 @@ export function Dashboard() {
 
             {/* About Tab */}
             <TabsContent value="about" className="space-y-6">
+              <About />
+            </TabsContent>
+          </Tabs>
+        </div>
+      </div>
+      </ErrorBoundary>
+    </div>
+  );
+}
+}
+        <TabsContent value="about" className="space-y-6">
               <About />
             </TabsContent>
           </Tabs>
