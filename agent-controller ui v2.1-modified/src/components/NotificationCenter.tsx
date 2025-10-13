@@ -20,6 +20,7 @@ import {
 import { cn } from './ui/utils';
 import { useSocket } from './SocketProvider';
 import { apiClient } from '../services/api';
+import { toast } from 'sonner';
 
 interface Notification {
   id: string;
