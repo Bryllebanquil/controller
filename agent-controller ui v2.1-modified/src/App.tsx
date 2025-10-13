@@ -1,9 +1,15 @@
 import React from "react";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { Dashboard } from "./components/Dashboard";
+import { Toaster } from "./components/ui/sonner";
 
 function AppContent() {
-  return <Dashboard />;
+  return (
+    <>
+      <Dashboard />
+      <Toaster />
+    </>
+  );
 }
 
 export default function App() {

@@ -165,6 +165,9 @@ export function NotificationCenter() {
       console.log('✅ Parsed notification:', newNotification);
       setNotifications(prev => [newNotification, ...prev]);
       
+      // Show toast notification
+      showToast(newNotification);
+      
       // Also show a browser notification if permission granted
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification(newNotification.title, {
