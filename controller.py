@@ -2178,10 +2178,48 @@ def dashboard():
     except Exception as e:
         print(f"Failed to inline dashboard, falling back to static file: {e}")
         # Fallback to static file if inline fails
-        build_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui', 'build', 'index.html')
-        if not os.path.exists(build_path):
-            build_path = os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'index.html')
-        return send_file(build_path)
+        base_dir = os.path.dirname(__file__)
+        build_paths = [
+            os.path.join(base_dir, 'agent-controller ui v2.1', 'build', 'index.html'),
+            os.path.join(base_dir, 'agent-controller ui', 'build', 'index.html')
+        ]
+        
+        for build_path in build_paths:
+            if os.path.exists(build_path):
+                return send_file(build_path)
+        
+        # If no build files exist, return a simple error page
+        error_html = """
+        <!DOCTYPE html>
+        <html lang="en">
+          <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>Agent Controller - Dashboard Unavailable</title>
+            <style>
+              body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
+              .error-container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 500px; margin: 0 auto; }
+              .error-title { color: #e74c3c; margin-bottom: 20px; }
+              .error-message { color: #666; line-height: 1.6; }
+              .retry-button { background: #3498db; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 20px; }
+              .retry-button:hover { background: #2980b9; }
+            </style>
+          </head>
+          <body>
+            <div class="error-container">
+              <h1 class="error-title">Dashboard Temporarily Unavailable</h1>
+              <p class="error-message">
+                The dashboard UI is currently being built or deployed. Please try refreshing the page in a few moments.
+              </p>
+              <p class="error-message">
+                If this issue persists, the frontend assets may need to be rebuilt.
+              </p>
+              <button class="retry-button" onclick="window.location.reload()">Retry</button>
+            </div>
+          </body>
+        </html>
+        """
+        return Response(error_html, mimetype='text/html', status=503)
 
 # Serve static assets for the UI v2.1
 @app.route('/assets/<path:filename>')
