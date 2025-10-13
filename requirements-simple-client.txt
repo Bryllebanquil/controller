@@ -1,8 +1,0 @@
-# Minimal requirements for simple-client.py
-# Only the essential dependencies for connection testing
-
-# Core communication
-python-socketio>=5.13.0
-requests>=2.32.4
-
-# That's it! These are the only dependencies needed for basic connection testing.
