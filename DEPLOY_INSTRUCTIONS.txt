@@ -1,0 +1,67 @@
+================================================================================
+🚀 DEPLOYMENT INSTRUCTIONS - FIX NOTIFICATION POPUPS
+================================================================================
+
+FILES TO DEPLOY:
+1. controller.py (updated - added /debug.html route)
+2. debug_notifications_ui.html (NEW - debug tool)
+3. agent-controller ui v2.1-modified/src/components/NotificationCenter.tsx (updated - fixed parsing)
+
+================================================================================
+STEP-BY-STEP DEPLOYMENT
+================================================================================
+
+OPTION 1: Git Deploy (Recommended)
+-----------------------------------
+1. Commit the changes:
+   git add controller.py
+   git add debug_notifications_ui.html
+   git add "agent-controller ui v2.1-modified/src/components/NotificationCenter.tsx"
+   git commit -m "Fix notification popups - handle agent_id/agentId mismatch"
+   git push
+
+2. Render will auto-deploy (check Render dashboard)
+
+3. Wait for build to complete (~2-3 minutes)
+
+
+OPTION 2: Manual Deploy
+------------------------
+1. Upload files to your Git repository
+2. Push to main/master branch
+3. Render will detect changes and redeploy
+
+
+================================================================================
+AFTER DEPLOYMENT
+================================================================================
+
+1. VERIFY DEBUG TOOL:
+   Open: https://agent-controller-backend.onrender.com/debug.html
+   Should see: Connection status, statistics, and "Waiting for notifications..."
+
+2. RUN TEST:
+   python test_notifications.py
+
+3. WATCH RESULTS:
+   - Debug tool should show all 39 notifications
+   - Dashboard should show notifications in bell icon
+   - Browser console should show "🔔 NotificationCenter received"
+
+================================================================================
+VERIFICATION
+================================================================================
+
+✅ Success indicators:
+   - Debug tool shows "✅ Connected"
+   - Notifications appear in debug tool as test runs
+   - Total count reaches 39
+   - Dashboard bell icon shows count
+
+❌ If not working:
+   - Check Render logs for errors
+   - Hard refresh browser (Ctrl+Shift+R)
+   - Check browser console (F12) for errors
+   - Verify new code is deployed (check Render "Events" tab)
+
+================================================================================

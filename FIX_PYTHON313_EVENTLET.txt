@@ -1,0 +1,48 @@
+===============================================================================
+  PYTHON 3.13 + EVENTLET COMPATIBILITY FIX
+===============================================================================
+
+PROBLEM:
+  - Python 3.13 removed 'distutils' module
+  - eventlet 0.33.3 requires 'distutils'
+  - Result: "No module named 'distutils'" error
+
+SOLUTION:
+  Use eventlet 0.35.0+ which supports Python 3.13
+
+===============================================================================
+  RUN THIS COMMAND:
+===============================================================================
+
+pip uninstall -y python-socketio python-engineio eventlet; pip install eventlet>=0.35.0 python-engineio>=4.8.0 python-socketio>=5.7.0 pywin32 numpy opencv-python pygame aiohttp; python client.py
+
+===============================================================================
+  OR STEP BY STEP:
+===============================================================================
+
+# Step 1: Uninstall old versions
+pip uninstall -y python-socketio python-engineio eventlet
+
+# Step 2: Install Python 3.13 compatible versions
+pip install eventlet>=0.35.0
+pip install python-engineio>=4.8.0
+pip install python-socketio>=5.7.0
+
+# Step 3: Install other dependencies
+pip install pywin32 numpy opencv-python pygame aiohttp
+
+# Step 4: Run the agent
+python client.py
+
+===============================================================================
+  COMPATIBLE VERSIONS FOR PYTHON 3.13:
+===============================================================================
+
+eventlet         >= 0.35.0  (Python 3.13 compatible)
+python-engineio  >= 4.8.0
+python-socketio  >= 5.7.0 or >= 5.12.0
+
+NOTE: flask-socketio 5.5.1 requires python-socketio>=5.12.0
+      Consider upgrading to python-socketio 5.12.0+
+
+===============================================================================

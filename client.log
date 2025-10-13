@@ -1,0 +1,14 @@
+websocket-client package not installed, only polling transport is available
+🚀 Enhanced Simple Client - Controller Testing Tool
+============================================================
+Target Controller: http://localhost:8080
+Agent ID: simple-client-1758347460
+Interactive Mode: ❌ Disabled
+============================================================
+[94m[05:51:00] INFO: Starting connection tests...[0m
+[94m[05:51:00] INFO: Testing HTTP connection to http://localhost:8080[0m
+[94m[05:51:00] INFO: ✅ HTTP connection successful[0m
+[94m[05:51:00] INFO: HTTP connection OK, testing Socket.IO...[0m
+[94m[05:51:00] INFO: Testing Socket.IO connection...[0m
+[94m[05:51:00] INFO: Connecting to http://localhost:8080...[0m
+2025-09-20 05:51:00,278 - ERROR - websocket-client package not installed, only polling transport is available

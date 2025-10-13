@@ -1,0 +1,79 @@
+================================================================================
+QUICK START - NOTIFICATION POPUP TESTING
+================================================================================
+
+📦 PREREQUISITES:
+1. Install Socket.IO client:
+   pip install python-socketio[client]
+
+2. Start the controller:
+   python3 controller.py
+
+3. Open dashboard in browser:
+   http://localhost:5000
+
+================================================================================
+🚀 RUN TESTS:
+================================================================================
+
+OPTION 1: Quick Test (5 notifications, 30 seconds)
+--------------------------------------------------
+python3 test_notifications_simple.py
+
+Expected: 5 popup notifications in dashboard
+- ✅ Success (Camera Stream Started)
+- ⚠️ Warning (Already Active)
+- ❌ Error (File Not Found)
+- ℹ️ Info (Download Started)
+- ✅ Command (Executed)
+
+
+OPTION 2: Full Test Suite (39 notifications, 3-4 minutes)
+----------------------------------------------------------
+python3 test_notifications.py
+
+Expected: 39 popup notifications covering all features
+- Streaming operations
+- File operations
+- Command execution
+- Security events
+- Connection events
+- WebRTC operations
+
+================================================================================
+✅ SUCCESS CRITERIA:
+================================================================================
+
+In the dashboard, you should see:
+1. 🔔 Bell icon with notification count
+2. Popup notifications appearing one by one
+3. Different colors for different types:
+   - Green (Success)
+   - Yellow (Warning)
+   - Red (Error)
+   - Blue (Info)
+4. Notifications listed in Notification Center
+5. Can filter by category
+6. Can mark as read
+7. Can clear notifications
+
+================================================================================
+🔍 TROUBLESHOOTING:
+================================================================================
+
+If no popups appear:
+1. Check controller is running (curl http://localhost:5000/api/health)
+2. Check browser console (F12) for errors
+3. Verify Socket.IO connection in browser console
+4. Make sure dashboard page is open during test
+
+If script fails to connect:
+1. Verify controller URL is correct
+2. Check firewall settings
+3. Verify controller logs for errors
+
+================================================================================
+📚 FOR MORE INFO:
+================================================================================
+See: README_NOTIFICATION_TESTING.md
+

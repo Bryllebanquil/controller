@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Neural Control Hub - Agent Management System (Static)" />
+    <meta name="theme-color" content="#030213" />
+    <title>Neural Control Hub - Static</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app" class="min-h-screen bg-background text-foreground">
+      <!-- Header -->
+      <header class="header">
+        <div class="header-left">
+          <button id="mobileMenuBtn" class="btn btn-ghost sm-hidden" aria-label="Open Menu">
+            <span class="icon">≡</span>
+          </button>
+          <div class="brand">
+            <div class="brand-icon"></div>
+            <div class="brand-text">
+              <h1 class="brand-title">Neural Control Hub</h1>
+              <p class="brand-subtitle">Advanced Agent Management</p>
+            </div>
+          </div>
+        </div>
+        <div class="header-right">
+          <span class="badge md-inline">v2.1</span>
+          <div class="theme-toggle">
+            <button class="btn btn-outline" id="themeBtn" aria-label="Toggle Theme">🌗<span class="label sm-inline">Auto</span></button>
+            <div id="themeMenu" class="menu hidden">
+              <button data-theme="light" class="menu-item">☀️ Light</button>
+              <button data-theme="dark" class="menu-item">🌙 Dark</button>
+              <button data-theme="system" class="menu-item">🖥 System</button>
+            </div>
+          </div>
+          <button class="btn btn-ghost" aria-label="Notifications">🔔</button>
+          <button class="btn btn-ghost" aria-label="User">👤</button>
+        </div>
+      </header>
+
+      <!-- Layout -->
+      <div class="layout">
+        <!-- Sidebar (desktop) -->
+        <aside id="sidebar" class="sidebar">
+          <nav class="nav">
+            <button class="nav-item" data-tab="overview">📊 <span>Overview</span></button>
+            <button class="nav-item" data-tab="agents">👥 <span>Agents</span></button>
+            <button class="nav-item" data-tab="streaming">🖥 <span>Streaming</span></button>
+            <button class="nav-item" data-tab="commands">❯_ <span>Commands</span></button>
+            <button class="nav-item" data-tab="files">📁 <span>Files</span></button>
+            <button class="nav-item" data-tab="voice">🎙 <span>Voice Control</span><span class="chip">AI</span></button>
+            <button class="nav-item" data-tab="video">🎥 <span>Video RTC</span><span class="chip">NEW</span></button>
+            <button class="nav-item" data-tab="monitoring">📈 <span>Monitoring</span></button>
+          </nav>
+          <div class="sidebar-footer">
+            <button class="nav-item" data-tab="settings">⚙️ <span>Settings</span></button>
+            <button class="nav-item" data-tab="about">❓ <span>About</span></button>
+          </div>
+        </aside>
+
+        <!-- Main -->
+        <main class="main">
+          <!-- Tabs (desktop) -->
+          <div class="tabs md-grid" id="tabsList">
+            <button class="tab" data-tab="overview">Overview</button>
+            <button class="tab" data-tab="agents">Agents</button>
+            <button class="tab" data-tab="streaming">Streaming</button>
+            <button class="tab" data-tab="commands">Commands</button>
+            <button class="tab" data-tab="files">Files</button>
+            <button class="tab" data-tab="voice">Voice</button>
+            <button class="tab" data-tab="video">Video RTC</button>
+            <button class="tab" data-tab="monitoring">Monitoring</button>
+            <button class="tab" data-tab="settings">Settings</button>
+          </div>
+
+          <!-- Tab contents -->
+          <section class="tab-content" data-tab="overview">
+            <div class="grid cards-4">
+              <div class="card">
+                <div class="card-header">
+                  <div class="card-title">Connected Agents</div>
+                  <div class="muted">👥</div>
+                </div>
+                <div class="card-body">
+                  <div class="stat" id="stat-online-agents">0</div>
+                  <div class="muted text-xs"><span id="stat-total-agents">0</span> total agents</div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-header">
+                  <div class="card-title">System Status</div>
+                  <div class="muted">⚡</div>
+                </div>
+                <div class="card-body">
+                  <span class="badge" id="stat-connection">Offline</span>
+                  <div class="muted text-xs">Controller connection</div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-header">
+                  <div class="card-title">Active Streams</div>
+                  <div class="muted">🖥</div>
+                </div>
+                <div class="card-body">
+                  <div class="stat">0</div>
+                  <div class="muted text-xs">Currently streaming</div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-header">
+                  <div class="card-title">Commands Executed</div>
+                  <div class="muted">⌨️</div>
+                </div>
+                <div class="card-body">
+                  <div class="stat" id="stat-commands">0</div>
+                  <div class="muted text-xs">Total commands</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Quick Actions</div>
+                  <div class="muted">Perform bulk operations on all connected agents</div>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="btn-row">
+                  <button class="btn">Ping All</button>
+                  <button class="btn">Restart Services</button>
+                  <button class="btn">Refresh Agents</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">Activity Feed</div>
+                <div class="muted">Real-time system events and agent activities</div>
+              </div>
+              <div class="card-body">
+                <div id="activityFeed" class="feed"></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="tab-content" data-tab="agents">
+            <div class="card">
+              <div class="card-body">
+                <input id="agentSearch" class="input" placeholder="Search agents..." />
+              </div>
+            </div>
+            <div id="agentsGrid" class="grid cards-4"></div>
+            <div id="agentsEmpty" class="card hidden">
+              <div class="card-body center">
+                <div class="icon-xl">👥</div>
+                <div class="title">No agents found</div>
+                <div class="muted">Try adjusting your search or filter criteria</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="tab-content" data-tab="streaming">
+            <div class="card center">
+              <div class="card-body center">
+                <div class="icon-xl">🖥</div>
+                <div class="title">No agent selected</div>
+                <div class="muted">Select an agent from the Agents tab to start streaming</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="tab-content" data-tab="commands">
+            <div class="tabs nested" id="commandsTabs">
+              <button class="tab" data-subtab="terminal">Terminal</button>
+              <button class="tab" data-subtab="processes">Process Manager</button>
+            </div>
+            <div class="tab-subcontent" data-subtab="terminal">
+              <div class="card">
+                <div class="card-body">
+                  <div class="terminal" id="terminalOutput"></div>
+                  <div class="terminal-input">
+                    <input id="terminalInput" class="input" placeholder="Enter command..." />
+                    <button id="terminalRun" class="btn">Run</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="tab-subcontent" data-subtab="processes">
+              <div class="card">
+                <div class="card-body">
+                  <div class="muted">Process manager is not available in static mode.</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="tab-content" data-tab="files">
+            <div class="card">
+              <div class="card-body">
+                <div class="muted">File manager is not available in static mode.</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="tab-content" data-tab="voice">
+            <div class="card">
+              <div class="card-body">
+                <div class="muted">Voice control is not available in static mode.</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="tab-content" data-tab="video">
+            <div class="card">
+              <div class="card-body">
+                <div class="muted">WebRTC monitoring is not available in static mode.</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="tab-content" data-tab="monitoring">
+            <div class="grid cards-2">
+              <div class="card">
+                <div class="card-header">
+                  <div class="card-title">System Monitor</div>
+                </div>
+                <div class="card-body">
+                  <div class="muted">System monitor is not available in static mode.</div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-header">
+                  <div class="card-title">Network Performance</div>
+                </div>
+                <div class="card-body">
+                  <div class="metrics">
+                    <div class="metric"><span>Latency</span><span class="badge">12ms</span></div>
+                    <div class="metric"><span>Throughput</span><span class="badge" id="metric-throughput">0.0 MB/s</span></div>
+                    <div class="metric"><span>Packet Loss</span><span class="badge">0.1%</span></div>
+                    <div class="metric"><span>Connection Status</span><span class="badge">Stable</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="tab-content" data-tab="settings">
+            <div class="card">
+              <div class="card-body">
+                <div class="muted">Settings are not available in static mode.</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="tab-content" data-tab="about">
+            <div class="card">
+              <div class="card-body">
+                <div class="title">About</div>
+                <div class="muted">Neural Control Hub v2.1 - Static UI</div>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+  </html>
+
+
