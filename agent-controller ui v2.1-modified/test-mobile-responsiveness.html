@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobile Responsiveness Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+        }
+        .test-section h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .device-frame {
+            border: 2px solid #333;
+            border-radius: 20px;
+            padding: 10px;
+            background: #000;
+            margin: 10px 0;
+            position: relative;
+        }
+        .device-frame::before {
+            content: '';
+            position: absolute;
+            top: 5px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60px;
+            height: 4px;
+            background: #333;
+            border-radius: 2px;
+        }
+        .screen {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            min-height: 400px;
+        }
+        .mobile-screen {
+            width: 375px;
+            height: 667px;
+        }
+        .tablet-screen {
+            width: 768px;
+            height: 1024px;
+        }
+        .desktop-screen {
+            width: 1200px;
+            height: 800px;
+        }
+        .test-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .test-info h4 {
+            margin-top: 0;
+            color: #1976d2;
+        }
+        .test-checklist {
+            list-style: none;
+            padding: 0;
+        }
+        .test-checklist li {
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .test-checklist li:before {
+            content: '✓ ';
+            color: #4caf50;
+            font-weight: bold;
+        }
+        .responsive-demo {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .demo-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+        }
+        .demo-card h4 {
+            margin-top: 0;
+            color: #495057;
+        }
+        .demo-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .demo-button:hover {
+            background: #0056b3;
+        }
+        .demo-tabs {
+            display: flex;
+            border-bottom: 1px solid #ddd;
+            margin-bottom: 15px;
+        }
+        .demo-tab {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+        }
+        .demo-tab.active {
+            border-bottom-color: #007bff;
+            color: #007bff;
+        }
+        @media (max-width: 768px) {
+            .test-container {
+                padding: 10px;
+            }
+            .device-frame {
+                margin: 5px 0;
+            }
+            .mobile-screen {
+                width: 100%;
+                max-width: 375px;
+            }
+            .tablet-screen, .desktop-screen {
+                width: 100%;
+                max-width: 100%;
+            }
+            .responsive-demo {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>Neural Control Hub - Mobile Responsiveness Test</h1>
+        
+        <div class="test-section">
+            <h3>Test Overview</h3>
+            <p>This page tests the mobile responsiveness of the Neural Control Hub UI components. Use the device frames below to simulate different screen sizes.</p>
+            
+            <div class="test-info">
+                <h4>Testing Instructions:</h4>
+                <ol>
+                    <li>Open the Neural Control Hub application</li>
+                    <li>Test on different screen sizes using browser dev tools</li>
+                    <li>Check the following components for proper mobile behavior</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>Mobile Device Simulation (375x667)</h3>
+            <div class="device-frame">
+                <div class="screen mobile-screen">
+                    <div style="padding: 20px;">
+                        <h4>Mobile Layout Test</h4>
+                        <div class="demo-tabs">
+                            <button class="demo-tab active">Overview</button>
+                            <button class="demo-tab">Agents</button>
+                            <button class="demo-tab">Stream</button>
+                            <button class="demo-tab">Cmd</button>
+                            <button class="demo-tab">Files</button>
+                            <button class="demo-tab">Monitor</button>
+                        </div>
+                        <div class="responsive-demo">
+                            <div class="demo-card">
+                                <h4>Quick Actions</h4>
+                                <button class="demo-button">Shutdown All</button>
+                                <button class="demo-button">Restart All</button>
+                            </div>
+                            <div class="demo-card">
+                                <h4>System Status</h4>
+                                <p>Connected: 5 agents</p>
+                                <p>Online: 3 agents</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>Tablet Device Simulation (768x1024)</h3>
+            <div class="device-frame">
+                <div class="screen tablet-screen">
+                    <div style="padding: 20px;">
+                        <h4>Tablet Layout Test</h4>
+                        <div class="demo-tabs">
+                            <button class="demo-tab active">Overview</button>
+                            <button class="demo-tab">Agents</button>
+                            <button class="demo-tab">Streaming</button>
+                            <button class="demo-tab">Commands</button>
+                            <button class="demo-tab">Files</button>
+                            <button class="demo-tab">Voice</button>
+                            <button class="demo-tab">Video RTC</button>
+                            <button class="demo-tab">Monitoring</button>
+                        </div>
+                        <div class="responsive-demo">
+                            <div class="demo-card">
+                                <h4>Agent Cards</h4>
+                                <p>Grid layout should adapt to tablet size</p>
+                            </div>
+                            <div class="demo-card">
+                                <h4>Quick Actions</h4>
+                                <p>Buttons should be properly spaced</p>
+                            </div>
+                            <div class="demo-card">
+                                <h4>Activity Feed</h4>
+                                <p>Should be readable and scrollable</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>Desktop Device Simulation (1200x800)</h3>
+            <div class="device-frame">
+                <div class="screen desktop-screen">
+                    <div style="padding: 20px;">
+                        <h4>Desktop Layout Test</h4>
+                        <div class="demo-tabs">
+                            <button class="demo-tab active">Overview</button>
+                            <button class="demo-tab">Agents</button>
+                            <button class="demo-tab">Streaming</button>
+                            <button class="demo-tab">Commands</button>
+                            <button class="demo-tab">Files</button>
+                            <button class="demo-tab">Voice Control</button>
+                            <button class="demo-tab">Video RTC</button>
+                            <button class="demo-tab">Monitoring</button>
+                            <button class="demo-tab">Settings</button>
+                        </div>
+                        <div class="responsive-demo">
+                            <div class="demo-card">
+                                <h4>Full Sidebar</h4>
+                                <p>Desktop should show full sidebar navigation</p>
+                            </div>
+                            <div class="demo-card">
+                                <h4>Multi-column Layout</h4>
+                                <p>Cards should be arranged in multiple columns</p>
+                            </div>
+                            <div class="demo-card">
+                                <h4>Advanced Features</h4>
+                                <p>All features should be accessible</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>Mobile Responsiveness Checklist</h3>
+            <div class="test-info">
+                <h4>Key Areas to Test:</h4>
+                <ul class="test-checklist">
+                    <li>Navigation tabs are properly sized and scrollable on mobile</li>
+                    <li>Touch targets are at least 44px in size</li>
+                    <li>Text is readable without zooming</li>
+                    <li>Forms don't cause zoom on iOS devices</li>
+                    <li>Cards and components stack properly on small screens</li>
+                    <li>Sidebar navigation works on mobile (hamburger menu)</li>
+                    <li>Quick Actions buttons are accessible and properly spaced</li>
+                    <li>Agent cards display properly in grid layout</li>
+                    <li>Command output is readable and scrollable</li>
+                    <li>File manager works on touch devices</li>
+                    <li>Streaming viewer adapts to mobile screen size</li>
+                    <li>Settings and About pages are mobile-friendly</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>Browser Dev Tools Testing</h3>
+            <div class="test-info">
+                <h4>How to Test:</h4>
+                <ol>
+                    <li>Open Chrome DevTools (F12)</li>
+                    <li>Click the device toggle button (Ctrl+Shift+M)</li>
+                    <li>Select different device presets:
+                        <ul>
+                            <li>iPhone SE (375x667)</li>
+                            <li>iPhone 12 Pro (390x844)</li>
+                            <li>iPad (768x1024)</li>
+                            <li>iPad Pro (1024x1366)</li>
+                        </ul>
+                    </li>
+                    <li>Test both portrait and landscape orientations</li>
+                    <li>Check for horizontal scrolling issues</li>
+                    <li>Verify touch interactions work properly</li>
+                </ol>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>Performance Considerations</h3>
+            <div class="test-info">
+                <h4>Mobile Performance Tips:</h4>
+                <ul>
+                    <li>Images should be optimized for mobile</li>
+                    <li>CSS should use efficient selectors</li>
+                    <li>JavaScript should be minified</li>
+                    <li>Fonts should load quickly</li>
+                    <li>Animations should be smooth on mobile devices</li>
+                    <li>Touch events should be responsive</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Add some interactive testing
+        document.querySelectorAll('.demo-tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.demo-tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+
+        // Simulate responsive behavior
+        function updateLayout() {
+            const width = window.innerWidth;
+            const container = document.querySelector('.test-container');
+            
+            if (width < 768) {
+                container.style.padding = '10px';
+            } else {
+                container.style.padding = '20px';
+            }
+        }
+
+        window.addEventListener('resize', updateLayout);
+        updateLayout();
+    </script>
+</body>
+</html>

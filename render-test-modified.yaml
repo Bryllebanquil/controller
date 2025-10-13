@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: agent-controller-backend-test
+    env: python
+    pythonVersion: 3.12.6
+    plan: free
+    buildCommand: |
+      pip install -r requirements-controller.txt
+      cd "agent-controller ui v2.1-modified" && npm install && npm run build && cd ..
+    startCommand: gunicorn -k gthread --threads 8 --worker-connections 1000 -w 1 controller:app --bind 0.0.0.0:$PORT
+    autoDeploy: false
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 10000
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: ADMIN_PASSWORD
+        value: "your_secure_password_here"
+      - key: SECRET_KEY
+        value: "your_secret_key_here"
+      - key: SESSION_TIMEOUT
+        value: "3600"
+      - key: MAX_LOGIN_ATTEMPTS
+        value: "5"
+      - key: LOGIN_TIMEOUT
+        value: "300"

@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notification Debug Tool</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+        .container {
+            background: #1e293b;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid #334155;
+        }
+        h1 {
+            color: #60a5fa;
+            border-bottom: 2px solid #3b82f6;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #818cf8;
+            font-size: 1.2em;
+            margin-top: 0;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .connected {
+            background: #10b981;
+            color: white;
+        }
+        .disconnected {
+            background: #ef4444;
+            color: white;
+        }
+        .notification {
+            background: #334155;
+            border-left: 4px solid #3b82f6;
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 4px;
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from {
+                transform: translateX(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        .notification.success {
+            border-left-color: #10b981;
+        }
+        .notification.warning {
+            border-left-color: #f59e0b;
+        }
+        .notification.error {
+            border-left-color: #ef4444;
+        }
+        .notification.info {
+            border-left-color: #3b82f6;
+        }
+        .notification-title {
+            font-weight: bold;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .notification-message {
+            color: #94a3b8;
+            font-size: 0.9em;
+        }
+        .notification-meta {
+            color: #64748b;
+            font-size: 0.8em;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #475569;
+        }
+        .log-entry {
+            padding: 6px 10px;
+            margin: 4px 0;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            background: #1e293b;
+            border-left: 3px solid #475569;
+        }
+        .log-entry.info {
+            border-left-color: #3b82f6;
+        }
+        .log-entry.success {
+            border-left-color: #10b981;
+        }
+        .log-entry.warning {
+            border-left-color: #f59e0b;
+        }
+        .log-entry.error {
+            border-left-color: #ef4444;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .stat-box {
+            background: #334155;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #60a5fa;
+        }
+        .stat-label {
+            color: #94a3b8;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+            margin: 5px;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        button:active {
+            transform: scale(0.98);
+        }
+        .clear-btn {
+            background: #6b7280;
+        }
+        .clear-btn:hover {
+            background: #4b5563;
+        }
+        pre {
+            background: #0f172a;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 0.85em;
+            border: 1px solid #334155;
+        }
+        .icon {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔔 Notification System Debug Tool</h1>
+    
+    <div class="container">
+        <h2>📡 Connection Status</h2>
+        <div id="status" class="status disconnected">
+            ❌ Disconnected
+        </div>
+        <div>
+            <strong>Socket ID:</strong> <span id="socketId">-</span><br>
+            <strong>Controller URL:</strong> <span id="controllerUrl">-</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>📊 Statistics</h2>
+        <div class="stats">
+            <div class="stat-box">
+                <div class="stat-value" id="totalNotifications">0</div>
+                <div class="stat-label">Total Notifications</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="successCount">0</div>
+                <div class="stat-label">Success</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="warningCount">0</div>
+                <div class="stat-label">Warnings</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="errorCount">0</div>
+                <div class="stat-label">Errors</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value" id="infoCount">0</div>
+                <div class="stat-label">Info</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>🔔 Live Notifications</h2>
+        <button onclick="clearNotifications()" class="clear-btn">Clear Notifications</button>
+        <div id="notifications"></div>
+    </div>
+
+    <div class="container">
+        <h2>📝 Debug Log</h2>
+        <button onclick="clearLogs()" class="clear-btn">Clear Logs</button>
+        <div id="logs"></div>
+    </div>
+
+    <script>
+        // Configuration
+        const CONTROLLER_URL = window.location.origin; // Use same origin
+        
+        // State
+        let totalNotifications = 0;
+        let counts = { success: 0, warning: 0, error: 0, info: 0 };
+        
+        // Initialize Socket.IO
+        log('info', `Connecting to ${CONTROLLER_URL}...`);
+        document.getElementById('controllerUrl').textContent = CONTROLLER_URL;
+        
+        const socket = io(CONTROLLER_URL, {
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionAttempts: 5
+        });
+
+        // Connection events
+        socket.on('connect', () => {
+            document.getElementById('status').className = 'status connected';
+            document.getElementById('status').textContent = '✅ Connected';
+            document.getElementById('socketId').textContent = socket.id;
+            log('success', `Connected with Socket ID: ${socket.id}`);
+            
+            // Join operators room
+            socket.emit('operator_connect');
+            log('info', 'Sent operator_connect event');
+        });
+
+        socket.on('disconnect', () => {
+            document.getElementById('status').className = 'status disconnected';
+            document.getElementById('status').textContent = '❌ Disconnected';
+            log('error', 'Disconnected from controller');
+        });
+
+        socket.on('connect_error', (error) => {
+            log('error', `Connection error: ${error.message}`);
+        });
+
+        // Notification event - THIS IS THE KEY LISTENER
+        socket.on('notification', (data) => {
+            log('success', `Received 'notification' event`);
+            console.log('Notification data:', data);
+            
+            totalNotifications++;
+            const type = data.type || 'info';
+            counts[type] = (counts[type] || 0) + 1;
+            
+            updateStats();
+            displayNotification(data);
+        });
+
+        // Agent list event
+        socket.on('agent_list', (data) => {
+            log('info', `Received agent list: ${data.agents?.length || 0} agents`);
+        });
+
+        // Listen to ALL events for debugging
+        socket.onAny((eventName, ...args) => {
+            log('info', `Event received: ${eventName}`);
+            console.log(`Event: ${eventName}`, args);
+        });
+
+        function displayNotification(data) {
+            const container = document.getElementById('notifications');
+            const notificationDiv = document.createElement('div');
+            notificationDiv.className = `notification ${data.type || 'info'}`;
+            
+            const icon = {
+                success: '✅',
+                warning: '⚠️',
+                error: '❌',
+                info: 'ℹ️'
+            }[data.type] || '📢';
+            
+            notificationDiv.innerHTML = `
+                <div class="notification-title">
+                    <span class="icon">${icon}</span>
+                    <span>${data.title || 'Notification'}</span>
+                </div>
+                <div class="notification-message">${data.message || 'No message'}</div>
+                <div class="notification-meta">
+                    <strong>Type:</strong> ${data.type || 'unknown'} | 
+                    <strong>Category:</strong> ${data.category || 'unknown'} | 
+                    <strong>Agent:</strong> ${data.agentId || 'N/A'} | 
+                    <strong>Time:</strong> ${new Date(data.timestamp || Date.now()).toLocaleTimeString()}
+                </div>
+            `;
+            
+            container.insertBefore(notificationDiv, container.firstChild);
+            
+            // Limit to 50 notifications
+            while (container.children.length > 50) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('totalNotifications').textContent = totalNotifications;
+            document.getElementById('successCount').textContent = counts.success || 0;
+            document.getElementById('warningCount').textContent = counts.warning || 0;
+            document.getElementById('errorCount').textContent = counts.error || 0;
+            document.getElementById('infoCount').textContent = counts.info || 0;
+        }
+
+        function log(level, message) {
+            const logsDiv = document.getElementById('logs');
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${level}`;
+            const timestamp = new Date().toLocaleTimeString();
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            logsDiv.insertBefore(logEntry, logsDiv.firstChild);
+            
+            // Limit to 100 log entries
+            while (logsDiv.children.length > 100) {
+                logsDiv.removeChild(logsDiv.lastChild);
+            }
+        }
+
+        function clearNotifications() {
+            document.getElementById('notifications').innerHTML = '';
+            totalNotifications = 0;
+            counts = { success: 0, warning: 0, error: 0, info: 0 };
+            updateStats();
+            log('info', 'Cleared all notifications');
+        }
+
+        function clearLogs() {
+            document.getElementById('logs').innerHTML = '';
+            log('info', 'Cleared debug logs');
+        }
+
+        // Log initial state
+        log('info', 'Debug tool initialized');
+        log('info', 'Waiting for notifications...');
+    </script>
+</body>
+</html>
