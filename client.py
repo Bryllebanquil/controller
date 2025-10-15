@@ -501,15 +501,11 @@ try:
     import socketio
     debug_print("[IMPORTS] ✅ python-socketio imported successfully!")
     
-    # Check if AsyncClient is available
-    if hasattr(socketio, 'AsyncClient'):
-        debug_print("[IMPORTS] ✅ socketio.AsyncClient available (asyncio mode)")
-        SOCKETIO_AVAILABLE = True
-        SOCKETIO_ASYNC_MODE = True
-    else:
-        debug_print("[IMPORTS] ⚠️ socketio.AsyncClient not found, using sync Client")
-        SOCKETIO_AVAILABLE = True
-        SOCKETIO_ASYNC_MODE = False
+    # FORCE SYNC MODE - threading code is designed for sync Socket.IO
+    # AsyncClient causes "no event loop in thread" errors for command handlers
+    debug_print("[IMPORTS] [CONFIG] Using SYNC Client (threading-based, all commands work)")
+    SOCKETIO_AVAILABLE = True
+    SOCKETIO_ASYNC_MODE = False  # Force sync mode for thread compatibility
         
 except ImportError as e:
     debug_print(f"[IMPORTS] ❌ python-socketio import FAILED: {e}")
