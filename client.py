@@ -1019,7 +1019,7 @@ def emit_agent_notification(notification_type: str, title: str, message: str,
             'title': title,
             'message': message,
             'category': category,  # 'agent', 'system', 'security', 'command'
-            'agent_id': our_agent_id,
+            'agent_id': get_or_create_agent_id(),
             'timestamp': datetime.datetime.now().isoformat(),
             'read': False
         }
