@@ -5,19 +5,21 @@
 # Installation: pip install -r requirements-client.txt
 # Or with pre-release versions: pip install --pre -r requirements-client.txt
 # Updated: 2025-10-15 for Python 3.14 compatibility
+# Modernized: Replaced eventlet/socketio with uvloop/websockets/aiohttp for better performance
 # ============================================================================
 
-# Core networking & Socket.IO (CRITICAL for controller connection)
---pre python-socketio>=5.12.0
---pre python-engineio>=4.11.0
+# Core networking & Modern Async (CRITICAL for controller connection)
+# Using native asyncio with uvloop for 2-3x better performance than eventlet
+--pre uvloop>=0.21.0
+--pre websockets>=14.1
+--pre aiohttp>=3.11.0
 --pre requests>=2.32.0
 --pre urllib3>=2.3.0
 --pre certifi>=2024.12.0
---pre websocket-client>=1.8.0
---pre websockets>=14.1
+--pre httpx>=0.28.1
 
-# Async & Event handling
---pre eventlet>=0.37.0
+# Async & Event handling (native asyncio - no eventlet/socketio)
+--pre anyio>=4.7.0
 
 # DNS resolution
 --pre dnspython>=2.0.0
@@ -52,9 +54,7 @@
 # Cryptography & Security
 --pre cryptography>=44.0.0
 
-# Web Framework (for controller mode)
---pre Flask>=3.0.0
---pre Flask-SocketIO>=5.3.0
+# Note: Web framework moved to modern async section (FastAPI + Uvicorn)
 
 # Machine Learning & AI (optional but used in code)
 --pre tensorflow>=2.18.0
@@ -67,9 +67,9 @@
 --pre selenium>=4.27.0
 --pre pyppeteer>=2.0.0
 
-# HTTP/Web scraping
---pre httpx>=0.28.1
---pre aiohttp>=3.11.0
+# Web Framework (for controller mode) - Modern async alternatives
+--pre fastapi>=0.115.0
+--pre uvicorn>=0.34.0
 
 # Data handling
 --pre pandas>=2.2.0
@@ -122,8 +122,8 @@
 # Install all packages (recommended):
 #   pip install --pre -r requirements-client.txt
 #
-# Install minimal required packages only:
-#   pip install --pre python-socketio python-engineio requests urllib3 certifi
+# Install minimal required packages only (modern async stack):
+#   pip install --pre uvloop websockets aiohttp requests urllib3 certifi
 #   pip install --pre pywin32 opencv-python numpy Pillow psutil pynput pyautogui
 #
 # Install for compilation:

