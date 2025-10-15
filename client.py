@@ -42,43 +42,53 @@ except ImportError as e:
     eventlet = None  # Set to None for later checks
 
 if EVENTLET_AVAILABLE:
-    debug_print("Step 2: Running eventlet.monkey_patch()...")
-    try:
-        # CRITICAL: Suppress the RLock warning by redirecting stderr temporarily
-        import io as _io
-        old_stderr = sys.stderr
-        sys.stderr = _io.StringIO()  # Capture stderr
-        
-        # Patch threading BEFORE any other imports!
-        eventlet.monkey_patch(all=True, thread=True, time=True, socket=True, select=True)
-        
-        # Restore stderr
-        captured_stderr = sys.stderr.getvalue()
-        sys.stderr = old_stderr
-        
-        # Check if there was an RLock warning
-        if "RLock" in captured_stderr:
-            debug_print("⚠️ RLock warning detected (Python created locks before eventlet patch)")
-            debug_print("   This is EXPECTED and can be ignored - eventlet will patch future locks")
-        
-        debug_print("✅ eventlet.monkey_patch() SUCCESS!")
-        debug_print("   - all=True")
-        debug_print("   - thread=True (threading patched)")
-        debug_print("   - time=True")
-        debug_print("   - socket=True")
-        debug_print("   - select=True")
-        EVENTLET_PATCHED = True
-    except Exception as e:
-        # Restore stderr if exception occurred
-        try:
-            sys.stderr = old_stderr
-        except (AttributeError, ValueError):
-            pass
-        
-        debug_print(f"⚠️ eventlet.monkey_patch() FAILED: {e}")
-        debug_print("⚠️ Continuing without monkey patching")
+    debug_print("Step 2: Checking Python version for eventlet compatibility...")
+    # Python 3.13+ has incompatibility with eventlet.monkey_patch(all=True)
+    # It breaks http.client and other stdlib modules
+    if sys.version_info >= (3, 13):
+        debug_print("⚠️ Python 3.13+ detected - eventlet.monkey_patch() breaks stdlib!")
+        debug_print("⚠️ SKIPPING monkey_patch to prevent http.client import errors")
+        debug_print("⚠️ Agent will use standard threading instead")
         EVENTLET_PATCHED = False
-        EVENTLET_AVAILABLE = False
+        # Keep EVENTLET_AVAILABLE True so we can still use eventlet features without patching
+    else:
+        debug_print("Step 2: Running eventlet.monkey_patch()...")
+        try:
+            # CRITICAL: Suppress the RLock warning by redirecting stderr temporarily
+            import io as _io
+            old_stderr = sys.stderr
+            sys.stderr = _io.StringIO()  # Capture stderr
+            
+            # Patch threading BEFORE any other imports!
+            # NOTE: Don't use all=True, it breaks imports
+            eventlet.monkey_patch(thread=True, time=True, socket=True, select=True, os=False)
+            
+            # Restore stderr
+            captured_stderr = sys.stderr.getvalue()
+            sys.stderr = old_stderr
+            
+            # Check if there was an RLock warning
+            if "RLock" in captured_stderr:
+                debug_print("⚠️ RLock warning detected (Python created locks before eventlet patch)")
+                debug_print("   This is EXPECTED and can be ignored - eventlet will patch future locks")
+            
+            debug_print("✅ eventlet.monkey_patch() SUCCESS!")
+            debug_print("   - thread=True (threading patched)")
+            debug_print("   - time=True")
+            debug_print("   - socket=True")
+            debug_print("   - select=True")
+            debug_print("   - os=False (kept original to prevent import issues)")
+            EVENTLET_PATCHED = True
+        except Exception as e:
+            # Restore stderr if exception occurred
+            try:
+                sys.stderr = old_stderr
+            except (AttributeError, ValueError):
+                pass
+            
+            debug_print(f"⚠️ eventlet.monkey_patch() FAILED: {e}")
+            debug_print("⚠️ Continuing without monkey patching")
+            EVENTLET_PATCHED = False
 else:
     debug_print("Step 2: Skipping eventlet.monkey_patch() (eventlet not available)")
     EVENTLET_PATCHED = False
@@ -10877,7 +10887,8 @@ def test_process_termination_functionality():
 
 try:
     import eventlet
-    eventlet.monkey_patch()
+    # Don't monkey_patch again - it was already done at startup (or skipped for Python 3.13+)
+    # Calling it twice causes issues
     
     from flask import Flask, request, jsonify, redirect, url_for, Response, send_file
     from flask_socketio import SocketIO, emit, join_room, leave_room
