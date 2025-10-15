@@ -560,7 +560,14 @@ try:
     else:
         debug_print("[IMPORTS] ❌ python-socketio package NOT found!")
         debug_print("[IMPORTS] Installing now...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "python-socketio"])
+        install_result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "python-socketio"],
+            capture_output=True,
+            text=True
+        )
+        if install_result.returncode != 0:
+            debug_print(f"[IMPORTS] ❌ pip install failed: {install_result.stderr[:200]}")
+            debug_print("[IMPORTS] Continuing without python-socketio...")
     
     # Now try to import
     debug_print("[IMPORTS] Attempting import...")
