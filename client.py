@@ -12261,10 +12261,10 @@ def main_unified():
 # ========================================================================================
 
 def connect():
+    """Handle connection to server."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle connect event", "warning")
         return
-    """Handle connection to server."""
     agent_id = get_or_create_agent_id()
     
     # Add stealth delay
@@ -12334,10 +12334,10 @@ def connect():
         pass
 
 def disconnect():
+    """Handle disconnection from server."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle disconnect event", "warning")
         return
-    """Handle disconnection from server."""
     log_message("Disconnected from server")
 
 def on_start_stream(data):
@@ -13171,10 +13171,10 @@ def on_file_upload(data):
 # ========================================================================================
 
 def on_webrtc_offer(data):
+    """Handle WebRTC offer from controller to start streaming."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC offer", "warning")
         return
-    """Handle WebRTC offer from controller to start streaming."""
     try:
         agent_id = get_or_create_agent_id()
         offer_sdp = data.get('sdp')
@@ -13204,10 +13204,10 @@ def on_webrtc_offer(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_answer(data):
+    """Handle WebRTC answer from controller."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC answer", "warning")
         return
-    """Handle WebRTC answer from controller."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         answer_sdp = data.get('sdp')
@@ -13231,10 +13231,10 @@ def on_webrtc_answer(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_ice_candidate(data):
+    """Handle ICE candidate from controller."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC ICE candidate", "warning")
         return
-    """Handle ICE candidate from controller."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         candidate_data = data.get('candidate')
@@ -13317,10 +13317,10 @@ def on_webrtc_stop_streaming(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_stats(data):
+    """Handle request for WebRTC streaming statistics."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC get stats", "warning")
         return
-    """Handle request for WebRTC streaming statistics."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         
@@ -13344,10 +13344,10 @@ def on_webrtc_get_stats(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_set_quality(data):
+    """Handle request to adjust WebRTC streaming quality."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC set quality", "warning")
         return
-    """Handle request to adjust WebRTC streaming quality."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         quality = data.get('quality', 85)
@@ -13373,10 +13373,10 @@ def on_webrtc_set_quality(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_quality_change(data):
+    """Handle request to change WebRTC quality level."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC quality change", "warning")
         return
-    """Handle request to change WebRTC quality level."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         quality_level = data.get('quality_level', 'auto')
@@ -13400,10 +13400,10 @@ def on_webrtc_quality_change(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_frame_dropping(data):
+    """Handle request to implement frame dropping."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC frame dropping", "warning")
         return
-    """Handle request to implement frame dropping."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         load_threshold = data.get('load_threshold', 0.8)
@@ -13427,10 +13427,10 @@ def on_webrtc_frame_dropping(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_enhanced_stats(data):
+    """Handle request for enhanced WebRTC statistics."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC get enhanced stats", "warning")
         return
-    """Handle request for enhanced WebRTC statistics."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         
@@ -13452,10 +13452,10 @@ def on_webrtc_get_enhanced_stats(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_production_readiness(data):
+    """Handle request for production readiness assessment."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC get production readiness", "warning")
         return
-    """Handle request for production readiness assessment."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         
@@ -13474,10 +13474,10 @@ def on_webrtc_get_production_readiness(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_migration_plan(data):
+    """Handle request for mediasoup migration plan."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC get migration plan", "warning")
         return
-    """Handle request for mediasoup migration plan."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         
@@ -13496,10 +13496,10 @@ def on_webrtc_get_migration_plan(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_monitoring_data(data):
+    """Handle request for comprehensive monitoring data."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC get monitoring data", "warning")
         return
-    """Handle request for comprehensive monitoring data."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         
@@ -13521,10 +13521,10 @@ def on_webrtc_get_monitoring_data(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_adaptive_bitrate_control(data):
+    """Handle request to manually trigger adaptive bitrate control."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC adaptive bitrate control", "warning")
         return
-    """Handle request to manually trigger adaptive bitrate control."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         current_quality = data.get('current_quality', 'auto')
@@ -13548,10 +13548,10 @@ def on_webrtc_adaptive_bitrate_control(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_implement_frame_dropping(data):
+    """Handle request to manually implement frame dropping."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC implement frame dropping", "warning")
         return
-    """Handle request to manually implement frame dropping."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         load_threshold = data.get('load_threshold', 0.8)
