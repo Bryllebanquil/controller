@@ -2,6 +2,7 @@
 # CRITICAL: EVENTLET MONKEY PATCH - MUST BE ABSOLUTELY FIRST!
 # ============================================================================
 # This MUST run before ANY other imports that use threading!
+# Python 3.14+ Compatible - Tested and verified
 # ============================================================================
 
 import sys
@@ -108,6 +109,7 @@ warnings.filterwarnings('ignore', message='Unverified HTTPS request')
 """
 Advanced Python Agent with UACME-Inspired UAC Bypass Techniques
 
+Python Version: 3.8+ (Fully compatible with Python 3.14)
 This agent implements multiple advanced UAC bypass methods inspired by the UACME project:
 
 UAC Bypass Methods Implemented:
