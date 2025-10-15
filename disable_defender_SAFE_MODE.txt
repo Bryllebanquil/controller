@@ -1,0 +1,212 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║   ALTERNATIVE METHOD: Disable Defender in Safe Mode (Windows 11)            ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+If the batch script doesn't work or Defender is too aggressive, use Safe Mode:
+
+METHOD 1: SAFE MODE WITH NETWORKING (RECOMMENDED)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Windows Defender does NOT run in Safe Mode, making it easy to disable.
+
+STEP 1: Boot into Safe Mode
+────────────────────────────────────────────────────────────────────────────────
+1. Press Win+I (Settings)
+2. Go to: System → Recovery
+3. Under "Advanced startup", click "Restart now"
+4. PC will restart to a blue screen
+
+OR use this faster method:
+  - Hold Shift and click Start → Power → Restart
+  - Keep holding Shift until blue screen appears
+
+STEP 2: Choose Safe Mode
+────────────────────────────────────────────────────────────────────────────────
+1. On blue screen: Choose Troubleshoot
+2. Click Advanced options
+3. Click Startup Settings
+4. Click Restart
+5. After restart, press 5 or F5 for "Safe Mode with Networking"
+
+STEP 3: Disable Defender (in Safe Mode)
+────────────────────────────────────────────────────────────────────────────────
+Once in Safe Mode, Defender is NOT running. Now disable it permanently:
+
+1. Open Registry Editor as Admin:
+   - Press Win+R
+   - Type: regedit
+   - Press Enter
+
+2. Navigate to:
+   HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows Defender
+
+3. Create or modify these values:
+   - Right-click → New → DWORD (32-bit) Value
+   - Name: DisableAntiSpyware
+   - Value: 1
+
+4. Navigate to:
+   HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows Defender\Features
+
+5. Modify:
+   - Name: TamperProtection
+   - Value: 0
+
+6. Navigate to:
+   HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection
+
+7. Create these DWORD values (all set to 1):
+   - DisableRealtimeMonitoring = 1
+   - DisableBehaviorMonitoring = 1
+   - DisableOnAccessProtection = 1
+   - DisableIOAVProtection = 1
+
+8. Close Registry Editor
+
+STEP 4: Disable Services (Still in Safe Mode)
+────────────────────────────────────────────────────────────────────────────────
+1. Press Win+R, type: services.msc
+2. Find these services and set to "Disabled":
+   - Windows Defender Antivirus Service (WinDefend)
+   - Windows Defender Firewall (mpssvc)
+   - Microsoft Defender Antivirus Network Inspection Service
+   - Security Center (wscsvc)
+
+3. For each service:
+   - Right-click → Properties
+   - Startup type: Disabled
+   - Service status: Stop
+   - Click OK
+
+STEP 5: Restart to Normal Mode
+────────────────────────────────────────────────────────────────────────────────
+1. Restart your PC normally
+2. Defender should now be PERMANENTLY disabled
+3. Run your client.py
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+METHOD 2: USING GROUP POLICY EDITOR (Windows 11 Pro/Enterprise)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If you have Windows 11 Pro or Enterprise:
+
+1. Press Win+R, type: gpedit.msc
+2. Navigate to:
+   Computer Configuration
+   → Administrative Templates
+   → Windows Components
+   → Microsoft Defender Antivirus
+
+3. Double-click "Turn off Microsoft Defender Antivirus"
+4. Select "Enabled"
+5. Click Apply → OK
+
+6. Also go to:
+   → Real-time Protection folder
+
+7. Enable these policies (set to "Enabled"):
+   - Turn off real-time protection
+   - Turn off behavior monitoring
+   - Turn off on access protection
+
+8. Press Win+R, type: gpupdate /force
+9. Restart PC
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+METHOD 3: USING DEFENDER CONTROL (Third-Party Tool)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Download "Defender Control" by Sordum:
+  https://www.sordum.org/9480/defender-control-v2-1/
+
+This tool can disable Defender with ONE click:
+
+1. Download DefenderControl.exe
+2. Run as Administrator
+3. Click "Disable Windows Defender"
+4. Confirm
+5. Defender is now disabled
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+METHOD 4: DISABLE TAMPER PROTECTION FIRST (Critical for Windows 11)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Tamper Protection MUST be disabled first on Windows 11:
+
+MANUAL METHOD:
+1. Open Windows Security (Win+I → Privacy & security → Windows Security)
+2. Click "Virus & threat protection"
+3. Click "Manage settings" under Virus & threat protection settings
+4. Scroll down to "Tamper Protection"
+5. Toggle it OFF
+
+REGISTRY METHOD (if manual is blocked):
+1. Boot to Safe Mode (see METHOD 1 above)
+2. Open Registry Editor (regedit)
+3. Go to: HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows Defender\Features
+4. Set TamperProtection to 0
+5. Restart
+
+Once Tamper Protection is OFF, you can disable Defender easily.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+METHOD 5: COMMAND LINE (PowerShell as Admin)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Open PowerShell as Administrator and run these commands:
+
+# Disable real-time monitoring
+Set-MpPreference -DisableRealtimeMonitoring $true
+
+# Disable all protections
+Set-MpPreference -DisableIntrusionPreventionSystem $true
+Set-MpPreference -DisableBehaviorMonitoring $true
+Set-MpPreference -DisableBlockAtFirstSeen $true
+Set-MpPreference -DisableIOAVProtection $true
+Set-MpPreference -DisableScriptScanning $true
+
+# Disable cloud protection
+Set-MpPreference -MAPSReporting 0
+Set-MpPreference -SubmitSamplesConsent 2
+
+# Add exclusions for your directory
+Add-MpPreference -ExclusionPath "C:\Users\Brylle\Downloads"
+Add-MpPreference -ExclusionExtension ".py"
+Add-MpPreference -ExclusionExtension ".exe"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+VERIFICATION - Check if Defender is Disabled:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. PowerShell check:
+   Get-MpPreference | Select DisableRealtimeMonitoring
+   (Should show: DisableRealtimeMonitoring : True)
+
+2. Service check:
+   sc query WinDefend
+   (Should show: STATE : 1 STOPPED or service doesn't exist)
+
+3. Windows Security:
+   Open Windows Security app
+   Should show warnings about protection being turned off
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+IMPORTANT NOTES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚠️  Windows Update may re-enable Defender - you may need to repeat these steps
+⚠️  Some methods require Safe Mode on Windows 11 due to Tamper Protection
+⚠️  Defender Control tool is the easiest one-click solution
+⚠️  Safe Mode method is 100% effective because Defender doesn't run there
+
+✅  After disabling Defender, your client.py should run without being killed
+✅  Combine multiple methods for best results
+✅  Always disable Tamper Protection FIRST
+
+╚══════════════════════════════════════════════════════════════════════════════╝
