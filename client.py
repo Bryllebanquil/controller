@@ -8925,7 +8925,7 @@ def register_socketio_handlers():
                 'screen': True,
                 'camera': CV2_AVAILABLE,
                 'audio': PYAUDIO_AVAILABLE,
-                'keylogger': PYNPUT_AVAILABLE,
+                'keylogger': False,  # Disabled - feature removed
                 'clipboard': True,
                 'file_manager': True,
                 'process_manager': PSUTIL_AVAILABLE,
@@ -13018,10 +13018,10 @@ def on_remote_key_press(data):
         emit_system_notification('error', 'Remote Control Error', f'Key press failed: {str(e)}')
 
 def on_file_upload(data):
+    """Handle file upload via Socket.IO."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle file upload", "warning")
         return
-    """Handle file upload via Socket.IO."""
     try:
         if not data or not isinstance(data, dict):
             safe_emit('file_upload_result', {'success': False, 'error': 'Invalid data format'})
