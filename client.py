@@ -13996,11 +13996,16 @@ def agent_main():
         else:
             log_message("Socket.IO not available - running in offline mode", "warning")
             log_message("Agent running in offline mode - no server communication")
+            print("\n" + "=" * 80)
+            print("OFFLINE MODE - NO SOCKET.IO AVAILABLE")
+            print("=" * 80)
+            print("The agent cannot connect to the controller.")
+            print("Install python-socketio: pip install python-socketio")
+            print("\nPress Enter to exit...")
             try:
-                while True:
-                    time.sleep(60)  # Keep alive in offline mode
-            except KeyboardInterrupt:
-                log_message("Offline mode interrupted")
+                input()
+            except:
+                time.sleep(30)
             return
         
         # Main connection loop with improved error handling
@@ -14198,6 +14203,15 @@ def agent_main():
         log_message("\n[INFO] Agent shutdown requested.")
     except Exception as e:
         log_message(f"[ERROR] Critical error during startup: {e}")
+        print("\n" + "=" * 80)
+        print("CRITICAL ERROR OCCURRED")
+        print("=" * 80)
+        print(f"Error: {e}")
+        print("\nPress Enter to exit...")
+        try:
+            input()
+        except:
+            time.sleep(30)
     finally:
         log_message("[INFO] Agent shutting down.")
         safe_disconnect()
@@ -14256,6 +14270,12 @@ if __name__ == "__main__":
     if os.environ.get('ELEVATED_MODE') == '1':
         # We're in elevated mode - don't run main startup, just provide functions
         print("[ELEVATED] Script loaded in elevated mode - functions available for import")
+        print("[ELEVATED] Exiting to prevent recursive execution")
+        print("\nPress Enter to exit...")
+        try:
+            input()
+        except:
+            time.sleep(5)
         # DO NOT run the full startup sequence - the elevated script will import and call specific functions
         # Exit immediately to prevent recursive execution
         sys.exit(0)
@@ -14443,26 +14463,40 @@ if __name__ == "__main__":
     try:
         main_unified()
     except KeyboardInterrupt:
-        print("System shutdown requested.")
-    except ImportError as e:
-        print(f"Missing dependency: {e}")
-        print("Agent will continue with limited functionality")
-        import traceback
-        traceback.print_exc()
-        # Continue running with basic functionality
+        print("\n[INFO] System shutdown requested.")
+        print("\nPress Enter to exit...")
         try:
-            while True:
-                time.sleep(60)
-        except KeyboardInterrupt:
-            print("Fallback mode interrupted")
-    except Exception as e:
-        print(f"System error: {e}")
-        print("Full traceback:")
+            input()
+        except:
+            time.sleep(5)
+    except ImportError as e:
+        print("\n" + "=" * 80)
+        print("MISSING DEPENDENCY ERROR")
+        print("=" * 80)
+        print(f"Missing dependency: {e}")
+        print("\nFull error details:")
         import traceback
         traceback.print_exc()
-        print("Attempting to recover and continue...")
-        # Try to recover and continue
-        time.sleep(5)
+        print("\n" + "=" * 80)
+        print("Press Enter to exit...")
+        try:
+            input()
+        except:
+            time.sleep(30)
+    except Exception as e:
+        print("\n" + "=" * 80)
+        print("CRITICAL SYSTEM ERROR")
+        print("=" * 80)
+        print(f"Error: {e}")
+        print("\nFull traceback:")
+        import traceback
+        traceback.print_exc()
+        print("\n" + "=" * 80)
+        print("Press Enter to exit...")
+        try:
+            input()
+        except:
+            time.sleep(30)
     finally:
         log_message("Shutting down system components.")
         try:
