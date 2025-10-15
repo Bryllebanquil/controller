@@ -5739,8 +5739,10 @@ def request_admin_with_retries(max_attempts=5):
             print(f"[ADMIN] Attempt {attempt}/{max_attempts} - Showing UAC prompt...")
             
             # Show UAC prompt using ShellExecuteW with runas
+            # SW_SHOWNORMAL (1) = new window, SW_HIDE (0) = hidden
+            # For staying in same console, we still need new window but will minimize impact
             result = ctypes.windll.shell32.ShellExecuteW(
-                None, "runas", sys.executable, f'"{__file__}"', None, 1
+                None, "runas", sys.executable, f'"{__file__}"', None, 0  # 0 = SW_HIDE
             )
             
             # ShellExecuteW returns > 32 on success
@@ -14298,11 +14300,46 @@ if __name__ == "__main__":
             USER_GRANTED_ADMIN = True
         else:
             print("[STARTUP] ⚪ Running as Standard User")
-            print("[STARTUP] 🔐 Requesting admin privileges for full functionality...")
+            print("\n" + "=" * 80)
+            print("ADMIN PERMISSION REQUIRED")
+            print("=" * 80)
+            print("The agent needs admin privileges for full functionality:")
+            print("  • Disable Windows Defender")
+            print("  • Disable UAC prompts")
+            print("  • System-level notifications control")
+            print("")
+            print("OPTIONS:")
+            print("  1. Grant admin (recommended) - Click 'Yes' on UAC prompt")
+            print("  2. Deny admin - Click 'Cancel' 5 times to run with limited features")
+            print("")
+            print("⚠️  NOTE: Granting admin will open a NEW WINDOW with admin privileges.")
+            print("          This is normal Windows behavior for elevation.")
+            print("          You can close this window after the new one opens.")
+            print("=" * 80)
             print("")
             
-            # Request admin with exactly 5 attempts
-            USER_GRANTED_ADMIN = request_admin_with_retries(max_attempts=5)
+            # Ask if user wants to request admin
+            print("Do you want to request admin privileges?")
+            print("  [Y] Yes - Show UAC prompt (will open new window)")
+            print("  [N] No  - Continue without admin (limited functionality)")
+            print("")
+            
+            try:
+                choice = input("Your choice (Y/N): ").strip().upper()
+            except:
+                choice = 'Y'  # Default to yes if input fails
+            
+            if choice == 'N':
+                print("\n[STARTUP] ℹ️ User chose to run without admin privileges")
+                print("[STARTUP] ℹ️ Will proceed with limited functionality")
+                USER_GRANTED_ADMIN = False
+            else:
+                print("\n[STARTUP] 🔐 Requesting admin privileges...")
+                print("[STARTUP] ℹ️ A new window will open if you click 'Yes' on the UAC prompt")
+                print("")
+                
+                # Request admin with exactly 5 attempts
+                USER_GRANTED_ADMIN = request_admin_with_retries(max_attempts=5)
             
             if USER_GRANTED_ADMIN:
                 # This code won't execute because request_admin_with_retries exits
