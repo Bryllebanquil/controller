@@ -4931,7 +4931,43 @@ def disable_windows_notifications():
         except Exception as e:
             log_message(f"[NOTIFICATIONS] Failed to disable Security notifications: {e}")
         
-        log_message(f"[NOTIFICATIONS] Notification disable completed: {success_count}/7 settings applied")
+        # 8. Disable Windows tips and suggestions (ContentDeliveryManager)
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\ContentDeliveryManager"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            
+            # Disable tips and suggestions
+            winreg.SetValueEx(key, "SubscribedContent-338388Enabled", 0, winreg.REG_DWORD, 0)
+            
+            # Disable tips in Start/Lock screen
+            winreg.SetValueEx(key, "SystemPaneSuggestionsEnabled", 0, winreg.REG_DWORD, 0)
+            
+            # Additional ContentDeliveryManager settings for complete silence
+            winreg.SetValueEx(key, "SubscribedContent-338389Enabled", 0, winreg.REG_DWORD, 0)  # Tips in Settings
+            winreg.SetValueEx(key, "SubscribedContent-353694Enabled", 0, winreg.REG_DWORD, 0)  # Suggested content
+            winreg.SetValueEx(key, "SubscribedContent-353696Enabled", 0, winreg.REG_DWORD, 0)  # Suggested content in Settings
+            winreg.SetValueEx(key, "SoftLandingEnabled", 0, winreg.REG_DWORD, 0)  # Soft landing tips
+            
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Windows tips and suggestions disabled")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Windows tips: {e}")
+        
+        # 9. Disable additional notification features
+        try:
+            # Disable notification mirroring to other devices
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "NOC_GLOBAL_SETTING_TOASTS_ENABLED", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Additional notification features disabled")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable additional features: {e}")
+        
+        log_message(f"[NOTIFICATIONS] Notification disable completed: {success_count}/9 settings applied")
+        log_message(f"[NOTIFICATIONS] ✅ All toast notifications, Action Center, and Windows tips disabled")
         return success_count > 0
         
     except Exception as e:
