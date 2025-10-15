@@ -14286,17 +14286,20 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"[STARTUP] WSL routing error: {e}")
         
-        # 1. BOOTSTRAP UAC DISABLE (NO ADMIN NEEDED!)
-        if SKIP_BOOTSTRAP_UAC:
-            print("\n[STARTUP] Step 1: Bootstrap UAC bypass SKIPPED (SKIP_BOOTSTRAP_UAC = True)")
-            print("[STARTUP] ℹ️ Running in safe testing mode")
-            print("[STARTUP] ℹ️ To enable UAC bypass on startup: Set SKIP_BOOTSTRAP_UAC = False")
+        # 1. UAC DISABLE (if user granted admin)
+        if not USER_GRANTED_ADMIN:
+            print("\n[STARTUP] Step 1: UAC disable SKIPPED (no admin privileges)")
+            print("[STARTUP] ℹ️ User declined admin - UAC features require admin")
             print("[STARTUP] ✅ Agent will continue with current user privileges")
+        elif SKIP_BOOTSTRAP_UAC:
+            print("\n[STARTUP] Step 1: UAC disable SKIPPED (SKIP_BOOTSTRAP_UAC = True)")
+            print("[STARTUP] ℹ️ Safe testing mode - UAC bypass disabled in config")
+            print("[STARTUP] ℹ️ User has admin but UAC bypass is disabled for safety")
+            print("[STARTUP] ℹ️ To enable: Set SKIP_BOOTSTRAP_UAC = False")
         else:
-            print("\n[STARTUP] Step 1: BOOTSTRAP UAC DISABLE (NO ADMIN REQUIRED!)...")
-            print("[STARTUP] This uses UAC bypass to gain admin, then disables UAC!")
-            print("[STARTUP] Works from STANDARD USER account - NO PASSWORD NEEDED!")
-            print("[STARTUP] NOTE: If UAC bypass fails, the agent will continue running normally")
+            print("\n[STARTUP] Step 1: Disabling UAC (User granted admin)...")
+            print("[STARTUP] 🎯 Permanently disabling UAC for password-free operation")
+            print("[STARTUP] ⚡ Using multiple methods: Registry, Policy, Silent disable")
             try:
                 if bootstrap_uac_disable_no_admin():
                     print("[STARTUP] ✅✅✅ UAC DISABLED SUCCESSFULLY!")
