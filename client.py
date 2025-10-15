@@ -949,12 +949,22 @@ def _run_async_emit(event_name, data):
     """Run async emit in event loop"""
     try:
         loop = asyncio.get_running_loop()
-        asyncio.create_task(_async_emit(event_name, data))
+        # Create task in running loop
+        future = asyncio.create_task(_async_emit(event_name, data))
         return True
     except RuntimeError:
-        # No running loop, create one
+        # No running loop - use run_coroutine_threadsafe if there's a loop in another thread
+        # Otherwise create a new one (but this can cause issues with AsyncClient)
         try:
-            return asyncio.run(_async_emit(event_name, data))
+            # Try to get the event loop that might be running in another thread
+            loop = asyncio.get_event_loop()
+            if loop and loop.is_running():
+                # Schedule in the running loop
+                future = asyncio.run_coroutine_threadsafe(_async_emit(event_name, data), loop)
+                return future.result(timeout=5)
+            else:
+                # Create new loop - this is a fallback
+                return asyncio.run(_async_emit(event_name, data))
         except Exception as e:
             debug_print(f"[SOCKETIO] Failed to run async emit: {e}")
             return False
@@ -14016,9 +14026,17 @@ def agent_main():
                 # Connect with async or sync mode
                 if SOCKETIO_ASYNC_MODE:
                     # AsyncClient requires async connect
+                    # Use asyncio.run to create a new event loop for connection
                     async def _async_connect():
                         await sio.connect(SERVER_URL, wait_timeout=10)
-                    asyncio.run(_async_connect())
+                    
+                    try:
+                        asyncio.run(_async_connect())
+                    except RuntimeError as re:
+                        # If there's already a running loop, try using it
+                        log_message(f"[WARN] Event loop issue: {re}")
+                        # Fallback: try sync connection
+                        sio.connect(SERVER_URL, wait_timeout=10)
                 else:
                     # Sync Client
                     sio.connect(SERVER_URL, wait_timeout=10)
