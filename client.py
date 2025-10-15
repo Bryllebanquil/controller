@@ -14134,7 +14134,14 @@ def agent_main():
                 log_message("[OK] Heartbeat started")
                 
                 # Keep connection alive and wait for events
-                sio.wait()
+                if SOCKETIO_ASYNC_MODE:
+                    # AsyncClient requires async wait
+                    async def _async_wait():
+                        await sio.wait()
+                    asyncio.run(_async_wait())
+                else:
+                    # Sync Client
+                    sio.wait()
                 
             except socketio.exceptions.ConnectionError as conn_err:
                 retry_delay = min(connection_attempts * 5, max_retry_delay)
