@@ -1,132 +1,101 @@
 # ============================================================================
-# Complete Requirements for client.py - All Dependencies
+# Complete Requirements for client.py - High-Performance Async-First Stack
 # ============================================================================
 # Python Version: 3.8+ (Fully compatible with Python 3.14)
 # Installation: pip install -r requirements-client.txt
-# Or with pre-release versions: pip install --pre -r requirements-client.txt
 # Updated: 2025-10-15 for Python 3.14 compatibility
-# Modernized: Replaced eventlet/socketio with uvloop/websockets/aiohttp for better performance
+# Optimized: Asyncio-first with uvloop for maximum performance
 # ============================================================================
 
-# Core networking & Modern Async (CRITICAL for controller connection)
-# Using native asyncio with uvloop for 2-3x better performance than eventlet
---pre uvloop>=0.21.0
---pre websockets>=14.1
---pre aiohttp>=3.11.0
---pre requests>=2.32.0
---pre urllib3>=2.3.0
---pre certifi>=2024.12.0
---pre httpx>=0.28.1
+# ============================================================================
+# NETWORKING / REALTIME (asyncio-first, high performance)
+# ============================================================================
+python-socketio>=5.12.0       # Socket.IO with asyncio support (use AsyncClient)
+python-engineio>=4.11.0       # Engine.IO async backend
+uvicorn[standard]>=0.22.0     # ASGI server with uvloop + httptools for speed
+fastapi>=0.100.0              # Modern async web framework (ASGI)
+websockets>=11.0              # Lightweight async WebSocket client/server
+uvloop>=0.18.0                # Ultra-fast asyncio event loop (2-3x faster)
 
-# Async & Event handling (native asyncio - no eventlet/socketio)
---pre anyio>=4.7.0
+# Core HTTP clients (async)
+httpx>=0.25.0                 # Modern async-capable HTTP client
+aiohttp>=3.9.0                # Async HTTP + WebSocket support
 
-# DNS resolution
---pre dnspython>=2.0.0
+# Async & concurrency helpers
+anyio>=4.0.0                  # Compatibility layer for asyncio/Trio
 
-# Windows-specific libraries (pywin32)
---pre pywin32>=306
---pre comtypes>=1.2.0
+# ============================================================================
+# COMPUTER VISION & IMAGE PROCESSING (prebuilt wheels recommended)
+# ============================================================================
+numpy>=1.26.0                 # Numerical computing (use 1.26+ for Python 3.12+)
+opencv-python>=4.9.0          # Computer vision (may require build on Python 3.14)
+Pillow>=10.0.0                # Image processing library
+mss>=9.0.0                    # Fast screen capture
 
-# Computer Vision & Image Processing
---pre opencv-python>=4.10.0
---pre numpy>=2.0.0
---pre Pillow>=11.0.0
---pre mss>=9.0.0
+# ============================================================================
+# AUDIO & MEDIA (native libs may be required)
+# ============================================================================
+aiortc>=1.6.0                 # WebRTC — async-native for real-time streaming
+av>=11.0.0                    # PyAV — needs FFmpeg / system libs
 
-# GUI Automation & Input Control
---pre pyautogui>=0.9.54
---pre pynput>=1.7.6
---pre pygame>=2.5.0
+# ============================================================================
+# SYSTEM / WINDOWS-SPECIFIC (only if running on Windows)
+# ============================================================================
+pywin32>=306                  # Windows-specific APIs (COM, registry, etc.)
+psutil>=5.9.0                 # Cross-platform system monitoring
 
-# Audio Processing
---pre pyaudio>=0.2.13
---pre SpeechRecognition>=3.10.0
---pre gTTS>=2.5.0
+# ============================================================================
+# GUI / AUTOMATION (keep only if used)
+# ============================================================================
+pyautogui>=0.9.54             # GUI automation
+pynput>=1.7.6                 # Keyboard/mouse input control
 
-# System Monitoring
---pre psutil>=5.9.0
+# ============================================================================
+# SECURITY & CRYPTO
+# ============================================================================
+cryptography>=41.0.0          # Cryptographic recipes and primitives
 
-# WebRTC & Video Streaming
---pre aiortc>=1.6.0
---pre av>=11.0.0
+# ============================================================================
+# UTILITIES & PARSING
+# ============================================================================
+lxml>=4.9.0                   # XML/HTML parsing (fast C library)
+beautifulsoup4>=4.12.0        # HTML/XML parsing
+tqdm>=4.66.0                  # Progress bars
+requests>=2.31.0              # Fallback blocking HTTP (if needed)
+certifi>=2024.0.0             # SSL certificates
+urllib3>=2.0.0                # HTTP client (used by requests)
 
-# Cryptography & Security
---pre cryptography>=44.0.0
+# ============================================================================
+# OPTIONAL ML (only if needed — these often lag newest Python)
+# ============================================================================
+# Prefer conda / prebuilt wheels; may not have 3.14 official builds immediately
+# Uncomment only if you need ML features:
+# tensorflow>=2.15.0
+# torch>=2.1.0
+# torchvision>=0.16.0
 
-# Note: Web framework moved to modern async section (FastAPI + Uvicorn)
-
-# Machine Learning & AI (optional but used in code)
---pre tensorflow>=2.18.0
---pre torch>=2.5.0
---pre torchvision>=0.20.0
-
-# Additional utilities
---pre lxml>=5.3.0
---pre beautifulsoup4>=4.12.0
---pre selenium>=4.27.0
---pre pyppeteer>=2.0.0
-
-# Web Framework (for controller mode) - Modern async alternatives
---pre fastapi>=0.115.0
---pre uvicorn>=0.34.0
-
-# Data handling
---pre pandas>=2.2.0
---pre openpyxl>=3.1.0
-
-# Compression
---pre lz4>=4.3.0
-
-# JSON/Data validation
---pre jsonschema>=4.23.0
---pre pydantic>=2.10.0
-
-# Misc utilities
---pre python-dateutil>=2.8.0
---pre pytz>=2024.1
---pre colorama>=0.4.6
---pre tqdm>=4.66.0
-
-# Database (if needed)
---pre pymongo>=4.10.0
---pre redis>=5.2.0
-
-# Cloud services
---pre google-cloud-storage>=2.18.0
---pre boto3>=1.35.0
-
-# Jupyter/IPython (for interactive features)
---pre ipython>=8.31.0
---pre jupyter>=1.1.0
-
-# Networking tools
---pre paramiko>=3.4.0
---pre scapy>=2.5.0
-
-# Protocol buffers & RPC
---pre protobuf>=5.29.0
---pre grpcio>=1.69.0
-
-# Image manipulation
---pre imageio>=2.36.0
---pre scikit-image>=0.24.0
-
-# PyInstaller (for compilation)
---pre pyinstaller>=6.12.0
+# ============================================================================
+# PACKAGING / BUILD
+# ============================================================================
+pyinstaller>=6.0.0            # Package Python apps into standalone executables
 
 # ============================================================================
 # INSTALLATION COMMANDS
 # ============================================================================
 #
 # Install all packages (recommended):
-#   pip install --pre -r requirements-client.txt
+#   pip install -r requirements-client.txt
 #
-# Install minimal required packages only (modern async stack):
-#   pip install --pre uvloop websockets aiohttp requests urllib3 certifi
-#   pip install --pre pywin32 opencv-python numpy Pillow psutil pynput pyautogui
+# Install minimal required packages only (high-performance async stack):
+#   pip install python-socketio uvloop uvicorn[standard] fastapi websockets
+#   pip install httpx aiohttp anyio
+#   pip install numpy opencv-python Pillow mss psutil pywin32
+#
+# Install with asyncio extras for Socket.IO:
+#   pip install "python-socketio[asyncio_client]"
 #
 # Install for compilation:
-#   pip install --pre pyinstaller
+#   pip install pyinstaller
 #
+# Performance note: uvicorn[standard] includes uvloop + httptools for speed
 # ============================================================================
