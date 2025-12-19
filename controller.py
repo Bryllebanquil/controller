@@ -229,7 +229,15 @@ for subdomain in ["www", "app", "dashboard", "frontend", "backend"]:
     render_origins.append(f"https://neural-control-hub-{subdomain}.onrender.com")
 
 all_socketio_origins = allowed_origins + render_origins
-socketio = SocketIO(app, async_mode='threading', cors_allowed_origins=all_socketio_origins)
+socketio = SocketIO(
+    app,
+    async_mode='threading',
+    cors_allowed_origins=all_socketio_origins,
+    ping_interval=25,
+    ping_timeout=60,
+    logger=False,
+    engineio_logger=False
+)
 print(f"Socket.IO CORS origins: {all_socketio_origins}")
 
 def send_email_notification(subject: str, body: str) -> bool:
@@ -4142,6 +4150,11 @@ def handle_command_result(data):
         'execution_id': execution_id,
         'command': command,
         'output': output,
+        'formatted_text': data.get('formatted_text'),
+        'prompt': data.get('prompt'),
+        'terminal_type': data.get('terminal_type'),
+        'ps_version': data.get('ps_version'),
+        'exit_code': data.get('exit_code'),
         'success': success,
         'execution_time': execution_time,
         'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
@@ -4232,7 +4245,7 @@ def handle_file_operation_result(data):
             'agent_name': AGENTS_DATA[agent_id].get("name", f"Agent-{agent_id}"),
             'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
             'status': 'success' if success else 'error'
-        }, room='operators', broadcast=True)
+    }, room='operators', broadcast=True)
 
 @socketio.on('system_alert')
 def handle_system_alert(data):
@@ -4263,6 +4276,10 @@ def handle_system_alert(data):
             'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
             'status': 'error' if alert_type in ['error', 'critical'] else 'warning'
         }, room='operators', broadcast=True)
+
+@socketio.on('agent_notification')
+def handle_agent_notification(data):
+    emit('agent_notification', data, room='operators', broadcast=True)
 
 @socketio.on('heartbeat')
 def handle_heartbeat(data):

@@ -43,7 +43,7 @@ export function StreamViewer({ agentId, type, title }: StreamViewerProps) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioQueueRef = useRef<Float32Array[]>([]);
   const isPlayingAudioRef = useRef(false);
-  const fpsIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const fpsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const frameCountRef = useRef(0);
 
   const getStreamIcon = () => {

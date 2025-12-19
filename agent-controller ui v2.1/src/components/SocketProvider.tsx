@@ -17,11 +17,23 @@ interface Agent {
   };
 }
 
+interface Notification {
+  id: string;
+  type: 'success' | 'warning' | 'error' | 'info';
+  title: string;
+  message: string;
+  timestamp: Date;
+  agentId?: string;
+  read: boolean;
+  category: 'agent' | 'system' | 'security' | 'command';
+}
+
 interface SocketContextType {
   socket: Socket | null;
   connected: boolean;
   authenticated: boolean;
   agents: Agent[];
+  notifications: Notification[];
   selectedAgent: string | null;
   setSelectedAgent: (agentId: string | null) => void;
   sendCommand: (agentId: string, command: string) => void;
@@ -79,6 +91,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [commandOutput, setCommandOutput] = useState<string[]>([]);
   const [agentMetrics, setAgentMetrics] = useState<Record<string, { cpu: number; memory: number; network: number }>>({});
@@ -232,32 +245,23 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     });
 
     // Command result events
-    socketInstance.on('command_result', (data: { agent_id: string; output: string; command?: string; success?: boolean; execution_id?: string; timestamp?: string }) => {
-      console.log('🔍 SocketProvider: Command result received:', data);
-      console.log('🔍 SocketProvider: Command result handler called!');
-      console.log('🔍 SocketProvider: Data type:', typeof data);
-      console.log('🔍 SocketProvider: Data keys:', Object.keys(data || {}));
-      
-      if (!data || typeof data !== 'object') {
-        console.error('🔍 SocketProvider: Invalid command result data:', data);
-        return;
-      }
-      
-      const { agent_id, output, command, success, execution_id, timestamp } = data;
-      
-      if (!output) {
-        console.warn('🔍 SocketProvider: No output in command result');
-        return;
-      }
-      
-      // Create a clean terminal-like output
-      const resultText = output.trim();
-      console.log('🔍 SocketProvider: Adding command output:', resultText);
-      console.log('🔍 SocketProvider: Current commandOutput length:', commandOutput.length);
-      
-      // Add command output immediately
-      addCommandOutput(resultText);
-      console.log('🔍 SocketProvider: Command output added successfully');
+    socketInstance.on('command_result', (data: any) => {
+      if (!data || typeof data !== 'object') return;
+      const formatted = typeof data.formatted_text === 'string' && data.formatted_text.trim()
+        ? data.formatted_text
+        : (() => {
+            const prompt = typeof data.prompt === 'string' ? data.prompt : 'PS C:\\>';
+            const cmd = typeof data.command === 'string' ? data.command : '';
+            const out = typeof data.output === 'string' ? data.output : '';
+            const err = typeof data.error === 'string' ? data.error : '';
+            const exit = typeof data.exit_code === 'number' ? data.exit_code : undefined;
+            let text = `${prompt} ${cmd}\n`;
+            if (out) text += out.endsWith('\n') ? out : `${out}\n`;
+            if (err && err.trim()) text += err.endsWith('\n') ? err : `${err}\n`;
+            if (exit && exit !== 0) text += `Exit code: ${exit}\n`;
+            return text;
+          })();
+      addCommandOutput(formatted);
     });
 
     // Legacy command output events (for backward compatibility)
@@ -305,6 +309,24 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       // Handle audio frame updates
       const event = new CustomEvent('audio_frame', { detail: data });
       window.dispatchEvent(event);
+    });
+
+    socketInstance.on('agent_notification', (data: any) => {
+      try {
+        const n: Notification = {
+          id: String(data?.id ?? `${Date.now()}`),
+          type: String(data?.type ?? 'info') as Notification['type'],
+          title: String(data?.title ?? ''),
+          message: String(data?.message ?? ''),
+          timestamp: new Date(data?.timestamp ?? Date.now()),
+          agentId: typeof data?.agent_id === 'string' ? data.agent_id : undefined,
+          read: Boolean(data?.read ?? false),
+          category: String(data?.category ?? 'agent') as Notification['category'],
+        };
+        setNotifications(prev => [...prev.slice(-99), n]);
+      } catch (e) {
+        console.error('Error processing agent_notification:', e, data);
+      }
     });
 
     // File transfer events - Download chunks
@@ -615,6 +637,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     login,
     logout,
     agentMetrics,
+    notifications,
   };
 
   return (

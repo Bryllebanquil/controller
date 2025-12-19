@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { useSocket } from './SocketProvider';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Textarea } from './ui/textarea';
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
@@ -52,11 +51,7 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
     if (!commandToExecute.trim() || !agentId) return;
 
     setIsExecuting(true);
-    
-    // Add the command to output immediately (like a real terminal)
-    const commandLine = `$ ${commandToExecute}`;
-    setOutput(prev => prev + (prev ? '\n' : '') + commandLine + '\n');
-    
+
     try {
       sendCommand(agentId, commandToExecute);
       const entry = {
@@ -155,35 +150,50 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
 
       <Tabs defaultValue="execute" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="execute">Execute</TabsTrigger>
+          <TabsTrigger value="execute">Terminal</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
 
         <TabsContent value="execute" className="space-y-4">
-          {/* Command Input */}
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm">Command Execution</CardTitle>
+                <CardTitle className="text-sm flex items-center">
+                  <Terminal className="h-4 w-4 mr-2" />
+                  PowerShell Terminal
+                </CardTitle>
                 {agentId && (
                   <Badge variant="outline">{agentId.substring(0, 8)}</Badge>
                 )}
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex space-x-2">
+            <CardContent className="space-y-3">
+              <ScrollArea className="min-h-[280px] max-h-[520px] rounded">
+                <div className="bg-[#012456] text-[#e5e5e5] p-4 rounded font-mono text-sm whitespace-pre-wrap">
+                  {output || 'PS C:\\> '}
+                  {isExecuting && (
+                    <div className="text-[#e5e5e5] opacity-70">
+                      Executing... ▋
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+              <div className="flex items-center gap-2 bg-[#012456] p-2 rounded">
+                <span className="font-mono text-sm text-[#e5e5e5]">{'PS C:\\>'}</span>
                 <Input
-                  placeholder="Enter command..."
+                  placeholder="Type a command and press Enter"
                   value={command}
                   onChange={(e) => setCommand(e.target.value)}
                   onKeyPress={handleKeyPress}
                   disabled={!agentId || isExecuting}
-                  className="font-mono"
+                  className="font-mono text-sm bg-transparent border-none text-[#e5e5e5] focus-visible:ring-0 focus-visible:outline-none"
                 />
                 <Button 
                   onClick={() => executeCommand()}
                   disabled={!agentId || !command.trim() || isExecuting}
                   size="sm"
+                  variant="secondary"
+                  className="bg-[#0a2a6b] text-[#e5e5e5] hover:bg-[#0d337f]"
                 >
                   {isExecuting ? (
                     <RefreshCw className="h-4 w-4 animate-spin" />
@@ -191,47 +201,23 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                     <Send className="h-4 w-4" />
                   )}
                 </Button>
+                <Button variant="ghost" size="sm" onClick={copyOutput} disabled={!output}>
+                  <Copy className="h-4 w-4 text-[#e5e5e5]" />
+                </Button>
+                <Button variant="ghost" size="sm" onClick={clearOutput} disabled={!output}>
+                  <Trash2 className="h-4 w-4 text-[#e5e5e5]" />
+                </Button>
+                <Button variant="ghost" size="sm" disabled={!output}>
+                  <Download className="h-4 w-4 text-[#e5e5e5]" />
+                </Button>
               </div>
-
               {!agentId && (
-                <div className="text-center text-muted-foreground text-sm py-4">
+                <div className="text-center text-muted-foreground text-sm py-2">
                   Select an agent to execute commands
                 </div>
               )}
             </CardContent>
           </Card>
-
-          {/* Command Output */}
-          {agentId && (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm">Output</CardTitle>
-                  <div className="flex items-center space-x-2">
-                    <Button variant="ghost" size="sm" onClick={copyOutput} disabled={!output}>
-                      <Copy className="h-3 w-3" />
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={clearOutput} disabled={!output}>
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                    <Button variant="ghost" size="sm" disabled={!output}>
-                      <Download className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="bg-black text-green-400 p-4 rounded font-mono text-sm min-h-[200px] max-h-[400px] overflow-auto">
-                  {output || 'No output yet. Execute a command to see results.'}
-                  {isExecuting && (
-                    <div className="text-yellow-400 animate-pulse">
-                      Executing command... <span className="animate-pulse">▋</span>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </TabsContent>
 
         <TabsContent value="history" className="space-y-4">

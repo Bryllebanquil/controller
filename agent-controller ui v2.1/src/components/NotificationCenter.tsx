@@ -17,6 +17,7 @@ import {
   Activity
 } from 'lucide-react';
 import { cn } from './ui/utils';
+import { useSocket } from './SocketProvider';
 
 interface Notification {
   id: string;
@@ -28,8 +29,6 @@ interface Notification {
   read: boolean;
   category: 'agent' | 'system' | 'security' | 'command';
 }
-
-const mockNotifications: Notification[] = [];
 
 const notificationIcons = {
   success: CheckCircle,
@@ -46,7 +45,8 @@ const categoryIcons = {
 };
 
 export function NotificationCenter() {
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
+  const { notifications: liveNotifications } = useSocket();
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [filter, setFilter] = useState<'all' | 'unread' | 'agent' | 'system' | 'security'>('all');
   
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -56,6 +56,10 @@ export function NotificationCenter() {
     if (filter === 'unread') return !notification.read;
     return notification.category === filter;
   });
+
+  useEffect(() => {
+    setNotifications(liveNotifications);
+  }, [liveNotifications]);
 
   const markAsRead = (id: string) => {
     setNotifications(prev => prev.map(n => 
