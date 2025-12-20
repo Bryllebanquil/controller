@@ -9,6 +9,9 @@ __pycache__/
 # Build outputs
 build/
 dist/
+!agent-controller ui v2.1/build/**
+!agent-controller ui v2.1/build/assets/**
+!agent-controller ui v2.1/build/index.html
 
 # Logs
 *.log

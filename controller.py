@@ -2076,7 +2076,15 @@ def dashboard():
 # Serve static assets for the UI v2.1
 @app.route('/assets/<path:filename>')
 def serve_assets(filename):
-    return send_file(os.path.join(os.path.dirname(__file__), 'agent-controller ui v2.1', 'build', 'assets', filename))
+    base_dir = os.path.dirname(__file__)
+    candidates = [
+        os.path.join(base_dir, 'agent-controller ui v2.1', 'build', 'assets', filename),
+        os.path.join(base_dir, 'agent-controller ui', 'build', 'assets', filename),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return send_file(path)
+    return ("Asset not found", 404)
 
 # --- Real-time Streaming Endpoints (COMMENTED OUT - REPLACED WITH OVERVIEW) ---
 # 
