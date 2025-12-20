@@ -2169,6 +2169,33 @@ def serve_assets(filename):
                 continue
     return ("Asset not found", 404)
 
+@app.route('/debug-assets')
+@require_auth
+def debug_assets():
+    base_dir = os.path.dirname(__file__)
+    dirs = [
+        os.path.join(base_dir, 'agent-controller ui v2.1', 'build'),
+        os.path.join(base_dir, 'agent-controller ui v2.1', 'build', 'assets'),
+        os.path.join(base_dir, 'agent-controller ui', 'build'),
+        os.path.join(base_dir, 'agent-controller ui', 'build', 'assets'),
+    ]
+    out = []
+    for d in dirs:
+        exists = os.path.isdir(d)
+        files = []
+        if exists:
+            try:
+                for fname in os.listdir(d):
+                    fp = os.path.join(d, fname)
+                    try:
+                        size = os.path.getsize(fp)
+                    except Exception:
+                        size = None
+                    files.append({'name': fname, 'size': size})
+            except Exception:
+                pass
+        out.append({'dir': d, 'exists': exists, 'files': files})
+    return jsonify(out)
 # --- Real-time Streaming Endpoints (COMMENTED OUT - REPLACED WITH OVERVIEW) ---
 # 
 # STREAMING OPTIMIZATION FOR REAL-TIME MONITORING:
