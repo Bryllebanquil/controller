@@ -184,6 +184,15 @@ export function FileManager({ agentId }: FileManagerProps) {
     }
   }, [previewOpen, previewKind, previewMime]);
 
+  const previewSourceType = useMemo(() => {
+    if (!previewKind || previewKind !== 'video') return undefined;
+    const item = previewItems[previewIndex];
+    const name = (item?.name || '').toLowerCase();
+    const ext = name.includes('.') ? name.split('.').pop()! : '';
+    if (ext === 'mp4' || ext === 'm4v' || previewMime === 'video/mp4') return 'video/mp4';
+    return previewMime || undefined;
+  }, [previewKind, previewItems, previewIndex, previewMime]);
+
   const requestPreviewAtIndex = (index: number) => {
     if (!agentId || !socket) return;
     if (index < 0 || index >= previewItems.length) return;
@@ -508,8 +517,8 @@ export function FileManager({ agentId }: FileManagerProps) {
                       )}
                       {previewUrl && previewKind === 'video' && (
                         canPlayPreviewVideo ? (
-                          <video className="w-full h-full" controls>
-                            <source src={previewUrl} type={previewMime || undefined} />
+                          <video className="w-full h-full" controls playsInline preload="metadata">
+                            <source src={previewUrl} type={previewSourceType} />
                           </video>
                         ) : (
                           <div className="text-sm text-muted-foreground text-center px-6">

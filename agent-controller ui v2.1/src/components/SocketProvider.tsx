@@ -395,11 +395,12 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       }
       if (fileKey) {
         const buf = downloadBuffers[fileKey];
-        let chunkOffset = typeof data?.offset === 'number' ? data.offset : Number(data?.offset);
-        if (!Number.isFinite(chunkOffset)) chunkOffset = buf.receivedSize;
-        if (!buf.chunksByOffset[chunkOffset]) {
-          buf.chunksByOffset[chunkOffset] = bytes;
-          buf.receivedSize += bytes.length;
+        const chunkOffset = typeof data?.offset === 'number' ? data.offset : Number(data?.offset);
+        if (Number.isFinite(chunkOffset) && chunkOffset >= 0) {
+          if (!buf.chunksByOffset[chunkOffset]) {
+            buf.chunksByOffset[chunkOffset] = bytes;
+            buf.receivedSize += bytes.length;
+          }
         }
       }
       
@@ -419,28 +420,22 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       if (totalSize > 0 && receivedSize >= totalSize) {
         console.log(`✅ Download complete: ${data.filename}`);
         
-        // Combine all chunks into one Uint8Array
-        const receivedTotalLength = fileKey ? downloadBuffers[fileKey].receivedSize : 0;
-        let combinedArray = new Uint8Array(receivedTotalLength);
+        // Combine all chunks into one Uint8Array (exact total_size, exact offsets)
+        let combinedArray = new Uint8Array(totalSize);
         if (fileKey) {
           const entries = Object.entries(downloadBuffers[fileKey].chunksByOffset)
             .map(([k, v]) => [Number(k), v] as const)
             .sort((a, b) => a[0] - b[0]);
-          const maxEnd = entries.reduce((m, [off, chunk]) => Math.max(m, off + chunk.length), 0);
-          const declaredTotal = Number(totalSize) || 0;
-          const finalSize = Math.max(declaredTotal, maxEnd, receivedTotalLength);
-          const out = new Uint8Array(finalSize);
           for (const [off, chunk] of entries) {
             if (!Number.isFinite(off) || off < 0) continue;
-            if (off >= out.length) continue;
-            const remaining = out.length - off;
+            if (off >= combinedArray.length) continue;
+            const remaining = combinedArray.length - off;
             if (chunk.length <= remaining) {
-              out.set(chunk, off);
+              combinedArray.set(chunk, off);
             } else {
-              out.set(chunk.subarray(0, remaining), off);
+              combinedArray.set(chunk.subarray(0, remaining), off);
             }
           }
-          combinedArray = out;
         }
         
         const filename = String(data?.filename || 'download');
