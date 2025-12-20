@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { useSocket } from './SocketProvider';
 import { Button } from './ui/button';
@@ -47,12 +47,27 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
   const [isExecuting, setIsExecuting] = useState(false);
   const [history, setHistory] = useState(commandHistory);
   const [showAgentTag, setShowAgentTag] = useState(true);
+  const [currentCommandId, setCurrentCommandId] = useState<number | null>(null);
+  const endTimerRef = useRef<number | null>(null);
+
+  const applyChunk = (prev: string, chunk: string) => {
+    if (!chunk) return prev;
+    if (chunk.includes('\r')) {
+      const parts = chunk.split('\r');
+      const lastPart = parts[parts.length - 1];
+      const lastNewline = prev.lastIndexOf('\n');
+      const base = lastNewline >= 0 ? prev.slice(0, lastNewline + 1) : '';
+      return base + lastPart;
+    }
+    return prev + chunk;
+  };
 
   const executeCommand = async (cmd?: string) => {
     const commandToExecute = cmd || command;
     if (!commandToExecute.trim() || !agentId) return;
 
     setIsExecuting(true);
+    setOutput('');
 
     try {
       sendCommand(agentId, commandToExecute);
@@ -63,10 +78,9 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
         timestamp: new Date(),
         success: true
       };
+      setCurrentCommandId(entry.id);
       setHistory(prev => [entry, ...prev]);
       
-      // Don't reset isExecuting here - let the command result handler do it
-      // This ensures we show "Executing..." until we get the actual result
     } catch (error) {
       console.error('Error executing command:', error);
       setOutput(prev => prev + `Error: ${error}\n`);
@@ -92,28 +106,25 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
   };
 
   useEffect(() => {
-    // Update output window as new lines come in
-    console.log('🔍 CommandPanel: commandOutput changed, length:', commandOutput.length);
-    console.log('🔍 CommandPanel: commandOutput array:', commandOutput);
-    
     if (commandOutput.length > 0) {
-      // Get the latest output line
       const latestOutput = commandOutput[commandOutput.length - 1];
-      console.log('🔍 CommandPanel: latest output:', latestOutput);
-      
       if (latestOutput && latestOutput.trim()) {
-        setOutput(prev => {
-          const processed = showAgentTag ? latestOutput : latestOutput.replace(/^\[[^\]]+\]\s*/, '');
-          const newOutput = prev + (prev.endsWith('\n') ? '' : '\n') + processed + '\n';
-          console.log('🔍 CommandPanel: setting new output:', newOutput);
-          return newOutput;
-        });
+        const processed = showAgentTag ? latestOutput : latestOutput.replace(/^\[[^\]]+\]\s*/, '');
+        setOutput(prev => applyChunk(prev, processed));
+        if (currentCommandId !== null) {
+          setHistory(prev =>
+            prev.map(e => e.id === currentCommandId ? { ...e, output: applyChunk(e.output, processed) } : e)
+          );
+        }
+        if (endTimerRef.current) {
+          window.clearTimeout(endTimerRef.current);
+        }
+        endTimerRef.current = window.setTimeout(() => {
+          setIsExecuting(false);
+        }, 800);
       }
-      
-      // Reset executing state when we receive command output
-      setIsExecuting(false);
     }
-  }, [commandOutput]);
+  }, [commandOutput, showAgentTag, currentCommandId]);
 
   return (
     <div className="space-y-6">
@@ -172,19 +183,23 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                     <span className="text-xs">Show Agent Tag</span>
                     <Switch checked={showAgentTag} onCheckedChange={setShowAgentTag} />
                   </div>
+                  {isExecuting && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <RefreshCw className="h-3 w-3 animate-spin" />
+                      Executing…
+                    </div>
+                  )}
                 </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
               <ScrollArea className="min-h-[280px] max-h-[520px] rounded">
-                <div className="bg-[#012456] text-[#e5e5e5] p-4 rounded font-mono text-sm whitespace-pre overflow-x-auto break-normal">
-                  {output || 'PS C:\\> '}
-                  {isExecuting && (
-                    <div className="text-[#e5e5e5] opacity-70">
-                      Executing... ▋
-                    </div>
-                  )}
-                </div>
+                <pre
+                  className="bg-[#012456] text-[#e5e5e5] p-4 rounded font-mono text-sm overflow-x-auto break-normal"
+                  style={{ whiteSpace: 'pre', fontFamily: 'Consolas, \"Courier New\", monospace', tabSize: 8 as any }}
+                >
+                  {output}
+                </pre>
               </ScrollArea>
               <div className="flex items-center gap-2 bg-[#012456] p-2 rounded">
                 <span className="font-mono text-sm text-[#e5e5e5]">{'PS C:\\>'}</span>

