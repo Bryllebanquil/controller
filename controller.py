@@ -2159,8 +2159,14 @@ def serve_assets(filename):
     ]
     for assets_dir in candidates:
         candidate_path = os.path.join(assets_dir, filename)
-        if os.path.exists(candidate_path):
-            return send_from_directory(assets_dir, filename)
+        if os.path.isfile(candidate_path):
+            try:
+                with open(candidate_path, 'rb') as f:
+                    data = f.read()
+                mime = 'text/css' if filename.endswith('.css') else 'application/javascript'
+                return Response(data, mimetype=mime)
+            except Exception:
+                continue
     return ("Asset not found", 404)
 
 # --- Real-time Streaming Endpoints (COMMENTED OUT - REPLACED WITH OVERVIEW) ---
