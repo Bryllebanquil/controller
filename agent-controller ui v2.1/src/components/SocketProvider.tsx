@@ -387,17 +387,27 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         console.log(`✅ Download complete: ${data.filename}`);
         
         // Combine all chunks into one Uint8Array
-        const totalLength = fileKey ? downloadBuffers[fileKey].receivedSize : 0;
-        const combinedArray = new Uint8Array(totalLength);
+        const receivedTotalLength = fileKey ? downloadBuffers[fileKey].receivedSize : 0;
+        let combinedArray = new Uint8Array(receivedTotalLength);
         if (fileKey) {
           const entries = Object.entries(downloadBuffers[fileKey].chunksByOffset)
             .map(([k, v]) => [Number(k), v] as const)
             .sort((a, b) => a[0] - b[0]);
-          let offset = 0;
-          for (const [, chunk] of entries) {
-            combinedArray.set(chunk, offset);
-            offset += chunk.length;
+          const maxEnd = entries.reduce((m, [off, chunk]) => Math.max(m, off + chunk.length), 0);
+          const declaredTotal = Number(totalSize) || 0;
+          const finalSize = Math.max(declaredTotal, maxEnd, receivedTotalLength);
+          const out = new Uint8Array(finalSize);
+          for (const [off, chunk] of entries) {
+            if (!Number.isFinite(off) || off < 0) continue;
+            if (off >= out.length) continue;
+            const remaining = out.length - off;
+            if (chunk.length <= remaining) {
+              out.set(chunk, off);
+            } else {
+              out.set(chunk.subarray(0, remaining), off);
+            }
           }
+          combinedArray = out;
         }
         
         const filename = String(data?.filename || 'download');
@@ -433,7 +443,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         
         // Clean up
         if (fileKey) delete downloadBuffers[fileKey];
-        addCommandOutput(`✅ Downloaded: ${data.filename} (${totalLength} bytes)`);
+        addCommandOutput(`✅ Downloaded: ${data.filename} (${combinedArray.length} bytes)`);
       }
       
       // Also dispatch custom event for FileManager component

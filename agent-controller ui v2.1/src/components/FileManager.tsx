@@ -6,6 +6,7 @@ import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
 import { Progress } from './ui/progress';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { 
   Files, 
   Folder, 
@@ -177,6 +178,7 @@ export function FileManager({ agentId }: FileManagerProps) {
     const ext = (item.extension || getExtension(item.name)).toLowerCase();
     const kind = getPreviewKind(ext);
     setPreviewKind(kind);
+    setPreviewUrl(null);
     setTransferFileName(item.name);
     setDownloadProgress(0);
     socket.emit('download_file', {
@@ -309,8 +311,9 @@ export function FileManager({ agentId }: FileManagerProps) {
 
   useEffect(() => {
     if (!previewOpen) return;
+    if (previewItems.length === 0) return;
     requestPreviewAtIndex(previewIndex);
-  }, [previewOpen, previewIndex]);
+  }, [previewOpen, previewIndex, previewItems]);
 
   useEffect(() => {
     if (previewOpen) return;
@@ -472,38 +475,44 @@ export function FileManager({ agentId }: FileManagerProps) {
                 </Button>
               </div>
 
-              {previewOpen && (
-                <div className="border rounded p-3 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm truncate">{previewItems[previewIndex]?.name || ''}</div>
-                    <Button size="sm" variant="ghost" onClick={() => setPreviewOpen(false)}>
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                  <div className="w-[500px] h-[500px] bg-muted rounded overflow-hidden flex items-center justify-center">
-                    {previewUrl && previewKind === 'image' && (
-                      <img src={previewUrl} className="max-w-full max-h-full object-contain" />
-                    )}
-                    {previewUrl && previewKind === 'video' && (
-                      <video src={previewUrl} className="max-w-full max-h-full" controls />
-                    )}
-                    {!previewUrl && (
-                      <div className="text-xs text-muted-foreground">Loading preview…</div>
-                    )}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <Button size="sm" variant="outline" onClick={handlePrevPreview} disabled={previewIndex <= 0}>
-                      Prev
-                    </Button>
-                    <div className="text-xs text-muted-foreground">
-                      {previewIndex + 1}/{previewItems.length}
+              <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+                <DialogContent className="w-[92vw] max-w-[1200px] h-[85vh] max-h-[900px] p-4">
+                  <div className="flex flex-col h-full gap-3">
+                    <DialogHeader className="shrink-0">
+                      <DialogTitle className="text-sm font-medium truncate">
+                        {previewItems[previewIndex]?.name || 'Preview'}
+                      </DialogTitle>
+                      <div className="text-xs text-muted-foreground">
+                        {previewIndex + 1}/{previewItems.length}
+                      </div>
+                    </DialogHeader>
+                    <div className="flex-1 bg-muted rounded overflow-hidden flex items-center justify-center">
+                      {previewUrl && previewKind === 'image' && (
+                        <img src={previewUrl} className="max-w-full max-h-full object-contain" />
+                      )}
+                      {previewUrl && previewKind === 'video' && (
+                        <video src={previewUrl} className="w-full h-full" controls />
+                      )}
+                      {!previewUrl && (
+                        <div className="text-sm text-muted-foreground">Loading preview…</div>
+                      )}
                     </div>
-                    <Button size="sm" variant="outline" onClick={handleNextPreview} disabled={previewIndex >= previewItems.length - 1}>
-                      Next
-                    </Button>
+                    <div className="shrink-0 flex items-center justify-between">
+                      <Button size="sm" variant="outline" onClick={handlePrevPreview} disabled={previewIndex <= 0}>
+                        Prev
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleNextPreview}
+                        disabled={previewIndex >= previewItems.length - 1}
+                      >
+                        Next
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              )}
+                </DialogContent>
+              </Dialog>
 
               {/* Upload/Download Progress */}
               {(uploadProgress !== null || downloadProgress !== null) && (
