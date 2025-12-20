@@ -129,7 +129,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     
     try {
       socketInstance = io(socketUrl, {
-        transports: ['polling'],
+        withCredentials: true,
+        path: '/socket.io',
+        transports: ['websocket', 'polling'],
         timeout: 20000,
         reconnection: true,
         reconnectionAttempts: 5,
@@ -161,6 +163,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       // Join operators room and request agent list
       socketInstance.emit('operator_connect');
       console.log('🔍 SocketProvider: operator_connect event emitted');
+      socketInstance.emit('join_room', 'operators');
+      console.log('🔍 SocketProvider: join_room(\"operators\") event emitted');
       
       // Request agent list after a short delay to ensure room joining is complete
       setTimeout(() => {
