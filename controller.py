@@ -195,6 +195,8 @@ allowed_origins = [
     "http://localhost:5173",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
     "https://neural-control-hub-frontend.onrender.com",
     "https://agent-controller-backend.onrender.com",
 ]
@@ -2056,8 +2058,8 @@ def dashboard():
             assets_dir = os.path.join(os.path.dirname(index_path), 'assets')
             # Extract built asset filenames referenced by index.html
             import re
-            css_files = re.findall(r'href=\"/assets/([^\"]+?\\.css)\"', index_html)
-            js_files = re.findall(r'src=\"/assets/([^\"]+?\\.js)\"', index_html)
+            css_files = re.findall(r'href=\"/assets/([^\"]+?\.css)\"', index_html)
+            js_files = re.findall(r'src=\"/assets/([^\"]+?\.js)\"', index_html)
             css_inline = ""
             js_inline = ""
             for cf in css_files:
