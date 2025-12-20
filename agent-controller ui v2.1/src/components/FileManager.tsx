@@ -93,6 +93,7 @@ export function FileManager({ agentId }: FileManagerProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewKind, setPreviewKind] = useState<'image' | 'video' | null>(null);
+  const [previewMime, setPreviewMime] = useState<string | null>(null);
   const [previewItems, setPreviewItems] = useState<FileItem[]>([]);
   const [previewIndex, setPreviewIndex] = useState<number>(0);
   const lastPreviewUrlRef = useRef<string | null>(null);
@@ -171,6 +172,18 @@ export function FileManager({ agentId }: FileManagerProps) {
     return previewableItems.findIndex(f => f.path === selectedPath);
   }, [selectedFiles, previewableItems]);
 
+  const canPlayPreviewVideo = useMemo(() => {
+    if (!previewOpen) return true;
+    if (previewKind !== 'video') return true;
+    if (!previewMime) return true;
+    try {
+      const v = document.createElement('video');
+      return v.canPlayType(previewMime) !== '';
+    } catch {
+      return true;
+    }
+  }, [previewOpen, previewKind, previewMime]);
+
   const requestPreviewAtIndex = (index: number) => {
     if (!agentId || !socket) return;
     if (index < 0 || index >= previewItems.length) return;
@@ -179,6 +192,7 @@ export function FileManager({ agentId }: FileManagerProps) {
     const kind = getPreviewKind(ext);
     setPreviewKind(kind);
     setPreviewUrl(null);
+    setPreviewMime(null);
     setTransferFileName(item.name);
     setDownloadProgress(0);
     socket.emit('download_file', {
@@ -299,6 +313,7 @@ export function FileManager({ agentId }: FileManagerProps) {
         }
         lastPreviewUrlRef.current = data.url;
         setPreviewUrl(data.url);
+        setPreviewMime(typeof data.mime === 'string' ? data.mime : null);
         setDownloadProgress(null);
         setTransferFileName(null);
       }
@@ -323,6 +338,7 @@ export function FileManager({ agentId }: FileManagerProps) {
     }
     setPreviewUrl(null);
     setPreviewKind(null);
+    setPreviewMime(null);
     setPreviewItems([]);
     setPreviewIndex(0);
   }, [previewOpen]);
@@ -476,7 +492,7 @@ export function FileManager({ agentId }: FileManagerProps) {
               </div>
 
               <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-                <DialogContent className="w-[92vw] max-w-[1200px] h-[85vh] max-h-[900px] p-4">
+                <DialogContent className="w-[92vw] sm:max-w-[1200px] h-[85vh] sm:max-h-[900px] p-4">
                   <div className="flex flex-col h-full gap-3">
                     <DialogHeader className="shrink-0">
                       <DialogTitle className="text-sm font-medium truncate">
@@ -491,7 +507,15 @@ export function FileManager({ agentId }: FileManagerProps) {
                         <img src={previewUrl} className="max-w-full max-h-full object-contain" />
                       )}
                       {previewUrl && previewKind === 'video' && (
-                        <video src={previewUrl} className="w-full h-full" controls />
+                        canPlayPreviewVideo ? (
+                          <video className="w-full h-full" controls>
+                            <source src={previewUrl} type={previewMime || undefined} />
+                          </video>
+                        ) : (
+                          <div className="text-sm text-muted-foreground text-center px-6">
+                            Video codec not supported by this browser
+                          </div>
+                        )
                       )}
                       {!previewUrl && (
                         <div className="text-sm text-muted-foreground">Loading preview…</div>

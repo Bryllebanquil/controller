@@ -81,6 +81,39 @@ function extractBase64Payload(value: unknown): string | null {
   return commaIndex >= 0 ? trimmed.slice(commaIndex + 1) : trimmed;
 }
 
+function detectMimeFromBytes(bytes: Uint8Array, filename: string): string {
+  const b0 = bytes[0];
+  const b1 = bytes[1];
+  const b2 = bytes[2];
+  const b3 = bytes[3];
+  if (b0 === 0xff && b1 === 0xd8 && b2 === 0xff) return 'image/jpeg';
+  if (b0 === 0x89 && b1 === 0x50 && b2 === 0x4e && b3 === 0x47) return 'image/png';
+  if (b0 === 0x47 && b1 === 0x49 && b2 === 0x46) return 'image/gif';
+  if (b0 === 0x1a && b1 === 0x45 && b2 === 0xdf && b3 === 0xa3) return 'video/webm';
+  if (b0 === 0x52 && b1 === 0x49 && b2 === 0x46 && b3 === 0x46) {
+    if (bytes.length >= 12 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
+      return 'image/webp';
+    }
+  }
+  if (bytes.length >= 12 && bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70) {
+    return 'video/mp4';
+  }
+
+  const name = String(filename || '').toLowerCase();
+  const ext = name.includes('.') ? name.split('.').pop()! : '';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'gif') return 'image/gif';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'bmp') return 'image/bmp';
+  if (ext === 'svg') return 'image/svg+xml';
+  if (ext === 'mp4') return 'video/mp4';
+  if (ext === 'webm') return 'video/webm';
+  if (ext === 'mov') return 'video/quicktime';
+  if (ext === 'm4v') return 'video/x-m4v';
+  return 'application/octet-stream';
+}
+
 function coerceFiniteNumber(value: unknown, fallback = 0): number {
   const num = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(num) ? num : fallback;
@@ -411,25 +444,12 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         }
         
         const filename = String(data?.filename || 'download');
-        const ext = filename.includes('.') ? filename.split('.').pop()!.toLowerCase() : '';
-        const mime =
-          ext === 'png' ? 'image/png'
-          : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
-          : ext === 'gif' ? 'image/gif'
-          : ext === 'webp' ? 'image/webp'
-          : ext === 'bmp' ? 'image/bmp'
-          : ext === 'svg' ? 'image/svg+xml'
-          : ext === 'mp4' ? 'video/mp4'
-          : ext === 'webm' ? 'video/webm'
-          : ext === 'mov' ? 'video/quicktime'
-          : ext === 'mkv' ? 'video/x-matroska'
-          : ext === 'avi' ? 'video/x-msvideo'
-          : 'application/octet-stream';
+        const mime = detectMimeFromBytes(combinedArray, filename);
         const blob = new Blob([combinedArray], { type: mime });
         const url = URL.createObjectURL(blob);
 
         if (data?.download_id && String(data.download_id).startsWith('preview_')) {
-          const event = new CustomEvent('file_preview_ready', { detail: { ...data, url } });
+          const event = new CustomEvent('file_preview_ready', { detail: { ...data, url, mime } });
           window.dispatchEvent(event);
         } else {
           const a = document.createElement('a');
