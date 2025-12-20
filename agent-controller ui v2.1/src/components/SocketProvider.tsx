@@ -129,7 +129,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     
     try {
       socketInstance = io(socketUrl, {
-        transports: ['websocket', 'polling'],
+        transports: ['polling'],
         timeout: 20000,
         reconnection: true,
         reconnectionAttempts: 5,

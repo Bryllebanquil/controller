@@ -239,15 +239,11 @@ for subdomain in ["www", "app", "dashboard", "frontend", "backend"]:
 
 all_socketio_origins = allowed_origins + render_origins
 ASYNC_MODE = 'threading'
-try:
-    import eventlet  # type: ignore
-    ASYNC_MODE = 'eventlet'
-except Exception:
-    pass
 socketio = SocketIO(
     app,
     async_mode=ASYNC_MODE,
     cors_allowed_origins=all_socketio_origins,
+    allow_upgrades=False,
     ping_interval=25,
     ping_timeout=60,
     logger=False,
