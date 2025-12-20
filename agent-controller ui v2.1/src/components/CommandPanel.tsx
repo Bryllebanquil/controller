@@ -169,7 +169,7 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
             </CardHeader>
             <CardContent className="space-y-3">
               <ScrollArea className="min-h-[280px] max-h-[520px] rounded">
-                <div className="bg-[#012456] text-[#e5e5e5] p-4 rounded font-mono text-sm whitespace-pre-wrap">
+                <div className="bg-[#012456] text-[#e5e5e5] p-4 rounded font-mono text-sm whitespace-pre overflow-x-auto break-normal">
                   {output || 'PS C:\\> '}
                   {isExecuting && (
                     <div className="text-[#e5e5e5] opacity-70">
