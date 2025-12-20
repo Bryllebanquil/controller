@@ -6,6 +6,7 @@ import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { Switch } from './ui/switch';
 import { 
   Terminal, 
   Send, 
@@ -45,6 +46,7 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
   const [output, setOutput] = useState('');
   const [isExecuting, setIsExecuting] = useState(false);
   const [history, setHistory] = useState(commandHistory);
+  const [showAgentTag, setShowAgentTag] = useState(true);
 
   const executeCommand = async (cmd?: string) => {
     const commandToExecute = cmd || command;
@@ -100,9 +102,9 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
       console.log('🔍 CommandPanel: latest output:', latestOutput);
       
       if (latestOutput && latestOutput.trim()) {
-        // Add the latest output to the display
         setOutput(prev => {
-          const newOutput = prev + (prev.endsWith('\n') ? '' : '\n') + latestOutput + '\n';
+          const processed = showAgentTag ? latestOutput : latestOutput.replace(/^\[[^\]]+\]\s*/, '');
+          const newOutput = prev + (prev.endsWith('\n') ? '' : '\n') + processed + '\n';
           console.log('🔍 CommandPanel: setting new output:', newOutput);
           return newOutput;
         });
@@ -162,9 +164,15 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                   <Terminal className="h-4 w-4 mr-2" />
                   PowerShell Terminal
                 </CardTitle>
-                {agentId && (
-                  <Badge variant="outline">{agentId.substring(0, 8)}</Badge>
-                )}
+                <div className="flex items-center gap-3">
+                  {agentId && (
+                    <Badge variant="outline">{agentId.substring(0, 8)}</Badge>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs">Show Agent Tag</span>
+                    <Switch checked={showAgentTag} onCheckedChange={setShowAgentTag} />
+                  </div>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">

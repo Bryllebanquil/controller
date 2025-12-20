@@ -247,21 +247,14 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     // Command result events
     socketInstance.on('command_result', (data: any) => {
       if (!data || typeof data !== 'object') return;
-      const formatted = typeof data.formatted_text === 'string' && data.formatted_text.trim()
-        ? data.formatted_text
-        : (() => {
-            const prompt = typeof data.prompt === 'string' ? data.prompt : 'PS C:\\>';
-            const cmd = typeof data.command === 'string' ? data.command : '';
-            const out = typeof data.output === 'string' ? data.output : '';
-            const err = typeof data.error === 'string' ? data.error : '';
-            const exit = typeof data.exit_code === 'number' ? data.exit_code : undefined;
-            let text = `${prompt} ${cmd}\n`;
-            if (out) text += out.endsWith('\n') ? out : `${out}\n`;
-            if (err && err.trim()) text += err.endsWith('\n') ? err : `${err}\n`;
-            if (exit && exit !== 0) text += `Exit code: ${exit}\n`;
-            return text;
-          })();
-      addCommandOutput(formatted);
+      const agentTag = typeof data.agent_id === 'string' ? `[${data.agent_id}] ` : '';
+      const text =
+        (typeof data.formatted_text === 'string' && data.formatted_text.trim())
+          ? data.formatted_text
+          : (typeof data.output === 'string' ? data.output : '');
+      if (text && text.trim()) {
+        addCommandOutput(agentTag + text);
+      }
     });
 
     // Legacy command output events (for backward compatibility)
