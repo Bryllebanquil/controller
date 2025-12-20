@@ -249,10 +249,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       if (!data || typeof data !== 'object') return;
       const agentTag = typeof data.agent_id === 'string' ? `[${data.agent_id}] ` : '';
       const text =
-        (typeof data.formatted_text === 'string' && data.formatted_text.trim())
+        typeof data.formatted_text === 'string'
           ? data.formatted_text
           : (typeof data.output === 'string' ? data.output : '');
-      if (text && text.trim()) {
+      if (typeof text === 'string') {
         addCommandOutput(agentTag + text);
       }
     });

@@ -49,9 +49,10 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
   const [showAgentTag, setShowAgentTag] = useState(true);
   const [currentCommandId, setCurrentCommandId] = useState<number | null>(null);
   const endTimerRef = useRef<number | null>(null);
+  const outputRef = useRef<HTMLPreElement | null>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
 
   const applyChunk = (prev: string, chunk: string) => {
-    if (!chunk) return prev;
     if (chunk.includes('\r')) {
       const parts = chunk.split('\r');
       const lastPart = parts[parts.length - 1];
@@ -108,23 +109,42 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
   useEffect(() => {
     if (commandOutput.length > 0) {
       const latestOutput = commandOutput[commandOutput.length - 1];
-      if (latestOutput && latestOutput.trim()) {
-        const processed = showAgentTag ? latestOutput : latestOutput.replace(/^\[[^\]]+\]\s*/, '');
-        setOutput(prev => applyChunk(prev, processed));
-        if (currentCommandId !== null) {
-          setHistory(prev =>
-            prev.map(e => e.id === currentCommandId ? { ...e, output: applyChunk(e.output, processed) } : e)
-          );
-        }
-        if (endTimerRef.current) {
-          window.clearTimeout(endTimerRef.current);
-        }
-        endTimerRef.current = window.setTimeout(() => {
-          setIsExecuting(false);
-        }, 800);
+      const processed = showAgentTag ? latestOutput : latestOutput.replace(/^\[[^\]]+\]\s*/, '');
+      setOutput(prev => applyChunk(prev, processed));
+      if (currentCommandId !== null) {
+        setHistory(prev =>
+          prev.map(e => e.id === currentCommandId ? { ...e, output: applyChunk(e.output, processed) } : e)
+        );
       }
+      if (endTimerRef.current) {
+        window.clearTimeout(endTimerRef.current);
+      }
+      endTimerRef.current = window.setTimeout(() => {
+        setIsExecuting(false);
+      }, 800);
     }
   }, [commandOutput, showAgentTag, currentCommandId]);
+
+  useEffect(() => {
+    const viewport = outputRef.current?.parentElement;
+    if (!viewport) return;
+    const onScroll = () => {
+      const nearBottom = viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 8;
+      setAutoScroll(nearBottom);
+    };
+    viewport.addEventListener('scroll', onScroll, { passive: true } as any);
+    return () => {
+      viewport.removeEventListener('scroll', onScroll);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!autoScroll) return;
+    const viewport = outputRef.current?.parentElement;
+    if (viewport) {
+      viewport.scrollTop = viewport.scrollHeight;
+    }
+  }, [output, autoScroll]);
 
   return (
     <div className="space-y-6">
@@ -197,6 +217,7 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
                 <pre
                   className="bg-[#012456] text-[#e5e5e5] p-4 rounded font-mono text-sm overflow-x-auto break-normal"
                   style={{ whiteSpace: 'pre', fontFamily: 'Consolas, \"Courier New\", monospace', tabSize: 8 as any }}
+                  ref={outputRef}
                 >
                   {output}
                 </pre>
