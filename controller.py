@@ -2039,60 +2039,108 @@ def index():
 def dashboard():
     # Serve a fully inlined single-file UI so deployment is self-contained
     try:
-        # Find latest built asset files dynamically (avoid hardcoded hashed names)
-        def find_asset(glob_pattern_candidates):
-            for assets_dir, pattern in glob_pattern_candidates:
-                try:
-                    if os.path.isdir(assets_dir):
-                        for fname in sorted(os.listdir(assets_dir)):
-                            if fname.startswith(pattern[0]) and fname.endswith(pattern[1]):
-                                return os.path.join(assets_dir, fname)
-                except Exception:
-                    continue
-            return None
-
         base_dir = os.path.dirname(__file__)
-        assets_dirs = [
-            os.path.join(base_dir, 'agent-controller ui v2.1', 'build', 'assets'),
-            os.path.join(base_dir, 'agent-controller ui', 'build', 'assets'),
+        candidate_builds = [
+            os.path.join(base_dir, 'agent-controller ui v2.1', 'build'),
+            os.path.join(base_dir, 'agent-controller ui', 'build'),
         ]
-
-        css_path = find_asset([(d, ('index-', '.css')) for d in assets_dirs])
-        js_path = find_asset([(d, ('index-', '.js')) for d in assets_dirs])
-
-        if not css_path or not js_path:
-            raise FileNotFoundError('Built assets not found in assets directories')
-
-        with open(css_path, 'r', encoding='utf-8', errors='replace') as f:
-            css_inline = f.read()
-        with open(js_path, 'r', encoding='utf-8', errors='replace') as f:
-            js_bundle = f.read()
-        
-        # Runtime overrides to ensure same-origin backend
-        runtime_overrides = """
-        <script>
-        window.__SOCKET_URL__ = window.location.protocol + '//' + window.location.host;
-        window.__API_URL__ = window.__SOCKET_URL__;
-        </script>
-        """
-        
-        html = f"""
-        <!DOCTYPE html>
-        <html lang=\"en\">
-          <head>
-            <meta charset=\"UTF-8\" />
-            <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
-            <title>Agent Controller</title>
-            <style>{css_inline}</style>
-            {runtime_overrides}
-          </head>
-          <body>
-            <div id=\"root\"></div>
-            <script type=\"module\">{js_bundle}</script>
-          </body>
-        </html>
-        """
-        return Response(html, mimetype='text/html')
+        index_path = None
+        for b in candidate_builds:
+            p = os.path.join(b, 'index.html')
+            if os.path.exists(p):
+                index_path = p
+                break
+        if index_path:
+            with open(index_path, 'r', encoding='utf-8', errors='replace') as f:
+                index_html = f.read()
+            assets_dir = os.path.join(os.path.dirname(index_path), 'assets')
+            # Extract built asset filenames referenced by index.html
+            import re
+            css_files = re.findall(r'href=\"/assets/([^\"]+?\\.css)\"', index_html)
+            js_files = re.findall(r'src=\"/assets/([^\"]+?\\.js)\"', index_html)
+            css_inline = ""
+            js_inline = ""
+            for cf in css_files:
+                fp = os.path.join(assets_dir, cf)
+                if os.path.exists(fp):
+                    with open(fp, 'r', encoding='utf-8', errors='replace') as f:
+                        css_inline += f.read()
+            for jf in js_files:
+                fp = os.path.join(assets_dir, jf)
+                if os.path.exists(fp):
+                    with open(fp, 'r', encoding='utf-8', errors='replace') as f:
+                        js_inline += f.read()
+            # Runtime overrides to ensure same-origin backend
+            runtime_overrides = """
+            <script>
+            window.__SOCKET_URL__ = window.location.protocol + '//' + window.location.host;
+            window.__API_URL__ = window.__SOCKET_URL__;
+            </script>
+            """
+            html = f"""
+            <!DOCTYPE html>
+            <html lang=\"en\">
+              <head>
+                <meta charset=\"UTF-8\" />
+                <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
+                <title>Agent Controller</title>
+                <style>{css_inline}</style>
+                {runtime_overrides}
+              </head>
+              <body>
+                <div id=\"root\"></div>
+                <script type=\"module\">{js_inline}</script>
+              </body>
+            </html>
+            """
+            return Response(html, mimetype='text/html')
+        else:
+            # If index.html isn't found, try direct asset inlining as a secondary strategy
+            def find_asset(glob_pattern_candidates):
+                for assets_dir, pattern in glob_pattern_candidates:
+                    try:
+                        if os.path.isdir(assets_dir):
+                            for fname in sorted(os.listdir(assets_dir)):
+                                if fname.startswith(pattern[0]) and fname.endswith(pattern[1]):
+                                    return os.path.join(assets_dir, fname)
+                    except Exception:
+                        continue
+                return None
+            assets_dirs = [
+                os.path.join(base_dir, 'agent-controller ui v2.1', 'build', 'assets'),
+                os.path.join(base_dir, 'agent-controller ui', 'build', 'assets'),
+            ]
+            css_path = find_asset([(d, ('index-', '.css')) for d in assets_dirs])
+            js_path = find_asset([(d, ('index-', '.js')) for d in assets_dirs])
+            if not css_path or not js_path:
+                raise FileNotFoundError('Built assets not found in assets directories')
+            with open(css_path, 'r', encoding='utf-8', errors='replace') as f:
+                css_inline = f.read()
+            with open(js_path, 'r', encoding='utf-8', errors='replace') as f:
+                js_bundle = f.read()
+            runtime_overrides = """
+            <script>
+            window.__SOCKET_URL__ = window.location.protocol + '//' + window.location.host;
+            window.__API_URL__ = window.__SOCKET_URL__;
+            </script>
+            """
+            html = f"""
+            <!DOCTYPE html>
+            <html lang=\"en\">
+              <head>
+                <meta charset=\"UTF-8\" />
+                <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
+                <title>Agent Controller</title>
+                <style>{css_inline}</style>
+                {runtime_overrides}
+              </head>
+              <body>
+                <div id=\"root\"></div>
+                <script type=\"module\">{js_bundle}</script>
+              </body>
+            </html>
+            """
+            return Response(html, mimetype='text/html')
     except Exception as e:
         print(f"Failed to inline dashboard, falling back to static file: {e}")
         # Fallback to static file if inline fails
