@@ -9698,6 +9698,7 @@ def on_request_file_chunk_from_agent(data):
         log_message(f"File download request received: {data}")
         filename = data.get('filename')
         provided_path = data.get('path')  # UI might send full path
+        download_id = data.get('download_id')
         
         if not filename:
             log_message("Invalid file request - no filename provided", "warning")
@@ -9747,6 +9748,7 @@ def on_request_file_chunk_from_agent(data):
             safe_emit('file_chunk_from_agent', {
                 'agent_id': get_or_create_agent_id(),
                 'filename': filename,
+                'download_id': download_id,
                 'error': f'File not found: {filename}. Last browsed dir: {LAST_BROWSED_DIRECTORY or "None"}'
             })
             return
@@ -9772,6 +9774,7 @@ def on_request_file_chunk_from_agent(data):
                 safe_emit('file_chunk_from_agent', {
                     'agent_id': agent_id,
                     'filename': filename_only,
+                    'download_id': download_id,
                     'chunk': chunk_b64,
                     'offset': offset,
                     'total_size': total_size
@@ -9788,6 +9791,7 @@ def on_request_file_chunk_from_agent(data):
                 safe_emit('file_download_progress', {
                     'agent_id': agent_id,
                     'filename': filename_only,
+                    'download_id': download_id,
                     'sent': offset,
                     'total': total_size,
                     'progress': progress
@@ -9800,6 +9804,7 @@ def on_request_file_chunk_from_agent(data):
         safe_emit('file_download_complete', {
             'agent_id': agent_id,
             'filename': filename_only,
+            'download_id': download_id,
             'size': total_size,
             'success': True
         })
