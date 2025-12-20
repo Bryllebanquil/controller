@@ -10229,8 +10229,11 @@ def main_loop(agent_id):
                                 })
                             except Exception:
                                 continue
-                    safe_emit('file_list', {'agent_id': agent_id, 'path': path, 'files': entries})
-                    output = f"Listed {len(entries)} entries in {path}"
+                        safe_emit('file_list', {'agent_id': agent_id, 'path': path, 'files': entries})
+                        output = f"Listed {len(entries)} entries in {path}"
+                    else:
+                        safe_emit('file_list', {'agent_id': agent_id, 'path': path, 'success': False, 'error': 'Directory not found'})
+                        output = f"Directory not found: {path}"
                 except Exception as e:
                     output = f"Error listing directory: {e}"
             elif command.startswith("upload-file:"):

@@ -368,6 +368,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       const receivedSize = fileKey ? downloadBuffers[fileKey].chunks.reduce((sum, chunk) => sum + chunk.length, 0) : 0;
       const progress = totalSize > 0 ? Math.round((receivedSize / totalSize) * 100) : 0;
       console.log(`📊 Download progress: ${data.filename} - ${progress}%`);
+
+      if (data?.download_id && String(data.download_id).startsWith('preview_')) {
+        const event = new CustomEvent('file_download_progress', { detail: { ...data, progress } });
+        window.dispatchEvent(event);
+      }
       
       // Check if download is complete
       if (totalSize > 0 && receivedSize >= totalSize) {
@@ -382,16 +387,36 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           offset += chunk.length;
         }
         
-        // Create Blob and trigger download
-        const blob = new Blob([combinedArray]);
+        const filename = String(data?.filename || 'download');
+        const ext = filename.includes('.') ? filename.split('.').pop()!.toLowerCase() : '';
+        const mime =
+          ext === 'png' ? 'image/png'
+          : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
+          : ext === 'gif' ? 'image/gif'
+          : ext === 'webp' ? 'image/webp'
+          : ext === 'bmp' ? 'image/bmp'
+          : ext === 'svg' ? 'image/svg+xml'
+          : ext === 'mp4' ? 'video/mp4'
+          : ext === 'webm' ? 'video/webm'
+          : ext === 'mov' ? 'video/quicktime'
+          : ext === 'mkv' ? 'video/x-matroska'
+          : ext === 'avi' ? 'video/x-msvideo'
+          : 'application/octet-stream';
+        const blob = new Blob([combinedArray], { type: mime });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = data.filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+
+        if (data?.download_id && String(data.download_id).startsWith('preview_')) {
+          const event = new CustomEvent('file_preview_ready', { detail: { ...data, url } });
+          window.dispatchEvent(event);
+        } else {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }
         
         // Clean up
         if (fileKey) delete downloadBuffers[fileKey];

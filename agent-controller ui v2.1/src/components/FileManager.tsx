@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useSocket } from './SocketProvider';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -81,6 +81,7 @@ const formatFileSize = (bytes?: number) => {
 export function FileManager({ agentId }: FileManagerProps) {
   const { uploadFile, downloadFile, socket } = useSocket();
   const [currentPath, setCurrentPath] = useState('/');
+  const [pathInput, setPathInput] = useState('/');
   const [files, setFiles] = useState(mockFiles);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -88,6 +89,13 @@ export function FileManager({ agentId }: FileManagerProps) {
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const [transferFileName, setTransferFileName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewKind, setPreviewKind] = useState<'image' | 'video' | null>(null);
+  const [previewItems, setPreviewItems] = useState<FileItem[]>([]);
+  const [previewIndex, setPreviewIndex] = useState<number>(0);
+  const lastPreviewUrlRef = useRef<string | null>(null);
+  const currentPathRef = useRef<string>('/');
 
   const filteredFiles = files.filter(file => 
     file.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -115,11 +123,88 @@ export function FileManager({ agentId }: FileManagerProps) {
   const handleNavigate = (path: string) => {
     const nextPath = path === '..' ? getParentPath(currentPath) : path;
     setCurrentPath(nextPath);
+    setPathInput(nextPath);
     setSelectedFiles([]);
     if (agentId && socket) {
       const reqPath = nextPath || '/';
       socket.emit('execute_command', { agent_id: agentId, command: `list-dir:${reqPath}` });
     }
+  };
+
+  const handlePathKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (!agentId || !socket) return;
+    const trimmed = pathInput.trim();
+    if (!trimmed) {
+      setPathInput(currentPathRef.current);
+      return;
+    }
+    setIsLoading(true);
+    socket.emit('execute_command', { agent_id: agentId, command: `list-dir:${trimmed}` });
+  };
+
+  const getExtension = (name: string) => {
+    const idx = name.lastIndexOf('.');
+    return idx >= 0 ? name.slice(idx + 1).toLowerCase() : '';
+  };
+
+  const getPreviewKind = (ext: string): 'image' | 'video' | null => {
+    const image = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
+    const video = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v']);
+    if (image.has(ext)) return 'image';
+    if (video.has(ext)) return 'video';
+    return null;
+  };
+
+  const previewableItems = useMemo(() => {
+    return files
+      .filter(f => f.type === 'file')
+      .filter(f => getPreviewKind((f.extension || getExtension(f.name)).toLowerCase()) !== null)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [files]);
+
+  const selectedPreviewableIndex = useMemo(() => {
+    if (selectedFiles.length !== 1) return -1;
+    const selectedPath = selectedFiles[0];
+    return previewableItems.findIndex(f => f.path === selectedPath);
+  }, [selectedFiles, previewableItems]);
+
+  const requestPreviewAtIndex = (index: number) => {
+    if (!agentId || !socket) return;
+    if (index < 0 || index >= previewItems.length) return;
+    const item = previewItems[index];
+    const ext = (item.extension || getExtension(item.name)).toLowerCase();
+    const kind = getPreviewKind(ext);
+    setPreviewKind(kind);
+    setTransferFileName(item.name);
+    setDownloadProgress(0);
+    socket.emit('download_file', {
+      agent_id: agentId,
+      filename: item.path,
+      download_id: `preview_${Date.now()}_${Math.random().toString(16).slice(2)}`
+    });
+  };
+
+  const handlePreview = () => {
+    if (selectedFiles.length !== 1) return;
+    const idx = selectedPreviewableIndex;
+    if (idx < 0) return;
+    setPreviewItems(previewableItems);
+    setPreviewIndex(idx);
+    setPreviewOpen(true);
+  };
+
+  const handleNextPreview = () => {
+    const next = previewIndex + 1;
+    if (next >= previewItems.length) return;
+    setPreviewIndex(next);
+  };
+
+  const handlePrevPreview = () => {
+    const prev = previewIndex - 1;
+    if (prev < 0) return;
+    setPreviewIndex(prev);
   };
 
   const handleDownload = () => {
@@ -177,7 +262,16 @@ export function FileManager({ agentId }: FileManagerProps) {
     if (!socket) return;
     const handler = (data: any) => {
       if (!agentId || data.agent_id !== agentId) return;
-      setCurrentPath(data.path || '/');
+      if (data && data.success === false) {
+        toast.error(data.error || 'Directory not found');
+        setIsLoading(false);
+        setPathInput(currentPathRef.current);
+        return;
+      }
+      const nextPath = data.path || '/';
+      currentPathRef.current = nextPath;
+      setCurrentPath(nextPath);
+      setPathInput(nextPath);
       const mapped = (data.files || []).map((f: any) => ({
         name: f.name,
         type: f.type,
@@ -187,10 +281,48 @@ export function FileManager({ agentId }: FileManagerProps) {
         extension: f.extension
       }));
       setFiles(mapped);
+      setIsLoading(false);
     };
     socket.on('file_list', handler);
     return () => { socket.off('file_list', handler); };
   }, [socket, agentId]);
+
+  useEffect(() => {
+    const handler = (event: any) => {
+      const data = event.detail;
+      if (!data || !agentId || data.agent_id !== agentId) return;
+      if (typeof data.url === 'string') {
+        if (lastPreviewUrlRef.current) {
+          URL.revokeObjectURL(lastPreviewUrlRef.current);
+        }
+        lastPreviewUrlRef.current = data.url;
+        setPreviewUrl(data.url);
+        setDownloadProgress(null);
+        setTransferFileName(null);
+      }
+    };
+    window.addEventListener('file_preview_ready', handler);
+    return () => {
+      window.removeEventListener('file_preview_ready', handler);
+    };
+  }, [agentId]);
+
+  useEffect(() => {
+    if (!previewOpen) return;
+    requestPreviewAtIndex(previewIndex);
+  }, [previewOpen, previewIndex]);
+
+  useEffect(() => {
+    if (previewOpen) return;
+    if (lastPreviewUrlRef.current) {
+      URL.revokeObjectURL(lastPreviewUrlRef.current);
+      lastPreviewUrlRef.current = null;
+    }
+    setPreviewUrl(null);
+    setPreviewKind(null);
+    setPreviewItems([]);
+    setPreviewIndex(0);
+  }, [previewOpen]);
 
   // Listen for upload progress events
   useEffect(() => {
@@ -285,9 +417,12 @@ export function FileManager({ agentId }: FileManagerProps) {
                 <Button variant="ghost" size="sm" onClick={() => handleNavigate('..')}>
                   <ArrowLeft className="h-3 w-3" />
                 </Button>
-                <div className="flex-1 text-sm text-muted-foreground font-mono bg-muted px-2 py-1 rounded">
-                  {currentPath}
-                </div>
+                <Input
+                  value={pathInput}
+                  onChange={(e) => setPathInput(e.target.value)}
+                  onKeyDown={handlePathKeyDown}
+                  className="flex-1 text-sm text-muted-foreground font-mono bg-muted"
+                />
                 <Button variant="ghost" size="sm" onClick={handleRefresh} disabled={isLoading}>
                   <RefreshCw className={`h-3 w-3 ${isLoading ? 'animate-spin' : ''}`} />
                 </Button>
@@ -318,6 +453,15 @@ export function FileManager({ agentId }: FileManagerProps) {
                     <span className="inline-flex items-center"><Upload className="h-3 w-3 mr-1" />Upload</span>
                   </Button>
                 </label>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handlePreview}
+                  disabled={selectedPreviewableIndex < 0 || uploadProgress !== null || downloadProgress !== null}
+                >
+                  <Image className="h-3 w-3 mr-1" />
+                  Preview
+                </Button>
                 <Button 
                   size="sm" 
                   variant="destructive"
@@ -327,6 +471,39 @@ export function FileManager({ agentId }: FileManagerProps) {
                   <Trash2 className="h-3 w-3" />
                 </Button>
               </div>
+
+              {previewOpen && (
+                <div className="border rounded p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm truncate">{previewItems[previewIndex]?.name || ''}</div>
+                    <Button size="sm" variant="ghost" onClick={() => setPreviewOpen(false)}>
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  <div className="w-[500px] h-[500px] bg-muted rounded overflow-hidden flex items-center justify-center">
+                    {previewUrl && previewKind === 'image' && (
+                      <img src={previewUrl} className="max-w-full max-h-full object-contain" />
+                    )}
+                    {previewUrl && previewKind === 'video' && (
+                      <video src={previewUrl} className="max-w-full max-h-full" controls />
+                    )}
+                    {!previewUrl && (
+                      <div className="text-xs text-muted-foreground">Loading preview…</div>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Button size="sm" variant="outline" onClick={handlePrevPreview} disabled={previewIndex <= 0}>
+                      Prev
+                    </Button>
+                    <div className="text-xs text-muted-foreground">
+                      {previewIndex + 1}/{previewItems.length}
+                    </div>
+                    <Button size="sm" variant="outline" onClick={handleNextPreview} disabled={previewIndex >= previewItems.length - 1}>
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {/* Upload/Download Progress */}
               {(uploadProgress !== null || downloadProgress !== null) && (
