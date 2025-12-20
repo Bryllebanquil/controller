@@ -327,7 +327,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     });
 
     // File transfer events - Download chunks
-    const downloadBuffers: Record<string, { chunks: Uint8Array[], totalSize: number }> = {};
+    const downloadBuffers: Record<string, { chunksByOffset: Record<number, Uint8Array>, receivedSize: number, totalSize: number }> = {};
     
     socketInstance.on('file_download_chunk', (data: any) => {
       console.log('📥 Received file_download_chunk:', data);
@@ -349,7 +349,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
       // Initialize buffer for this file
       if (fileKey && !downloadBuffers[fileKey]) {
-        downloadBuffers[fileKey] = { chunks: [], totalSize: data.total_size || 0 };
+        downloadBuffers[fileKey] = { chunksByOffset: {}, receivedSize: 0, totalSize: data.total_size || 0 };
         console.log(`📥 Starting download: ${data.filename} (${data.total_size} bytes)`);
         addCommandOutput(`📥 Downloading: ${data.filename} (${data.total_size} bytes)`);
       }
@@ -360,12 +360,20 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
-      if (fileKey) downloadBuffers[fileKey].chunks.push(bytes);
+      if (fileKey) {
+        const buf = downloadBuffers[fileKey];
+        let chunkOffset = typeof data?.offset === 'number' ? data.offset : Number(data?.offset);
+        if (!Number.isFinite(chunkOffset)) chunkOffset = buf.receivedSize;
+        if (!buf.chunksByOffset[chunkOffset]) {
+          buf.chunksByOffset[chunkOffset] = bytes;
+          buf.receivedSize += bytes.length;
+        }
+      }
       
       // Calculate progress
       const totalSize = fileKey ? (data.total_size || downloadBuffers[fileKey].totalSize || 0) : (data.total_size || 0);
       if (fileKey && data.total_size) downloadBuffers[fileKey].totalSize = data.total_size;
-      const receivedSize = fileKey ? downloadBuffers[fileKey].chunks.reduce((sum, chunk) => sum + chunk.length, 0) : 0;
+      const receivedSize = fileKey ? downloadBuffers[fileKey].receivedSize : 0;
       const progress = totalSize > 0 ? Math.round((receivedSize / totalSize) * 100) : 0;
       console.log(`📊 Download progress: ${data.filename} - ${progress}%`);
 
@@ -379,12 +387,17 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         console.log(`✅ Download complete: ${data.filename}`);
         
         // Combine all chunks into one Uint8Array
-        const totalLength = fileKey ? downloadBuffers[fileKey].chunks.reduce((sum, chunk) => sum + chunk.length, 0) : 0;
+        const totalLength = fileKey ? downloadBuffers[fileKey].receivedSize : 0;
         const combinedArray = new Uint8Array(totalLength);
-        let offset = 0;
-        for (const chunk of (fileKey ? downloadBuffers[fileKey].chunks : [])) {
-          combinedArray.set(chunk, offset);
-          offset += chunk.length;
+        if (fileKey) {
+          const entries = Object.entries(downloadBuffers[fileKey].chunksByOffset)
+            .map(([k, v]) => [Number(k), v] as const)
+            .sort((a, b) => a[0] - b[0]);
+          let offset = 0;
+          for (const [, chunk] of entries) {
+            combinedArray.set(chunk, offset);
+            offset += chunk.length;
+          }
         }
         
         const filename = String(data?.filename || 'download');
