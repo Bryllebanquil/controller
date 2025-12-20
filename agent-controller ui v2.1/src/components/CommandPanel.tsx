@@ -53,14 +53,15 @@ export function CommandPanel({ agentId }: CommandPanelProps) {
   const [autoScroll, setAutoScroll] = useState(true);
 
   const applyChunk = (prev: string, chunk: string) => {
-    if (chunk.includes('\r')) {
-      const parts = chunk.split('\r');
-      const lastPart = parts[parts.length - 1];
-      const lastNewline = prev.lastIndexOf('\n');
-      const base = lastNewline >= 0 ? prev.slice(0, lastNewline + 1) : '';
-      return base + lastPart;
+    const normalized = chunk.replace(/\r\n/g, '\n');
+    if (!normalized.includes('\r')) return prev + normalized;
+    const parts = normalized.split('\r');
+    let acc = prev + parts[0];
+    for (let i = 1; i < parts.length; i++) {
+      const lastNewline = acc.lastIndexOf('\n');
+      acc = (lastNewline >= 0 ? acc.slice(0, lastNewline + 1) : '') + parts[i];
     }
-    return prev + chunk;
+    return acc;
   };
 
   const executeCommand = async (cmd?: string) => {
