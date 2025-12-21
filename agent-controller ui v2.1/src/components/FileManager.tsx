@@ -6,6 +6,8 @@ import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { ScrollArea } from './ui/scroll-area';
 import { Progress } from './ui/progress';
+import { AspectRatio } from './ui/aspect-ratio';
+import { Skeleton } from './ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { 
   Files, 
@@ -96,6 +98,7 @@ export function FileManager({ agentId }: FileManagerProps) {
   const [previewItems, setPreviewItems] = useState<FileItem[]>([]);
   const [previewIndex, setPreviewIndex] = useState<number>(0);
   const [previewErrorCount, setPreviewErrorCount] = useState<number>(0);
+  const [isPreviewLoading, setIsPreviewLoading] = useState<boolean>(false);
   const currentPathRef = useRef<string>('/');
 
   const filteredFiles = files.filter(file => 
@@ -306,6 +309,7 @@ export function FileManager({ agentId }: FileManagerProps) {
     const kind = getPreviewKind(ext);
     setPreviewKind(kind);
     setPreviewErrorCount(0);
+    setIsPreviewLoading(true);
     setPreviewUrl(makeStreamUrl(item.path));
   }, [previewOpen, previewIndex, previewItems, agentId]);
 
@@ -315,6 +319,7 @@ export function FileManager({ agentId }: FileManagerProps) {
     setPreviewKind(null);
     setPreviewItems([]);
     setPreviewIndex(0);
+    setIsPreviewLoading(false);
   }, [previewOpen]);
 
   // Listen for upload progress events
@@ -476,26 +481,55 @@ export function FileManager({ agentId }: FileManagerProps) {
                         {previewIndex + 1}/{previewItems.length}
                       </div>
                     </DialogHeader>
-                    <div className="flex-1 bg-muted rounded overflow-hidden flex items-center justify-center">
-                      {previewUrl && previewKind === 'image' && (
-                        <img src={previewUrl} className="max-w-full max-h-full object-contain" />
-                      )}
-                      {previewUrl && previewKind === 'video' && (
-                        <video className="w-full h-full" controls playsInline preload="metadata" onError={() => {
-                          if (previewItems[previewIndex] && previewErrorCount === 0) {
-                            setPreviewErrorCount(1);
-                            setPreviewUrl(makeStreamFastUrl(previewItems[previewIndex].path));
-                          }
-                        }}>
-                          <source src={previewUrl} type={previewSourceType} />
-                        </video>
-                      )}
-                      {previewUrl && previewKind === 'pdf' && (
-                        <iframe src={previewUrl} className="w-full h-full" title="PDF Preview" />
-                      )}
-                      {!previewUrl && (
-                        <div className="text-sm text-muted-foreground">Loading preview…</div>
-                      )}
+                    <div className="flex-1 bg-muted rounded flex items-center justify-center">
+                      <AspectRatio ratio={16 / 9} className="w-full max-w-[1000px] rounded overflow-hidden bg-black">
+                        <div className="relative w-full h-full">
+                          {isPreviewLoading && (
+                            <Skeleton className="absolute inset-0 w-full h-full" />
+                          )}
+                          {previewUrl && previewKind === 'image' && (
+                            <img
+                              src={previewUrl}
+                              className="absolute inset-0 w-full h-full object-contain"
+                              onLoad={() => setIsPreviewLoading(false)}
+                            />
+                          )}
+                          {previewUrl && previewKind === 'video' && (
+                            <video
+                              className="absolute inset-0 w-full h-full"
+                              controls
+                              playsInline
+                              preload="metadata"
+                              onLoadedData={() => setIsPreviewLoading(false)}
+                              onCanPlay={() => setIsPreviewLoading(false)}
+                              onError={() => {
+                                if (previewItems[previewIndex] && previewErrorCount === 0) {
+                                  setPreviewErrorCount(1);
+                                  setIsPreviewLoading(true);
+                                  setPreviewUrl(makeStreamFastUrl(previewItems[previewIndex].path));
+                                } else {
+                                  setIsPreviewLoading(false);
+                                }
+                              }}
+                            >
+                              <source src={previewUrl} type={previewSourceType} />
+                            </video>
+                          )}
+                          {previewUrl && previewKind === 'pdf' && (
+                            <iframe
+                              src={previewUrl}
+                              className="absolute inset-0 w-full h-full"
+                              title="PDF Preview"
+                              onLoad={() => setIsPreviewLoading(false)}
+                            />
+                          )}
+                          {!previewUrl && !isPreviewLoading && (
+                            <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
+                              Loading preview…
+                            </div>
+                          )}
+                        </div>
+                      </AspectRatio>
                     </div>
                     <div className="shrink-0 flex items-center justify-between">
                       <Button size="sm" variant="outline" onClick={handlePrevPreview} disabled={previewIndex <= 0}>
