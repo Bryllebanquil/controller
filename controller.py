@@ -2028,32 +2028,41 @@ FILE_RANGE_WAITERS = {}
 FILE_THUMB_WAITERS = {}
 FILE_FASTSTART_WAITERS = {}
 FILE_WAITERS_LOCK = threading.Lock()
-STREAM_SETTINGS = defaultdict(lambda: {"chunk_size": 1024 * 1024})
+STREAM_SETTINGS = defaultdict(lambda: {"chunk_size": 1024 * 1024, "max_chunk": 2 * 1024 * 1024, "min_chunk": 256 * 1024})
 
-MIN_STREAM_CHUNK = 256 * 1024
-MAX_STREAM_CHUNK = 8 * 1024 * 1024
+GLOBAL_MIN_STREAM_CHUNK = 256 * 1024
+GLOBAL_MAX_STREAM_CHUNK = 8 * 1024 * 1024
 
 def _get_stream_chunk_size(agent_id: str) -> int:
     try:
         s = STREAM_SETTINGS.get(agent_id) or {}
         cs = int(s.get("chunk_size") or (1024 * 1024))
-        return max(MIN_STREAM_CHUNK, min(cs, MAX_STREAM_CHUNK))
+        min_c = int(s.get("min_chunk") or GLOBAL_MIN_STREAM_CHUNK)
+        max_c = int(s.get("max_chunk") or GLOBAL_MAX_STREAM_CHUNK)
+        return max(min_c, min(cs, max_c))
     except Exception:
         return 1024 * 1024
 
 def _adjust_stream_chunk_size(agent_id: str, elapsed_s: float, success: bool):
     try:
+        s = STREAM_SETTINGS.get(agent_id) or {}
         current = _get_stream_chunk_size(agent_id)
+        min_c = int(s.get("min_chunk") or GLOBAL_MIN_STREAM_CHUNK)
+        max_c = int(s.get("max_chunk") or GLOBAL_MAX_STREAM_CHUNK)
         if not success:
-            new_size = max(MIN_STREAM_CHUNK, current // 2)
+            # Reduce chunk size and cap for repeated failures
+            new_size = max(min_c, current // 2)
+            new_max = max(min_c, max_c // 2)
+            STREAM_SETTINGS[agent_id] = {"chunk_size": new_size, "max_chunk": new_max, "min_chunk": min_c}
         else:
             if elapsed_s < 1.0:
-                new_size = min(MAX_STREAM_CHUNK, current * 2)
-            elif elapsed_s > 10.0:
-                new_size = max(MIN_STREAM_CHUNK, current // 2)
+                new_size = min(max_c, current * 2)
+            elif elapsed_s > 15.0:
+                new_size = max(min_c, current // 2)
+                max_c = max(min_c, max_c // 2)
             else:
                 new_size = current
-        STREAM_SETTINGS[agent_id] = {"chunk_size": new_size}
+            STREAM_SETTINGS[agent_id] = {"chunk_size": new_size, "max_chunk": max_c, "min_chunk": min_c}
     except Exception:
         pass
 
@@ -2646,7 +2655,7 @@ def _guess_mime(path: str):
         return mime
     return 'application/octet-stream'
 
-def _request_agent_file_range(agent_id: str, agent_sid: str, file_path: str, start: Optional[int], end: Optional[int], timeout_s: float = 30.0):
+def _request_agent_file_range(agent_id: str, agent_sid: str, file_path: str, start: Optional[int], end: Optional[int], timeout_s: float = 300.0):
     request_id = f"range_{int(time.time() * 1000)}_{secrets.token_hex(6)}"
     ev = threading.Event()
     with FILE_WAITERS_LOCK:
