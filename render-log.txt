@@ -1,0 +1,210 @@
+==> Cloning from https://github.com/Bryllebanquil/controller
+==> Checking out commit c3749c7295e0107553e8a79b76fa8ab5b2d1e18f in branch master
+==> Installing Python version 3.13.4...
+==> Using Python version 3.13.4 (default)
+==> Docs on specifying a Python version: https://render.com/docs/python-version
+==> Using Poetry version 2.1.3 (default)
+==> Docs on specifying a Poetry version: https://render.com/docs/poetry-version
+==> Running build command 'pip install -r requirements-controller.txt && cd "agent-controller ui v2.1" && rm -rf build && (npm ci --no-fund --no-audit || npm install --no-fund --no-audit) && npm run build && cd ..'...
+Collecting flask>=3.0.0 (from -r requirements-controller.txt (line 2))
+  Downloading flask-3.1.2-py3-none-any.whl.metadata (3.2 kB)
+Collecting flask-socketio>=5.5.0 (from -r requirements-controller.txt (line 3))
+  Downloading Flask_SocketIO-5.5.1-py3-none-any.whl.metadata (2.6 kB)
+Collecting flask-cors>=4.0.0 (from -r requirements-controller.txt (line 4))
+  Downloading flask_cors-6.0.2-py3-none-any.whl.metadata (5.3 kB)
+Collecting eventlet>=0.40.0 (from -r requirements-controller.txt (line 5))
+  Downloading eventlet-0.40.4-py3-none-any.whl.metadata (5.5 kB)
+Collecting gunicorn>=21.0.0 (from -r requirements-controller.txt (line 6))
+  Downloading gunicorn-23.0.0-py3-none-any.whl.metadata (4.4 kB)
+Collecting python-socketio>=5.13.0 (from -r requirements-controller.txt (line 7))
+  Downloading python_socketio-5.15.1-py3-none-any.whl.metadata (3.2 kB)
+Collecting websockets>=12.0 (from -r requirements-controller.txt (line 8))
+  Downloading websockets-15.0.1-cp313-cp313-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.8 kB)
+Collecting requests>=2.31.0 (from -r requirements-controller.txt (line 11))
+  Downloading requests-2.32.5-py3-none-any.whl.metadata (4.9 kB)
+Collecting cryptography>=41.0.0 (from -r requirements-controller.txt (line 14))
+  Downloading cryptography-46.0.3-cp311-abi3-manylinux_2_34_x86_64.whl.metadata (5.7 kB)
+Collecting numpy>=1.24.0 (from -r requirements-controller.txt (line 17))
+  Downloading numpy-2.3.5-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (62 kB)
+Collecting blinker>=1.9.0 (from flask>=3.0.0->-r requirements-controller.txt (line 2))
+  Downloading blinker-1.9.0-py3-none-any.whl.metadata (1.6 kB)
+Collecting click>=8.1.3 (from flask>=3.0.0->-r requirements-controller.txt (line 2))
+  Downloading click-8.3.1-py3-none-any.whl.metadata (2.6 kB)
+Collecting itsdangerous>=2.2.0 (from flask>=3.0.0->-r requirements-controller.txt (line 2))
+  Downloading itsdangerous-2.2.0-py3-none-any.whl.metadata (1.9 kB)
+Collecting jinja2>=3.1.2 (from flask>=3.0.0->-r requirements-controller.txt (line 2))
+  Downloading jinja2-3.1.6-py3-none-any.whl.metadata (2.9 kB)
+Collecting markupsafe>=2.1.1 (from flask>=3.0.0->-r requirements-controller.txt (line 2))
+  Downloading markupsafe-3.0.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.7 kB)
+Collecting werkzeug>=3.1.0 (from flask>=3.0.0->-r requirements-controller.txt (line 2))
+  Downloading werkzeug-3.1.4-py3-none-any.whl.metadata (4.0 kB)
+Collecting dnspython>=1.15.0 (from eventlet>=0.40.0->-r requirements-controller.txt (line 5))
+  Downloading dnspython-2.8.0-py3-none-any.whl.metadata (5.7 kB)
+Collecting greenlet>=1.0 (from eventlet>=0.40.0->-r requirements-controller.txt (line 5))
+  Downloading greenlet-3.3.0-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (4.1 kB)
+Collecting packaging (from gunicorn>=21.0.0->-r requirements-controller.txt (line 6))
+  Downloading packaging-25.0-py3-none-any.whl.metadata (3.3 kB)
+Collecting bidict>=0.21.0 (from python-socketio>=5.13.0->-r requirements-controller.txt (line 7))
+  Downloading bidict-0.23.1-py3-none-any.whl.metadata (8.7 kB)
+Collecting python-engineio>=4.11.0 (from python-socketio>=5.13.0->-r requirements-controller.txt (line 7))
+  Downloading python_engineio-4.12.3-py3-none-any.whl.metadata (2.2 kB)
+Collecting charset_normalizer<4,>=2 (from requests>=2.31.0->-r requirements-controller.txt (line 11))
+  Downloading charset_normalizer-3.4.4-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (37 kB)
+Collecting idna<4,>=2.5 (from requests>=2.31.0->-r requirements-controller.txt (line 11))
+  Downloading idna-3.11-py3-none-any.whl.metadata (8.4 kB)
+Collecting urllib3<3,>=1.21.1 (from requests>=2.31.0->-r requirements-controller.txt (line 11))
+  Downloading urllib3-2.6.2-py3-none-any.whl.metadata (6.6 kB)
+Collecting certifi>=2017.4.17 (from requests>=2.31.0->-r requirements-controller.txt (line 11))
+  Downloading certifi-2025.11.12-py3-none-any.whl.metadata (2.5 kB)
+Collecting cffi>=2.0.0 (from cryptography>=41.0.0->-r requirements-controller.txt (line 14))
+  Downloading cffi-2.0.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.6 kB)
+Collecting pycparser (from cffi>=2.0.0->cryptography>=41.0.0->-r requirements-controller.txt (line 14))
+  Downloading pycparser-2.23-py3-none-any.whl.metadata (993 bytes)
+Collecting simple-websocket>=0.10.0 (from python-engineio>=4.11.0->python-socketio>=5.13.0->-r requirements-controller.txt (line 7))
+  Downloading simple_websocket-1.1.0-py3-none-any.whl.metadata (1.5 kB)
+Collecting wsproto (from simple-websocket>=0.10.0->python-engineio>=4.11.0->python-socketio>=5.13.0->-r requirements-controller.txt (line 7))
+  Downloading wsproto-1.3.2-py3-none-any.whl.metadata (5.2 kB)
+Collecting h11<1,>=0.16.0 (from wsproto->simple-websocket>=0.10.0->python-engineio>=4.11.0->python-socketio>=5.13.0->-r requirements-controller.txt (line 7))
+  Downloading h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+Downloading flask-3.1.2-py3-none-any.whl (103 kB)
+Downloading Flask_SocketIO-5.5.1-py3-none-any.whl (18 kB)
+Downloading flask_cors-6.0.2-py3-none-any.whl (13 kB)
+Downloading eventlet-0.40.4-py3-none-any.whl (364 kB)
+Downloading gunicorn-23.0.0-py3-none-any.whl (85 kB)
+Downloading python_socketio-5.15.1-py3-none-any.whl (79 kB)
+Downloading websockets-15.0.1-cp313-cp313-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl (182 kB)
+Downloading requests-2.32.5-py3-none-any.whl (64 kB)
+Downloading charset_normalizer-3.4.4-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (153 kB)
+Downloading idna-3.11-py3-none-any.whl (71 kB)
+Downloading urllib3-2.6.2-py3-none-any.whl (131 kB)
+Downloading cryptography-46.0.3-cp311-abi3-manylinux_2_34_x86_64.whl (4.5 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.5/4.5 MB 103.6 MB/s eta 0:00:00
+Downloading numpy-2.3.5-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (16.6 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.6/16.6 MB 164.8 MB/s eta 0:00:00
+Downloading bidict-0.23.1-py3-none-any.whl (32 kB)
+Downloading blinker-1.9.0-py3-none-any.whl (8.5 kB)
+Downloading certifi-2025.11.12-py3-none-any.whl (159 kB)
+Downloading cffi-2.0.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (219 kB)
+Downloading click-8.3.1-py3-none-any.whl (108 kB)
+Downloading dnspython-2.8.0-py3-none-any.whl (331 kB)
+Downloading greenlet-3.3.0-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (612 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 612.8/612.8 kB 40.9 MB/s eta 0:00:00
+Downloading itsdangerous-2.2.0-py3-none-any.whl (16 kB)
+Downloading jinja2-3.1.6-py3-none-any.whl (134 kB)
+Downloading markupsafe-3.0.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (22 kB)
+Downloading python_engineio-4.12.3-py3-none-any.whl (59 kB)
+Downloading simple_websocket-1.1.0-py3-none-any.whl (13 kB)
+Downloading werkzeug-3.1.4-py3-none-any.whl (224 kB)
+Downloading packaging-25.0-py3-none-any.whl (66 kB)
+Downloading pycparser-2.23-py3-none-any.whl (118 kB)
+Downloading wsproto-1.3.2-py3-none-any.whl (24 kB)
+Downloading h11-0.16.0-py3-none-any.whl (37 kB)
+Installing collected packages: websockets, urllib3, pycparser, packaging, numpy, markupsafe, itsdangerous, idna, h11, greenlet, dnspython, click, charset_normalizer, certifi, blinker, bidict, wsproto, werkzeug, requests, jinja2, gunicorn, eventlet, cffi, simple-websocket, flask, cryptography, python-engineio, flask-cors, python-socketio, flask-socketio
+Successfully installed bidict-0.23.1 blinker-1.9.0 certifi-2025.11.12 cffi-2.0.0 charset_normalizer-3.4.4 click-8.3.1 cryptography-46.0.3 dnspython-2.8.0 eventlet-0.40.4 flask-3.1.2 flask-cors-6.0.2 flask-socketio-5.5.1 greenlet-3.3.0 gunicorn-23.0.0 h11-0.16.0 idna-3.11 itsdangerous-2.2.0 jinja2-3.1.6 markupsafe-3.0.3 numpy-2.3.5 packaging-25.0 pycparser-2.23 python-engineio-4.12.3 python-socketio-5.15.1 requests-2.32.5 simple-websocket-1.1.0 urllib3-2.6.2 websockets-15.0.1 werkzeug-3.1.4 wsproto-1.3.2
+[notice] A new release of pip is available: 25.1.1 -> 25.3
+[notice] To update, run: pip install --upgrade pip
+==> Using Node.js version 22.16.0 (default)
+==> Docs on specifying a Node.js version: https://render.com/docs/node-version
+added 163 packages in 5s
+> Advanced UAC Bypass Tool (Community)@0.1.0 build
+> vite build
+vite v6.3.6 building for production...
+transforming...
+✓ 1755 modules transformed.
+rendering chunks...
+computing gzip size...
+build/index.html                   0.42 kB │ gzip:   0.30 kB
+build/assets/index-kl9EZ_3a.css  101.55 kB │ gzip:  15.97 kB
+build/assets/index-CWnzZjHn.js   566.43 kB │ gzip: 160.00 kB
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 2.58s
+==> Uploading build...
+==> Uploaded in 13.5s. Compression took 4.9s
+==> Build successful 🎉
+==> Deploying...
+==> Running 'gunicorn -k gthread -w 1 --threads 8 controller:app --bind 0.0.0.0:$PORT'
+[2025-12-20 08:12:45 +0000] [56] [INFO] Starting gunicorn 23.0.0
+[2025-12-20 08:12:45 +0000] [56] [INFO] Listening at: http://0.0.0.0:10000 (56)
+[2025-12-20 08:12:45 +0000] [56] [INFO] Using worker: gthread
+[2025-12-20 08:12:45 +0000] [59] [INFO] Booting worker with pid: 59
+WebRTC (aiortc) not available - falling back to Socket.IO streaming
+Socket.IO CORS origins: ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:3000', 'http://127.0.0.1:5173', 'http://localhost:8080', 'http://127.0.0.1:8080', 'https://neural-control-hub-frontend.onrender.com', 'https://agent-controller-backend.onrender.com', 'https://agent-controller-backend.onrender.com', 'https://neural-control-hub-frontend.onrender.com', 'https://www.onrender.com', 'https://agent-controller-www.onrender.com', 'https://neural-control-hub-www.onrender.com', 'https://app.onrender.com', 'https://agent-controller-app.onrender.com', 'https://neural-control-hub-app.onrender.com', 'https://dashboard.onrender.com', 'https://agent-controller-dashboard.onrender.com', 'https://neural-control-hub-dashboard.onrender.com', 'https://frontend.onrender.com', 'https://agent-controller-frontend.onrender.com', 'https://neural-control-hub-frontend.onrender.com', 'https://backend.onrender.com', 'https://agent-controller-backend.onrender.com', 'https://neural-control-hub-backend.onrender.com']
+Session check - authenticated: False
+Session contents: {}
+Not authenticated - returning False
+127.0.0.1 - - [20/Dec/2025:08:12:45 +0000] "HEAD / HTTP/1.1" 302 0 "-" "Go-http-client/1.1"
+==> Your service is live 🎉
+==> 
+==> ///////////////////////////////////////////////////////////
+==> 
+==> Available at your primary URL https://agent-controller-backend.onrender.com
+==> 
+==> ///////////////////////////////////////////////////////////
+Session check - authenticated: False
+Session contents: {}
+Not authenticated - returning False
+127.0.0.1 - - [20/Dec/2025:08:12:54 +0000] "GET / HTTP/1.1" 302 199 "-" "Go-http-client/2.0"
+127.0.0.1 - - [20/Dec/2025:08:12:54 +0000] "GET /login HTTP/1.1" 200 7905 "https://agent-controller-backend.onrender.com" "Go-http-client/2.0"
+Session check - authenticated: False
+Session contents: {}
+Not authenticated - returning False
+127.0.0.1 - - [20/Dec/2025:08:12:57 +0000] "GET / HTTP/1.1" 302 199 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+127.0.0.1 - - [20/Dec/2025:08:12:58 +0000] "GET /login HTTP/1.1" 200 7905 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+127.0.0.1 - - [20/Dec/2025:08:13:06 +0000] "POST /login HTTP/1.1" 302 207 "https://agent-controller-backend.onrender.com/login" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+Session check - authenticated: True
+Session contents: {'authenticated': True, 'login_ip': '127.0.0.1', 'login_time': '2025-12-20T08:13:06.836357+00:00'}
+Authentication successful - returning True
+127.0.0.1 - - [20/Dec/2025:08:13:07 +0000] "GET /dashboard HTTP/1.1" 200 668672 "https://agent-controller-backend.onrender.com/login" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+Session check - authenticated: True
+Session contents: {'authenticated': True, 'login_ip': '127.0.0.1', 'login_time': '2025-12-20T08:13:06.836357+00:00'}
+Authentication successful - returning True
+127.0.0.1 - - [20/Dec/2025:08:13:07 +0000] "GET /api/auth/status HTTP/1.1" 200 94 "https://agent-controller-backend.onrender.com/dashboard" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+Session check - authenticated: True
+Session contents: {'authenticated': True, 'login_ip': '127.0.0.1', 'login_time': '2025-12-20T08:13:06.836357+00:00'}
+Authentication successful - returning True
+127.0.0.1 - - [20/Dec/2025:08:13:24 +0000] "GET /debug-assets HTTP/1.1" 200 516 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+127.0.0.1 - - [20/Dec/2025:08:13:27 +0000] "GET /socket.io/?EIO=4&transport=websocket HTTP/1.1" None 0 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+[2025-12-20 08:13:27 +0000] [59] [ERROR] Error handling request /socket.io/?EIO=4&transport=websocket
+Traceback (most recent call last):
+  File "/opt/render/project/src/.venv/lib/python3.13/site-packages/gunicorn/workers/gthread.py", line 281, in handle
+    keepalive = self.handle_request(req, conn)
+  File "/opt/render/project/src/.venv/lib/python3.13/site-packages/gunicorn/workers/gthread.py", line 341, in handle_request
+    resp.close()
+    ~~~~~~~~~~^^
+  File "/opt/render/project/src/.venv/lib/python3.13/site-packages/gunicorn/http/wsgi.py", line 399, in close
+    self.send_headers()
+    ~~~~~~~~~~~~~~~~~^^
+  File "/opt/render/project/src/.venv/lib/python3.13/site-packages/gunicorn/http/wsgi.py", line 326, in send_headers
+    tosend = self.default_headers()
+  File "/opt/render/project/src/.venv/lib/python3.13/site-packages/gunicorn/http/wsgi.py", line 307, in default_headers
+    elif self.should_close():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/opt/render/project/src/.venv/lib/python3.13/site-packages/gunicorn/http/wsgi.py", line 226, in should_close
+    if self.status_code < 200 or self.status_code in (204, 304):
+       ^^^^^^^^^^^^^^^^
+AttributeError: 'Response' object has no attribute 'status_code'
+127.0.0.1 - - [20/Dec/2025:08:13:27 +0000] "GET /socket.io/?EIO=4&transport=websocket HTTP/1.1" 500 0 "-" "-"
+127.0.0.1 - - [20/Dec/2025:08:13:49 +0000] "GET /socket.io/?EIO=4&transport=websocket HTTP/1.1" None 0 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+[2025-12-20 08:13:49 +0000] [59] [ERROR] Error handling request /socket.io/?EIO=4&transport=websocket
+127.0.0.1 - - [20/Dec/2025:08:13:49 +0000] "GET /socket.io/?EIO=4&transport=websocket HTTP/1.1" 500 0 "-" "-"
+Traceback (most recent call last):
+  File "/opt/render/project/src/.venv/lib/python3.13/site-packages/gunicorn/workers/gthread.py", line 281, in handle
+    keepalive = self.handle_request(req, conn)
+  File "/opt/render/project/src/.venv/lib/python3.13/site-packages/gunicorn/workers/gthread.py", line 341, in handle_request
+    resp.close()
+    ~~~~~~~~~~^^
+  File "/opt/render/project/src/.venv/lib/python3.13/site-packages/gunicorn/http/wsgi.py", line 399, in close
+    self.send_headers()
+    ~~~~~~~~~~~~~~~~~^^
+  File "/opt/render/project/src/.venv/lib/python3.13/site-packages/gunicorn/http/wsgi.py", line 326, in send_headers
+    tosend = self.default_headers()
+  File "/opt/render/project/src/.venv/lib/python3.13/site-packages/gunicorn/http/wsgi.py", line 307, in default_headers
+    elif self.should_close():
+         ~~~~~~~~~~~~~~~~~^^
+  File "/opt/render/project/src/.venv/lib/python3.13/site-packages/gunicorn/http/wsgi.py", line 226, in should_close
+    if self.status_code < 200 or self.status_code in (204, 304):
+       ^^^^^^^^^^^^^^^^
+AttributeError: 'Response' object has no attribute 'status_code'

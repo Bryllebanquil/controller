@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    container_name: agent-controller-backend
+    env_file:
+      - ./.env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+      - PYTHONUNBUFFERED=1
+      - CONTROLLER_URL=http://backend:8080
+    ports:
+      - "8080:8080"
+    networks:
+      - app
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend.Dockerfile
+      args:
+        - VITE_SOCKET_URL=${VITE_SOCKET_URL:-http://localhost:8080}
+        - VITE_API_URL=${VITE_API_URL:-http://localhost:8080}
+    container_name: agent-controller-frontend
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    networks:
+      - app
+    environment:
+      - VITE_SOCKET_URL=${VITE_SOCKET_URL:-http://localhost:8080}
+      - VITE_API_URL=${VITE_API_URL:-http://localhost:8080}
+
+networks:
+  app:
+    driver: bridge
+
