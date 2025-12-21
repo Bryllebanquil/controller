@@ -2028,6 +2028,34 @@ FILE_RANGE_WAITERS = {}
 FILE_THUMB_WAITERS = {}
 FILE_FASTSTART_WAITERS = {}
 FILE_WAITERS_LOCK = threading.Lock()
+STREAM_SETTINGS = defaultdict(lambda: {"chunk_size": 1024 * 1024})
+
+MIN_STREAM_CHUNK = 256 * 1024
+MAX_STREAM_CHUNK = 8 * 1024 * 1024
+
+def _get_stream_chunk_size(agent_id: str) -> int:
+    try:
+        s = STREAM_SETTINGS.get(agent_id) or {}
+        cs = int(s.get("chunk_size") or (1024 * 1024))
+        return max(MIN_STREAM_CHUNK, min(cs, MAX_STREAM_CHUNK))
+    except Exception:
+        return 1024 * 1024
+
+def _adjust_stream_chunk_size(agent_id: str, elapsed_s: float, success: bool):
+    try:
+        current = _get_stream_chunk_size(agent_id)
+        if not success:
+            new_size = max(MIN_STREAM_CHUNK, current // 2)
+        else:
+            if elapsed_s < 1.0:
+                new_size = min(MAX_STREAM_CHUNK, current * 2)
+            elif elapsed_s > 10.0:
+                new_size = max(MIN_STREAM_CHUNK, current // 2)
+            else:
+                new_size = current
+        STREAM_SETTINGS[agent_id] = {"chunk_size": new_size}
+    except Exception:
+        pass
 
 # Remove the agent secret authentication - allow direct agent access
 # AGENT_SHARED_SECRET = os.environ.get("AGENT_SHARED_SECRET", "sphinx_agent_secret")
@@ -2807,16 +2835,20 @@ def stream_agent_file(agent_id):
             total_size = int(meta.get('total_size') or 0)
             if total_size <= 0:
                 return Response(status=416)
-            chunk_len = 4 * 1024 * 1024
+            chunk_len = _get_stream_chunk_size(agent_id)
             s = int(start or 0)
             e = min(s + chunk_len - 1, total_size - 1)
             start = s
             end = e
 
+        _t0 = time.time()
         data = _request_agent_file_range(agent_id, agent_sid, file_path, start, end if end is not None else -1)
+        _elapsed = time.time() - _t0
         if not data:
+            _adjust_stream_chunk_size(agent_id, _elapsed, success=False)
             return jsonify({'error': 'Timeout'}), 504
         if data.get('error'):
+            _adjust_stream_chunk_size(agent_id, _elapsed, success=False)
             return jsonify({'error': data.get('error')}), 404
 
         total_size = int(data.get('total_size') or 0)
@@ -2839,14 +2871,27 @@ def stream_agent_file(agent_id):
         if total_size > 0:
             resp.headers['Content-Range'] = f'bytes {actual_start}-{actual_end}/{total_size}'
         resp.headers['Content-Disposition'] = 'inline'
+        _adjust_stream_chunk_size(agent_id, _elapsed, success=True)
         return resp
 
-    data = _request_agent_file_range(agent_id, agent_sid, file_path, 0, -1)
+    # No Range header: serve initial chunk as partial content for progressive playback
+    meta = _request_agent_file_range(agent_id, agent_sid, file_path, 0, 0)
+    if not meta or meta.get('error'):
+        return jsonify({'error': meta.get('error') if meta else 'Timeout'}), 504
+    total_size = int(meta.get('total_size') or 0)
+    if total_size <= 0:
+        return jsonify({'error': 'Empty file'}), 404
+    chunk_len = _get_stream_chunk_size(agent_id)
+    end = min(chunk_len - 1, total_size - 1)
+    _t0 = time.time()
+    data = _request_agent_file_range(agent_id, agent_sid, file_path, 0, end)
+    _elapsed = time.time() - _t0
     if not data:
+        _adjust_stream_chunk_size(agent_id, _elapsed, success=False)
         return jsonify({'error': 'Timeout'}), 504
     if data.get('error'):
+        _adjust_stream_chunk_size(agent_id, _elapsed, success=False)
         return jsonify({'error': data.get('error')}), 404
-
     b64 = _extract_b64(data.get('data') or data.get('chunk'))
     if not b64:
         return jsonify({'error': 'Empty response'}), 502
@@ -2854,11 +2899,14 @@ def stream_agent_file(agent_id):
         raw = base64.b64decode(b64)
     except Exception:
         return jsonify({'error': 'Invalid data'}), 502
-
-    resp = Response(raw, status=200, mimetype=mime)
+    actual_start = 0
+    actual_end = int(data.get('end') if data.get('end') is not None else end)
+    resp = Response(raw, status=206, mimetype=mime)
     resp.headers['Accept-Ranges'] = 'bytes'
     resp.headers['Content-Length'] = str(len(raw))
+    resp.headers['Content-Range'] = f'bytes {actual_start}-{actual_end}/{total_size}'
     resp.headers['Content-Disposition'] = 'inline'
+    _adjust_stream_chunk_size(agent_id, _elapsed, success=True)
     return resp
 
 @app.route('/api/agents/<agent_id>/files/stream_faststart', methods=['GET'])
@@ -2909,7 +2957,7 @@ def stream_agent_file_faststart(agent_id):
             total_size = int(meta.get('total_size') or 0)
             if total_size <= 0:
                 return Response(status=416)
-            chunk_len = 4 * 1024 * 1024
+            chunk_len = _get_stream_chunk_size(agent_id)
             s = int(start or 0)
             e = min(s + chunk_len - 1, total_size - 1)
             start = s
@@ -2943,12 +2991,24 @@ def stream_agent_file_faststart(agent_id):
         resp.headers['Content-Disposition'] = 'inline'
         return resp
 
-    data = _request_agent_file_range(agent_id, agent_sid, target_path, 0, -1)
+    # No Range header: serve initial chunk as partial content for progressive playback
+    meta = _request_agent_file_range(agent_id, agent_sid, target_path, 0, 0)
+    if not meta or meta.get('error'):
+        return jsonify({'error': meta.get('error') if meta else 'Timeout'}), 504
+    total_size = int(meta.get('total_size') or 0)
+    if total_size <= 0:
+        return jsonify({'error': 'Empty file'}), 404
+    chunk_len = _get_stream_chunk_size(agent_id)
+    end = min(chunk_len - 1, total_size - 1)
+    _t0 = time.time()
+    data = _request_agent_file_range(agent_id, agent_sid, target_path, 0, end)
+    _elapsed = time.time() - _t0
     if not data:
+        _adjust_stream_chunk_size(agent_id, _elapsed, success=False)
         return jsonify({'error': 'Timeout'}), 504
     if data.get('error'):
+        _adjust_stream_chunk_size(agent_id, _elapsed, success=False)
         return jsonify({'error': data.get('error')}), 404
-
     b64 = _extract_b64(data.get('data') or data.get('chunk'))
     if not b64:
         return jsonify({'error': 'Empty response'}), 502
@@ -2956,11 +3016,14 @@ def stream_agent_file_faststart(agent_id):
         raw = base64.b64decode(b64)
     except Exception:
         return jsonify({'error': 'Invalid data'}), 502
-
-    resp = Response(raw, status=200, mimetype=mime)
+    actual_start = 0
+    actual_end = int(data.get('end') if data.get('end') is not None else end)
+    resp = Response(raw, status=206, mimetype=mime)
     resp.headers['Accept-Ranges'] = 'bytes'
     resp.headers['Content-Length'] = str(len(raw))
+    resp.headers['Content-Range'] = f'bytes {actual_start}-{actual_end}/{total_size}'
     resp.headers['Content-Disposition'] = 'inline'
+    _adjust_stream_chunk_size(agent_id, _elapsed, success=True)
     return resp
 
 @app.route('/api/agents/<agent_id>/files/thumbnail', methods=['GET'])
