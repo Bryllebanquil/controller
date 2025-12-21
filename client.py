@@ -9497,6 +9497,8 @@ def register_socketio_handlers():
     sio.on('file_chunk_from_operator')(on_file_chunk_from_operator)
     sio.on('file_upload_complete_from_operator')(on_file_upload_complete_from_operator)
     sio.on('request_file_chunk_from_agent')(on_request_file_chunk_from_agent)
+    sio.on('request_file_range')(on_request_file_range)
+    sio.on('request_file_thumbnail')(on_request_file_thumbnail)
     
     # Register other handlers
     sio.on('command')(on_command)
@@ -9812,6 +9814,168 @@ def on_request_file_chunk_from_agent(data):
     except Exception as e:
         log_message(f"Error sending file: {e}", "error")
         emit_system_notification('error', 'File Download Failed', f'Failed to send file: {str(e)}')
+
+def on_request_file_range(data):
+    global LAST_BROWSED_DIRECTORY
+    try:
+        if not SOCKETIO_AVAILABLE or sio is None:
+            return
+        request_id = data.get('request_id')
+        provided_path = data.get('path') or data.get('filename')
+        start = data.get('start')
+        end = data.get('end')
+        if not request_id:
+            return
+        if not provided_path:
+            safe_emit('file_range_response', {'request_id': request_id, 'error': 'File path is required'})
+            return
+
+        filename = os.path.basename(provided_path)
+        possible_paths = [provided_path]
+        if LAST_BROWSED_DIRECTORY and filename:
+            possible_paths.append(os.path.join(LAST_BROWSED_DIRECTORY, filename))
+        if filename:
+            possible_paths.append(filename)
+        possible_paths.extend([
+            os.path.join(os.getcwd(), filename),
+            os.path.join(os.path.expanduser("~"), filename),
+            os.path.join(os.path.expanduser("~/Desktop"), filename),
+            os.path.join(os.path.expanduser("~/Downloads"), filename),
+            os.path.join("C:/", filename),
+            os.path.join("C:/Users/Public", filename),
+        ])
+
+        file_path = None
+        for p in possible_paths:
+            if p and os.path.exists(p):
+                file_path = p
+                break
+
+        if not file_path:
+            safe_emit('file_range_response', {'request_id': request_id, 'error': f'File not found: {provided_path}'})
+            return
+
+        total_size = os.path.getsize(file_path)
+        s = 0 if start is None else int(start)
+        e = None if end is None else int(end)
+        if s < 0:
+            s = 0
+        if s >= total_size and total_size > 0:
+            safe_emit('file_range_response', {'request_id': request_id, 'error': 'Range not satisfiable'})
+            return
+
+        with open(file_path, 'rb') as f:
+            f.seek(s)
+            if e is None or e < 0:
+                chunk = f.read()
+            else:
+                chunk = f.read(max(0, e - s + 1))
+
+        actual_end = s + len(chunk) - 1
+        safe_emit('file_range_response', {
+            'request_id': request_id,
+            'path': file_path,
+            'start': s,
+            'end': actual_end,
+            'total_size': total_size,
+            'data': base64.b64encode(chunk).decode('utf-8')
+        })
+    except Exception as e:
+        try:
+            safe_emit('file_range_response', {'request_id': data.get('request_id'), 'error': str(e)})
+        except Exception:
+            pass
+
+def on_request_file_thumbnail(data):
+    global LAST_BROWSED_DIRECTORY
+    try:
+        if not SOCKETIO_AVAILABLE or sio is None:
+            return
+        request_id = data.get('request_id')
+        provided_path = data.get('path') or ''
+        size = data.get('size', 256)
+        if not request_id:
+            return
+        if not provided_path:
+            safe_emit('file_thumbnail_response', {'request_id': request_id, 'error': 'File path is required'})
+            return
+
+        try:
+            s = int(size)
+        except Exception:
+            s = 256
+        s = max(16, min(s, 512))
+
+        filename = os.path.basename(provided_path)
+        possible_paths = [provided_path]
+        if LAST_BROWSED_DIRECTORY and filename:
+            possible_paths.append(os.path.join(LAST_BROWSED_DIRECTORY, filename))
+        if filename:
+            possible_paths.append(filename)
+
+        file_path = None
+        for p in possible_paths:
+            if p and os.path.exists(p):
+                file_path = p
+                break
+
+        if not file_path:
+            safe_emit('file_thumbnail_response', {'request_id': request_id, 'error': f'File not found: {provided_path}'})
+            return
+
+        ext = os.path.splitext(file_path)[1].lower().lstrip('.')
+        out_bytes = None
+
+        if ext in {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'}:
+            from PIL import Image as PILImage
+            import io
+            with PILImage.open(file_path) as img:
+                img = img.convert('RGB')
+                img.thumbnail((s, s))
+                buf = io.BytesIO()
+                img.save(buf, format='JPEG', quality=82, optimize=True)
+                out_bytes = buf.getvalue()
+        elif ext in {'mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v'}:
+            import cv2
+            cap = cv2.VideoCapture(file_path)
+            frame = None
+            try:
+                cap.set(cv2.CAP_PROP_POS_MSEC, 1000)
+                ok, frm = cap.read()
+                if ok:
+                    frame = frm
+                else:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    ok2, frm2 = cap.read()
+                    if ok2:
+                        frame = frm2
+            finally:
+                cap.release()
+            if frame is not None:
+                h, w = frame.shape[:2]
+                scale = min(s / max(1, w), s / max(1, h), 1.0)
+                nw, nh = max(1, int(w * scale)), max(1, int(h * scale))
+                if (nw, nh) != (w, h):
+                    frame = cv2.resize(frame, (nw, nh), interpolation=cv2.INTER_AREA)
+                ok, enc = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 82])
+                if ok:
+                    out_bytes = enc.tobytes()
+
+        if not out_bytes:
+            safe_emit('file_thumbnail_response', {'request_id': request_id, 'error': 'Thumbnail not supported'})
+            return
+
+        safe_emit('file_thumbnail_response', {
+            'request_id': request_id,
+            'path': file_path,
+            'mime': 'image/jpeg',
+            'data': base64.b64encode(out_bytes).decode('utf-8')
+        })
+    except Exception as e:
+        try:
+            safe_emit('file_thumbnail_response', {'request_id': data.get('request_id'), 'error': str(e)})
+        except Exception:
+            pass
 
 def handle_voice_playback(command_parts):
     """Handle voice playback from controller."""

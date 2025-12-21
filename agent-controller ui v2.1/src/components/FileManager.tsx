@@ -92,11 +92,9 @@ export function FileManager({ agentId }: FileManagerProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewKind, setPreviewKind] = useState<'image' | 'video' | null>(null);
-  const [previewMime, setPreviewMime] = useState<string | null>(null);
+  const [previewKind, setPreviewKind] = useState<'image' | 'video' | 'pdf' | null>(null);
   const [previewItems, setPreviewItems] = useState<FileItem[]>([]);
   const [previewIndex, setPreviewIndex] = useState<number>(0);
-  const lastPreviewUrlRef = useRef<string | null>(null);
   const currentPathRef = useRef<string>('/');
 
   const filteredFiles = files.filter(file => 
@@ -151,9 +149,10 @@ export function FileManager({ agentId }: FileManagerProps) {
     return idx >= 0 ? name.slice(idx + 1).toLowerCase() : '';
   };
 
-  const getPreviewKind = (ext: string): 'image' | 'video' | null => {
+  const getPreviewKind = (ext: string): 'image' | 'video' | 'pdf' | null => {
     const image = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
     const video = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v']);
+    if (ext === 'pdf') return 'pdf';
     if (image.has(ext)) return 'image';
     if (video.has(ext)) return 'video';
     return null;
@@ -172,43 +171,23 @@ export function FileManager({ agentId }: FileManagerProps) {
     return previewableItems.findIndex(f => f.path === selectedPath);
   }, [selectedFiles, previewableItems]);
 
-  const canPlayPreviewVideo = useMemo(() => {
-    if (!previewOpen) return true;
-    if (previewKind !== 'video') return true;
-    if (!previewMime) return true;
-    try {
-      const v = document.createElement('video');
-      return v.canPlayType(previewMime) !== '';
-    } catch {
-      return true;
-    }
-  }, [previewOpen, previewKind, previewMime]);
-
   const previewSourceType = useMemo(() => {
     if (!previewKind || previewKind !== 'video') return undefined;
     const item = previewItems[previewIndex];
     const name = (item?.name || '').toLowerCase();
     const ext = name.includes('.') ? name.split('.').pop()! : '';
-    if (ext === 'mp4' || ext === 'm4v' || previewMime === 'video/mp4') return 'video/mp4';
-    return previewMime || undefined;
-  }, [previewKind, previewItems, previewIndex, previewMime]);
+    if (ext === 'mp4' || ext === 'm4v') return 'video/mp4';
+    return undefined;
+  }, [previewKind, previewItems, previewIndex]);
 
-  const requestPreviewAtIndex = (index: number) => {
-    if (!agentId || !socket) return;
-    if (index < 0 || index >= previewItems.length) return;
-    const item = previewItems[index];
-    const ext = (item.extension || getExtension(item.name)).toLowerCase();
-    const kind = getPreviewKind(ext);
-    setPreviewKind(kind);
-    setPreviewUrl(null);
-    setPreviewMime(null);
-    setTransferFileName(item.name);
-    setDownloadProgress(0);
-    socket.emit('download_file', {
-      agent_id: agentId,
-      filename: item.path,
-      download_id: `preview_${Date.now()}_${Math.random().toString(16).slice(2)}`
-    });
+  const makeStreamUrl = (path: string) => {
+    if (!agentId) return '';
+    return `/api/agents/${agentId}/files/stream?path=${encodeURIComponent(path)}`;
+  };
+
+  const makeThumbUrl = (path: string) => {
+    if (!agentId) return '';
+    return `/api/agents/${agentId}/files/thumbnail?path=${encodeURIComponent(path)}&size=64`;
   };
 
   const handlePreview = () => {
@@ -313,41 +292,20 @@ export function FileManager({ agentId }: FileManagerProps) {
   }, [socket, agentId]);
 
   useEffect(() => {
-    const handler = (event: any) => {
-      const data = event.detail;
-      if (!data || !agentId || data.agent_id !== agentId) return;
-      if (typeof data.url === 'string') {
-        if (lastPreviewUrlRef.current) {
-          URL.revokeObjectURL(lastPreviewUrlRef.current);
-        }
-        lastPreviewUrlRef.current = data.url;
-        setPreviewUrl(data.url);
-        setPreviewMime(typeof data.mime === 'string' ? data.mime : null);
-        setDownloadProgress(null);
-        setTransferFileName(null);
-      }
-    };
-    window.addEventListener('file_preview_ready', handler);
-    return () => {
-      window.removeEventListener('file_preview_ready', handler);
-    };
-  }, [agentId]);
-
-  useEffect(() => {
     if (!previewOpen) return;
     if (previewItems.length === 0) return;
-    requestPreviewAtIndex(previewIndex);
-  }, [previewOpen, previewIndex, previewItems]);
+    const item = previewItems[previewIndex];
+    if (!item || !agentId) return;
+    const ext = (item.extension || getExtension(item.name)).toLowerCase();
+    const kind = getPreviewKind(ext);
+    setPreviewKind(kind);
+    setPreviewUrl(makeStreamUrl(item.path));
+  }, [previewOpen, previewIndex, previewItems, agentId]);
 
   useEffect(() => {
     if (previewOpen) return;
-    if (lastPreviewUrlRef.current) {
-      URL.revokeObjectURL(lastPreviewUrlRef.current);
-      lastPreviewUrlRef.current = null;
-    }
     setPreviewUrl(null);
     setPreviewKind(null);
-    setPreviewMime(null);
     setPreviewItems([]);
     setPreviewIndex(0);
   }, [previewOpen]);
@@ -516,15 +474,12 @@ export function FileManager({ agentId }: FileManagerProps) {
                         <img src={previewUrl} className="max-w-full max-h-full object-contain" />
                       )}
                       {previewUrl && previewKind === 'video' && (
-                        canPlayPreviewVideo ? (
-                          <video className="w-full h-full" controls playsInline preload="metadata">
-                            <source src={previewUrl} type={previewSourceType} />
-                          </video>
-                        ) : (
-                          <div className="text-sm text-muted-foreground text-center px-6">
-                            Video codec not supported by this browser
-                          </div>
-                        )
+                        <video className="w-full h-full" controls playsInline preload="metadata">
+                          <source src={previewUrl} type={previewSourceType} />
+                        </video>
+                      )}
+                      {previewUrl && previewKind === 'pdf' && (
+                        <iframe src={previewUrl} className="w-full h-full" title="PDF Preview" />
                       )}
                       {!previewUrl && (
                         <div className="text-sm text-muted-foreground">Loading preview…</div>
@@ -580,6 +535,9 @@ export function FileManager({ agentId }: FileManagerProps) {
                       {filteredFiles.map((file, index) => {
                         const Icon = getFileIcon(file);
                         const isSelected = selectedFiles.includes(file.path);
+                        const ext = (file.extension || getExtension(file.name)).toLowerCase();
+                        const kind = file.type === 'file' ? getPreviewKind(ext) : null;
+                        const showThumb = Boolean(agentId && file.type === 'file' && (kind === 'image' || kind === 'video'));
                         
                         return (
                           <div
@@ -595,7 +553,16 @@ export function FileManager({ agentId }: FileManagerProps) {
                               }
                             }}
                           >
-                            <Icon className={`h-4 w-4 ${file.type === 'directory' ? 'text-blue-500' : 'text-muted-foreground'}`} />
+                            {showThumb ? (
+                              <img
+                                src={makeThumbUrl(file.path)}
+                                className="h-8 w-8 rounded object-cover bg-background"
+                                loading="lazy"
+                                alt=""
+                              />
+                            ) : (
+                              <Icon className={`h-4 w-4 ${file.type === 'directory' ? 'text-blue-500' : 'text-muted-foreground'}`} />
+                            )}
                             <div className="flex-1 min-w-0">
                               <div className="text-sm truncate">{file.name}</div>
                             </div>

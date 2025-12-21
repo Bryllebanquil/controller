@@ -720,6 +720,136 @@ def on_request_file_chunk(data):
     except Exception as e:
         log(f"Error downloading file: {e}")
 
+@sio.on('request_file_range')
+def on_request_file_range(data):
+    try:
+        request_id = data.get('request_id')
+        file_path = data.get('path') or data.get('filename') or ''
+        start = data.get('start')
+        end = data.get('end')
+
+        if not request_id:
+            return
+        if not file_path:
+            sio.emit('file_range_response', {'request_id': request_id, 'error': 'File path is required'})
+            return
+
+        try:
+            path_obj = Path(file_path)
+            if not path_obj.exists():
+                raise FileNotFoundError(f"File not found: {file_path}")
+            if not path_obj.is_file():
+                raise ValueError(f"Not a file: {file_path}")
+
+            total_size = path_obj.stat().st_size
+            s = 0 if start is None else int(start)
+            e = None if end is None else int(end)
+            if s < 0:
+                s = 0
+            if s >= total_size and total_size > 0:
+                raise ValueError('Range not satisfiable')
+
+            with open(path_obj, 'rb') as f:
+                f.seek(s)
+                if e is None or e < 0:
+                    chunk = f.read()
+                    actual_end = s + len(chunk) - 1
+                else:
+                    read_len = max(0, (e - s + 1))
+                    chunk = f.read(read_len)
+                    actual_end = s + len(chunk) - 1
+
+            chunk_b64 = base64.b64encode(chunk).decode('utf-8')
+            sio.emit('file_range_response', {
+                'request_id': request_id,
+                'path': str(path_obj),
+                'start': s,
+                'end': actual_end,
+                'total_size': total_size,
+                'data': chunk_b64
+            })
+        except Exception as e:
+            sio.emit('file_range_response', {'request_id': request_id, 'error': str(e)})
+    except Exception as e:
+        log(f"Error handling request_file_range: {e}")
+
+@sio.on('request_file_thumbnail')
+def on_request_file_thumbnail(data):
+    try:
+        request_id = data.get('request_id')
+        file_path = data.get('path') or ''
+        size = data.get('size', 256)
+
+        if not request_id:
+            return
+        if not file_path:
+            sio.emit('file_thumbnail_response', {'request_id': request_id, 'error': 'File path is required'})
+            return
+
+        try:
+            s = int(size)
+        except Exception:
+            s = 256
+        s = max(16, min(s, 512))
+
+        path_obj = Path(file_path)
+        if not path_obj.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+        if not path_obj.is_file():
+            raise ValueError(f"Not a file: {file_path}")
+
+        ext = path_obj.suffix.lower().lstrip('.')
+        out_bytes = None
+
+        if ext in {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'}:
+            from PIL import Image as PILImage
+            with PILImage.open(path_obj) as img:
+                img = img.convert('RGB')
+                img.thumbnail((s, s))
+                import io
+                buf = io.BytesIO()
+                img.save(buf, format='JPEG', quality=82, optimize=True)
+                out_bytes = buf.getvalue()
+        elif ext in {'mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v'}:
+            import cv2
+            cap = cv2.VideoCapture(str(path_obj))
+            frame = None
+            try:
+                cap.set(cv2.CAP_PROP_POS_MSEC, 1000)
+                ok, frm = cap.read()
+                if ok:
+                    frame = frm
+                else:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    ok2, frm2 = cap.read()
+                    if ok2:
+                        frame = frm2
+            finally:
+                cap.release()
+
+            if frame is not None:
+                h, w = frame.shape[:2]
+                scale = min(s / max(1, w), s / max(1, h), 1.0)
+                nw, nh = max(1, int(w * scale)), max(1, int(h * scale))
+                if (nw, nh) != (w, h):
+                    frame = cv2.resize(frame, (nw, nh), interpolation=cv2.INTER_AREA)
+                ok, enc = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 82])
+                if ok:
+                    out_bytes = enc.tobytes()
+
+        if not out_bytes:
+            sio.emit('file_thumbnail_response', {'request_id': request_id, 'error': 'Thumbnail not supported'})
+            return
+
+        sio.emit('file_thumbnail_response', {
+            'request_id': request_id,
+            'path': str(path_obj),
+            'mime': 'image/jpeg',
+            'data': base64.b64encode(out_bytes).decode('utf-8')
+        })
+    except Exception as e:
+        sio.emit('file_thumbnail_response', {'request_id': data.get('request_id'), 'error': str(e)})
+
 @sio.on('file_chunk_from_operator')
 def on_file_chunk_from_operator(data):
     """Receive file upload chunk from operator (UI sends this)"""
