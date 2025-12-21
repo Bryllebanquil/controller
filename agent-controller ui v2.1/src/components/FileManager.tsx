@@ -100,6 +100,8 @@ export function FileManager({ agentId }: FileManagerProps) {
   const [previewErrorCount, setPreviewErrorCount] = useState<number>(0);
   const [isPreviewLoading, setIsPreviewLoading] = useState<boolean>(false);
   const currentPathRef = useRef<string>('/');
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const lastTimeRef = useRef<number>(0);
 
   const filteredFiles = files.filter(file => 
     file.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -305,6 +307,7 @@ export function FileManager({ agentId }: FileManagerProps) {
     if (previewItems.length === 0) return;
     const item = previewItems[previewIndex];
     if (!item || !agentId) return;
+    lastTimeRef.current = 0;
     const ext = (item.extension || getExtension(item.name)).toLowerCase();
     const kind = getPreviewKind(ext);
     setPreviewKind(kind);
@@ -485,7 +488,7 @@ export function FileManager({ agentId }: FileManagerProps) {
                       </div>
                     </DialogHeader>
                     <div className="flex-1 bg-muted rounded flex items-center justify-center">
-                      <AspectRatio ratio={16 / 9} className="w-full max-w-[1000px] rounded overflow-hidden bg-black">
+                      <AspectRatio ratio={16 / 9} className="w-full rounded overflow-hidden bg-black">
                         <div className="relative w-full h-full">
                           {isPreviewLoading && (
                             <Skeleton className="absolute inset-0 w-full h-full" />
@@ -499,13 +502,39 @@ export function FileManager({ agentId }: FileManagerProps) {
                           )}
                           {previewUrl && previewKind === 'video' && (
                             <video
+                              ref={videoRef}
                               className="absolute inset-0 w-full h-full"
                               controls
                               playsInline
+                              autoPlay
                               preload="metadata"
-                              onLoadedData={() => setIsPreviewLoading(false)}
-                              onCanPlay={() => setIsPreviewLoading(false)}
+                              onLoadedData={() => {
+                                setIsPreviewLoading(false);
+                                const v = videoRef.current;
+                                if (v) {
+                                  if (lastTimeRef.current > 0) {
+                                    try { v.currentTime = lastTimeRef.current; } catch {}
+                                  }
+                                  try { v.play(); } catch {}
+                                }
+                              }}
+                              onCanPlay={() => {
+                                setIsPreviewLoading(false);
+                                const v = videoRef.current;
+                                if (v) {
+                                  if (lastTimeRef.current > 0) {
+                                    try { v.currentTime = lastTimeRef.current; } catch {}
+                                  }
+                                  try { v.play(); } catch {}
+                                }
+                              }}
+                              onTimeUpdate={() => {
+                                const v = videoRef.current;
+                                if (v) lastTimeRef.current = v.currentTime;
+                              }}
                               onError={() => {
+                                const v = videoRef.current;
+                                if (v) lastTimeRef.current = v.currentTime || lastTimeRef.current;
                                 if (previewItems[previewIndex] && previewErrorCount === 0) {
                                   setPreviewErrorCount(1);
                                   setIsPreviewLoading(true);
