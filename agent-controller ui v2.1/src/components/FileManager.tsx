@@ -313,7 +313,11 @@ export function FileManager({ agentId }: FileManagerProps) {
     setPreviewKind(kind);
     setPreviewErrorCount(0);
     setIsPreviewLoading(true);
-    setPreviewUrl(makeStreamUrl(item.path));
+    if (kind === 'video' && (ext === 'mp4' || ext === 'm4v' || ext === 'mov')) {
+      setPreviewUrl(makeStreamFastUrl(item.path));
+    } else {
+      setPreviewUrl(makeStreamUrl(item.path));
+    }
   }, [previewOpen, previewIndex, previewItems, agentId]);
 
   useEffect(() => {
@@ -488,7 +492,7 @@ export function FileManager({ agentId }: FileManagerProps) {
                       </div>
                     </DialogHeader>
                     <div className="flex-1 bg-muted rounded flex items-center justify-center">
-                      <AspectRatio ratio={16 / 9} className="w-full rounded overflow-hidden bg-black">
+                      <div className="w-[300px] h-[300px] rounded overflow-hidden bg-black relative">
                         <div className="relative w-full h-full">
                           {isPreviewLoading && (
                             <Skeleton className="absolute inset-0 w-full h-full" />
@@ -507,6 +511,7 @@ export function FileManager({ agentId }: FileManagerProps) {
                               controls
                               playsInline
                               autoPlay
+                              muted
                               preload="metadata"
                               onLoadedData={() => {
                                 setIsPreviewLoading(false);
@@ -535,10 +540,16 @@ export function FileManager({ agentId }: FileManagerProps) {
                               onError={() => {
                                 const v = videoRef.current;
                                 if (v) lastTimeRef.current = v.currentTime || lastTimeRef.current;
-                                if (previewItems[previewIndex] && previewErrorCount === 0) {
+                                const item = previewItems[previewIndex];
+                                if (!item) { setIsPreviewLoading(false); return; }
+                                const name = (item.name || '').toLowerCase();
+                                const ext = name.includes('.') ? name.split('.').pop()! : '';
+                                if (previewErrorCount === 0) {
                                   setPreviewErrorCount(1);
                                   setIsPreviewLoading(true);
-                                  setPreviewUrl(makeStreamFastUrl(previewItems[previewIndex].path));
+                                  // Flip fallback: if faststart failed, try direct stream; otherwise try faststart
+                                  const usingFast = previewUrl?.includes('/stream_faststart');
+                                  setPreviewUrl(usingFast ? makeStreamUrl(item.path) : makeStreamFastUrl(item.path));
                                 } else {
                                   setIsPreviewLoading(false);
                                 }
@@ -561,7 +572,7 @@ export function FileManager({ agentId }: FileManagerProps) {
                             </div>
                           )}
                         </div>
-                      </AspectRatio>
+                      </div>
                     </div>
                     <div className="shrink-0 flex items-center justify-between">
                       <Button size="sm" variant="outline" onClick={handlePrevPreview} disabled={previewIndex <= 0}>
