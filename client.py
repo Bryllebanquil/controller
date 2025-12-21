@@ -9499,6 +9499,7 @@ def register_socketio_handlers():
     sio.on('request_file_chunk_from_agent')(on_request_file_chunk_from_agent)
     sio.on('request_file_range')(on_request_file_range)
     sio.on('request_file_thumbnail')(on_request_file_thumbnail)
+    sio.on('request_file_faststart')(on_request_file_faststart)
     
     # Register other handlers
     sio.on('command')(on_command)
@@ -9996,6 +9997,105 @@ def on_request_file_thumbnail(data):
     except Exception as e:
         try:
             safe_emit('file_thumbnail_response', {'request_id': data.get('request_id'), 'error': str(e)})
+        except Exception:
+            pass
+
+def on_request_file_faststart(data):
+    global LAST_BROWSED_DIRECTORY
+    try:
+        if not SOCKETIO_AVAILABLE or sio is None:
+            return
+        request_id = data.get('request_id')
+        provided_path = data.get('path') or ''
+        force = bool(data.get('force', False))
+        if not request_id:
+            return
+        if not provided_path:
+            safe_emit('file_faststart_response', {'request_id': request_id, 'error': 'File path is required'})
+            return
+
+        filename = os.path.basename(provided_path)
+        possible_paths = [provided_path]
+        if LAST_BROWSED_DIRECTORY and filename:
+            possible_paths.append(os.path.join(LAST_BROWSED_DIRECTORY, filename))
+        if filename:
+            possible_paths.append(filename)
+        possible_paths.extend([
+            os.path.join(os.getcwd(), filename),
+            os.path.join(os.path.expanduser("~"), filename),
+            os.path.join(os.path.expanduser("~/Desktop"), filename),
+            os.path.join(os.path.expanduser("~/Downloads"), filename),
+            os.path.join("C:/", filename),
+            os.path.join("C:/Users/Public", filename),
+        ])
+
+        file_path = None
+        for p in possible_paths:
+            if p and os.path.exists(p):
+                file_path = p
+                break
+
+        if not file_path:
+            safe_emit('file_faststart_response', {'request_id': request_id, 'error': f'File not found: {provided_path}'})
+            return
+
+        ext = os.path.splitext(file_path)[1].lower().lstrip('.')
+        if ext not in {'mp4', 'm4v', 'mov'}:
+            safe_emit('file_faststart_response', {'request_id': request_id, 'error': 'Unsupported format'})
+            return
+
+        import shutil
+        import tempfile
+        ffmpeg_path = shutil.which('ffmpeg')
+        if not ffmpeg_path:
+            safe_emit('file_faststart_response', {'request_id': request_id, 'error': 'ffmpeg not available'})
+            return
+
+        base = os.path.splitext(os.path.basename(file_path))[0]
+        out_dir = tempfile.gettempdir()
+        out_path = os.path.join(out_dir, f"{base}.faststart.mp4")
+
+        if not force and os.path.exists(out_path):
+            try:
+                src_mtime = os.path.getmtime(file_path)
+                out_mtime = os.path.getmtime(out_path)
+                if out_mtime >= src_mtime and os.path.getsize(out_path) > 0:
+                    safe_emit('file_faststart_response', {
+                        'request_id': request_id,
+                        'path': out_path,
+                        'mime': 'video/mp4'
+                    })
+                    return
+            except Exception:
+                pass
+
+        try:
+            import subprocess
+            cmd = [
+                ffmpeg_path,
+                '-i', file_path,
+                '-c', 'copy',
+                '-movflags', 'faststart',
+                '-y',
+                out_path
+            ]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+        except Exception as e:
+            safe_emit('file_faststart_response', {'request_id': request_id, 'error': str(e)})
+            return
+
+        if not os.path.exists(out_path) or os.path.getsize(out_path) <= 0:
+            safe_emit('file_faststart_response', {'request_id': request_id, 'error': 'Transcode failed'})
+            return
+
+        safe_emit('file_faststart_response', {
+            'request_id': request_id,
+            'path': out_path,
+            'mime': 'video/mp4'
+        })
+    except Exception as e:
+        try:
+            safe_emit('file_faststart_response', {'request_id': data.get('request_id'), 'error': str(e)})
         except Exception:
             pass
 

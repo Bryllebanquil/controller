@@ -2026,6 +2026,7 @@ DOWNLOAD_BUFFERS = defaultdict(lambda: {"chunks": [], "total_size": 0, "local_pa
 FILE_INFO_WAITERS = {}
 FILE_RANGE_WAITERS = {}
 FILE_THUMB_WAITERS = {}
+FILE_FASTSTART_WAITERS = {}
 FILE_WAITERS_LOCK = threading.Lock()
 
 # Remove the agent secret authentication - allow direct agent access
@@ -2654,6 +2655,24 @@ def _request_agent_thumbnail(agent_id: str, agent_sid: str, file_path: str, size
         return None
     return waiter.get('data')
 
+def _request_agent_faststart(agent_id: str, agent_sid: str, file_path: str, force: bool = False, timeout_s: float = 60.0):
+    request_id = f"fast_{int(time.time() * 1000)}_{secrets.token_hex(6)}"
+    ev = threading.Event()
+    with FILE_WAITERS_LOCK:
+        FILE_FASTSTART_WAITERS[request_id] = {'event': ev, 'data': None}
+    socketio.emit('request_file_faststart', {
+        'agent_id': agent_id,
+        'request_id': request_id,
+        'path': file_path,
+        'force': force
+    }, room=agent_sid)
+    ev.wait(timeout_s)
+    with FILE_WAITERS_LOCK:
+        waiter = FILE_FASTSTART_WAITERS.pop(request_id, None)
+    if not waiter:
+        return None
+    return waiter.get('data')
+
 # File Management API
 @app.route('/api/agents/<agent_id>/files', methods=['GET'])
 @require_auth
@@ -2811,6 +2830,96 @@ def stream_agent_file(agent_id):
         return resp
 
     data = _request_agent_file_range(agent_id, agent_sid, file_path, 0, -1)
+    if not data:
+        return jsonify({'error': 'Timeout'}), 504
+    if data.get('error'):
+        return jsonify({'error': data.get('error')}), 404
+
+    b64 = _extract_b64(data.get('data') or data.get('chunk'))
+    if not b64:
+        return jsonify({'error': 'Empty response'}), 502
+    try:
+        raw = base64.b64decode(b64)
+    except Exception:
+        return jsonify({'error': 'Invalid data'}), 502
+
+    resp = Response(raw, status=200, mimetype=mime)
+    resp.headers['Accept-Ranges'] = 'bytes'
+    resp.headers['Content-Length'] = str(len(raw))
+    resp.headers['Content-Disposition'] = 'inline'
+    return resp
+
+@app.route('/api/agents/<agent_id>/files/stream_faststart', methods=['GET'])
+@require_auth
+def stream_agent_file_faststart(agent_id):
+    if agent_id not in AGENTS_DATA:
+        return jsonify({'error': 'Agent not found'}), 404
+    agent_sid = AGENTS_DATA[agent_id].get('sid')
+    if not agent_sid:
+        return jsonify({'error': 'Agent not connected'}), 400
+
+    file_path = request.args.get('path', '')
+    if not file_path:
+        return jsonify({'error': 'File path is required'}), 400
+
+    faststart = _request_agent_faststart(agent_id, agent_sid, file_path, False)
+    target_path = file_path
+    if faststart and not faststart.get('error'):
+        p = faststart.get('path') or faststart.get('transformed_path')
+        if isinstance(p, str) and p.strip():
+            target_path = p.strip()
+
+    mime = _guess_mime(target_path)
+    range_header = request.headers.get('Range')
+
+    if range_header:
+        m = _RANGE_RE.match(range_header.strip())
+        if not m:
+            return Response(status=416)
+        start_s, end_s = m.group(1), m.group(2)
+        start = int(start_s) if start_s != '' else None
+        end = int(end_s) if end_s != '' else None
+
+        if start is None and end is not None:
+            meta = _request_agent_file_range(agent_id, agent_sid, target_path, 0, 0)
+            if not meta or meta.get('error'):
+                return jsonify({'error': meta.get('error') if meta else 'Timeout'}), 404
+            total_size = int(meta.get('total_size') or 0)
+            suffix_len = end
+            if total_size <= 0 or suffix_len <= 0:
+                return Response(status=416)
+            start = max(0, total_size - suffix_len)
+            end = total_size - 1
+
+        data = _request_agent_file_range(agent_id, agent_sid, target_path, start, end if end is not None else -1)
+        if not data:
+            return jsonify({'error': 'Timeout'}), 504
+        if data.get('error'):
+            return jsonify({'error': data.get('error')}), 404
+
+        total_size = int(data.get('total_size') or 0)
+        b64 = _extract_b64(data.get('data') or data.get('chunk'))
+        if not b64:
+            return jsonify({'error': 'Empty response'}), 502
+        try:
+            raw = base64.b64decode(b64)
+        except Exception:
+            return jsonify({'error': 'Invalid data'}), 502
+
+        actual_start = int(data.get('start') if data.get('start') is not None else (start or 0))
+        actual_end = int(data.get('end') if data.get('end') is not None else (actual_start + len(raw) - 1))
+        if total_size > 0:
+            actual_end = min(actual_end, total_size - 1)
+
+        resp = Response(raw, status=206, mimetype=mime)
+        resp.headers['Accept-Ranges'] = 'bytes'
+        resp.headers['Content-Length'] = str(len(raw))
+        if total_size > 0:
+            resp.headers['Content-Range'] = f'bytes {actual_start}-{actual_end}/{total_size}'
+        resp.headers['Content-Disposition'] = 'inline'
+        return resp
+
+    data = _request_agent_file_range(agent_id, agent_sid, target_path, 0, -1)
     if not data:
         return jsonify({'error': 'Timeout'}), 504
     if data.get('error'):
@@ -3787,6 +3896,17 @@ def handle_file_thumbnail_response(data):
         return
     with FILE_WAITERS_LOCK:
         waiter = FILE_THUMB_WAITERS.get(request_id)
+        if waiter:
+            waiter['data'] = data
+            waiter['event'].set()
+
+@socketio.on('file_faststart_response')
+def handle_file_faststart_response(data):
+    request_id = data.get('request_id')
+    if not request_id:
+        return
+    with FILE_WAITERS_LOCK:
+        waiter = FILE_FASTSTART_WAITERS.get(request_id)
         if waiter:
             waiter['data'] = data
             waiter['event'].set()

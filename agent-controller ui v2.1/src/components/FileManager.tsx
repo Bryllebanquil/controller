@@ -95,6 +95,7 @@ export function FileManager({ agentId }: FileManagerProps) {
   const [previewKind, setPreviewKind] = useState<'image' | 'video' | 'pdf' | null>(null);
   const [previewItems, setPreviewItems] = useState<FileItem[]>([]);
   const [previewIndex, setPreviewIndex] = useState<number>(0);
+  const [previewErrorCount, setPreviewErrorCount] = useState<number>(0);
   const currentPathRef = useRef<string>('/');
 
   const filteredFiles = files.filter(file => 
@@ -183,6 +184,10 @@ export function FileManager({ agentId }: FileManagerProps) {
   const makeStreamUrl = (path: string) => {
     if (!agentId) return '';
     return `/api/agents/${agentId}/files/stream?path=${encodeURIComponent(path)}`;
+  };
+  const makeStreamFastUrl = (path: string) => {
+    if (!agentId) return '';
+    return `/api/agents/${agentId}/files/stream_faststart?path=${encodeURIComponent(path)}`;
   };
 
   const makeThumbUrl = (path: string) => {
@@ -299,6 +304,7 @@ export function FileManager({ agentId }: FileManagerProps) {
     const ext = (item.extension || getExtension(item.name)).toLowerCase();
     const kind = getPreviewKind(ext);
     setPreviewKind(kind);
+    setPreviewErrorCount(0);
     setPreviewUrl(makeStreamUrl(item.path));
   }, [previewOpen, previewIndex, previewItems, agentId]);
 
@@ -474,7 +480,12 @@ export function FileManager({ agentId }: FileManagerProps) {
                         <img src={previewUrl} className="max-w-full max-h-full object-contain" />
                       )}
                       {previewUrl && previewKind === 'video' && (
-                        <video className="w-full h-full" controls playsInline preload="metadata">
+                        <video className="w-full h-full" controls playsInline preload="metadata" onError={() => {
+                          if (previewItems[previewIndex] && previewErrorCount === 0) {
+                            setPreviewErrorCount(1);
+                            setPreviewUrl(makeStreamFastUrl(previewItems[previewIndex].path));
+                          }
+                        }}>
                           <source src={previewUrl} type={previewSourceType} />
                         </video>
                       )}
