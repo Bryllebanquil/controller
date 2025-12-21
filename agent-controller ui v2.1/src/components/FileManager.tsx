@@ -471,7 +471,10 @@ export function FileManager({ agentId }: FileManagerProps) {
               </div>
 
               <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-                <DialogContent className="w-[92vw] sm:max-w-[1200px] h-[85vh] sm:max-h-[900px] p-4">
+                <DialogContent
+                  className="w-[92vw] sm:max-w-[1200px] h-[85vh] sm:max-h-[900px] p-4"
+                  style={{ width: '92vw', maxWidth: '1200px', height: '85vh', maxHeight: '900px' }}
+                >
                   <div className="flex flex-col h-full gap-3">
                     <DialogHeader className="shrink-0">
                       <DialogTitle className="text-sm font-medium truncate">

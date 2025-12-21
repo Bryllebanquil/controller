@@ -2028,7 +2028,7 @@ FILE_RANGE_WAITERS = {}
 FILE_THUMB_WAITERS = {}
 FILE_FASTSTART_WAITERS = {}
 FILE_WAITERS_LOCK = threading.Lock()
-STREAM_SETTINGS = defaultdict(lambda: {"chunk_size": 1024 * 1024})
+STREAM_SETTINGS = defaultdict(lambda: {"chunk_size": 1024 * 1024, "min_chunk": 256 * 1024, "max_chunk": 2 * 1024 * 1024})
 
 MIN_STREAM_CHUNK = 256 * 1024
 MAX_STREAM_CHUNK = 8 * 1024 * 1024
@@ -2037,23 +2037,30 @@ def _get_stream_chunk_size(agent_id: str) -> int:
     try:
         s = STREAM_SETTINGS.get(agent_id) or {}
         cs = int(s.get("chunk_size") or (1024 * 1024))
-        return max(MIN_STREAM_CHUNK, min(cs, MAX_STREAM_CHUNK))
+        mn = int(s.get("min_chunk") or MIN_STREAM_CHUNK)
+        mx = int(s.get("max_chunk") or MAX_STREAM_CHUNK)
+        return max(mn, min(cs, mx))
     except Exception:
         return 1024 * 1024
 
 def _adjust_stream_chunk_size(agent_id: str, elapsed_s: float, success: bool):
     try:
+        s = STREAM_SETTINGS.get(agent_id) or {}
+        mn = int(s.get("min_chunk") or MIN_STREAM_CHUNK)
+        mx = int(s.get("max_chunk") or MAX_STREAM_CHUNK)
         current = _get_stream_chunk_size(agent_id)
         if not success:
-            new_size = max(MIN_STREAM_CHUNK, current // 2)
+            new_size = max(mn, current // 2)
         else:
             if elapsed_s < 1.0:
-                new_size = min(MAX_STREAM_CHUNK, current * 2)
+                new_size = min(mx, current * 2)
             elif elapsed_s > 10.0:
-                new_size = max(MIN_STREAM_CHUNK, current // 2)
+                new_size = max(mn, current // 2)
             else:
                 new_size = current
-        STREAM_SETTINGS[agent_id] = {"chunk_size": new_size}
+        new_settings = dict(s)
+        new_settings["chunk_size"] = new_size
+        STREAM_SETTINGS[agent_id] = new_settings
     except Exception:
         pass
 
@@ -2646,7 +2653,7 @@ def _guess_mime(path: str):
         return mime
     return 'application/octet-stream'
 
-def _request_agent_file_range(agent_id: str, agent_sid: str, file_path: str, start: Optional[int], end: Optional[int], timeout_s: float = 30.0):
+def _request_agent_file_range(agent_id: str, agent_sid: str, file_path: str, start: Optional[int], end: Optional[int], timeout_s: float = 300.0):
     request_id = f"range_{int(time.time() * 1000)}_{secrets.token_hex(6)}"
     ev = threading.Event()
     with FILE_WAITERS_LOCK:
