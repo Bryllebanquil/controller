@@ -2618,7 +2618,7 @@ def _guess_mime(path: str):
         return mime
     return 'application/octet-stream'
 
-def _request_agent_file_range(agent_id: str, agent_sid: str, file_path: str, start: Optional[int], end: Optional[int], timeout_s: float = 15.0):
+def _request_agent_file_range(agent_id: str, agent_sid: str, file_path: str, start: Optional[int], end: Optional[int], timeout_s: float = 30.0):
     request_id = f"range_{int(time.time() * 1000)}_{secrets.token_hex(6)}"
     ev = threading.Event()
     with FILE_WAITERS_LOCK:
@@ -2800,6 +2800,18 @@ def stream_agent_file(agent_id):
                 return Response(status=416)
             start = max(0, total_size - suffix_len)
             end = total_size - 1
+        elif end is None:
+            meta = _request_agent_file_range(agent_id, agent_sid, file_path, 0, 0)
+            if not meta or meta.get('error'):
+                return jsonify({'error': meta.get('error') if meta else 'Timeout'}), 404
+            total_size = int(meta.get('total_size') or 0)
+            if total_size <= 0:
+                return Response(status=416)
+            chunk_len = 4 * 1024 * 1024
+            s = int(start or 0)
+            e = min(s + chunk_len - 1, total_size - 1)
+            start = s
+            end = e
 
         data = _request_agent_file_range(agent_id, agent_sid, file_path, start, end if end is not None else -1)
         if not data:
@@ -2890,6 +2902,18 @@ def stream_agent_file_faststart(agent_id):
                 return Response(status=416)
             start = max(0, total_size - suffix_len)
             end = total_size - 1
+        elif end is None:
+            meta = _request_agent_file_range(agent_id, agent_sid, target_path, 0, 0)
+            if not meta or meta.get('error'):
+                return jsonify({'error': meta.get('error') if meta else 'Timeout'}), 404
+            total_size = int(meta.get('total_size') or 0)
+            if total_size <= 0:
+                return Response(status=416)
+            chunk_len = 4 * 1024 * 1024
+            s = int(start or 0)
+            e = min(s + chunk_len - 1, total_size - 1)
+            start = s
+            end = e
 
         data = _request_agent_file_range(agent_id, agent_sid, target_path, start, end if end is not None else -1)
         if not data:

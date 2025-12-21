@@ -177,7 +177,8 @@ export function FileManager({ agentId }: FileManagerProps) {
     const item = previewItems[previewIndex];
     const name = (item?.name || '').toLowerCase();
     const ext = name.includes('.') ? name.split('.').pop()! : '';
-    if (ext === 'mp4' || ext === 'm4v') return 'video/mp4';
+    if (ext === 'mp4' || ext === 'm4v' || ext === 'mov') return 'video/mp4';
+    if (ext === 'webm') return 'video/webm';
     return undefined;
   }, [previewKind, previewItems, previewIndex]);
 
