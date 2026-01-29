@@ -7,7 +7,7 @@ services:
       cd "agent-controller ui v2.1"
       npm install --no-audit --no-fund
       npm run build
-    startCommand: python controller.py
+    startCommand: gunicorn -k eventlet -w 1 --bind 0.0.0.0:$PORT controller:app
     autoDeploy: true
     plan: starter
     envVars:
@@ -17,3 +17,7 @@ services:
         value: 20.20.0
       - key: NPM_CONFIG_PRODUCTION
         value: "false"
+      - key: SOCKET_ASYNC_MODE
+        value: eventlet
+      - key: EVENTLET_MONKEY_PATCH
+        value: "1"
