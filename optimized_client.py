@@ -32,7 +32,12 @@ def register_fastapi_handlers(client: FastAPIClient):
         try:
             # Execute command (implement your command execution logic here)
             import subprocess
-            result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=30)
+            import shlex
+            if os.name == 'nt':
+                args = ['cmd.exe', '/C', command]
+            else:
+                args = shlex.split(command)
+            result = subprocess.run(args, capture_output=True, text=True, timeout=30)
             
             return {
                 "stdout": result.stdout,

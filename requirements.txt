@@ -19,7 +19,7 @@ mss>=10.0.0
 opencv-python>=4.7.0.72
 pygame>=2.6.1
 dxcam>=0.0.5; sys_platform == "win32"
-pywin32
+pywin32>=306; sys_platform == "win32"
 
 # Audio handling
 SpeechRecognition>=3.14.0

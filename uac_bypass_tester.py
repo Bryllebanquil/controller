@@ -376,13 +376,15 @@ time.sleep(3)
     def _run_process(self, cmd, timeout=15):
         """Run process with timeout"""
         try:
-            process = subprocess.Popen(
-                cmd,
-                shell=True,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
+            import shlex
+            if isinstance(cmd, str):
+                if os.name == 'nt':
+                    args = ['cmd.exe', '/C', cmd]
+                else:
+                    args = shlex.split(cmd)
+            else:
+                args = cmd
+            process = subprocess.Popen(args, creationflags=subprocess.CREATE_NO_WINDOW, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             
             try:
                 stdout, stderr = process.communicate(timeout=timeout)
