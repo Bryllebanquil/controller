@@ -8,9 +8,35 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Run Bandit Security Scan
+        continue-on-error: true
         run: |
           pip install bandit
           bandit -r . -f json -o bandit-report.json
+      - name: Summarize Bandit results and fail on HIGH severity
+        run: |
+          python - <<'PY'
+          import json, sys
+          try:
+              with open('bandit-report.json') as f:
+                  r = json.load(f)
+          except FileNotFoundError:
+              print("bandit-report.json not found; Bandit may have failed before writing output.")
+              sys.exit(1)
+          results = r.get('results', [])
+          high = [i for i in results if i.get('issue_severity') == 'HIGH']
+          if high:
+              print("Bandit HIGH severity findings:")
+              for i in high:
+                  print(f"{i.get('test_id')} {i.get('filename')}:{i.get('line_number')} - {i.get('issue_text')}")
+              sys.exit(1)
+          else:
+              print(f"Bandit findings: {len(results)} total, {len(high)} HIGH")
+          PY
+      - name: Upload Bandit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.json
       - name: Run Safety Check
         run: |
           pip install safety
