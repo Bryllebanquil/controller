@@ -1,0 +1,45 @@
+[33m30c6f71[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m new auth 3
+[33mdfb51c9[m new auth 2
+[33m6d12bbc[m new auth 1
+[33ma4a4f79[m new auth
+[33m14d7fa3[m fix login ui
+[33mb4cced5[m fix authentication 2
+[33m26e3347[m fix authentication
+[33m68a596c[m fix settings
+[33m907ba36[m added 30days for devices to prevent OTP flooding request
+[33mc2abe75[m adjust debugger ui
+[33m976d4d9[m fix login authetication
+[33m8497855[m login authentication
+[33ma863132[m fix authentication
+[33m9f21da4[m added pyplot in requirements
+[33mdf427ef[m added qrcode and pyotp in controller
+[33m6993573[m added OTP Authentication
+[33m3a07d89[m debugger agent3
+[33m46b51f5[m debugger agent2
+[33mb62f0b8[m debugger agent1
+[33m8a12083[m fix auto update client
+[33m1bed62d[m render fix 4
+[33m6fc52f3[m render fix 3
+[33mb76265f[m render fix 2
+[33mcd3b61a[m render fix 1
+[33m103353c[m add monoco editor for vs code and fix npm ci
+[33m5b1220c[m add auto update for client
+[33md122026[m fix audio
+[33md3a96fd[m add ip block
+[33m0b69a47[m fix file auto load 2
+[33mde17b3d[m fix file autoload
+[33mc98a1dc[m major tweaks
+[33m60c9eb3[m enhance reconnecting/upcoming request
+[33mfd10cfe[m hls fix 2
+[33m4a5b1b2[m hls fix
+[33maae567c[m change to fast stream
+[33mba2ed40[m dashboard unseen 1
+[33m20568d9[m controller 5
+[33m64436e6[m controller 4
+[33m83b3703[m controller 3
+[33m9c8e117[m controller 2
+[33m117335c[m controller 1
+[33mb087286[m edit 2
+[33m2ab58f4[m Merge remote main into local project
+[33mdb92c19[m edit 1
+[33mbc37ad7[m semi fix

@@ -1,0 +1,367 @@
+me\pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import resource_stream, resource_exists
+pygame 2.6.1 (SDL 2.28.4, Python 3.12.0)
+Hello from the pygame community. https://www.pygame.org/contribute.html       
+2746 INFO: checking Analysis
+2747 INFO: Building Analysis because Analysis-00.toc is non existent
+2747 INFO: Looking for Python shared library...
+2747 INFO: Using Python shared library: C:\Users\Brylle\AppData\Local\Programs\Python\Python312\python312.dll        
+2749 INFO: Running Analysis Analysis-00.toc
+2749 INFO: Target bytecode optimization level: 0
+2749 INFO: Initializing module dependency graph...
+2753 INFO: Initializing module graph hook caches...
+2808 INFO: Analyzing modules for base_library.zip ...
+6102 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+10084 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+12320 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+13277 INFO: Caching module dependency graph...
+13418 INFO: Analyzing C:\Users\Brylle\testing\client.py
+15372 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+15987 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+16634 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+18145 INFO: Processing standard module hook 'hook-cryptography.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks' 
+21970 INFO: hook-cryptography: cryptography does not seem to be using dynamically linked OpenSSL.
+22800 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+22805 INFO: SetuptoolsInfo: initializing cached setuptools info...
+33576 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+33784 INFO: Processing standard module hook 'hook-urllib3.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'      
+33997 INFO: Processing pre-safe-import-module hook 'hook-backports.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+34000 INFO: Setuptools: 'backports' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.backports'!
+35565 INFO: Processing standard module hook 'hook-charset_normalizer.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+35891 INFO: Processing standard module hook 'hook-certifi.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'      
+36345 INFO: Processing standard module hook 'hook-numpy.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+37432 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+39006 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+39478 INFO: Processing standard module hook 'hook-psutil.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'       
+41986 INFO: Processing standard module hook 'hook-cv2.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+43952 INFO: Processing standard module hook 'hook-pynput.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'       
+45035 INFO: Processing pre-safe-import-module hook 'hook-six.moves.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+45231 INFO: Processing standard module hook 'hook-pygame.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\pygame\\__pyinstaller'
+C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\pygame\pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  from pkg_resources import resource_stream, resource_exists
+pygame 2.6.1 (SDL 2.28.4, Python 3.12.0)
+Hello from the pygame community. https://www.pygame.org/contribute.html       
+46863 INFO: Processing standard module hook 'hook-pkg_resources.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+47704 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+47911 INFO: Processing pre-safe-import-module hook 'hook-jaraco.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+47912 INFO: Setuptools: 'jaraco' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.jaraco'!
+47926 INFO: Processing pre-safe-import-module hook 'hook-platformdirs.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+47929 INFO: Setuptools: 'platformdirs' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.platformdirs'!
+48071 INFO: Processing standard module hook 'hook-websockets.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'   
+50899 INFO: Processing standard module hook 'hook-speech_recognition.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+51165 INFO: Processing pre-safe-import-module hook 'hook-tensorflow.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\pre_safe_import_module'
+51344 INFO: Processing standard module hook 'hook-PIL.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+51632 INFO: Processing standard module hook 'hook-PIL.Image.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+52840 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+53295 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\pyautogui\_pyautogui_x11.py:284: SyntaxWarning: invalid escape sequence '\e'      
+  '\e': _display.keysym_to_keycode(Xlib.XK.string_to_keysym('Escape')),       
+57768 INFO: Processing pre-safe-import-module hook 'hook-importlib_metadata.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+57770 INFO: Setuptools: 'importlib_metadata' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.importlib_metadata'!
+60820 INFO: Processing standard module hook 'hook-av.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+65517 INFO: Processing standard module hook 'hook-dns.rdata.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'    
+71137 INFO: Processing pre-safe-import-module hook 'hook-win32com.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\pre_safe_import_module'
+71449 INFO: Processing standard module hook 'hook-win32com.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'     
+71474 INFO: Processing standard module hook 'hook-pythoncom.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'    
+71785 INFO: Processing standard module hook 'hook-pywintypes.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'   
+74763 INFO: Processing standard module hook 'hook-comtypes.client.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+77201 INFO: Processing standard module hook 'hook-lz4.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+79221 INFO: Processing standard module hook 'hook-jinja2.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'       
+85391 INFO: Analyzing hidden import 'socketio.asyncio_client'
+85392 ERROR: Hidden import 'socketio.asyncio_client' not found
+85392 INFO: Analyzing hidden import 'flask_cors'
+85625 INFO: Analyzing hidden import 'aiohttp.signals'
+85627 ERROR: Hidden import 'aiohttp.signals' not found
+85629 INFO: Analyzing hidden import 'aiofiles'
+85984 INFO: Analyzing hidden import 'aiofiles.os'
+86066 INFO: Analyzing hidden import 'websockets.connection'
+86110 INFO: Analyzing hidden import 'websockets.http'
+86255 INFO: Analyzing hidden import 'websockets.legacy.auth'
+87158 INFO: Analyzing hidden import 'websockets.legacy.client'
+87252 INFO: Analyzing hidden import 'websockets.sync'
+87254 INFO: Analyzing hidden import 'websocket_client'
+87257 ERROR: Hidden import 'websocket_client' not found
+87257 INFO: Analyzing hidden import 'urllib3.packages'
+87259 ERROR: Hidden import 'urllib3.packages' not found
+87260 INFO: Analyzing hidden import 'urllib3.packages.six'
+87260 ERROR: Hidden import 'urllib3.packages.six' not found
+87275 INFO: Analyzing hidden import 'cv2.cv2'
+87279 INFO: Analyzing hidden import 'cv2.data'
+87324 INFO: Analyzing hidden import 'cv2.misc'
+87388 INFO: Analyzing hidden import 'cv2.version'
+87427 INFO: Analyzing hidden import 'numpy._dtype_ctypes'
+87429 ERROR: Hidden import 'numpy._dtype_ctypes' not found
+87429 INFO: Analyzing hidden import 'numpy.compat'
+87547 INFO: Analyzing hidden import 'numpy.lib.utils'
+87550 ERROR: Hidden import 'numpy.lib.utils' not found
+87550 INFO: Analyzing hidden import 'numpy.linalg.lapack_lite'
+87618 INFO: Analyzing hidden import 'pygame.overlay'
+87619 ERROR: Hidden import 'pygame.overlay' not found
+87620 INFO: Analyzing hidden import 'PIL.ImageEnhance'
+87730 INFO: Analyzing hidden import 'PIL.ImageTk'
+87786 INFO: Analyzing hidden import 'PIL.ImageCrop'
+87786 ERROR: Hidden import 'PIL.ImageCrop' not found
+87787 INFO: Analyzing hidden import 'PIL.WebPImagePlugin'
+87873 INFO: Analyzing hidden import 'PyTurboJPEG'
+87874 ERROR: Hidden import 'PyTurboJPEG' not found
+87877 INFO: Analyzing hidden import '' 
+87878 ERROR: Hidden import '' not found
+87879 INFO: Analyzing hidden import 'pynput.keyboard._base'
+87984 INFO: Analyzing hidden import 'pynput.keyboard._win32'
+88172 INFO: Analyzing hidden import ''
+88173 ERROR: Hidden import '' not found
+88173 INFO: Analyzing hidden import '' 
+88175 ERROR: Hidden import '' not found
+88175 INFO: Analyzing hidden import 'pynput.mouse._base'
+88251 INFO: Analyzing hidden import 'pynput.mouse._win32'
+88312 INFO: Analyzing hidden import ''
+88314 ERROR: Hidden import '' not found
+88316 INFO: Analyzing hidden import '' 
+88317 ERROR: Hidden import '' not found
+88317 INFO: Analyzing hidden import 'keyboard'
+88930 INFO: Analyzing hidden import 'keyboard._keyboard_tests'
+89090 INFO: Analyzing hidden import ''
+89092 ERROR: Hidden import '' not found
+89092 INFO: Analyzing hidden import '' 
+89093 ERROR: Hidden import '' not found
+89093 INFO: Analyzing hidden import 'psutil._compat'
+89095 ERROR: Hidden import 'psutil._compat' not found
+89095 INFO: Analyzing hidden import '' 
+89098 ERROR: Hidden import '' not found
+89098 INFO: Analyzing hidden import '' 
+89112 ERROR: Hidden import '' not found
+89113 INFO: Analyzing hidden import '' 
+89126 ERROR: Hidden import '' not found
+89129 INFO: Analyzing hidden import 'py_cpuinfo'
+89132 ERROR: Hidden import 'py_cpuinfo' not found
+89133 INFO: Analyzing hidden import 'py_cpuinfo.cpuinfo'
+89134 ERROR: Hidden import 'py_cpuinfo.cpuinfo' not found
+89136 INFO: Analyzing hidden import 'aiortc.rtcstats'
+89136 ERROR: Hidden import 'aiortc.rtcstats' not found
+89137 INFO: Analyzing hidden import 'av.datasets'
+89202 INFO: Analyzing hidden import 'av.library'
+89203 ERROR: Hidden import 'av.library' not found
+89203 INFO: Analyzing hidden import 'av.subtitle'
+89203 ERROR: Hidden import 'av.subtitle' not found
+89204 INFO: Analyzing hidden import 'lz4.block'
+89253 INFO: Analyzing hidden import 'lz4.stream'
+89255 ERROR: Hidden import 'lz4.stream' not found
+89255 INFO: Analyzing hidden import 'zstandard'
+89611 INFO: Analyzing hidden import 'zstandard.backend'
+89611 ERROR: Hidden import 'zstandard.backend' not found
+89612 INFO: Analyzing hidden import '' 
+89614 ERROR: Hidden import '' not found
+89614 INFO: Analyzing hidden import 'uvloop._noop'
+89614 ERROR: Hidden import 'uvloop._noop' not found
+89616 INFO: Analyzing hidden import 'cryptography.hazmat.backends.openssl.aead'
+89616 ERROR: Hidden import 'cryptography.hazmat.backends.openssl.aead' not found
+89617 INFO: Analyzing hidden import 'cryptography.hazmat.backends.openssl.ciphers'
+89618 ERROR: Hidden import 'cryptography.hazmat.backends.openssl.ciphers' not found
+89623 INFO: Analyzing hidden import 'cryptography.hazmat.backends.openssl.cmac'
+89630 ERROR: Hidden import 'cryptography.hazmat.backends.openssl.cmac' not found
+89633 INFO: Analyzing hidden import 'cryptography.hazmat.backends.openssl.decode_asn1'
+89634 ERROR: Hidden import 'cryptography.hazmat.backends.openssl.decode_asn1' not found
+89635 INFO: Analyzing hidden import 'cryptography.hazmat.backends.openssl.dh' 
+89636 ERROR: Hidden import 'cryptography.hazmat.backends.openssl.dh' not found
+89637 INFO: Analyzing hidden import 'cryptography.hazmat.backends.openssl.dsa'
+89638 ERROR: Hidden import 'cryptography.hazmat.backends.openssl.dsa' not found
+89639 INFO: Analyzing hidden import 'cryptography.hazmat.backends.openssl.ec' 
+89639 ERROR: Hidden import 'cryptography.hazmat.backends.openssl.ec' not found
+89640 INFO: Analyzing hidden import 'cryptography.hazmat.backends.openssl.ed25519'
+89641 ERROR: Hidden import 'cryptography.hazmat.backends.openssl.ed25519' not found
+89641 INFO: Analyzing hidden import 'cryptography.hazmat.backends.openssl.ed448'
+89643 ERROR: Hidden import 'cryptography.hazmat.backends.openssl.ed448' not found
+89651 INFO: Analyzing hidden import 'cryptography.hazmat.backends.openssl.encode_asn1'
+89653 ERROR: Hidden import 'cryptography.hazmat.backends.openssl.encode_asn1' not found
+89654 INFO: Analyzing hidden import 'cryptography.hazmat.backends.openssl.hashes'
+89655 ERROR: Hidden import 'cryptography.hazmat.backends.openssl.hashes' not found
+89656 INFO: Analyzing hidden import 'cryptography.hazmat.backends.openssl.hmac'
+89658 ERROR: Hidden import 'cryptography.hazmat.backends.openssl.hmac' not found
+89660 INFO: Analyzing hidden import 'cryptography.hazmat.backends.openssl.poly1305'
+89669 ERROR: Hidden import 'cryptography.hazmat.backends.openssl.poly1305' not found
+89671 INFO: Analyzing hidden import 'cryptography.hazmat.backends.openssl.rsa'
+89673 ERROR: Hidden import 'cryptography.hazmat.backends.openssl.rsa' not found
+89673 INFO: Analyzing hidden import 'cryptography.hazmat.backends.openssl.x25519'
+89675 ERROR: Hidden import 'cryptography.hazmat.backends.openssl.x25519' not found
+89681 INFO: Analyzing hidden import 'cryptography.hazmat.backends.openssl.x448'
+89684 ERROR: Hidden import 'cryptography.hazmat.backends.openssl.x448' not found
+89685 INFO: Analyzing hidden import 'cryptography.hazmat.backends.openssl.x509'
+89686 ERROR: Hidden import 'cryptography.hazmat.backends.openssl.x509' not found
+89688 INFO: Analyzing hidden import 'cryptography.hazmat.primitives.keywrap'  
+89893 INFO: Analyzing hidden import 'pyotp'
+90339 INFO: Analyzing hidden import 'qrcode'
+91275 INFO: Analyzing hidden import 'qrcode.image.svg'
+91430 INFO: Analyzing hidden import 'email.mime.multipart'
+91502 INFO: Analyzing hidden import 'logging.handlers'
+91777 INFO: Analyzing hidden import 'shelve'
+91822 INFO: Processing standard module hook 'hook-shelve.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+91904 INFO: Analyzing hidden import 'sqlite3'
+91950 INFO: Processing standard module hook 'hook-sqlite3.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+93178 INFO: Analyzing hidden import 'configparser'
+93334 INFO: Analyzing hidden import 'optparse'
+93444 INFO: Analyzing hidden import 'pickletools'
+93574 INFO: Analyzing hidden import 'formatter'
+93575 ERROR: Hidden import 'formatter' not found
+93577 INFO: Analyzing hidden import 'html.parser'
+93742 INFO: Analyzing hidden import 'cgi'
+93868 INFO: Analyzing hidden import 'cgitb'
+93946 INFO: Analyzing hidden import 'wsgiref'
+93987 INFO: Analyzing hidden import 'urllib.robotparser'
+94064 INFO: Analyzing hidden import 'poplib'
+94155 INFO: Analyzing hidden import 'imaplib'
+94317 INFO: Analyzing hidden import 'nntplib'
+94442 INFO: Analyzing hidden import 'smtpd'
+94444 ERROR: Hidden import 'smtpd' not found
+94445 INFO: Analyzing hidden import 'telnetlib'
+94552 INFO: Analyzing hidden import 'asyncore'
+94554 ERROR: Hidden import 'asyncore' not found
+94555 INFO: Analyzing hidden import 'asynchat'
+94558 ERROR: Hidden import 'asynchat' not found
+94560 INFO: Analyzing hidden import 'sched'
+94609 INFO: Analyzing hidden import 'cython'
+99628 INFO: Processing standard module hook 'hook-pygments.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks'
+104983 INFO: Processing pre-safe-import-module hook 'hook-distutils.py' from 'C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Scripts\pyinstaller.exe\__main__.py", line 7, in <module>
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\__main__.py", line 231, in _console_script_run
+    run()
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\__main__.py", line 215, in run
+    run_build(pyi_config, spec_file, **vars(args))
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\__main__.py", line 70, in run_build
+    PyInstaller.building.build_main.main(pyi_config, spec_file, **kwargs)     
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\building\build_main.py", line 1275, in main
+    build(specfile, distpath, workpath, clean_build)
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\building\build_main.py", line 1213, in build
+    exec(code, spec_namespace)
+  File "client.spec", line 28, in <module>
+    a = Analysis(
+        ^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\building\build_main.py", line 584, in __init__
+    self.__postinit__()
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\building\datastruct.py", line 184, in __postinit__
+    self.assemble()
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\building\build_main.py", line 719, in assemble
+    self.graph.add_hiddenimports(self.hiddenimports)
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\depend\analysis.py", line 770, in add_hiddenimports
+    nodes = self.import_hook(modnm)    
+            ^^^^^^^^^^^^^^^^^^^^^^^    
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 1266, in import_hook    
+    target_package, target_module_partname = self._find_head_package(
+                                       
+      ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 1445, in _find_head_package
+    target_package = self._safe_import_module(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\depend\analysis.py", line 539, in _safe_import_module
+    return super()._safe_import_module(module_basename, module_name, parent_package)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 1826, in _safe_import_module
+    self._process_imports(n)
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 2654, in _process_imports
+    target_modules = self._safe_import_hook(*import_info, **kwargs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\depend\analysis.py", line 477, in _safe_import_hook
+    ret_modules = super()._safe_import_hook(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 2103, in _safe_import_hook
+    target_modules = self.import_hook(
+                     ^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 1266, in import_hook    
+    target_package, target_module_partname = self._find_head_package(
+                                       
+      ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 1445, in _find_head_package
+    target_package = self._safe_import_module(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\depend\analysis.py", line 539, in _safe_import_module
+    return super()._safe_import_module(module_basename, module_name, parent_package)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 1826, in _safe_import_module
+    self._process_imports(n)
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 2654, in _process_imports
+    target_modules = self._safe_import_hook(*import_info, **kwargs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\depend\analysis.py", line 477, in _safe_import_hook
+    ret_modules = super()._safe_import_hook(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 2103, in _safe_import_hook
+    target_modules = self.import_hook( 
+                     ^^^^^^^^^^^^^^^^^ 
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 1266, in import_hook    
+    target_package, target_module_partname = self._find_head_package(
+                                       
+      ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 1445, in _find_head_package
+    target_package = self._safe_import_module(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\depend\analysis.py", line 539, in _safe_import_module
+    return super()._safe_import_module(module_basename, module_name, parent_package)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 1826, in _safe_import_module
+    self._process_imports(n)
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 2654, in _process_imports
+    target_modules = self._safe_import_hook(*import_info, **kwargs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\depend\analysis.py", line 477, in _safe_import_hook
+    ret_modules = super()._safe_import_hook(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 2103, in _safe_import_hook
+    target_modules = self.import_hook(
+                     ^^^^^^^^^^^^^^^^^ 
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 1279, in import_hook    
+    submodule = self._safe_import_module(head, mname, submodule)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\depend\analysis.py", line 539, in _safe_import_module
+    return super()._safe_import_module(module_basename, module_name, parent_package)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 1826, in _safe_import_module
+    self._process_imports(n)
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 2654, in _process_imports
+    target_modules = self._safe_import_hook(*import_info, **kwargs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\depend\analysis.py", line 477, in _safe_import_hook
+    ret_modules = super()._safe_import_hook(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 2103, in _safe_import_hook
+    target_modules = self.import_hook( 
+                     ^^^^^^^^^^^^^^^^^ 
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 1266, in import_hook    
+    target_package, target_module_partname = self._find_head_package(
+                                       
+      ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 1445, in _find_head_package
+    target_package = self._safe_import_module(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\depend\analysis.py", line 539, in _safe_import_module
+    return super()._safe_import_module(module_basename, module_name, parent_package)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 1826, in _safe_import_module
+    self._process_imports(n)
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 2654, in _process_imports
+    target_modules = self._safe_import_hook(*import_info, **kwargs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\depend\analysis.py", line 477, in _safe_import_hook
+    ret_modules = super()._safe_import_hook(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 2103, in _safe_import_hook
+    target_modules = self.import_hook( 
+                     ^^^^^^^^^^^^^^^^^ 
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 1266, in import_hook    
+    target_package, target_module_partname = self._find_head_package(
+                                       
+      ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 1445, in _find_head_package
+    target_package = self._safe_import_module(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\depend\analysis.py", line 532, in _safe_import_module
+    hook_module.pre_safe_import_module(hook_api)
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\hooks\pre_safe_import_module\hook-distutils.py", line 23, in pre_safe_import_module
+    api.add_alias_module(real_vendored_name, aliased_name)
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\depend\imphookapi.py", line 161, in add_alias_module
+    self._module_graph.alias_module(real_module_name, alias_module_name)      
+  File "C:\Users\Brylle\AppData\Local\Programs\Python\Python312\Lib\site-packages\PyInstaller\lib\modulegraph\modulegraph.py", line 1687, in alias_module   
+    raise ValueError(
+ValueError: Target module "distutils" already imported as "ExcludedModule('distutils',)".
+PS C:\Users\Brylle\testing> 
