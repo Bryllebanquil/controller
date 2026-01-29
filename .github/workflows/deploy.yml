@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-controller.txt
       - name: Run tests
-        run: pytest tests/
+        run: python -m pytest -q tests
   deploy:
     needs: [security-scan, test]
     runs-on: ubuntu-latest

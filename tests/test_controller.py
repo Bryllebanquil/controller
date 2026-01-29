@@ -1,5 +1,23 @@
 import pytest
-from controller import app, socketio
+import sys
+import os
+import importlib.util
+
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+try:
+    from controller import app, socketio
+except ModuleNotFoundError:
+    spec = importlib.util.spec_from_file_location("controller", os.path.join(ROOT_DIR, "controller.py"))
+    controller = importlib.util.module_from_spec(spec)
+    loader = spec.loader
+    if loader is None:
+        raise
+    loader.exec_module(controller)
+    app = controller.app
+    socketio = controller.socketio
 
 @pytest.fixture
 def client():
