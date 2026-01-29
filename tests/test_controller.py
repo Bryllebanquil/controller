@@ -3,6 +3,13 @@ import sys
 import os
 import importlib.util
 
+# Ensure eventlet monkey patching is disabled during tests to avoid lock issues
+os.environ.setdefault('EVENTLET_MONKEY_PATCH', '0')
+# Force threading async mode for Socket.IO in tests
+os.environ.setdefault('SOCKET_ASYNC_MODE', 'threading')
+# Use in-memory SQLite for fast, side-effect-free tests
+os.environ.setdefault('DATABASE_URL', 'sqlite:///:memory:')
+
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
