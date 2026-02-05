@@ -8,7 +8,7 @@
 Option Explicit
 
 ' Configuration
-Const SCRIPT_PATH = "C:\Users\Brylle\testing\client.py"
+Const SCRIPT_PATH = "C:\Users\Brylle\controller\client.py"
 Const PROCESS_NAME = "python.exe"
 Const WINDOW_TITLE = "client.py"
 
