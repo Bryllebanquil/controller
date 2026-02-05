@@ -403,31 +403,6 @@ export function ScreenshotTab({ agentId }: ScreenshotTabProps) {
         {isLoading && <p className="text-yellow-600">• Waiting for agent response, please wait...</p>}
       </div>
 
-      {operationLogs.length > 0 && (
-        <Card>
-          <CardHeader className="py-3">
-            <CardTitle className="text-sm">Screenshot Logs</CardTitle>
-            <CardDescription className="text-xs">Latest {Math.min(operationLogs.length, 8)} events</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {operationLogs.slice(-8).map((log, index) => (
-              <div key={`${log.timestamp}-${index}`} className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary" className="text-[10px] uppercase">{log.type}</Badge>
-                  <span className="text-muted-foreground">{log.timestamp}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  {typeof log.accuracy === 'number' && <span>Accuracy: {Math.round(log.accuracy)}%</span>}
-                  {typeof log.durationMs === 'number' && <span>{log.durationMs}ms</span>}
-                  {typeof log.size === 'number' && log.size > 0 && <span>{log.size} bytes</span>}
-                  {log.message && <span className="text-muted-foreground">{log.message}</span>}
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-      
       <ScreenshotTest agentId={agentId} />
     </div>
   );

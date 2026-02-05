@@ -165,7 +165,7 @@ export function FileManager({ agentId }: FileManagerProps) {
   };
 
   const getPreviewKind = (ext: string): 'image' | 'video' | 'pdf' | 'ppt' | null => {
-    const image = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']);
+    const image = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'heic', 'heif', 'tif', 'tiff', 'ico', 'jfif']);
     const video = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v']);
     const office = new Set(['ppt', 'pptx']);
     if (ext === 'pdf') return 'pdf';
@@ -207,11 +207,36 @@ export function FileManager({ agentId }: FileManagerProps) {
     return `${API_BASE_URL}/api/agents/${agentId}/files/stream_faststart?path=${encodeURIComponent(path)}`;
   };
 
+  const openActual = (path: string, kind: string | null) => {
+    if (!agentId) return;
+    if (kind === 'ppt') {
+      setSelectedFiles([path]);
+      downloadFile(agentId!, path);
+      return;
+    }
+    const ext = (getExtension(path) || '').toLowerCase();
+    const useFast = kind === 'video' && (ext === 'mp4' || ext === 'm4v' || ext === 'mov');
+    const url = useFast ? makeStreamFastUrl(path) : makeStreamUrl(path);
+    try {
+      const win = window.open(url, '_blank');
+      if (!win) {
+        window.location.href = url;
+      }
+    } catch {}
+  };
   const makeThumbUrl = (path: string) => {
     if (!agentId) return '';
     return `${API_BASE_URL}/api/agents/${agentId}/files/thumbnail?path=${encodeURIComponent(path)}&size=64`;
   };
 
+  const handlePlay = () => {
+    if (selectedFiles.length !== 1) return;
+    const idx = selectedPreviewableIndex;
+    if (idx < 0) return;
+    const item = previewableItems[idx];
+    const kind = getPreviewKind((item.extension || getExtension(item.name)).toLowerCase());
+    openActual(item.path, kind);
+  };
   const handlePreview = () => {
     if (selectedFiles.length !== 1) return;
     const idx = selectedPreviewableIndex;
@@ -258,7 +283,12 @@ export function FileManager({ agentId }: FileManagerProps) {
 
   const handleRefresh = () => {
     setIsLoading(true);
-    handleNavigate(currentPath);
+    if (agentId && socket) {
+      const reqPath = currentPath || '/';
+      try { setLastFilePath(agentId, reqPath); } catch {}
+      socket.emit('execute_command', { agent_id: agentId, command: `list-dir:${reqPath}` });
+      try { setLastActivity('files', reqPath, agentId); } catch {}
+    }
     setTimeout(() => setIsLoading(false), 500);
   };
 
@@ -516,15 +546,16 @@ export function FileManager({ agentId }: FileManagerProps) {
                     <span className="inline-flex items-center"><Upload className="h-3 w-3 mr-1" />Upload</span>
                   </Button>
                 </label>
-                <Button
-                  size="sm"
+                <Button 
+                  size="sm" 
                   variant="outline"
-                  onClick={handlePreview}
+                  onClick={handlePlay}
                   disabled={selectedPreviewableIndex < 0 || uploadProgress !== null || downloadProgress !== null}
                 >
-                  <Image className="h-3 w-3 mr-1" />
-                  Preview
+                  <Video className="h-3 w-3 mr-1" />
+                  Play
                 </Button>
+                
                 <Button 
                   size="sm" 
                   variant="destructive"
@@ -535,7 +566,7 @@ export function FileManager({ agentId }: FileManagerProps) {
                 </Button>
               </div>
 
-              <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+              <Dialog open={false} onOpenChange={setPreviewOpen}>
                 <DialogContent className="w-[90vw] max-w-5xl h-[85vh] p-4 flex flex-col">
                   <div className="flex flex-col h-full gap-3 min-w-0">
                     {/* Header with word-wrap for long filenames */}
@@ -756,32 +787,16 @@ export function FileManager({ agentId }: FileManagerProps) {
                         return (
                           <div
                             key={index}
-                            className={`flex items-center space-x-3 p-2 rounded cursor-pointer hover:bg-muted ${isSelected ? 'bg-secondary' : ''}`}
+                            className={`flex items-center space-x-3 p-2 rounded hover:bg-muted ${isSelected ? 'bg-secondary' : ''}`}
                             onClick={() => {
                               if (file.type === 'directory') {
                                 handleNavigate(file.path);
                                 setSearchTerm('');
                               } else {
+                                setSelectedFiles([]);
                                 const ext2 = (file.extension || getExtension(file.name)).toLowerCase();
                                 const kind2 = getPreviewKind(ext2);
-                                if (kind2) {
-                                  setSelectedFiles([file.path]);
-                                  const idx = previewableItems.findIndex(f => f.path === file.path);
-                                  if (idx >= 0) {
-                                    setPreviewItems(previewableItems);
-                                    setPreviewIndex(idx);
-                                    setPreviewOpen(true);
-                                  } else {
-                                    handleFileSelect(file.path);
-                                  }
-                                } else {
-                                  handleFileSelect(file.path);
-                                }
-                                const now = Date.now();
-                                if (now - (lastRefreshRef.current || 0) > 700) {
-                                  lastRefreshRef.current = now;
-                                  handleRefresh();
-                                }
+                                openActual(file.path, kind2);
                               }
                             }}
                           >
@@ -791,9 +806,18 @@ export function FileManager({ agentId }: FileManagerProps) {
                                 className="h-8 w-8 rounded object-cover bg-background"
                                 loading="lazy"
                                 alt=""
+                                onClick={(e) => { e.stopPropagation(); handleFileSelect(file.path); }}
                               />
                             ) : (
-                              <Icon className={`h-4 w-4 ${file.type === 'directory' ? 'text-blue-500' : 'text-muted-foreground'}`} />
+                              <Icon 
+                                className={`h-4 w-4 ${file.type === 'directory' ? 'text-blue-500' : 'text-muted-foreground'} ${file.type === 'file' ? 'cursor-pointer' : ''}`} 
+                                onClick={(e: any) => { 
+                                  if (file.type === 'file') { 
+                                    e.stopPropagation(); 
+                                    handleFileSelect(file.path); 
+                                  } 
+                                }} 
+                              />
                             )}
                             <div className="flex-1 min-w-0">
                               <div className="text-sm truncate">{file.name}</div>

@@ -21,7 +21,7 @@ export function FileBrowser({ agentId }: FileBrowserProps) {
   const [loading, setLoading] = useState(false);
   const [thumbnailCache, setThumbnailCache] = useState<Record<string, string>>({});
 
-  const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
+  const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'avif', 'heic', 'heif', 'tif', 'tiff', 'ico', 'jfif'];
   const videoExtensions = ['mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm'];
 
   const isMediaFile = (file: FileItem) => {
