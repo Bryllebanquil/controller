@@ -499,6 +499,7 @@ allowed_origins = [
     "http://127.0.0.1:8080",
     "https://neural-control-hub-frontend.onrender.com",
     "https://agent-controller-backend.onrender.com",
+    "https://neural-control-hub.onrender.com",
 ]
 
 try:
@@ -540,13 +541,23 @@ CORS(
 # Initialize Socket.IO with expanded origin allowlist (include render.com wildcard)
 render_origins = [
     "https://agent-controller-backend.onrender.com",
-    "https://neural-control-hub-frontend.onrender.com"
+    "https://neural-control-hub-frontend.onrender.com",
+    "https://neural-control-hub.onrender.com",
 ]
 # Add any render.com subdomain variations
 for subdomain in ["www", "app", "dashboard", "frontend", "backend"]:
     render_origins.append(f"https://{subdomain}.onrender.com")
     render_origins.append(f"https://agent-controller-{subdomain}.onrender.com")
     render_origins.append(f"https://neural-control-hub-{subdomain}.onrender.com")
+# Add the Render-provided external URL if present
+try:
+    _ext = os.environ.get("RENDER_EXTERNAL_URL")
+    if _ext and _ext not in allowed_origins:
+        allowed_origins.append(_ext)
+    if _ext and _ext not in render_origins:
+        render_origins.append(_ext)
+except Exception:
+    pass
 
 all_socketio_origins = allowed_origins + render_origins
 # Allow overriding async mode via env, default to threading to avoid eventlet/gevent issues on some platforms
