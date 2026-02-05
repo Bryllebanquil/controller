@@ -1839,6 +1839,137 @@ def check_system_requirements():
     
     return len(missing_critical) == 0
 
+def ensure_prerequisites():
+    """Ensure required Python packages for client.py are installed before use."""
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+    except Exception:
+        base_dir = os.getcwd()
+    req_files = [
+        os.path.join(base_dir, 'requirements-client.txt'),
+        os.path.join(base_dir, 'requirements-client-minimal.txt'),
+        os.path.join(base_dir, 'requirements-pure-agent.txt'),
+        os.path.join(base_dir, 'requirements-simple-client.txt'),
+    ]
+    pkgs = set([
+        'python-socketio>=5.13.0',
+        'requests>=2.32.4',
+        'psutil>=5.9.5',
+        'mss>=10.0.0',
+    ])
+    def _eval_marker(marker: str) -> bool:
+        m = (marker or '').strip()
+        if not m:
+            return True
+        try:
+            # Very small eval for sys_platform
+            if 'sys_platform' in m:
+                if '==' in m:
+                    lhs, rhs = m.split('==', 1)
+                    rhs = rhs.strip().strip('"\'')
+                    return (sys.platform == rhs)
+                if '!=' in m:
+                    lhs, rhs = m.split('!=', 1)
+                    rhs = rhs.strip().strip('"\'')
+                    return (sys.platform != rhs)
+            return True
+        except Exception:
+            return True
+    # Parse requirement files
+    for rf in req_files:
+        try:
+            with open(rf, 'r', encoding='utf-8') as f:
+                for line in f:
+                    s = line.strip()
+                    if not s or s.startswith('#'):
+                        continue
+                    # Split environment marker
+                    pkg_part, marker = (s.split(';', 1) + [''])[:2]
+                    if _eval_marker(marker):
+                        pkgs.add(pkg_part.strip())
+        except Exception:
+            continue
+    # Map package specs to import names
+    overrides = {
+        'python-socketio': 'socketio',
+        'opencv-python': 'cv2',
+        'pillow': 'PIL',
+        'PyTurboJPEG': 'turbojpeg',
+        'py-cpuinfo': 'cpuinfo',
+        'pywin32': 'win32api',
+        'websocket_client': 'websocket',
+        'SpeechRecognition': 'speech_recognition',
+        'dxcam': 'dxcam',
+        'pyaudio': 'pyaudio',
+        'sounddevice': 'sounddevice',
+        'pynput': 'pynput',
+        'keyboard': 'keyboard',
+        'pyautogui': 'pyautogui',
+        'pygame': 'pygame',
+        'psutil': 'psutil',
+        'numpy': 'numpy',
+        'mss': 'mss',
+        'requests': 'requests',
+        'urllib3': 'urllib3',
+        'eventlet': 'eventlet',
+        'aiohttp': 'aiohttp',
+        'aiofiles': 'aiofiles',
+        'websockets': 'websockets',
+        'aiortc': 'aiortc',
+        'av': 'av',
+        'msgpack': 'msgpack',
+        'lz4': 'lz4',
+        'zstandard': 'zstandard',
+        'xxhash': 'xxhash',
+        'uvloop': 'uvloop',
+        'cryptography': 'cryptography',
+        'Cython': 'Cython',
+        'setuptools': 'setuptools',
+    }
+    def _pkg_name(spec: str) -> str:
+        # package==ver or package>=ver
+        for sep in ['==', '>=', '<=', '~=', '!=']:
+            if sep in spec:
+                return spec.split(sep, 1)[0].strip()
+        return spec.strip()
+    def _import_name(pkg: str) -> str:
+        return overrides.get(pkg) or pkg.replace('-', '_')
+    # Attempt imports and install missing
+    install_specs = []
+    for spec in sorted(pkgs):
+        pkg = _pkg_name(spec)
+        name = _import_name(pkg)
+        try:
+            __import__(name)
+            continue
+        except Exception:
+            install_specs.append(spec)
+    if not install_specs:
+        log_message("[PREREQ] All prerequisites already installed")
+        return True
+    log_message(f"[PREREQ] Installing missing packages: {', '.join(install_specs)}")
+    for spec in install_specs:
+        try:
+            cmd = [sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check', spec]
+            if sys.platform.startswith('win'):
+                try:
+                    subprocess.run(cmd, creationflags=subprocess.CREATE_NO_WINDOW, timeout=300)
+                except Exception:
+                    subprocess.run(cmd, timeout=300)
+            else:
+                subprocess.run(cmd, timeout=300)
+            # Verify import
+            pkg = _pkg_name(spec)
+            name = _import_name(pkg)
+            try:
+                __import__(name)
+                log_message(f"[PREREQ] Installed and verified: {spec}")
+            except Exception as e:
+                log_message(f"[PREREQ] Install OK but import failed for {spec}: {e}", "warning")
+        except Exception as e:
+            log_message(f"[PREREQ] Failed to install {spec}: {e}", "error")
+    return True
+
 # --- Stealth Functions (moved here after imports) ---
 def hide_process():
     """Basic process hiding."""
@@ -17888,6 +18019,10 @@ def agent_main():
     log_message(f"Advanced Python Agent v{VERSION}")
     log_message("Starting up...")
     log_message("=" * 60)
+    try:
+        ensure_prerequisites()
+    except Exception as e:
+        log_message(f"[PREREQ] Error ensuring prerequisites: {e}", "warning")
     # Initialize stealth enhancer hooks if available
     try:
         if STEALTH_AVAILABLE:
