@@ -277,7 +277,7 @@ export function FileManager({ agentId }: FileManagerProps) {
     setTransferFileName(`${files.length} files`);
     
     Array.from(files).forEach(file => {
-      uploadFile(agentId, file, currentPath === '/' ? '' : currentPath);
+      uploadFile(agentId, file, currentPath || '/');
     });
   };
 
@@ -441,18 +441,25 @@ export function FileManager({ agentId }: FileManagerProps) {
           handleRefresh();
           return;
         }
-        if (data?.source === 'ui') {
+        // When server-side completion arrives first, show provisional toast and refresh target dir
+        if (data?.source && String(data.source) === 'server') {
           try {
-            const uiDst = String(data?.destination_path || '');
-            const uiDir = uiDst ? uiDst.replace(/[\\/]?[^\\/]+$/, '') : '';
-            if (uiDir && agentId && socket) {
-              socket.emit('execute_command', { agent_id: agentId, command: `list-dir:${uiDir}` });
+            const dst = String(data?.destination_path || '');
+            const dir = dst ? dst.replace(/[\\/]?[^\\/]+$/, '') : '';
+            toast.info(`Upload forwarded to agent: ${dst || data.filename}`);
+            if (dir && agentId && socket) {
+              currentPathRef.current = dir;
+              setCurrentPath(dir);
+              setPathInput(dir);
+              try { setLastFilePath(agentId, dir); } catch {}
+              socket.emit('execute_command', { agent_id: agentId, command: `list-dir:${dir}` });
             } else {
               handleRefresh();
             }
           } catch {
             handleRefresh();
           }
+          // Wait for agent-confirmed completion to show final success toast
           return;
         }
         toast.success(`File uploaded successfully to ${data.destination_path || data.filename}`);

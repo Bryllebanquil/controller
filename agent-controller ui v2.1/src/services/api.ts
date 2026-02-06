@@ -471,14 +471,29 @@ class ApiClient {
     });
   }
 
-  async uploadFile(agentId: string, file: File): Promise<ApiResponse> {
+  async uploadFile(agentId: string, file: File, destination?: string, socketSid?: string): Promise<ApiResponse> {
     const formData = new FormData();
     formData.append('file', file);
+    if (destination) formData.append('destination', destination);
+    if (socketSid) formData.append('socket_sid', socketSid);
 
     return this.request(API_ENDPOINTS.agents.upload(agentId), {
       method: 'POST',
       body: formData,
       headers: {}, // Let browser set Content-Type for FormData
+    });
+  }
+
+  async uploadFileP2P(agentId: string, file: File, destination?: string, socketSid?: string): Promise<ApiResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (destination) formData.append('destination', destination);
+    if (socketSid) formData.append('socket_sid', socketSid);
+    const endpoint = `/api/agents/${agentId}/files/upload_p2p`;
+    return this.request(endpoint, {
+      method: 'POST',
+      body: formData,
+      headers: {},
     });
   }
 

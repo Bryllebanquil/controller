@@ -285,6 +285,11 @@ class Config:
 app = Flask(__name__)
 app.config['SECRET_KEY'] = Config.SECRET_KEY or secrets.token_hex(32)  # Use config or generate secure random key
 try:
+    _max_mb = int(os.environ.get('FILE_UPLOAD_MAX_MB', '1024'))
+except Exception:
+    _max_mb = 1024
+app.config['MAX_CONTENT_LENGTH'] = _max_mb * 1024 * 1024
+try:
     _ext = os.environ.get("RENDER_EXTERNAL_URL", "")
     _is_prod = bool(_ext)
     app.config['SESSION_COOKIE_SAMESITE'] = 'None' if _is_prod else 'Lax'
@@ -569,16 +574,30 @@ try:
 except Exception:
     pass
 
-all_socketio_origins = allowed_origins + render_origins
+def _sanitize_origin_list(items):
+    cleaned = []
+    seen = set()
+    for it in (items or []):
+        s = str(it or '').strip().strip('`').strip('"').strip("'")
+        if not s:
+            continue
+        if s in seen:
+            continue
+        seen.add(s)
+        cleaned.append(s)
+    return cleaned
+all_socketio_origins = _sanitize_origin_list(allowed_origins + render_origins)
 # Allow overriding async mode via env, default to threading to avoid eventlet/gevent issues on some platforms
 ASYNC_MODE = os.environ.get('SOCKET_ASYNC_MODE', 'threading').strip().lower()
 if ASYNC_MODE not in ('threading', 'eventlet', 'gevent', 'gevent_uwsgi', 'asgi'):
     ASYNC_MODE = 'threading'
+# Disable websocket upgrades when running in threading mode to avoid werkzeug AssertionError
+ALLOW_UPGRADES = ASYNC_MODE not in ('threading', 'asgi')
 socketio = SocketIO(
     app,
     async_mode=ASYNC_MODE,
     cors_allowed_origins=all_socketio_origins,
-    allow_upgrades=True,
+    allow_upgrades=ALLOW_UPGRADES,
     max_http_buffer_size=50 * 1024 * 1024,
     ping_interval=25,
     ping_timeout=60,
@@ -3029,6 +3048,118 @@ def api_system_bypasses_test():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/agents/<agent_id>/files/upload_b64', methods=['POST'])
+@require_auth
+def upload_file_b64(agent_id):
+    if agent_id not in AGENTS_DATA:
+        return jsonify({'error': 'Agent not found'}), 404
+    agent_sid = AGENTS_DATA[agent_id].get('sid')
+    if not agent_sid:
+        return jsonify({'error': 'Agent not connected'}), 400
+    try:
+        data = request.get_json(force=True) or {}
+        filename = str(data.get('filename') or '').strip()
+        content = str(data.get('content') or '')
+        destination = str(data.get('destination') or '')
+        operator_sid = str(data.get('socket_sid') or '')
+        if not filename or not content:
+            return jsonify({'error': 'filename and content required'}), 400
+        upload_id = f"ul_{int(time.time())}_{secrets.token_hex(4)}"
+        if operator_sid:
+            UPLOAD_REQUESTERS[upload_id] = operator_sid
+        # decode to temp and forward using same path
+        base_dir = os.path.join(os.getcwd(), 'uploads', 'http')
+        os.makedirs(base_dir, exist_ok=True)
+        temp_path = os.path.join(base_dir, f"{upload_id}_{os.path.basename(filename)}")
+        raw = base64.b64decode(content)
+        with open(temp_path, 'wb') as f:
+            f.write(raw)
+        try:
+            socketio.emit('upload_file_start', {
+                'agent_id': agent_id,
+                'upload_id': upload_id,
+                'filename': os.path.basename(filename),
+                'destination': destination,
+                'total_size': os.path.getsize(temp_path)
+            }, room=agent_sid)
+            # forward chunks
+            chunk_size = 512 * 1024
+            total_size = os.path.getsize(temp_path)
+            with open(temp_path, 'rb') as fin:
+                off = 0
+                while True:
+                    c = fin.read(chunk_size)
+                    if not c:
+                        break
+                    b64 = base64.b64encode(c).decode('utf-8')
+                    socketio.emit('upload_file_chunk', {
+                        'agent_id': agent_id,
+                        'upload_id': upload_id,
+                        'filename': os.path.basename(filename),
+                        'destination': destination,
+                        'total_size': total_size,
+                        'chunk': b64,
+                        'offset': off
+                    }, room=agent_sid)
+                    _upload_debug_log(upload_id, f"server_chunk off={off} len={len(c)}")
+                    off += len(c)
+                    try:
+                        prog = int(min(100, (off / float(total_size or 1)) * 100))
+                        sid = UPLOAD_REQUESTERS.get(upload_id) or operator_sid or None
+                        resolved = _resolve_destination_for_agent(destination)
+                        payload = {
+                            'agent_id': agent_id,
+                            'upload_id': upload_id,
+                            'filename': os.path.basename(filename),
+                            'destination_path': resolved,
+                            'received': off,
+                            'total': total_size,
+                            'progress': prog,
+                            'source': 'server'
+                        }
+                        if sid:
+                            socketio.emit('file_upload_progress', payload, room=sid)
+                        socketio.emit('file_upload_progress', payload, room='operators')
+                    except Exception:
+                        pass
+            socketio.emit('upload_file_complete', {
+                'agent_id': agent_id,
+                'upload_id': upload_id,
+                'filename': os.path.basename(filename),
+                'destination': destination,
+                'total_size': os.path.getsize(temp_path)
+            }, room=agent_sid)
+            _upload_debug_log(upload_id, "server_complete")
+            try:
+                sid = UPLOAD_REQUESTERS.get(upload_id) or operator_sid or None
+                resolved = _resolve_destination_for_agent(destination)
+                complete_payload = {
+                    'agent_id': agent_id,
+                    'upload_id': upload_id,
+                    'filename': os.path.basename(filename),
+                    'destination_path': resolved,
+                    'size': os.path.getsize(temp_path),
+                    'success': True,
+                    'source': 'server'
+                }
+                if sid:
+                    socketio.emit('file_upload_complete', complete_payload, room=sid)
+                socketio.emit('file_upload_complete', complete_payload, room='operators')
+            except Exception:
+                pass
+        finally:
+            try: os.remove(temp_path)
+            except Exception: pass
+        return jsonify({'success': True, 'upload_id': upload_id, 'filename': filename})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/uploads/<upload_id>/status', methods=['GET'])
+@require_auth
+def upload_status(upload_id):
+    s = UPLOAD_STATUS.get(upload_id) or {}
+    return jsonify({'success': True, 'status': s})
+
 @app.route('/api/system/registry/test', methods=['POST'])
 def api_system_registry_test():
     try:
@@ -3914,32 +4045,160 @@ def download_file(agent_id):
 @app.route('/api/agents/<agent_id>/files/upload', methods=['POST'])
 @require_auth
 def upload_file(agent_id):
-    """Upload a file to an agent"""
+    """Upload a file to an agent via HTTP (multipart/form-data)"""
     if agent_id not in AGENTS_DATA:
         return jsonify({'error': 'Agent not found'}), 404
-    
     agent_sid = AGENTS_DATA[agent_id].get('sid')
     if not agent_sid:
         return jsonify({'error': 'Agent not connected'}), 400
-    
-    # Handle file upload
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
-    
-    file = request.files['file']
-    if file.filename == '':
+    f = request.files['file']
+    if not f or not f.filename:
         return jsonify({'error': 'No file selected'}), 400
-    
-    # Generate upload ID
+    destination = request.form.get('destination') or ''
+    operator_sid = request.form.get('socket_sid') or ''
     upload_id = f"ul_{int(time.time())}_{secrets.token_hex(4)}"
-    
-    # In a real implementation, you would handle the file transfer
-    # For now, just return success
-    return jsonify({
-        'success': True,
-        'upload_id': upload_id,
-        'filename': file.filename
-    })
+    try:
+        base_dir = os.path.join(os.getcwd(), 'uploads', 'http')
+        os.makedirs(base_dir, exist_ok=True)
+        temp_path = os.path.join(base_dir, f"{upload_id}_{os.path.basename(f.filename)}")
+        f.save(temp_path)
+        try:
+            if operator_sid:
+                UPLOAD_REQUESTERS[upload_id] = operator_sid
+        except Exception:
+            pass
+        try:
+            socketio.emit('upload_file_start', {
+                'agent_id': agent_id,
+                'upload_id': upload_id,
+                'filename': os.path.basename(f.filename),
+                'destination': destination,
+                'total_size': os.path.getsize(temp_path)
+            }, room=agent_sid)
+        except Exception:
+            pass
+        try:
+            chunk_size = 512 * 1024
+            total_size = os.path.getsize(temp_path)
+            with open(temp_path, 'rb') as fin:
+                off = 0
+                while True:
+                    chunk = fin.read(chunk_size)
+                    if not chunk:
+                        break
+                    b64 = base64.b64encode(chunk).decode('utf-8')
+                    socketio.emit('upload_file_chunk', {
+                        'agent_id': agent_id,
+                        'upload_id': upload_id,
+                        'filename': os.path.basename(f.filename),
+                        'destination': destination,
+                        'total_size': total_size,
+                        'chunk': b64,
+                        'offset': off
+                    }, room=agent_sid)
+                    _upload_debug_log(upload_id, f"server_chunk off={off} len={len(chunk)}")
+                    off += len(chunk)
+                    try:
+                        prog = int(min(100, (off / float(total_size or 1)) * 100))
+                        sid = UPLOAD_REQUESTERS.get(upload_id) or operator_sid or None
+                        resolved = _resolve_destination_for_agent(destination)
+                        payload = {
+                            'agent_id': agent_id,
+                            'upload_id': upload_id,
+                            'filename': os.path.basename(f.filename),
+                            'destination_path': resolved,
+                            'received': off,
+                            'total': total_size,
+                            'progress': prog,
+                            'source': 'server'
+                        }
+                        if sid:
+                            socketio.emit('file_upload_progress', payload, room=sid)
+                        socketio.emit('file_upload_progress', payload, room='operators')
+                    except Exception:
+                        pass
+            socketio.emit('upload_file_complete', {
+                'agent_id': agent_id,
+                'upload_id': upload_id,
+                'filename': os.path.basename(f.filename),
+                'destination': destination,
+                'total_size': os.path.getsize(temp_path)
+            }, room=agent_sid)
+            _upload_debug_log(upload_id, "server_complete")
+            try:
+                sid = UPLOAD_REQUESTERS.get(upload_id) or operator_sid or None
+                resolved = _resolve_destination_for_agent(destination)
+                complete_payload = {
+                    'agent_id': agent_id,
+                    'upload_id': upload_id,
+                    'filename': os.path.basename(f.filename),
+                    'destination_path': resolved,
+                    'size': os.path.getsize(temp_path),
+                    'success': True,
+                    'source': 'server'
+                }
+                if sid:
+                    socketio.emit('file_upload_complete', complete_payload, room=sid)
+                socketio.emit('file_upload_complete', complete_payload, room='operators')
+            except Exception:
+                pass
+        finally:
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+        return jsonify({'success': True, 'upload_id': upload_id, 'filename': f.filename})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/agents/<agent_id>/files/upload_p2p', methods=['POST'])
+@require_auth
+def upload_file_p2p(agent_id):
+    if agent_id not in AGENTS_DATA:
+        return jsonify({'error': 'Agent not found'}), 404
+    agent_sid = AGENTS_DATA[agent_id].get('sid')
+    if not agent_sid:
+        return jsonify({'error': 'Agent not connected'}), 400
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    f = request.files['file']
+    if not f or not f.filename:
+        return jsonify({'error': 'No file selected'}), 400
+    destination = request.form.get('destination') or ''
+    operator_sid = request.form.get('socket_sid') or ''
+    upload_id = f"ul_p2p_{int(time.time())}_{secrets.token_urlsafe(4)}"
+    try:
+        base_dir = os.path.join(os.getcwd(), 'uploads', 'p2p')
+        os.makedirs(base_dir, exist_ok=True)
+        temp_path = os.path.join(base_dir, f"{upload_id}_{os.path.basename(f.filename)}")
+        f.save(temp_path)
+        agent_ip = AGENTS_DATA[agent_id].get('ip', '').strip() or (request.remote_addr or '127.0.0.1')
+        from controller_p2p_transfer import start_p2p_upload
+        port = start_p2p_upload(agent_ip, temp_path, upload_id)
+        size = os.path.getsize(temp_path)
+        sha = hashlib.sha256(open(temp_path, 'rb').read()).hexdigest()
+        socketio.emit('p2p_download_request', {
+            'agent_id': agent_id,
+            'upload_id': upload_id,
+            'filename': os.path.basename(f.filename),
+            'destination': destination,
+            'controller_ip': request.host.split(':')[0],
+            'controller_port': port,
+            'file_size': size,
+            'sha256': sha
+        }, room=agent_sid)
+        def _cleanup():
+            time.sleep(120)
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+        threading.Thread(target=_cleanup, daemon=True).start()
+        return jsonify({'success': True, 'upload_id': upload_id, 'filename': f.filename, 'controller_port': port})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/agents/<agent_id>/files/stream', methods=['GET'])
 @require_auth
@@ -5478,6 +5737,48 @@ def handle_live_mouse_click(data):
         emit('mouse_click', data, room=agent_sid, include_self=False)
 
 # --- Chunked File Transfer Handlers ---
+UPLOAD_REQUESTERS = {}
+UPLOAD_STATUS = {}
+def _upload_debug_log(uid, msg):
+    try:
+        arr = UPLOAD_STATUS.setdefault(uid, {}).setdefault('logs', [])
+        arr.append({'ts': int(time.time()*1000), 'msg': str(msg or '')})
+        if len(arr) > 500:
+            del arr[:len(arr)-500]
+    except Exception:
+        pass
+def _resolve_destination_for_agent(destination: str) -> str:
+    try:
+        raw = str(destination or '').strip()
+        if not raw:
+            return ''
+        import re, os
+        if os.name == 'nt':
+            if raw and not re.match(r'^[A-Za-z]:', raw):
+                if raw.startswith('/') or raw.startswith('\\'):
+                    drive = os.environ.get('SystemDrive', 'C:')
+                    dest_dir = os.path.normpath(drive + '\\' + raw.lstrip('\\/'))
+                else:
+                    dest_dir = os.path.normpath(os.path.join(os.path.expanduser('~'), raw))
+            else:
+                if re.match(r'^[A-Za-z]:$', raw):
+                    dest_dir = raw + '\\'
+                else:
+                    dest_dir = os.path.normpath(raw or '')
+            try:
+                user_profile = os.environ.get('USERPROFILE') or ''
+                if os.path.basename(dest_dir).lower() == 'desktop' and user_profile:
+                    one = os.path.join(user_profile, 'OneDrive', 'Desktop')
+                    if os.path.isdir(one):
+                        dest_dir = one
+            except Exception:
+                pass
+            return dest_dir
+        else:
+            import os as _os
+            return _os.path.normpath(raw)
+    except Exception:
+        return str(destination or '')
 @socketio.on('upload_file_chunk')
 def handle_upload_file_chunk(data):
     agent_id = data.get('agent_id')
@@ -5487,6 +5788,12 @@ def handle_upload_file_chunk(data):
     total_size = data.get('total_size', 0)
     destination_path = data.get('destination_path') or data.get('destination')
     agent_sid = AGENTS_DATA.get(agent_id, {}).get('sid')
+    try:
+        uid = data.get('upload_id')
+        if uid:
+            UPLOAD_REQUESTERS[uid] = request.sid
+    except Exception:
+        pass
     if agent_sid:
         emit('upload_file_chunk', {
             'agent_id': agent_id,
@@ -5498,11 +5805,22 @@ def handle_upload_file_chunk(data):
             'total_size': total_size
         }, room=agent_sid)
         print(f"📤 Forwarding upload chunk: {filename} offset {offset}/{total_size}")
+        try:
+            uid = data.get('upload_id') or ''
+            _upload_debug_log(uid, f"forward_chunk off={offset} size={len((chunk or '') if isinstance(chunk, str) else bytes(chunk or b''))}")
+        except Exception:
+            pass
 
 @socketio.on('upload_file_end')
 def handle_upload_file_end(data):
     agent_id = data.get('agent_id')
     agent_sid = AGENTS_DATA.get(agent_id, {}).get('sid')
+    try:
+        uid = data.get('upload_id')
+        if uid:
+            UPLOAD_REQUESTERS[uid] = request.sid
+    except Exception:
+        pass
     if agent_sid:
         emit('upload_file_complete', {
             'agent_id': agent_id,
@@ -5512,11 +5830,24 @@ def handle_upload_file_end(data):
             'total_size': data.get('total_size', 0)
         }, room=agent_sid)
         print(f"📦 Upload complete: {data.get('filename')} to {agent_id}")
+        try:
+            uid = data.get('upload_id') or ''
+            s = UPLOAD_STATUS.setdefault(uid, {})
+            s['complete'] = True
+            _upload_debug_log(uid, "forward_complete")
+        except Exception:
+            pass
 
 @socketio.on('upload_file_start')
 def handle_upload_file_start(data):
     agent_id = data.get('agent_id')
     agent_sid = AGENTS_DATA.get(agent_id, {}).get('sid')
+    try:
+        uid = data.get('upload_id')
+        if uid:
+            UPLOAD_REQUESTERS[uid] = request.sid
+    except Exception:
+        pass
     if agent_sid:
         emit('upload_file_start', {
             'agent_id': agent_id,
@@ -5526,6 +5857,13 @@ def handle_upload_file_start(data):
             'total_size': data.get('total_size', 0)
         }, room=agent_sid)
         print(f"📦 Upload start: {data.get('filename')} destined for {data.get('destination')}")
+        try:
+            uid = data.get('upload_id') or ''
+            s = UPLOAD_STATUS.setdefault(uid, {})
+            s['start'] = {'filename': data.get('filename'), 'destination': data.get('destination')}
+            _upload_debug_log(uid, "forward_start")
+        except Exception:
+            pass
 
 @socketio.on('upload_file_complete')
 def handle_upload_file_complete(data):
@@ -5742,13 +6080,31 @@ def handle_file_faststart_response(data):
 def handle_file_upload_progress(data):
     """Forward file upload progress from agent to UI"""
     print(f"📊 Upload progress: {data.get('filename')} - {data.get('progress')}%")
-    emit('file_upload_progress', data, room='operators')
+    try:
+        uid = data.get('upload_id')
+        sid = UPLOAD_REQUESTERS.get(uid)
+        if sid:
+            emit('file_upload_progress', data, room=sid)
+        emit('file_upload_progress', data, room='operators')
+    except Exception:
+        emit('file_upload_progress', data, room='operators')
 
 @socketio.on('file_upload_complete')
 def handle_file_upload_complete(data):
     """Forward file upload completion from agent to UI"""
     print(f"✅ Upload complete: {data.get('filename')} ({data.get('size')} bytes)")
-    emit('file_upload_complete', data, room='operators')
+    try:
+        uid = data.get('upload_id')
+        sid = UPLOAD_REQUESTERS.get(uid)
+        if sid:
+            emit('file_upload_complete', data, room=sid)
+            try:
+                del UPLOAD_REQUESTERS[uid]
+            except Exception:
+                pass
+        emit('file_upload_complete', data, room='operators')
+    except Exception:
+        emit('file_upload_complete', data, room='operators')
 
 @socketio.on('client_update_check')
 def handle_client_update_check(data):

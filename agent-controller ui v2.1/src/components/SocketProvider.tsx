@@ -131,7 +131,11 @@ function extractDirectoryFromPath(path: string): string {
   const idx1 = raw.lastIndexOf('\\');
   const idx2 = raw.lastIndexOf('/');
   const idx = Math.max(idx1, idx2);
-  if (idx >= 0) return raw.slice(0, idx);
+  if (idx >= 0) {
+    const dir = raw.slice(0, idx);
+    if (!hasBackslash && dir === '' && raw.startsWith('/')) return '/';
+    return dir;
+  }
   return raw;
 }
 
@@ -1184,54 +1188,17 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       ? (destinationDir.endsWith('\\') || destinationDir.endsWith('/') ? `${destinationDir}${file.name}` : `${destinationDir}${destinationDir.includes('\\') ? '\\' : '/'}${file.name}`)
       : file.name;
     addCommandOutput(`Uploading ${file.name} (${file.size} bytes) to ${agentId}:${displayPath || '(default)'}`);
-
-    const uploadId = `ul_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-    const chunkSize = 512 * 1024;
-    const chunkDelayMs = 8;
     (async () => {
-      socket.emit('upload_file_start', {
-        agent_id: agentId,
-        upload_id: uploadId,
-        filename: file.name,
-        destination: destinationDir || '',
-        total_size: file.size,
-      });
-      for (let offset = 0; offset < file.size; offset += chunkSize) {
-        const slice = file.slice(offset, offset + chunkSize);
-        const buffer = await slice.arrayBuffer();
-        const bytes = new Uint8Array(buffer);
-        const chunkB64 = bytesToBase64(bytes);
-        socket.emit('upload_file_chunk', {
-          agent_id: agentId,
-          upload_id: uploadId,
-          filename: file.name,
-          destination: destinationDir || '',
-          total_size: file.size,
-          chunk: chunkB64,
-          offset,
-        });
-        try {
-          const sent = Math.min(file.size, offset + bytes.length);
-          const progress = Math.max(0, Math.min(99, Math.round((sent / file.size) * 100)));
-          const event = new CustomEvent('file_upload_progress', { detail: { agent_id: agentId, filename: file.name, destination_path: destinationFilePath, total: file.size, received: sent, progress, source: 'ui' } });
-          window.dispatchEvent(event);
-        } catch {}
-        await new Promise((r) => setTimeout(r, chunkDelayMs));
-      }
-      socket.emit('upload_file_complete', {
-        agent_id: agentId,
-        upload_id: uploadId,
-        filename: file.name,
-        destination: destinationDir || '',
-        total_size: file.size,
-      });
       try {
-        const event = new CustomEvent('file_upload_complete', { detail: { agent_id: agentId, filename: file.name, destination_path: destinationFilePath, size: file.size, success: true, source: 'ui' } });
-        window.dispatchEvent(event);
-      } catch {}
-    })().catch((error) => {
-      addCommandOutput(`Upload failed: ${error?.message || String(error)}`);
-    });
+        const resp = await apiClient.uploadFileP2P(agentId, file, destinationDir || '', socket?.id || '');
+        if (!resp?.success) {
+          throw new Error(resp?.error || resp?.message || 'Upload request failed');
+        }
+      } catch (e: any) {
+        addCommandOutput(`Upload failed: ${e?.message || String(e)}`);
+        try { toast.error(`Upload failed: ${e?.message || 'Unknown error'}`); } catch {}
+      }
+    })();
   }, [socket, connected, addCommandOutput]);
 
   const downloadFile = useCallback((agentId: string, filename: string) => {

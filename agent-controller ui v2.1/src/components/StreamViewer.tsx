@@ -71,6 +71,7 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
   const fallbackTriggeredRef = useRef(false);
   const fpsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const frameCountRef = useRef(0);
+  const prevCountRef = useRef(0);
   const lastMouseEmitRef = useRef<number>(0);
   const lastKeyEmitRef = useRef<number>(0);
   const [webrtcAudioBridge, setWebrtcAudioBridge] = useState(false);
@@ -336,7 +337,9 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
   useEffect(() => {
     if (isStreaming) {
       fpsIntervalRef.current = setInterval(() => {
-        setFps(frameCountRef.current);
+        const avg = Math.round((prevCountRef.current + frameCountRef.current) / 2);
+        setFps(avg);
+        prevCountRef.current = frameCountRef.current;
         frameCountRef.current = 0;
       }, 1000);
     } else {
@@ -346,6 +349,7 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
       }
       setFps(0);
       frameCountRef.current = 0;
+      prevCountRef.current = 0;
     }
 
     return () => {
@@ -684,8 +688,6 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
       if (data.agent_id !== agentId) return;
       try {
         playAudioFrame(data.frame);
-        frameCountRef.current++;
-        setFrameCount((prev: number) => prev + 1);
       } catch {}
     };
     window.addEventListener('audio_frame', handleAudioFrame);
