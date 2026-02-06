@@ -964,15 +964,15 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     
     // Upload progress events
     socketInstance.on('file_upload_progress', (data: any) => {
-      console.log(`📊 Upload progress: ${data.filename} - ${data.progress}%`);
-      const event = new CustomEvent('file_upload_progress', { detail: data });
+      console.log(`📊 Upload progress (from agent): ${data.filename} - ${data.progress}%`);
+      const event = new CustomEvent('file_upload_progress', { detail: { ...data, source: data?.source || 'agent' } });
       window.dispatchEvent(event);
     });
     
     socketInstance.on('file_upload_complete', (data: any) => {
-      console.log(`✅ Upload complete: ${data.filename} (${data.size} bytes)`);
+      console.log(`✅ Upload complete (from agent): ${data.filename} (${data.size} bytes)`);
       addCommandOutput(`✅ Uploaded: ${data.filename} (${data.size} bytes)`);
-      const event = new CustomEvent('file_upload_complete', { detail: data });
+      const event = new CustomEvent('file_upload_complete', { detail: { ...data, source: data?.source || 'agent' } });
       window.dispatchEvent(event);
     });
     
@@ -1213,7 +1213,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         try {
           const sent = Math.min(file.size, offset + bytes.length);
           const progress = Math.max(0, Math.min(99, Math.round((sent / file.size) * 100)));
-          const event = new CustomEvent('file_upload_progress', { detail: { agent_id: agentId, filename: file.name, destination_path: destinationFilePath, total: file.size, received: sent, progress } });
+          const event = new CustomEvent('file_upload_progress', { detail: { agent_id: agentId, filename: file.name, destination_path: destinationFilePath, total: file.size, received: sent, progress, source: 'ui' } });
           window.dispatchEvent(event);
         } catch {}
         await new Promise((r) => setTimeout(r, chunkDelayMs));
@@ -1226,7 +1226,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         total_size: file.size,
       });
       try {
-        const event = new CustomEvent('file_upload_complete', { detail: { agent_id: agentId, filename: file.name, destination_path: destinationFilePath, size: file.size, success: true } });
+        const event = new CustomEvent('file_upload_complete', { detail: { agent_id: agentId, filename: file.name, destination_path: destinationFilePath, size: file.size, success: true, source: 'ui' } });
         window.dispatchEvent(event);
       } catch {}
     })().catch((error) => {

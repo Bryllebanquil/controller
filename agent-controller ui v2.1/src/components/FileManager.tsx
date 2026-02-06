@@ -435,8 +435,42 @@ export function FileManager({ agentId }: FileManagerProps) {
       setTimeout(() => {
         setUploadProgress(null);
         setTransferFileName(null);
-        toast.success(`File uploaded successfully: ${data.filename}`);
-        handleRefresh();
+        // If upload failed, show error and do a lightweight refresh of current directory
+        if (data?.success === false || data?.error) {
+          toast.error(`Upload failed: ${data?.error || 'Unknown error'}`);
+          handleRefresh();
+          return;
+        }
+        if (data?.source === 'ui') {
+          try {
+            const uiDst = String(data?.destination_path || '');
+            const uiDir = uiDst ? uiDst.replace(/[\\/]?[^\\/]+$/, '') : '';
+            if (uiDir && agentId && socket) {
+              socket.emit('execute_command', { agent_id: agentId, command: `list-dir:${uiDir}` });
+            } else {
+              handleRefresh();
+            }
+          } catch {
+            handleRefresh();
+          }
+          return;
+        }
+        toast.success(`File uploaded successfully to ${data.destination_path || data.filename}`);
+        try {
+          const dst = String(data?.destination_path || '');
+          const dir = dst ? dst.replace(/[\\/]?[^\\/]+$/, '') : '';
+          if (dir && agentId && socket) {
+            currentPathRef.current = dir;
+            setCurrentPath(dir);
+            setPathInput(dir);
+            try { setLastFilePath(agentId, dir); } catch {}
+            socket.emit('execute_command', { agent_id: agentId, command: `list-dir:${dir}` });
+          } else {
+            handleRefresh();
+          }
+        } catch {
+          handleRefresh();
+        }
       }, 1000);
     };
 

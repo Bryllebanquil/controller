@@ -207,20 +207,31 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
       }
       
       // For PCM audio (16-bit samples)
-      // Convert bytes to Float32Array for Web Audio API
-      const samples = new Int16Array(bytes.buffer);
-      const floatSamples = new Float32Array(samples.length);
-      for (let i = 0; i < samples.length; i++) {
-        floatSamples[i] = samples[i] / 32768.0; // Convert to -1.0 to 1.0 range
+      // Convert bytes to Float32Array for Web Audio API (respect byteOffset)
+      const samples16 = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
+      const floatSamples = new Float32Array(samples16.length);
+      for (let i = 0; i < samples16.length; i++) {
+        floatSamples[i] = samples16[i] / 32768.0;
       }
       
       // Add to audio queue
       audioQueueRef.current.push(floatSamples);
       
-      // Start playing if not already playing
+      // Start playing if not already playing; wait for a minimal pre-roll to prevent crackle
       if (!isPlayingAudioRef.current) {
-        isPlayingAudioRef.current = true;
-        scheduleAudioPlayback();
+        const prerollBuffers = 2;
+        if (audioQueueRef.current.length < prerollBuffers) {
+          // Allow a tiny delay to accumulate samples
+          setTimeout(() => {
+            if (!isPlayingAudioRef.current) {
+              isPlayingAudioRef.current = true;
+              scheduleAudioPlayback();
+            }
+          }, 20);
+        } else {
+          isPlayingAudioRef.current = true;
+          scheduleAudioPlayback();
+        }
       }
     } catch (error) {
       console.error('Error processing audio frame:', error);
@@ -277,36 +288,36 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
   };
 
   // Schedule audio playback from queue
+  const playHeadRef = useRef<number>(0);
   const scheduleAudioPlayback = () => {
     const audioContext = audioContextRef.current;
     if (!audioContext) return;
-
-    const playNextChunk = () => {
-      if (audioQueueRef.current.length === 0) {
-        isPlayingAudioRef.current = false;
-        return;
-      }
-
+    if (audioQueueRef.current.length === 0) {
+      isPlayingAudioRef.current = false;
+      return;
+    }
+    // Initialize play head slightly in the future
+    if (playHeadRef.current <= audioContext.currentTime) {
+      playHeadRef.current = audioContext.currentTime + 0.05;
+    }
+    while (audioQueueRef.current.length) {
       const samples = audioQueueRef.current.shift();
-      if (!samples) return;
-
-      // Create audio buffer
+      if (!samples) break;
+      const duration = samples.length / 44100;
       const audioBuffer = audioContext.createBuffer(1, samples.length, 44100);
       const channelData = audioBuffer.getChannelData(0);
       channelData.set(samples);
-
-      // Create buffer source and play
       const source = audioContext.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(audioContext.destination);
-      source.start();
-
-      // Schedule next chunk
-      const duration = samples.length / 44100;
-      setTimeout(playNextChunk, duration * 1000 * 0.9); // Slight overlap to prevent gaps
-    };
-
-    playNextChunk();
+      try {
+        source.start(playHeadRef.current);
+      } catch {
+        source.start();
+      }
+      playHeadRef.current += duration;
+    }
+    isPlayingAudioRef.current = false;
   };
 
   // Cleanup audio context on unmount

