@@ -297,13 +297,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     // If running in production (same origin as backend), use current origin
     // Otherwise use environment variable or localhost for development
     let socketUrl: string;
-    
-    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      // Production: use same origin as the current page
+    const overrideUrl = (import.meta as any)?.env?.VITE_SOCKET_URL || (window as any)?.__SOCKET_URL__;
+    if (overrideUrl) {
+      socketUrl = overrideUrl;
+    } else if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
       socketUrl = `${window.location.protocol}//${window.location.host}`;
     } else {
-      // Development: use environment variable or default to localhost
-      socketUrl = (import.meta as any)?.env?.VITE_SOCKET_URL || (window as any)?.__SOCKET_URL__ || 'http://localhost:8080';
+      socketUrl = 'http://localhost:8080';
     }
     
     console.log('Connecting to Socket.IO server:', socketUrl);
