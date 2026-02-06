@@ -17034,7 +17034,30 @@ class FileSystemManager:
             destination = data.get('destination')
             total_size = int(data.get('total_size') or 0)
             upload_id = data.get('upload_id') or f'ul_{int(time.time())}'
-            self.active_uploads[upload_id] = {'filename': filename, 'destination': destination, 'total_size': total_size, 'received': 0, 'chunks': [], 'start_time': time.time()}
+            try:
+                import tempfile, os as _os, hashlib as _hashlib
+                tmpdir = _os.path.join(tempfile.gettempdir(), 'agent_uploads')
+                _os.makedirs(tmpdir, exist_ok=True)
+                temp_path = _os.path.join(tmpdir, f"{upload_id}_{filename}")
+                # pre-allocate to hint size
+                try:
+                    with open(temp_path, 'wb') as f:
+                        if total_size > 0:
+                            f.seek(total_size - 1)
+                            f.write(b'\0')
+                except Exception:
+                    pass
+                self.active_uploads[upload_id] = {
+                    'filename': filename,
+                    'destination': destination,
+                    'total_size': total_size,
+                    'received': 0,
+                    'start_time': time.time(),
+                    'temp_path': temp_path,
+                    'hasher': _hashlib.sha256()
+                }
+            except Exception:
+                self.active_uploads[upload_id] = {'filename': filename, 'destination': destination, 'total_size': total_size, 'received': 0, 'chunks': [], 'start_time': time.time()}
             safe_emit('upload_ready', {'agent_id': self.agent_id, 'upload_id': upload_id})
         @self.socket.on('upload_file_chunk')
         def handle_upload_chunk(data):
@@ -17047,8 +17070,24 @@ class FileSystemManager:
             try:
                 payload = chunk_data.split(',', 1)[1] if isinstance(chunk_data, str) and ',' in chunk_data else chunk_data
                 chunk_bytes = base64.b64decode(payload if isinstance(payload, str) else chunk_data)
-                up['chunks'].append((offset, chunk_bytes))
-                up['received'] += len(chunk_bytes)
+                temp_path = up.get('temp_path')
+                if temp_path:
+                    try:
+                        with open(temp_path, 'r+b') as f:
+                            f.seek(offset)
+                            f.write(chunk_bytes)
+                        up['received'] += len(chunk_bytes)
+                        try:
+                            h = up.get('hasher')
+                            if h: h.update(chunk_bytes)
+                        except Exception:
+                            pass
+                    except Exception:
+                        up.setdefault('chunks', []).append((offset, chunk_bytes))
+                        up['received'] += len(chunk_bytes)
+                else:
+                    up.setdefault('chunks', []).append((offset, chunk_bytes))
+                    up['received'] += len(chunk_bytes)
                 progress = (up['received'] / (up['total_size'] or max(1, up['received']))) * 100.0
                 try:
                     self.socket.emit('file_upload_progress', {
@@ -17074,8 +17113,11 @@ class FileSystemManager:
                 return
             up = self.active_uploads[upload_id]
             try:
-                up['chunks'].sort(key=lambda x: x[0])
-                file_data = b''.join([c for _, c in up['chunks']])
+                temp_path = up.get('temp_path')
+                file_data = None
+                if not temp_path:
+                    up.get('chunks', []).sort(key=lambda x: x[0])
+                    file_data = b''.join([c for _, c in up.get('chunks', [])])
                 dest_dir = up.get('destination') or os.path.expanduser('~')
                 try:
                     import re
@@ -17124,7 +17166,19 @@ class FileSystemManager:
                             pass
                 wrote_ok = False
                 write_error = None
-                if os.name == 'nt':
+                if temp_path:
+                    try:
+                        if os.path.abspath(temp_path) != os.path.abspath(target_path):
+                            try:
+                                if os.path.exists(target_path):
+                                    os.remove(target_path)
+                            except Exception:
+                                pass
+                            os.replace(temp_path, target_path)
+                        wrote_ok = os.path.isfile(target_path)
+                    except Exception as e_mv:
+                        write_error = str(e_mv)
+                elif os.name == 'nt':
                     try:
                         import subprocess, base64
                         ps_exe = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
@@ -17151,7 +17205,15 @@ class FileSystemManager:
                         safe_emit('file_upload_complete', {'agent_id': self.agent_id, 'upload_id': upload_id, 'filename': (self.active_uploads.get(upload_id) or {}).get('filename'), 'error': write_error or 'Write failed', 'success': False})
                     del self.active_uploads[upload_id]
                     return
-                file_hash = hashlib.sha256(file_data).hexdigest()
+                try:
+                    if temp_path and up.get('hasher'):
+                        file_hash = up['hasher'].hexdigest()
+                    elif file_data is not None:
+                        file_hash = hashlib.sha256(file_data).hexdigest()
+                    else:
+                        file_hash = ''
+                except Exception:
+                    file_hash = ''
                 elapsed = time.time() - up['start_time']
                 try:
                     self.socket.emit('file_upload_complete', {
@@ -17159,7 +17221,7 @@ class FileSystemManager:
                         'upload_id': upload_id,
                         'filename': up['filename'],
                         'destination_path': target_path,
-                        'size': len(file_data),
+                        'size': os.path.getsize(target_path) if os.path.isfile(target_path) else (len(file_data) if file_data is not None else up.get('received', 0)),
                         'hash': file_hash,
                         'elapsed': elapsed,
                         'success': True,
