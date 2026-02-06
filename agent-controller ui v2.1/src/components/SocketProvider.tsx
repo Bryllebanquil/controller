@@ -1190,7 +1190,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     addCommandOutput(`Uploading ${file.name} (${file.size} bytes) to ${agentId}:${displayPath || '(default)'}`);
     (async () => {
       try {
-        const resp = await apiClient.uploadFileP2P(agentId, file, destinationDir || '', socket?.id || '');
+        const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const resp = isLocalHost
+          ? await apiClient.uploadFileP2P(agentId, file, destinationDir || '', socket?.id || '')
+          : await apiClient.uploadFile(agentId, file, destinationDir || '', socket?.id || '');
         if (!resp?.success) {
           throw new Error(resp?.error || resp?.message || 'Upload request failed');
         }
