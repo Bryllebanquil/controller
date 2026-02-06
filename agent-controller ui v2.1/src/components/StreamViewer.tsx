@@ -159,6 +159,9 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
         sampleRate: 44100,
         latencyHint: 'interactive'
       });
+      try {
+        audioContextRef.current.resume().catch(() => {});
+      } catch {}
     }
     return audioContextRef.current;
   };
@@ -167,6 +170,11 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
   const playAudioFrame = async (payload: string | ArrayBuffer | Uint8Array) => {
     try {
       const audioContext = initAudioContext();
+      try {
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+      } catch {}
       
       // Normalize payload to Uint8Array
       let bytes: Uint8Array;
