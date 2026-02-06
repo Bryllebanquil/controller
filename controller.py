@@ -284,6 +284,16 @@ class Config:
 # Initialize Flask app with configuration
 app = Flask(__name__)
 app.config['SECRET_KEY'] = Config.SECRET_KEY or secrets.token_hex(32)  # Use config or generate secure random key
+try:
+    _ext = os.environ.get("RENDER_EXTERNAL_URL", "")
+    _is_prod = bool(_ext)
+    app.config['SESSION_COOKIE_SAMESITE'] = 'None' if _is_prod else 'Lax'
+    app.config['SESSION_COOKIE_SECURE'] = True if _is_prod else False
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+except Exception:
+    pass
 
 logHandler = logging.StreamHandler()
 formatter = jsonlogger.JsonFormatter('%(asctime)s %(levelname)s %(name)s %(message)s')
