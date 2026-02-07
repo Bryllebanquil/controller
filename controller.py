@@ -6993,8 +6993,21 @@ def handle_webrtc_set_quality(data):
                     STREAM_BIN_CHUNK_SIZES[agent_id] = STREAM_BIN_CHUNK_SIZE_DEFAULT
             except Exception:
                 pass
-            emit('set_webrtc_quality', {'quality': quality}, room=agent_sid)
-            emit('fallback_set_quality', {'quality': quality}, room=agent_sid)
+            # Forward quality setting for WebRTC-capable agents
+            emit('webrtc_set_quality', {'quality': quality, 'fps': 30}, room=agent_sid)
+            # For fallback (Socket.IO) streaming, translate quality to screen params
+            try:
+                if q == 'low':
+                    params = {'type': 'screen', 'fps': 15, 'max_width': 854, 'jpeg_quality': 50}
+                elif q == 'medium':
+                    params = {'type': 'screen', 'fps': 15, 'max_width': 1280, 'jpeg_quality': 60}
+                elif q == 'high':
+                    params = {'type': 'screen', 'fps': 20, 'max_width': 1280, 'jpeg_quality': 70}
+                else:
+                    params = {'type': 'screen', 'fps': 15, 'max_width': 1280, 'jpeg_quality': 60}
+                emit('set_stream_params', params, room=agent_sid)
+            except Exception:
+                pass
             print(f"WebRTC quality set to {quality} for {agent_id}")
         else:
             emit('webrtc_error', {'message': f'Agent {agent_id} not connected'}, room=request.sid)
@@ -7214,6 +7227,7 @@ def handle_webrtc_quality_change(data):
     if agent_sid:
         emit('webrtc_quality_change', {
             'quality': quality,
+            'quality_level': quality,
             'bandwidth_stats': bandwidth_stats
         }, room=agent_sid)
         print(f"Quality change command sent to agent {agent_id}")
@@ -7239,11 +7253,20 @@ def handle_webrtc_quality_change(data):
     except Exception:
         pass
     try:
+        # Also update fallback (Socket.IO) screen params for steady FPS streaming
         if agent_sid:
-            emit('fallback_quality_change', {
-                'quality': quality,
-                'bandwidth_stats': bandwidth_stats
-            }, room=agent_sid)
+            try:
+                if q == 'low':
+                    params = {'type': 'screen', 'fps': 15, 'max_width': 854, 'jpeg_quality': 50}
+                elif q == 'medium':
+                    params = {'type': 'screen', 'fps': 15, 'max_width': 1280, 'jpeg_quality': 60}
+                elif q == 'high':
+                    params = {'type': 'screen', 'fps': 20, 'max_width': 1280, 'jpeg_quality': 70}
+                else:
+                    params = {'type': 'screen', 'fps': 15, 'max_width': 1280, 'jpeg_quality': 60}
+                emit('set_stream_params', params, room=agent_sid)
+            except Exception:
+                pass
     except Exception:
         pass
 
