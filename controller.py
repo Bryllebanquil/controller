@@ -138,7 +138,7 @@ def verify_totp_code(secret: str, otp: str, window: int = 2) -> bool:
 try:
     import asyncio
     import aiortc
-    from aiortc import RTCPeerConnection, RTCSessionDescription, MediaStreamTrack
+    from aiortc import RTCPeerConnection, RTCSessionDescription, MediaStreamTrack, RTCConfiguration, RTCIceServer
     from aiortc.contrib.media import MediaPlayer, MediaRecorder
     from aiortc.mediastreams import MediaStreamError
     WEBRTC_AVAILABLE = True
@@ -890,11 +890,8 @@ def create_webrtc_peer_connection(agent_id):
         return None
     
     try:
-        pc = RTCPeerConnection()
-        
-        # Configure ICE servers
-        for ice_server in WEBRTC_CONFIG['ice_servers']:
-            pc.addIceServer(ice_server)
+        ice_cfg = [RTCIceServer(**srv) if isinstance(srv, dict) else RTCIceServer(srv) for srv in WEBRTC_CONFIG['ice_servers']]
+        pc = RTCPeerConnection(configuration=RTCConfiguration(iceServers=ice_cfg))
         
         # Store the peer connection
         WEBRTC_PEER_CONNECTIONS[agent_id] = pc
@@ -6638,7 +6635,7 @@ def handle_request_video_frame(data):
                 b64 = s.split(',', 1)[1] if s.startswith('data:') and ',' in s else s
             else:
                 return
-            emit('video_frame', {'agent_id': agent_id, 'frame': b64}, room='operators')
+            emit('video_frame', {'agent_id': agent_id, 'frame': b64}, room=request.sid)
         except Exception:
             pass
 
@@ -7020,11 +7017,8 @@ def handle_webrtc_viewer_connect(data):
     
     try:
         # Create viewer peer connection
-        viewer_pc = RTCPeerConnection()
-        
-        # Configure ICE servers
-        for ice_server in WEBRTC_CONFIG['ice_servers']:
-            viewer_pc.addIceServer(ice_server)
+        ice_cfg = [RTCIceServer(**srv) if isinstance(srv, dict) else RTCIceServer(srv) for srv in WEBRTC_CONFIG['ice_servers']]
+        viewer_pc = RTCPeerConnection(configuration=RTCConfiguration(iceServers=ice_cfg))
         
         # Store viewer data
         WEBRTC_VIEWERS[viewer_id] = {
@@ -7424,9 +7418,8 @@ def http_webrtc_viewer_connect():
         return jsonify({'success': False, 'error': 'Agent not available for WebRTC'}), 400
     try:
         viewer_token = _get_viewer_token()
-        viewer_pc = RTCPeerConnection()
-        for ice_server in WEBRTC_CONFIG['ice_servers']:
-            viewer_pc.addIceServer(ice_server)
+        ice_cfg = [RTCIceServer(**srv) if isinstance(srv, dict) else RTCIceServer(srv) for srv in WEBRTC_CONFIG['ice_servers']]
+        viewer_pc = RTCPeerConnection(configuration=RTCConfiguration(iceServers=ice_cfg))
         WEBRTC_VIEWERS[viewer_token] = {
             'agent_id': agent_id,
             'pc': viewer_pc,
