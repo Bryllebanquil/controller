@@ -108,9 +108,16 @@ export function FileManager({ agentId }: FileManagerProps) {
   const lastRefreshRef = useRef<number>(0);
   const [fitMode, setFitMode] = useState<'contain' | 'cover' | 'fill'>('contain');
 
-  const filteredFiles = files.filter(file => 
-    file.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredFiles = useMemo(() => {
+    const term = searchTerm.toLowerCase();
+    const arr = files.filter(file => file.name.toLowerCase().includes(term));
+    // Sort: directories first, then files; A→Z by name
+    arr.sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+    return arr;
+  }, [files, searchTerm]);
 
   const handleFileSelect = (filePath: string) => {
     setSelectedFiles(prev => 
@@ -286,6 +293,7 @@ export function FileManager({ agentId }: FileManagerProps) {
 
   const handleRefresh = () => {
     setIsLoading(true);
+    setSelectedFiles([]);
     if (agentId && socket) {
       const reqPath = currentPath || '/';
       try { setLastFilePath(agentId, reqPath); } catch {}
@@ -301,6 +309,8 @@ export function FileManager({ agentId }: FileManagerProps) {
     selectedFiles.forEach(path => {
       socket.emit('execute_command', { agent_id: agentId, command: `delete-file:${path}` });
     });
+    // Clear selection immediately so Download(n) resets
+    setSelectedFiles([]);
   };
 
   // Listen to operation results
@@ -310,6 +320,7 @@ export function FileManager({ agentId }: FileManagerProps) {
       if (!agentId || data.agent_id !== agentId) return;
       if (data.success) {
         toast.success(`${data.op} ok: ${data.path || data.dst || ''}`);
+        setSelectedFiles([]);
         handleRefresh();
       } else {
         toast.error(`${data.op} failed: ${data.error || ''}`);
