@@ -12370,7 +12370,8 @@ def register_socketio_handlers():
                 try:
                     import subprocess
                     ps_exe = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-                    ps_cmd = f"(Invoke-WebRequest -Uri '{url.replace(\"'\",\"''\")}' -Method Head -UseBasicParsing).Headers.'Content-Length'"
+                    _u = url.replace("'", "''")
+                    ps_cmd = f"$u='{_u}'; (Invoke-WebRequest -Uri $u -Method Head -UseBasicParsing).Headers['Content-Length']"
                     r = subprocess.run([ps_exe, "-NoProfile", "-NonInteractive", "-Command", ps_cmd], capture_output=True, timeout=15)
                     if r.returncode == 0:
                         out = (r.stdout or b'').decode('utf-8', errors='ignore').strip()
@@ -12382,7 +12383,9 @@ def register_socketio_handlers():
                 try:
                     import subprocess, time as _t
                     ps_exe = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-                    ps_cmd = f"curl.exe -L '{url.replace(\"'\", \"''\")}' -o '{target_path.replace(\"'\", \"''\")}'"
+                    _u = url.replace("'", "''")
+                    _p = target_path.replace("'", "''")
+                    ps_cmd = f"$u='{_u}'; $p='{_p}'; curl.exe -L $u -o $p"
                     p = subprocess.Popen([ps_exe, "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW if WINDOWS_AVAILABLE else 0)
                     last_emit = 0
