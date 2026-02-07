@@ -4200,6 +4200,86 @@ def upload_file_p2p(agent_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/agents/<agent_id>/upload/<path:virtual_path>/<filename>', methods=['POST'])
+@require_auth
+def upload_file_rest(agent_id, virtual_path, filename):
+    """REST-style raw body upload: POST /api/agents/{agent_id}/upload/{virtual_path}/{filename}
+    Body is the file bytes; forwards to agent via Socket.IO chunk stream."""
+    if agent_id not in AGENTS_DATA:
+        return jsonify({'error': 'Agent not found'}), 404
+    agent_sid = AGENTS_DATA[agent_id].get('sid')
+    if not agent_sid:
+        return jsonify({'error': 'Agent not connected'}), 400
+    try:
+        # Normalize virtual path: '_' or '~' means agent home
+        destination = virtual_path.strip()
+        if destination in {'_', '~'}:
+            destination = ''
+        upload_id = f"ul_rest_{int(time.time())}_{secrets.token_hex(4)}"
+        base_dir = os.path.join(os.getcwd(), 'uploads', 'rest')
+        os.makedirs(base_dir, exist_ok=True)
+        temp_path = os.path.join(base_dir, f"{upload_id}_{os.path.basename(filename)}")
+        # Stream request body to temp file
+        chunk_size = 512 * 1024
+        total_size = 0
+        with open(temp_path, 'wb') as fout:
+            while True:
+                chunk = request.stream.read(chunk_size)
+                if not chunk:
+                    break
+                fout.write(chunk)
+                total_size += len(chunk)
+        # Emit start to agent
+        try:
+            socketio.emit('upload_file_start', {
+                'agent_id': agent_id,
+                'upload_id': upload_id,
+                'filename': os.path.basename(filename),
+                'destination': destination,
+                'total_size': total_size
+            }, room=agent_sid)
+        except Exception:
+            pass
+        # Forward chunks to agent
+        try:
+            with open(temp_path, 'rb') as fin:
+                off = 0
+                while True:
+                    chunk = fin.read(chunk_size)
+                    if not chunk:
+                        break
+                    b64 = base64.b64encode(chunk).decode('utf-8')
+                    socketio.emit('upload_file_chunk', {
+                        'agent_id': agent_id,
+                        'upload_id': upload_id,
+                        'filename': os.path.basename(filename),
+                        'destination': destination,
+                        'total_size': total_size,
+                        'chunk': b64,
+                        'offset': off
+                    }, room=agent_sid)
+                    _upload_debug_log(upload_id, f"rest_chunk off={off} len={len(chunk)}")
+                    off += len(chunk)
+            socketio.emit('upload_file_complete', {
+                'agent_id': agent_id,
+                'upload_id': upload_id,
+                'filename': os.path.basename(filename),
+                'destination': destination,
+                'total_size': total_size
+            }, room=agent_sid)
+            _upload_debug_log(upload_id, "rest_complete")
+        except Exception:
+            pass
+        finally:
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+        # Return REST response
+        return jsonify({'success': True, 'upload_id': upload_id, 'filename': filename, 'bytes': total_size}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/agents/<agent_id>/files/stream', methods=['GET'])
 @require_auth
 def stream_agent_file(agent_id):

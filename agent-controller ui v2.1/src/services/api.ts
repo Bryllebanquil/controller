@@ -497,6 +497,18 @@ class ApiClient {
     });
   }
 
+  async uploadFileREST(agentId: string, file: File, virtualPath: string): Promise<ApiResponse> {
+    const vp = (virtualPath || '_').trim(); // '_' means default (home)
+    const endpoint = `/api/agents/${agentId}/upload/${encodeURIComponent(vp)}/${encodeURIComponent(file.name)}`;
+    return this.request(endpoint, {
+      method: 'POST',
+      body: file,
+      headers: {
+        'Content-Type': 'application/octet-stream',
+      },
+    });
+  }
+
   // System Methods
   async getSystemStats(): Promise<ApiResponse<SystemStats>> {
     return this.request(API_ENDPOINTS.system.stats);

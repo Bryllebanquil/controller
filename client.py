@@ -17198,6 +17198,10 @@ class FileSystemManager:
                         write_error = None
                     except Exception as e_write:
                         write_error = str(e_write)
+                try:
+                    safe_emit('file_upload_debug', {'agent_id': self.agent_id, 'upload_id': upload_id, 'stage': 'commit', 'ok': wrote_ok, 'error': write_error, 'target_path': target_path})
+                except Exception:
+                    pass
                 if not wrote_ok:
                     try:
                         self.socket.emit('file_upload_complete', {'agent_id': self.agent_id, 'upload_id': upload_id, 'filename': (self.active_uploads.get(upload_id) or {}).get('filename'), 'error': write_error or 'Write failed', 'success': False})
