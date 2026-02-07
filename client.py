@@ -17129,7 +17129,7 @@ class FileSystemManager:
                                 drive = os.environ.get('SystemDrive', 'C:')
                                 dest_dir = os.path.normpath(drive + '\\' + raw.lstrip('\\/'))
                             else:
-                                dest_dir = os.path.normpath(os.path.join(os.getcwd(), raw))
+                                dest_dir = os.path.normpath(os.path.join(os.path.expanduser('~'), raw))
                         else:
                             dest_dir = os.path.normpath(raw or os.path.expanduser('~'))
                         try:

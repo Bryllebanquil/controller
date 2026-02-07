@@ -979,6 +979,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       const event = new CustomEvent('file_upload_complete', { detail: { ...data, source: data?.source || 'agent' } });
       window.dispatchEvent(event);
     });
+    socketInstance.on('file_upload_debug', (data: any) => {
+      console.log('🧪 Upload debug:', data);
+      const event = new CustomEvent('file_upload_debug', { detail: data });
+      window.dispatchEvent(event);
+    });
     
     // Download progress events
     socketInstance.on('file_download_progress', (data: any) => {
@@ -1190,13 +1195,46 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     addCommandOutput(`Uploading ${file.name} (${file.size} bytes) to ${agentId}:${displayPath || '(default)'}`);
     (async () => {
       try {
-        const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        const resp = isLocalHost
-          ? await apiClient.uploadFileP2P(agentId, file, destinationDir || '', socket?.id || '')
-          : await apiClient.uploadFile(agentId, file, destinationDir || '', socket?.id || '');
-        if (!resp?.success) {
-          throw new Error(resp?.error || resp?.message || 'Upload request failed');
+        // WebSocket-based chunked upload (works reliably on hosted Render)
+        const uploadId = `ul_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+        const totalSize = file.size;
+        const chunkSize = 512 * 1024;
+        socket.emit('upload_file_start', {
+          agent_id: agentId,
+          upload_id: uploadId,
+          filename: file.name,
+          destination: destinationDir || '',
+          total_size: totalSize
+        });
+        const buf = new Uint8Array(await file.arrayBuffer());
+        let offset = 0;
+        while (offset < buf.length) {
+          const end = Math.min(offset + chunkSize, buf.length);
+          const chunk = buf.subarray(offset, end);
+          // Convert to base64 data URI style for agent decoder path
+          let binary = '';
+          const step = 0x8000;
+          for (let i = 0; i < chunk.length; i += step) {
+            binary += String.fromCharCode(...chunk.subarray(i, i + step));
+          }
+          const b64 = btoa(binary);
+          socket.emit('upload_file_chunk', {
+            agent_id: agentId,
+            upload_id: uploadId,
+            filename: file.name,
+            destination: destinationDir || '',
+            total_size: totalSize,
+            chunk: `data:application/octet-stream;base64,${b64}`,
+            offset
+          });
+          offset = end;
+          // Lightweight pacing for stability in hosted environments
+          await new Promise(r => setTimeout(r, 5));
         }
+        socket.emit('upload_file_complete', {
+          agent_id: agentId,
+          upload_id: uploadId
+        });
       } catch (e: any) {
         addCommandOutput(`Upload failed: ${e?.message || String(e)}`);
         try { toast.error(`Upload failed: ${e?.message || 'Unknown error'}`); } catch {}

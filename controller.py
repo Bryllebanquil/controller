@@ -5455,6 +5455,12 @@ def handle_file_list(data):
     files = data.get('files', [])
     emit('file_list', {'agent_id': agent_id, 'path': path, 'files': files}, room='operators', broadcast=True)
 
+@socketio.on('file_upload_debug')
+def handle_file_upload_debug(data):
+    try:
+        emit('file_upload_debug', data, room='operators', broadcast=True)
+    except Exception:
+        pass
 @socketio.on('file_op_result')
 def handle_file_op_result(data):
     """Relay file operation result to operators."""
