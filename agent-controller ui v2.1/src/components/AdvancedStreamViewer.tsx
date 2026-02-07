@@ -82,6 +82,7 @@ export function AdvancedStreamViewer({ agentId, useWebRTC = true }: { agentId: s
     if (useWebRTC) {
       socket.emit('start_webrtc_streaming', { agent_id: agentId, type: 'all', quality, fps: quality === 'ultra' ? 60 : 30 });
     } else {
+      socket.emit('set_stream_mode', { agent_id: agentId, type: 'screen', mode: 'buffered', fps: 10, buffer_frames: 30 });
       socket.emit('start_stream', { agent_id: agentId, type: 'screen', quality });
     }
     setIsStreaming(true);

@@ -446,6 +446,9 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
                   if (type === 'screen') cmd = 'start-stream';
                   else if (type === 'camera') cmd = 'start-camera';
                   else cmd = 'start-audio';
+                  if (socket && type === 'screen') {
+                    socket.emit('set_stream_mode', { agent_id: agentId, type: 'screen', mode: 'buffered', fps: 10, buffer_frames: 30 });
+                  }
                   sendCommand(agentId, cmd);
                 }
               }
@@ -546,6 +549,9 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
                 if (type === 'screen') cmd = 'start-stream';
                 else if (type === 'camera') cmd = 'start-camera';
                 else cmd = 'start-audio';
+                if (socket && type === 'screen') {
+                  socket.emit('set_stream_mode', { agent_id: agentId, type: 'screen', mode: 'buffered', fps: 10, buffer_frames: 30 });
+                }
                 sendCommand(agentId, cmd);
               }
             }
@@ -784,6 +790,9 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
             command = 'start-audio';
             break;
         }
+        if (socket && (type === 'screen' || type === 'camera')) {
+          socket.emit('set_stream_mode', { agent_id: agentId, type: type, mode: 'buffered', fps: 10, buffer_frames: 30 });
+        }
         if (type === 'screen' || type === 'camera') {
           sendCommand(agentId, 'start-webrtc-audio');
           setWebrtcAudioBridge(true);
@@ -832,6 +841,9 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
             if (type === 'screen') cmd = 'start-stream';
             else if (type === 'camera') cmd = 'start-camera';
             else cmd = 'start-audio';
+            if (socket && (type === 'screen' || type === 'camera')) {
+              socket.emit('set_stream_mode', { agent_id: agentId, type: type, mode: 'buffered', fps: 10, buffer_frames: 30 });
+            }
             sendCommand(agentId, cmd);
             if (type === 'screen' || type === 'camera') {
               sendCommand(agentId, 'start-webrtc-audio');

