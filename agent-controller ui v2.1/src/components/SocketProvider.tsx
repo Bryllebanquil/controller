@@ -314,8 +314,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       socketInstance = io(socketUrl, {
         withCredentials: true,
         path: '/socket.io',
-        transports: ['polling'],
-        upgrade: false,
+        transports: ['websocket', 'polling'],
+        upgrade: true,
+        perMessageDeflate: { threshold: 1024 },
+        forceNew: true,
         timeout: 20000,
         reconnection: true,
         reconnectionAttempts: 20,
