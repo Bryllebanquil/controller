@@ -12404,25 +12404,29 @@ def register_socketio_handlers():
                         if rc is not None:
                             break
                         _t.sleep(0.5)
-                    # Finalize
-                    if os.path.isfile(target_path):
-                        sz = os.path.getsize(target_path)
-                        ok = (total_size <= 0) or (sz == total_size)
-                        if ok:
-                            safe_emit('file_upload_complete', {'agent_id': agent_id, 'upload_id': upload_id, 'filename': filename, 'destination_path': target_path, 'size': sz, 'success': True, 'source': 'agent'})
-                            try:
-                                files = FileSystemManager(sio, agent_id).list_directory(dest_dir)
-                                safe_emit('file_list', {'agent_id': agent_id, 'path': dest_dir, 'files': files})
-                            except Exception:
-                                pass
-                        else:
-                            safe_emit('file_upload_complete', {'agent_id': agent_id, 'upload_id': upload_id, 'filename': filename, 'error': f'Incomplete download ({sz}/{total_size})', 'success': False})
-                    else:
+                    # Finalize based on curl exit code and file size
+                    try:
+                        out_b, err_b = p.communicate(timeout=2)
+                    except Exception:
+                        out_b, err_b = (b'', b'')
+                    rc = p.returncode if isinstance(p.returncode, int) else -1
+                    exists = os.path.isfile(target_path)
+                    sz = os.path.getsize(target_path) if exists else 0
+                    ok = (rc == 0) and ((total_size > 0 and sz == total_size) or (total_size <= 0 and sz > 0))
+                    if ok:
+                        safe_emit('file_upload_complete', {'agent_id': agent_id, 'upload_id': upload_id, 'filename': filename, 'destination_path': target_path, 'size': sz, 'success': True, 'source': 'agent'})
                         try:
-                            err = p.stderr.read().decode('utf-8', errors='ignore') if p.stderr else 'Download failed'
+                            files = FileSystemManager(sio, agent_id).list_directory(dest_dir)
+                            safe_emit('file_list', {'agent_id': agent_id, 'path': dest_dir, 'files': files})
                         except Exception:
+                            pass
+                    else:
+                        err = (err_b or b'').decode('utf-8', errors='ignore').strip()
+                        if not err:
                             err = 'Download failed'
-                        safe_emit('file_upload_complete', {'agent_id': agent_id, 'upload_id': upload_id, 'filename': filename, 'error': err, 'success': False})
+                        # Provide a concise message including exit code and size
+                        msg = f'curl exit={rc}, size={sz}/{total_size}: {err}'
+                        safe_emit('file_upload_complete', {'agent_id': agent_id, 'upload_id': upload_id, 'filename': filename, 'destination_path': target_path, 'error': msg, 'success': False})
                 except Exception as e:
                     safe_emit('file_upload_complete', {'agent_id': agent_id, 'upload_id': upload_id, 'filename': filename, 'error': str(e), 'success': False})
             threading.Thread(target=_run, daemon=True).start()

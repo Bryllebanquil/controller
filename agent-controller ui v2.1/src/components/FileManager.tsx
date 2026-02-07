@@ -91,6 +91,7 @@ export function FileManager({ agentId }: FileManagerProps) {
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const [transferFileName, setTransferFileName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewKind, setPreviewKind] = useState<'image' | 'video' | 'pdf' | 'ppt' | 'gif' | null>(null);
@@ -279,6 +280,8 @@ export function FileManager({ agentId }: FileManagerProps) {
     Array.from(files).forEach(file => {
       uploadFile(agentId, file, currentPath || '/');
     });
+    // Clear input to allow re-selecting the same file without needing a page refresh
+    try { if (fileInputRef.current) fileInputRef.current.value = ''; } catch {}
   };
 
   const handleRefresh = () => {
@@ -582,7 +585,7 @@ export function FileManager({ agentId }: FileManagerProps) {
                   Download ({selectedFiles.length})
                 </Button>
                 <label className="inline-flex items-center">
-                  <input type="file" className="hidden" onChange={handleUpload} multiple />
+                  <input type="file" className="hidden" ref={fileInputRef} onChange={handleUpload} multiple />
                   <Button size="sm" variant="outline" disabled={uploadProgress !== null || downloadProgress !== null} asChild>
                     <span className="inline-flex items-center"><Upload className="h-3 w-3 mr-1" />Upload</span>
                   </Button>

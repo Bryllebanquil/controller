@@ -995,8 +995,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       const event = new CustomEvent('file_upload_complete', { detail: { ...data, source: data?.source || 'agent' } });
       window.dispatchEvent(event);
       try {
-        const dst = String(data?.destination_path || '');
-        toast.success(`Upload complete: ${data?.filename || ''}`, { description: dst ? `Saved to ${dst}` : undefined, duration: 5000 });
+        const src = String(data?.source || 'agent');
+        if (src === 'agent') {
+          const dst = String(data?.destination_path || '');
+          toast.success(`Upload complete: ${data?.filename || ''}`, { description: dst ? `Saved to ${dst}` : undefined, duration: 5000 });
+        }
       } catch {}
     });
     socketInstance.on('file_upload_debug', (data: any) => {
@@ -1238,6 +1241,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       } catch (e: any) {
         addCommandOutput(`Upload failed: ${e?.message || String(e)}`);
         try { toast.error(`Upload failed: ${e?.message || 'Unknown error'}`); } catch {}
+        // Dispatch a failure event to allow UI to reset progress without page refresh
+        try {
+          const event = new CustomEvent('file_upload_complete', { detail: { agent_id: agentId, filename: file.name, destination_path: displayPath, success: false, error: e?.message || String(e), source: 'client' } });
+          window.dispatchEvent(event);
+        } catch {}
       }
     })();
   }, [socket, connected, addCommandOutput]);

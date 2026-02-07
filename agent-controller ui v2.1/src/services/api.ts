@@ -280,13 +280,19 @@ class ApiClient {
   ): Promise<ApiResponse<T>> {
     const url = `${this.baseUrl}${endpoint}`;
     
+    // Prepare headers; avoid forcing Content-Type for FormData bodies
+    const baseHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(this.getSupabaseAuthHeader()),
+      ...(options.headers as Record<string, string> || {}),
+    };
+    const isFormData = typeof FormData !== 'undefined' && (options.body as any) instanceof FormData;
+    if (isFormData) {
+      delete baseHeaders['Content-Type'];
+    }
     const defaultOptions: RequestInit = {
       credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(this.getSupabaseAuthHeader()),
-        ...options.headers,
-      },
+      headers: baseHeaders,
     };
 
     const method = String(options.method || 'GET').toUpperCase();
