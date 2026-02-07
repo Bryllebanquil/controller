@@ -589,6 +589,22 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       const event = new CustomEvent('screen_frame', { detail: data });
       window.dispatchEvent(event);
     });
+    // Fallback single-frame response handler (used by request_video_frame)
+    socketInstance.on('video_frame', (data: { agent_id?: string; frame: any }) => {
+      try {
+        const aid = String(data?.agent_id || '');
+        if (aid) markStreamActive(aid);
+        const f = data?.frame as any;
+        if (typeof f !== 'string' && f) {
+          const bytes = f instanceof Uint8Array ? f : new Uint8Array(f);
+          data.frame = bytesToBase64(bytes);
+        } else if (typeof f === 'string' && f.startsWith('data:')) {
+          data.frame = extractBase64Payload(f) || f;
+        }
+      } catch {}
+      const event = new CustomEvent('screen_frame', { detail: { agent_id: data?.agent_id || '', frame: data?.frame } });
+      window.dispatchEvent(event);
+    });
 
     socketInstance.on('camera_frame', (data: { agent_id: string; frame: any }) => {
       console.log('📷 SocketProvider: Received camera_frame from agent:', data.agent_id);

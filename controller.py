@@ -6638,7 +6638,7 @@ def handle_request_video_frame(data):
                 b64 = s.split(',', 1)[1] if s.startswith('data:') and ',' in s else s
             else:
                 return
-            emit('video_frame', {'frame': b64})
+            emit('video_frame', {'agent_id': agent_id, 'frame': b64}, room='operators')
         except Exception:
             pass
 
