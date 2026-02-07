@@ -195,6 +195,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [commandOutput, setCommandOutput] = useState<string[]>([]);
   const [agentMetrics, setAgentMetrics] = useState<Record<string, { cpu: number; memory: number; network: number }>>({});
   const streamsActiveRef = useRef<Record<string, number>>({});
+  const prevSelectedStatusRef = useRef<string>('unknown');
   const [streamsActiveCount, setStreamsActiveCount] = useState<number>(0);
   const [commandsExecutedCount, setCommandsExecutedCount] = useState<number>(0);
   const lastEmitRef = useRef<Record<string, number>>({});
@@ -479,6 +480,35 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         });
         console.log('Processed agent list:', agentList);
         setAgents(agentList);
+        
+        try {
+          const sel = selectedAgent;
+          if (sel) {
+            const entry = agentList.find(a => a.id === sel);
+            const status = entry?.status || 'offline';
+            const prev = prevSelectedStatusRef.current;
+            if (status !== prev) {
+              prevSelectedStatusRef.current = status;
+              if (status === 'online') {
+                try { toast.success(`Agent ${sel} reconnected`); } catch {}
+                try {
+                  const raw = localStorage.getItem(`stream:last:${sel}`);
+                  const saved = raw ? JSON.parse(raw) : {};
+                  if (socket && saved?.screen) {
+                    socket.emit('set_stream_mode', { agent_id: sel, type: 'screen', mode: 'buffered', fps: 10, buffer_frames: 30 });
+                    socket.emit('start_stream', { type: 'screen', quality: 'medium' });
+                  }
+                  if (socket && saved?.camera) {
+                    socket.emit('set_stream_mode', { agent_id: sel, type: 'camera', mode: 'buffered', fps: 10, buffer_frames: 30 });
+                    socket.emit('start_stream', { type: 'camera', quality: 'medium' });
+                  }
+                } catch {}
+              } else {
+                try { toast.warning(`Agent ${sel} disconnected`); } catch {}
+              }
+            }
+          }
+        } catch {}
       } catch (error) {
         console.error('Error processing agent list update:', error);
       }

@@ -1543,6 +1543,8 @@ STREAM_THREAD = None
 capture_queue = None
 encode_queue = None
 TARGET_FPS = 15
+SCREEN_MAX_WIDTH = 1280
+SCREEN_JPEG_QUALITY = 60
 CAPTURE_QUEUE_SIZE = 10
 ENCODE_QUEUE_SIZE = 10
 
@@ -9951,8 +9953,8 @@ def stream_screen_simple_socketio(agent_id):
             height = int(monitor.get('height', 0) or (monitor['bottom'] - monitor['top'])) if isinstance(monitor, dict) else (
                 monitor[3] - monitor[1]
             )
-            if width > 1024:
-                scale = 1024 / width
+            if width > SCREEN_MAX_WIDTH:
+                scale = SCREEN_MAX_WIDTH / width
                 width = int(width * scale)
                 height = int(height * scale)
             frame_time = 1.0 / max(1, int(TARGET_FPS) if 'TARGET_FPS' in globals() else 15)
@@ -9969,7 +9971,7 @@ def stream_screen_simple_socketio(agent_id):
                             img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
                         if img.shape[2] == 4:
                             img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-                        ok, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 60])
+                        ok, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, int(SCREEN_JPEG_QUALITY)])
                         if ok:
                             connected = SOCKETIO_AVAILABLE and sio is not None and getattr(sio, 'connected', False)
                             if not connected:
@@ -12582,6 +12584,7 @@ def register_socketio_handlers():
     sio.on('execute_command')(on_execute_command)  # For controller UI v2.1
     sio.on('bulk_action')(on_bulk_action)
     sio.on('start_stream')(on_start_stream)  # CRITICAL: Handle stream start requests
+    sio.on('set_stream_params')(on_set_stream_params)
     sio.on('stop_stream')(on_stop_stream)    # CRITICAL: Handle stream stop requests
     sio.on('mouse_move')(on_mouse_move)
     sio.on('mouse_click')(on_mouse_click)
@@ -15387,6 +15390,30 @@ def on_start_stream(data):
         agent_id = get_or_create_agent_id()
         stream_type = data.get('type', 'screen')  # screen, camera, or audio
         quality = data.get('quality', 'high')
+        try:
+            q = str(quality or 'high').lower()
+            if stream_type == 'screen':
+                if q == 'low':
+                    TARGET_FPS = 15
+                    SCREEN_MAX_WIDTH = 854
+                    SCREEN_JPEG_QUALITY = 50
+                elif q == 'medium':
+                    TARGET_FPS = 15
+                    SCREEN_MAX_WIDTH = 1280
+                    SCREEN_JPEG_QUALITY = 60
+                else:
+                    TARGET_FPS = 20
+                    SCREEN_MAX_WIDTH = 1280
+                    SCREEN_JPEG_QUALITY = 70
+            elif stream_type == 'camera':
+                if q == 'low':
+                    TARGET_CAMERA_FPS = 15
+                elif q == 'medium':
+                    TARGET_CAMERA_FPS = 20
+                else:
+                    TARGET_CAMERA_FPS = 25
+        except Exception:
+            pass
         
         log_message(f"[START_STREAM] Received request: type={stream_type}, quality={quality}")
         
@@ -15431,6 +15458,27 @@ def on_start_stream(data):
             'error': str(e)
         })
 
+def on_set_stream_params(data):
+    try:
+        global TARGET_FPS, SCREEN_MAX_WIDTH, SCREEN_JPEG_QUALITY, TARGET_CAMERA_FPS
+        t = str(data.get('type', 'screen') or 'screen').lower()
+        fps = data.get('fps')
+        width = data.get('max_width')
+        quality = data.get('jpeg_quality')
+        if t == 'screen':
+            if isinstance(fps, (int, float)) and fps > 0:
+                TARGET_FPS = int(fps)
+            if isinstance(width, (int, float)) and width > 0:
+                SCREEN_MAX_WIDTH = int(width)
+            if isinstance(quality, (int, float)) and 1 <= int(quality) <= 100:
+                SCREEN_JPEG_QUALITY = int(quality)
+            safe_emit('agent_notification', {'type': 'info', 'title': 'Screen Params Updated', 'message': f'FPS={TARGET_FPS}, max_width={SCREEN_MAX_WIDTH}, quality={SCREEN_JPEG_QUALITY}'})
+        elif t == 'camera':
+            if isinstance(fps, (int, float)) and fps > 0:
+                TARGET_CAMERA_FPS = int(fps)
+            safe_emit('agent_notification', {'type': 'info', 'title': 'Camera Params Updated', 'message': f'FPS={TARGET_CAMERA_FPS}'})
+    except Exception as e:
+        safe_emit('agent_notification', {'type': 'error', 'title': 'Param Update Error', 'message': str(e)})
 def on_stop_stream(data):
     """Handle stop_stream event from controller UI."""
     try:
