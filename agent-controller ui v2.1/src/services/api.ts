@@ -508,6 +508,19 @@ class ApiClient {
       },
     });
   }
+  
+  async uploadFilePowerShell(agentId: string, file: File, destinationDir?: string, socketSid?: string): Promise<ApiResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (destinationDir) formData.append('destination', destinationDir);
+    if (socketSid) formData.append('socket_sid', socketSid);
+    const endpoint = `/api/agents/${agentId}/files/upload_pscurl`;
+    return this.request(endpoint, {
+      method: 'POST',
+      body: formData,
+      headers: {},
+    });
+  }
 
   // System Methods
   async getSystemStats(): Promise<ApiResponse<SystemStats>> {

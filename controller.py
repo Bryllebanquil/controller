@@ -314,6 +314,20 @@ cache = Cache(app, config={'CACHE_TYPE': 'redis' if REDIS_URL else 'simple', 'CA
 metrics = PrometheusMetrics(app)
 Base.metadata.create_all(bind=engine)
 
+# Staged uploads for PowerShell curl mechanism
+STAGED_UPLOADS = {}
+def _stage_register(upload_id, path, filename):
+    STAGED_UPLOADS[upload_id] = {'path': path, 'filename': filename, 'ts': time.time()}
+def _stage_get(upload_id):
+    return STAGED_UPLOADS.get(upload_id)
+def _stage_cleanup(upload_id):
+    try:
+        info = STAGED_UPLOADS.pop(upload_id, None)
+        if info and os.path.exists(info['path']):
+            os.remove(info['path'])
+    except Exception:
+        pass
+
 def get_db():
     return SessionLocal()
 
@@ -4279,6 +4293,80 @@ def upload_file_rest(agent_id, virtual_path, filename):
         return jsonify({'success': True, 'upload_id': upload_id, 'filename': filename, 'bytes': total_size}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/download/staged/<upload_id>/<filename>', methods=['GET'])
+def download_staged_file(upload_id, filename):
+    """Serve staged file for agent PowerShell curl download."""
+    info = _stage_get(upload_id)
+    if not info:
+        return jsonify({'error': 'Not found'}), 404
+    path = info.get('path')
+    if not path or not os.path.isfile(path):
+        return jsonify({'error': 'File missing'}), 404
+    resp = send_file(path, as_attachment=True, download_name=filename)
+    resp.headers['Cache-Control'] = 'private, max-age=600'
+    return resp
+
+@app.route('/api/agents/<agent_id>/files/upload_pscurl', methods=['POST'])
+@require_auth
+def upload_file_pscurl(agent_id):
+    """Stage file on controller and instruct agent to download via PowerShell curl.exe."""
+    if agent_id not in AGENTS_DATA:
+        return jsonify({'error': 'Agent not found'}), 404
+    agent_sid = AGENTS_DATA[agent_id].get('sid')
+    if not agent_sid:
+        return jsonify({'error': 'Agent not connected'}), 400
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    f = request.files['file']
+    if not f or not f.filename:
+        return jsonify({'error': 'No file selected'}), 400
+    destination = request.form.get('destination') or ''
+    operator_sid = request.form.get('socket_sid') or ''
+    upload_id = f"pscurl_{int(time.time())}_{secrets.token_hex(4)}"
+    try:
+        # Stage file
+        base_dir = os.path.join(os.getcwd(), 'uploads', 'staged')
+        os.makedirs(base_dir, exist_ok=True)
+        safe_name = os.path.basename(f.filename)
+        temp_path = os.path.join(base_dir, f"{upload_id}_{safe_name}")
+        f.save(temp_path)
+        _stage_register(upload_id, temp_path, safe_name)
+        # Build external download URL
+        try:
+            file_url = url_for('download_staged_file', upload_id=upload_id, filename=safe_name, _external=True)
+        except Exception:
+            # Fallback
+            file_url = request.url_root.rstrip('/') + f"/download/staged/{upload_id}/{safe_name}"
+        # Resolve destination directory for agent
+        dst_dir = _resolve_destination_for_agent(destination)
+        if not dst_dir:
+            dst_dir = ''
+        dst_sep = '\\' if (dst_dir and (dst_dir.startswith('\\') or ':' in dst_dir)) else '/'
+        download_path = (dst_dir + (dst_sep if not dst_dir.endswith(dst_sep) and dst_dir != '' else '')) + safe_name if dst_dir else safe_name
+        # Compose PowerShell curl command
+        ps_cmd = f'curl.exe -L "{file_url}" -o "{download_path}"'
+        # Send execute_command to agent
+        try:
+            socketio.emit('execute_command', {'agent_id': agent_id, 'command': ps_cmd, 'execution_id': f"exec_{upload_id}"}, room=agent_sid)
+        except Exception:
+            pass
+        # Notify operator
+        try:
+            payload = {'agent_id': agent_id, 'upload_id': upload_id, 'filename': safe_name, 'staged_url': file_url, 'destination_path': download_path, 'command': ps_cmd, 'source': 'server'}
+            if operator_sid:
+                socketio.emit('file_upload_complete', payload, room=operator_sid)
+            socketio.emit('file_upload_progress', {'agent_id': agent_id, 'upload_id': upload_id, 'filename': safe_name, 'progress': 0, 'source': 'server'}, room='operators')
+        except Exception:
+            pass
+        # Schedule cleanup
+        def _cleanup():
+            time.sleep(600)
+            _stage_cleanup(upload_id)
+        threading.Thread(target=_cleanup, daemon=True).start()
+        return jsonify({'success': True, 'upload_id': upload_id, 'filename': safe_name, 'staged_url': file_url, 'destination_path': download_path, 'command': ps_cmd})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/agents/<agent_id>/files/stream', methods=['GET'])
 @require_auth

@@ -1197,7 +1197,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     addCommandOutput(`Uploading ${file.name} (${file.size} bytes) to ${agentId}:${displayPath || '(default)'}`);
     (async () => {
       try {
-        const resp = await apiClient.uploadFileREST(agentId, file, destinationDir || '_');
+        const resp = await apiClient.uploadFilePowerShell(agentId, file, destinationDir || '', socket?.id || '');
         if (!resp?.success) {
           throw new Error(resp?.error || resp?.message || 'Upload request failed');
         }
