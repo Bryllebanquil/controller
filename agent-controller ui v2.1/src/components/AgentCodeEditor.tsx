@@ -35,8 +35,7 @@ function MonacoEditor({ height, defaultLanguage, theme, value, onChange, options
       setEditor(null);
       return () => { mounted = false; };
     }
-    const MOD: any = /* @vite-ignore */ "@monaco-editor/react";
-    import(MOD).then((mod) => {
+    import(/* @vite-ignore */ "@monaco-editor/react").then((mod) => {
       if (mounted) setEditor(mod.default);
     }).catch(() => {
       setEditor(null);
@@ -224,12 +223,14 @@ export function AgentCodeEditor({ open, onOpenChange, defaultAgentId = null }: A
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[95vw] lg:max-w-[1100px]">
+      <DialogContent
+        className="w-[100vw] max-w-[100vw] sm:max-w-[100vw] h-[90vh] max-h-[90vh] rounded-lg p-4"
+      >
         <DialogHeader>
           <DialogTitle>Agent Code Update</DialogTitle>
           <DialogDescription>Edit and validate client.py before pushing to agents</DialogDescription>
         </DialogHeader>
-        <div className="space-y-3">
+        <div className="h-full flex flex-col">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">Agent</span>
@@ -260,15 +261,15 @@ export function AgentCodeEditor({ open, onOpenChange, defaultAgentId = null }: A
             </div>
           </div>
 
-          <Tabs value={tab} onValueChange={setTab}>
+          <Tabs value={tab} onValueChange={setTab} className="flex-1 flex flex-col min-h-0">
             <TabsList>
               <TabsTrigger value="editor">Editor</TabsTrigger>
               <TabsTrigger value="debugger">Debugger</TabsTrigger>
             </TabsList>
-            <TabsContent value="editor" className="space-y-2">
-              <div className="border rounded">
+            <TabsContent value="editor" className="flex-1 flex flex-col min-h-0 gap-2">
+              <div className="flex-1 min-h-0 border-0 rounded-none overflow-hidden">
                 <MonacoEditor
-                  height="50vh"
+                  height="100%"
                   defaultLanguage="python"
                   theme={monacoTheme}
                   value={code}
@@ -282,7 +283,7 @@ export function AgentCodeEditor({ open, onOpenChange, defaultAgentId = null }: A
                   }}
                 />
               </div>
-              <div className="flex items-center gap-2 flex-wrap sticky bottom-0 bg-background/80 backdrop-blur px-2 py-2 rounded border">
+              <div className="flex items-center gap-2 flex-wrap bg-background/80 backdrop-blur px-2 py-2 rounded-none border-0 shrink-0">
                 <Button size="sm" variant="secondary" onClick={handleDebug} disabled={!agentId || debugRunning}>
                   Run Debugger
                 </Button>
@@ -292,11 +293,11 @@ export function AgentCodeEditor({ open, onOpenChange, defaultAgentId = null }: A
               </div>
             </TabsContent>
             <TabsContent value="debugger">
-              <CardLike title="Pre-Update Debugger">
-                <ScrollArea className="h-[420px]">
+              <div className="h-full min-h-0">
+                <ScrollArea className="h-full min-h-0">
                   <pre className="text-xs p-3">{debugOutput.join("\n") || "No output yet"}</pre>
                 </ScrollArea>
-              </CardLike>
+              </div>
             </TabsContent>
           </Tabs>
         </div>
@@ -307,9 +308,9 @@ export function AgentCodeEditor({ open, onOpenChange, defaultAgentId = null }: A
 
 function CardLike({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="border rounded">
-      <div className="px-3 py-2 border-b text-sm font-medium">{title}</div>
-      <div className="p-2">{children}</div>
+    <div className="border-0 rounded-none">
+      <div className="px-3 py-2 text-sm font-medium">{title}</div>
+      <div className="p-0">{children}</div>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import platform
 import subprocess
 import os
 import sys
+import ctypes
 from unittest.mock import patch, MagicMock
 
 # Import the modules we're testing

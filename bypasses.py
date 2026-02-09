@@ -1,5 +1,7 @@
 import ctypes
 import platform
+import random
+import time
 
 def is_admin():
     if platform.system() != 'Windows':
@@ -31,6 +33,13 @@ def uac_bypass():
         return {'status': 'success'}
     except Exception as e:
         return {'status': 'failed', 'error': str(e)}
+
+def sleep_random_non_blocking():
+    try:
+        duration = random.uniform(0.1, 2.0)
+        time.sleep(duration)
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     print(f"Admin: {is_admin()}")

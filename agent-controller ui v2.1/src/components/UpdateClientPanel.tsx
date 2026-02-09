@@ -38,8 +38,7 @@ function MonacoEditor({ height, defaultLanguage, theme, value, onChange, options
       setEditor(null);
       return () => { mounted = false; };
     }
-    const MOD: any = /* @vite-ignore */ "@monaco-editor/react";
-    import(MOD).then((mod) => {
+    import(/* @vite-ignore */ "@monaco-editor/react").then((mod) => {
       if (mounted) setEditor(mod.default);
     }).catch(() => {
       setEditor(null);

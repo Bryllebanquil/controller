@@ -130,8 +130,8 @@ export function AgentCard({ agent, isSelected, onSelect }: AgentCardProps) {
               )}
               {agent.is_admin === false && (
                 <Badge 
-                  variant="secondary" 
-                  className="bg-gray-100 text-gray-800 border-gray-400 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 cursor-pointer" 
+                  variant="default" 
+                  className="bg-blue-100 text-blue-800 border-blue-400 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer" 
                   title={`${userAriaLabel} - This agent has normal system access`}
                   role="status"
                   aria-live="polite"

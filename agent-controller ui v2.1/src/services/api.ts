@@ -452,10 +452,17 @@ class ApiClient {
     return this.request(API_ENDPOINTS.agents.commandHistory(agentId));
   }
 
-  async startStream(agentId: string, streamType: 'screen' | 'camera' | 'audio', quality: string = 'high'): Promise<ApiResponse> {
+  async startStream(
+    agentId: string,
+    streamType: 'screen' | 'camera' | 'audio',
+    quality: string = 'high',
+    mode: 'realtime' | 'buffered' = 'buffered',
+    fps: number = 20,
+    buffer_frames: number = 40,
+  ): Promise<ApiResponse> {
     return this.request(API_ENDPOINTS.agents.startStream(agentId, streamType), {
       method: 'POST',
-      body: JSON.stringify({ quality }),
+      body: JSON.stringify({ quality, mode, fps, buffer_frames }),
     });
   }
 

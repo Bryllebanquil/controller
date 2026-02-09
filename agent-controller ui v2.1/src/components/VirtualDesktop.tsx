@@ -6,7 +6,7 @@ import { useSocket } from "./SocketProvider";
 import { AlertCircle, Monitor, Camera } from "lucide-react";
 
 export function VirtualDesktop({ agentId }: { agentId: string | null }) {
-  const { setLastActivity, startStream } = useSocket();
+  const { setLastActivity, startStream, agents } = useSocket();
 
   useEffect(() => {
     try {
@@ -23,7 +23,14 @@ export function VirtualDesktop({ agentId }: { agentId: string | null }) {
               <Monitor className="h-4 w-4" />
               Virtual Desktop
             </CardTitle>
-            {agentId && <Badge variant="outline" className="text-xs">{agentId.substring(0, 8)}</Badge>}
+            {agentId && (
+              <Badge variant="outline" className="text-xs">
+                {(() => {
+                  const a = agents.find(x => x.id === agentId);
+                  return a ? a.name : agentId;
+                })()}
+              </Badge>
+            )}
           </div>
         </CardHeader>
         <CardContent>

@@ -10,7 +10,7 @@ import time
 from typing import Dict, List, Optional
 
 
-def test_localization_support():
+def run_localization_support():
     """Test localization support for admin privilege indicator."""
     print("🌍 Testing Localization Support for Admin Privilege Indicator")
     print("=" * 70)
@@ -73,19 +73,18 @@ def test_localization_support():
     
     # Test language switching
     print(f"\n🔄 Testing Language Switching:")
-    test_language_switching(test_languages)
+    run_language_switching(test_languages)
     
     # Test fallback to English
     print(f"\n🛡️  Testing Fallback to English:")
-    test_fallback_to_english()
+    run_fallback_to_english()
     
     print(f"\n" + "=" * 70)
     if all_passed:
         print("🎉 All localization tests passed!")
-        return True
     else:
         print("❌ Some localization tests failed!")
-        return False
+    return all_passed
 
 
 def get_language_name(code: str) -> str:
@@ -111,7 +110,7 @@ def simulate_localization(key: str, language: str, translations: Dict[str, str])
     return translations.get(key, f"[{key}]")
 
 
-def test_language_switching(test_languages: Dict[str, Dict[str, str]]):
+def run_language_switching(test_languages: Dict[str, Dict[str, str]]):
     """Test that language switching works correctly."""
     # Simulate switching between languages
     languages = list(test_languages.keys())
@@ -132,7 +131,7 @@ def test_language_switching(test_languages: Dict[str, Dict[str, str]]):
             print(f"      ❌ {get_language_name(next_lang)} missing keys: {missing_keys}")
 
 
-def test_fallback_to_english():
+def run_fallback_to_english():
     """Test that the system falls back to English for unsupported languages."""
     unsupported_languages = ['xx', 'yy', 'zz']  # Non-existent language codes
     
@@ -151,7 +150,7 @@ def test_fallback_to_english():
             print(f"   ❌ {lang} fallback failed: {fallback_result}")
 
 
-def test_browser_language_detection():
+def run_browser_language_detection():
     """Test browser language detection (simulated)."""
     print(f"\n🌐 Testing Browser Language Detection:")
     
@@ -175,20 +174,24 @@ def test_browser_language_detection():
             print(f"   ❌ {browser_lang} → {detected_code} (expected {expected_code})")
 
 
+def test_localization_support():
+    success = run_localization_support()
+    assert success
+
 def main():
     """Main test execution."""
     print("🚀 Starting Localization Support Tests")
     print("=" * 70)
     
     # Test localization support
-    success = test_localization_support()
+    success = run_localization_support()
     
     # Test browser language detection
-    test_browser_language_detection()
+    run_browser_language_detection()
     
     # Test with real API (if available)
     print(f"\n🔌 Testing with Real API:")
-    test_with_real_api()
+    run_with_real_api()
     
     print(f"\n" + "=" * 70)
     print("📊 Test Summary:")
@@ -197,7 +200,7 @@ def main():
     return success
 
 
-def test_with_real_api():
+def run_with_real_api():
     """Test with the actual running API."""
     try:
         # Test getting agents to see if localization is applied

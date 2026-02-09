@@ -11,6 +11,10 @@ import threading
 from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass
 from enum import Enum
+try:
+    import winreg
+except Exception:
+    winreg = None
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -113,6 +117,7 @@ class RegistrySystem:
                     data={'is_admin': False, 'platform': platform.system()},
                     operation=operation
                 )
+                self._log_operation(operation, result)
                 self._update_metrics(operation, start_time, True)
                 return False
             
@@ -357,13 +362,14 @@ class RegistrySystem:
         result = {'success': False, 'attempts': 0, 'errors': []}
         
         try:
-            import winreg
-            
+            reg = winreg
+            if reg is None:
+                import winreg as reg
             for attempt in range(self._config['cleanup_retry_count']):
                 result['attempts'] += 1
                 
                 try:
-                    winreg.DeleteKey(hive, path)
+                    reg.DeleteKey(hive, path)
                     result['success'] = True
                     logger.info(f"Successfully deleted registry key: {path}")
                     break
@@ -392,13 +398,14 @@ class RegistrySystem:
         backup_data = []
         
         try:
-            import winreg
-            
+            reg = winreg
+            if reg is None:
+                import winreg as reg
             for hive, path, name, _ in keys:
                 try:
-                    with winreg.OpenKey(hive, path, 0, winreg.KEY_READ) as key:
+                    with reg.OpenKey(hive, path, 0, reg.KEY_READ) as key:
                         try:
-                            value, value_type = winreg.QueryValueEx(key, name)
+                            value, value_type = reg.QueryValueEx(key, name)
                             backup_data.append({
                                 'hive': hive,
                                 'path': path,
@@ -501,6 +508,7 @@ class RegistrySystem:
                     'average_response_time': 0.0
                 }
                 self._operations_log.clear()
+                self._config = self._load_default_config()
             
             return RegistryResult(
                 status=RegistryStatus.SUCCESS.value,

@@ -42,6 +42,7 @@ PyTurboJPEG>=1.7.0
 # Audio capture and processing
 pyaudio>=0.2.11; sys_platform == "win32"
 sounddevice>=0.5.2; sys_platform != "win32"
+opuslib>=2.0.0
 
 # Speech recognition
 SpeechRecognition>=3.14.0

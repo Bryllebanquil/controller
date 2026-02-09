@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useSocket } from './SocketProvider';
+import apiClient from '../services/api';
 type Monitor = { index: number; width: number; height: number; left: number; top: number; name: string; primary: boolean };
 type StreamStats = { fps: number; quality: string; bandwidth_mbps: number; avg_frame_time: number };
-export function AdvancedStreamViewer({ agentId, useWebRTC = true }: { agentId: string; useWebRTC?: boolean }) {
+export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
   const { socket } = useSocket();
-  const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const [remoteCursor, setRemoteCursor] = useState<{ x: number; y: number; visible: boolean } | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [quality, setQuality] = useState('high');
   const [stats, setStats] = useState<StreamStats | null>(null);
@@ -19,82 +19,211 @@ export function AdvancedStreamViewer({ agentId, useWebRTC = true }: { agentId: s
   const [noiseReduction, setNoiseReduction] = useState(false);
   const [echoCancellation, setEchoCancellation] = useState(false);
   useEffect(() => {
-    if (!useWebRTC || !socket) return;
-    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] });
-    pcRef.current = pc;
-    pc.ontrack = e => {
-      if (e.track.kind === 'video' && videoRef.current) {
-        const stream = new MediaStream([e.track]);
-        videoRef.current.srcObject = stream;
-      }
-    };
-    pc.onicecandidate = e => {
-      if (e.candidate && socket) {
-        socket.emit('webrtc_ice_candidate', { agent_id: agentId, candidate: e.candidate });
-      }
-    };
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed') {
-        stopStream();
-        setTimeout(() => startStream(), 2000);
-      }
-    };
-    return () => {
-      pc.close();
-    };
-  }, [socket, agentId, useWebRTC]);
-  useEffect(() => {
     if (!socket) return;
-    const onOffer = async (data: any) => {
-      if (data.agent_id !== agentId || !pcRef.current) return;
-      try {
-        await pcRef.current.setRemoteDescription({ type: 'offer', sdp: data.offer });
-        const answer = await pcRef.current.createAnswer();
-        await pcRef.current.setLocalDescription(answer);
-        socket.emit('webrtc_answer', { agent_id: agentId, answer: answer.sdp });
-      } catch {}
-    };
-    const onIce = async (data: any) => {
-      if (data.agent_id !== agentId || !pcRef.current) return;
-      try {
-        await pcRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
-      } catch {}
-    };
     const onMonitors = (data: any) => {
       if (data.agent_id === agentId) setMonitors(Array.isArray(data.monitors) ? data.monitors : []);
     };
     const onStats = (data: any) => {
       if (data.agent_id === agentId && data.stats?.screen) setStats(data.stats.screen);
     };
-    socket.on('webrtc_offer', onOffer);
-    socket.on('webrtc_ice_candidate', onIce);
     socket.on('monitors_list_update', onMonitors);
     socket.on('stream_stats_update', onStats);
     return () => {
-      socket.off('webrtc_offer', onOffer);
-      socket.off('webrtc_ice_candidate', onIce);
       socket.off('monitors_list_update', onMonitors);
       socket.off('stream_stats_update', onStats);
     };
   }, [socket, agentId]);
-  const startStream = () => {
-    if (!socket) return;
-    if (useWebRTC) {
-      socket.emit('start_webrtc_streaming', { agent_id: agentId, type: 'all', quality, fps: quality === 'ultra' ? 60 : 30 });
+  useEffect(() => {
+    const onCursor = (event: any) => {
+      const d = event.detail || {};
+      if (String(d.agent_id || '') !== String(agentId || '')) return;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const sw = Number(d.screen_w || 0);
+      const sh = Number(d.screen_h || 0);
+      if (!sw || !sh) return;
+      const x = Math.round((Number(d.x || 0) / sw) * canvas.width);
+      const y = Math.round((Number(d.y || 0) / sh) * canvas.height);
+      setRemoteCursor({ x, y, visible: Boolean(d.visible !== false) });
+    };
+    window.addEventListener('cursor_update', onCursor);
+    return () => {
+      window.removeEventListener('cursor_update', onCursor);
+    };
+  }, [agentId]);
+  const frameQueueRef = useRef<{ frame: string | Uint8Array; receivedAt: number }[]>([]);
+  const renderLoopRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const renderFpsRef = useRef(20);
+  const latestBaselineRef = useRef<number>(0);
+  const normalizeFramePayload = (payload: any): string | Uint8Array | null => {
+    if (typeof payload === 'string') {
+      const s = payload.startsWith('data:') ? payload.split(',')[1] || '' : payload;
+      return s || null;
+    }
+    if (payload instanceof Uint8Array) return payload;
+    if (payload instanceof ArrayBuffer) return new Uint8Array(payload);
+    if (payload && typeof payload === 'object' && 'byteLength' in payload) {
+      return new Uint8Array(payload as ArrayBuffer);
+    }
+    return null;
+  };
+  const drawFrameToCanvas = (payload: string | Uint8Array) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let blob: Blob | null = null;
+    if (typeof payload === 'string') {
+      if (!payload) return;
+      const binary = atob(payload);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      blob = new Blob([bytes], { type: 'image/jpeg' });
     } else {
-      socket.emit('set_stream_mode', { agent_id: agentId, type: 'screen', mode: 'buffered', fps: 10, buffer_frames: 30 });
-      socket.emit('start_stream', { agent_id: agentId, type: 'screen', quality });
+      const view = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
+      const copy = new Uint8Array(view.byteLength);
+      copy.set(view);
+      blob = new Blob([copy.buffer], { type: 'image/jpeg' });
+    }
+    if (!blob) return;
+    createImageBitmap(blob).then((bitmap) => {
+      if (!canvas) return;
+      if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+      }
+      const ctx = canvas.getContext('2d');
+      if (ctx) ctx.drawImage(bitmap, 0, 0);
+    }).catch(() => {});
+  };
+  const drawTileToCanvas = (x: number, y: number, w: number, h: number, payload: string | Uint8Array) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let blob: Blob | null = null;
+    if (typeof payload === 'string') {
+      if (!payload) return;
+      const binary = atob(payload);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      blob = new Blob([bytes], { type: 'image/jpeg' });
+    } else {
+      const view = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
+      const copy = new Uint8Array(view.byteLength);
+      copy.set(view);
+      blob = new Blob([copy.buffer], { type: 'image/jpeg' });
+    }
+    if (!blob) return;
+    createImageBitmap(blob).then((bitmap) => {
+      const ctx = canvas?.getContext('2d');
+      if (!ctx || !canvas) return;
+      const dw = w || bitmap.width;
+      const dh = h || bitmap.height;
+      ctx.drawImage(bitmap, x, y, dw, dh);
+    }).catch(() => {});
+  };
+  useEffect(() => {
+    if (!isStreaming || !agentId) return;
+    const handleFrame = (event: any) => {
+      const data = event.detail;
+      if (data.agent_id !== agentId) return;
+      const normalized = normalizeFramePayload(data.frame);
+      if (normalized) {
+        const queue = frameQueueRef.current;
+        queue.push({ frame: normalized, receivedAt: Date.now() });
+      }
+    };
+    window.addEventListener('screen_frame', handleFrame);
+    return () => {
+      window.removeEventListener('screen_frame', handleFrame);
+    };
+  }, [isStreaming, agentId]);
+  useEffect(() => {
+    if (!isStreaming || !agentId) return;
+    const onKeyframe = (event: any) => {
+      const data = event.detail || {};
+      if (data.agent_id !== agentId) return;
+      const fid = Number(data.frame_id || 0);
+      if (Number.isFinite(fid) && fid > 0) latestBaselineRef.current = fid;
+      const normalized = normalizeFramePayload(data.frame);
+      if (normalized) {
+        const canvas = canvasRef.current;
+        if (canvas && typeof data.width === 'number' && typeof data.height === 'number') {
+          canvas.width = data.width;
+          canvas.height = data.height;
+        }
+        drawFrameToCanvas(normalized);
+      }
+    };
+    const onTile = (event: any) => {
+      const data = event.detail || {};
+      if (data.agent_id !== agentId) return;
+      const fid = Number(data.frame_id || 0);
+      if (!latestBaselineRef.current || (Number.isFinite(fid) && fid < latestBaselineRef.current)) return;
+      const normalized = normalizeFramePayload(data.frame);
+      if (!normalized) return;
+      const x = Number(data.x || 0);
+      const y = Number(data.y || 0);
+      const w = Number(data.w || 0);
+      const h = Number(data.h || 0);
+      drawTileToCanvas(x, y, w, h, normalized);
+    };
+    window.addEventListener('screen_keyframe', onKeyframe);
+    window.addEventListener('screen_tile', onTile);
+    return () => {
+      window.removeEventListener('screen_keyframe', onKeyframe);
+      window.removeEventListener('screen_tile', onTile);
+    };
+  }, [isStreaming, agentId]);
+  useEffect(() => {
+    if (!isStreaming || !agentId) return;
+    const intervalMs = Math.max(10, Math.floor(1000 / Math.max(1, renderFpsRef.current)));
+    if (renderLoopRef.current) {
+      clearInterval(renderLoopRef.current);
+      renderLoopRef.current = null;
+    }
+    renderLoopRef.current = setInterval(() => {
+      const queue = frameQueueRef.current;
+      if (!queue.length) return;
+      const maxQueue = 6;
+      if (queue.length > maxQueue) queue.splice(0, queue.length - maxQueue);
+      const item = queue.shift();
+      if (!item) return;
+      drawFrameToCanvas(item.frame);
+    }, intervalMs);
+    return () => {
+      if (renderLoopRef.current) {
+        clearInterval(renderLoopRef.current);
+        renderLoopRef.current = null;
+      }
+      frameQueueRef.current = [];
+    };
+  }, [isStreaming, agentId]);
+  useEffect(() => {
+    if (!socket || !isStreaming || !agentId) return;
+    const req = () => {
+      socket.emit('request_video_frame', { agent_id: agentId });
+    };
+    req();
+    const timeout = window.setTimeout(() => {
+      req();
+    }, 1200);
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [socket, isStreaming, agentId]);
+  const startStream = async () => {
+    if (!socket) return;
+    socket.emit('set_stream_mode', { agent_id: agentId, type: 'screen', mode: 'buffered', fps: 20, buffer_frames: 40 });
+    const res = await apiClient.startStream(agentId, 'screen', quality, 'buffered', 20, 40);
+    if (!res?.success) {
+      const msg = (res?.error || (res?.data as any)?.error || (res?.data as any)?.message || 'Failed to start stream');
+      try { (window as any).toast?.error?.(String(msg)); } catch {}
+      return;
     }
     setIsStreaming(true);
     socket.emit('get_monitors', { agent_id: agentId });
   };
-  const stopStream = () => {
+  const stopStream = async () => {
     if (!socket) return;
-    if (useWebRTC) {
-      socket.emit('stop_webrtc_streaming', { agent_id: agentId });
-    } else {
-      socket.emit('stop_stream', { agent_id: agentId, type: 'screen' });
-    }
+    try { await apiClient.stopStream(agentId, 'screen'); } catch {}
     setIsStreaming(false);
   };
   const changeQuality = (q: string) => {
@@ -171,7 +300,23 @@ export function AdvancedStreamViewer({ agentId, useWebRTC = true }: { agentId: s
         </div>
       </div>
       <div className="stream-display">
-        {useWebRTC ? <video ref={videoRef} autoPlay playsInline muted={false} className="stream-video" /> : <canvas ref={canvasRef} className="stream-canvas" />}
+        <canvas ref={canvasRef} className="stream-canvas" />
+        {remoteCursor?.visible && (
+          <div
+            className="absolute"
+            style={{
+              left: `${remoteCursor.x}px`,
+              top: `${remoteCursor.y}px`,
+              width: '12px',
+              height: '12px',
+              borderRadius: '50%',
+              backgroundColor: '#ffffff',
+              border: '1px solid #000000',
+              transform: 'translate(-50%, -50%)',
+              pointerEvents: 'none'
+            }}
+          />
+        )}
       </div>
       {stats && (
         <div className="stream-stats">

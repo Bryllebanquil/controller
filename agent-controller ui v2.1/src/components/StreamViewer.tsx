@@ -34,8 +34,8 @@ interface StreamViewerProps {
   hideCursor?: boolean;
 }
 
-export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaultCaptureKeyboard, autoResume = true, hideCursor = false }: StreamViewerProps) {
-  const { sendCommand, socket, setLastActivity } = useSocket();
+export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaultCaptureKeyboard, autoResume = true, hideCursor = true }: StreamViewerProps) {
+  const { sendCommand, socket, setLastActivity, agents } = useSocket();
   const [isStreaming, setIsStreaming] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [quality, setQuality] = useState('high');
@@ -72,7 +72,13 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
   const fpsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const frameCountRef = useRef(0);
   const prevCountRef = useRef(0);
+  const lastFrameTimeRef = useRef(0);
+  const frameQueueRef = useRef<{ frame: string | Uint8Array; receivedAt: number }[]>([]);
+  const renderLoopRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const renderFpsRef = useRef(20);
+  const latestBaselineRef = useRef<number>(0);
   const lastMouseEmitRef = useRef<number>(0);
+  const [remoteCursor, setRemoteCursor] = useState<{ x: number; y: number; visible: boolean } | null>(null);
   const lastKeyEmitRef = useRef<number>(0);
   const [webrtcAudioBridge, setWebrtcAudioBridge] = useState(false);
 
@@ -239,6 +245,79 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
     }
   };
 
+  const normalizeFramePayload = (payload: any): string | Uint8Array | null => {
+    if (typeof payload === 'string') {
+      const s = payload.startsWith('data:') ? payload.split(',')[1] || '' : payload;
+      return s || null;
+    }
+    if (payload instanceof Uint8Array) return payload;
+    if (payload instanceof ArrayBuffer) return new Uint8Array(payload);
+    if (payload && typeof payload === 'object' && 'byteLength' in payload) {
+      return new Uint8Array(payload as ArrayBuffer);
+    }
+    return null;
+  };
+
+  const drawFrameToCanvas = (payload: string | Uint8Array) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let blob: Blob | null = null;
+    if (typeof payload === 'string') {
+      if (!payload) return;
+      const binary = atob(payload);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      blob = new Blob([bytes], { type: 'image/jpeg' });
+    } else {
+      const view = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
+      const copy = new Uint8Array(view.byteLength);
+      copy.set(view);
+      blob = new Blob([copy.buffer], { type: 'image/jpeg' });
+    }
+    if (!blob) return;
+    createImageBitmap(blob).then((bitmap) => {
+      if (!canvas) return;
+      if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+      }
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(bitmap, 0, 0);
+      }
+    }).catch(() => {});
+  };
+  const drawTileToCanvas = (x: number, y: number, w: number, h: number, payload: string | Uint8Array) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let blob: Blob | null = null;
+    if (typeof payload === 'string') {
+      if (!payload) return;
+      const binary = atob(payload);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      blob = new Blob([bytes], { type: 'image/jpeg' });
+    } else {
+      const view = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
+      const copy = new Uint8Array(view.byteLength);
+      copy.set(view);
+      blob = new Blob([copy.buffer], { type: 'image/jpeg' });
+    }
+    if (!blob) return;
+    createImageBitmap(blob).then((bitmap) => {
+      const ctx = canvas?.getContext('2d');
+      if (!ctx || !canvas) return;
+      // Ensure canvas exists with correct size; tiles rely on keyframe establishing dimensions
+      const dw = w || bitmap.width;
+      const dh = h || bitmap.height;
+      ctx.drawImage(bitmap, x, y, dw, dh);
+    }).catch(() => {});
+  };
+
   const ensureAudioDecoder = () => {
     if (audioDecoderRef.current) return audioDecoderRef.current;
     const AudioDecoderCtor = (window as any).AudioDecoder;
@@ -372,299 +451,122 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
     return () => { active = false; };
   }, []);
 
-  // WebRTC viewer: signaling and media attachment
-  useEffect(() => {
-    if (!socket || !isStreaming || !agentId) return;
-    if (transportMode === 'fallback' && !webrtcAudioBridge) return;
-    let attachSocket = true;
-    (async () => {
-      try {
-        if (transportMode !== 'fallback') {
-          const resp = await apiClient.webrtcViewerConnect(agentId);
-          if (resp.success && resp.data && (resp.data as any).offer) {
-            attachSocket = false;
-            if (webrtcTimeoutRef.current) {
-              clearTimeout(webrtcTimeoutRef.current);
-              webrtcTimeoutRef.current = null;
-            }
-            const pc = new RTCPeerConnection({
-              iceServers: webrtcIceServers.length > 0 ? webrtcIceServers : [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' },
-                { urls: 'stun:stun3.l.google.com:19302' },
-                { urls: 'stun:stun4.l.google.com:19302' }
-              ]
-            });
-            rtcPcRef.current = pc;
-            const inboundStream = new MediaStream();
-            if (videoRef.current) {
-              videoRef.current.srcObject = inboundStream;
-              videoRef.current.muted = isMuted;
-              await videoRef.current.play().catch(() => {});
-            }
-            pc.ontrack = (event) => {
-              for (const track of event.streams[0]?.getTracks?.() || []) {
-                inboundStream.addTrack(track);
-              }
-              try {
-                const hasAudio = !!event.streams[0]?.getAudioTracks?.()?.length;
-                if (hasAudio && videoRef.current) {
-                  videoRef.current.muted = isMuted;
-                  videoRef.current.play().catch(() => {});
-                }
-              } catch {}
-              if (webrtcTimeoutRef.current) {
-                clearTimeout(webrtcTimeoutRef.current);
-                webrtcTimeoutRef.current = null;
-              }
-              frameCountRef.current++;
-              setFrameCount((prev: number) => prev + 1);
-              setIsWebRTCActive(true);
-              setHasError(false);
-            };
-            pc.onicecandidate = (ev) => {
-              if (ev.candidate) {
-                apiClient.webrtcViewerIce(ev.candidate);
-              }
-            };
-            pc.onconnectionstatechange = () => {
-              const state = pc.connectionState;
-              if (state === 'connected') {
-                if (webrtcTimeoutRef.current) {
-                  clearTimeout(webrtcTimeoutRef.current);
-                  webrtcTimeoutRef.current = null;
-                }
-              } else if ((state === 'failed' || state === 'disconnected') && transportMode === 'auto') {
-                if (fallbackTriggeredRef.current) return;
-                fallbackTriggeredRef.current = true;
-                setTransportMode('fallback');
-                setIsWebRTCActive(false);
-                apiClient.webrtcViewerDisconnect();
-                if (agentId) {
-                  let cmd = '';
-                  if (type === 'screen') cmd = 'start-stream';
-                  else if (type === 'camera') cmd = 'start-camera';
-                  else cmd = 'start-audio';
-                  if (socket && type === 'screen') {
-                    socket.emit('set_stream_mode', { agent_id: agentId, type: 'screen', mode: 'buffered', fps: 10, buffer_frames: 30 });
-                  }
-                  sendCommand(agentId, cmd);
-                }
-              }
-            };
-            const remoteDesc: RTCSessionDescriptionInit = {
-              type: 'offer',
-              sdp: (resp.data as any).offer
-            };
-            await pc.setRemoteDescription(remoteDesc);
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            await apiClient.webrtcViewerAnswer(answer.sdp || '');
-            return;
-          }
-        }
-      } catch {}
-      if (!attachSocket) return;
-      const handleViewerOffer = async (data: { offer: string; type: string }) => {
-        try {
-          if (webrtcTimeoutRef.current) {
-            clearTimeout(webrtcTimeoutRef.current);
-            webrtcTimeoutRef.current = null;
-          }
-          const pc = new RTCPeerConnection({
-            iceServers: webrtcIceServers.length > 0 ? webrtcIceServers : [
-              { urls: 'stun:stun.l.google.com:19302' },
-              { urls: 'stun:stun1.l.google.com:19302' },
-              { urls: 'stun:stun2.l.google.com:19302' },
-              { urls: 'stun:stun3.l.google.com:19302' },
-              { urls: 'stun:stun4.l.google.com:19302' }
-            ]
-          });
-          rtcPcRef.current = pc;
-          const inboundStream = new MediaStream();
-          if (transportMode === 'fallback' && (type === 'screen' || type === 'camera')) {
-            const audioEl = audioElRef.current;
-            if (audioEl) {
-              audioEl.srcObject = inboundStream;
-              audioEl.muted = isMuted;
-              await audioEl.play().catch(() => {});
-            }
-          } else if (videoRef.current) {
-            videoRef.current.srcObject = inboundStream;
-            videoRef.current.muted = isMuted;
-            await videoRef.current.play().catch(() => {});
-          }
-          pc.ontrack = (event) => {
-            for (const track of event.streams[0]?.getTracks?.() || []) {
-              inboundStream.addTrack(track);
-            }
-            try {
-              if (transportMode === 'fallback' && (type === 'screen' || type === 'camera')) {
-                const hasAudio = !!event.streams[0]?.getAudioTracks?.()?.length;
-                const audioEl = audioElRef.current;
-                if (hasAudio && audioEl) {
-                  audioEl.muted = isMuted;
-                  audioEl.play().catch(() => {});
-                }
-              } else {
-                const hasAudio = !!event.streams[0]?.getAudioTracks?.()?.length;
-                if (hasAudio && videoRef.current) {
-                  videoRef.current.muted = isMuted;
-                  videoRef.current.play().catch(() => {});
-                }
-              }
-            } catch {}
-            if (webrtcTimeoutRef.current) {
-              clearTimeout(webrtcTimeoutRef.current);
-              webrtcTimeoutRef.current = null;
-            }
-            frameCountRef.current++;
-            setFrameCount((prev: number) => prev + 1);
-            setIsWebRTCActive(true);
-            setHasError(false);
-          };
-          pc.onicecandidate = (ev) => {
-            if (ev.candidate) {
-              socket.emit('webrtc_viewer_ice_candidate', { candidate: ev.candidate });
-            }
-          };
-          pc.onconnectionstatechange = () => {
-            const state = pc.connectionState;
-            if (state === 'connected') {
-              if (webrtcTimeoutRef.current) {
-                clearTimeout(webrtcTimeoutRef.current);
-                webrtcTimeoutRef.current = null;
-              }
-            } else if ((state === 'failed' || state === 'disconnected') && transportMode === 'auto') {
-              if (fallbackTriggeredRef.current) return;
-              fallbackTriggeredRef.current = true;
-              setTransportMode('fallback');
-              setIsWebRTCActive(false);
-              if (socket) {
-                socket.emit('webrtc_viewer_disconnect');
-              }
-              if (agentId) {
-                let cmd = '';
-                if (type === 'screen') cmd = 'start-stream';
-                else if (type === 'camera') cmd = 'start-camera';
-                else cmd = 'start-audio';
-                if (socket && type === 'screen') {
-                  socket.emit('set_stream_mode', { agent_id: agentId, type: 'screen', mode: 'buffered', fps: 10, buffer_frames: 30 });
-                }
-                sendCommand(agentId, cmd);
-              }
-            }
-          };
-          const remoteDesc: RTCSessionDescriptionInit = {
-            type: data.type as RTCSessionDescriptionInit['type'],
-            sdp: data.offer
-          };
-          await pc.setRemoteDescription(remoteDesc);
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          socket.emit('webrtc_viewer_answer', { answer: answer.sdp });
-        } catch (e) {
-          setIsWebRTCActive(false);
-        }
-      };
-      const handleServerIce = async (payload: { agent_id?: string; candidate: any }) => {
-        try {
-          if (!rtcPcRef.current) return;
-          await rtcPcRef.current.addIceCandidate(payload.candidate);
-        } catch {}
-      };
-      socket.on('webrtc_viewer_offer', handleViewerOffer);
-      socket.on('webrtc_ice_candidate', handleServerIce);
-      socket.emit('webrtc_viewer_connect', { agent_id: agentId });
-      const cleanup = () => {
-        socket.off('webrtc_viewer_offer', handleViewerOffer);
-        socket.off('webrtc_ice_candidate', handleServerIce);
-      };
-      return cleanup;
-    })();
-    return;
-  }, [socket, isStreaming, agentId, transportMode, webrtcIceServers]);
-
-  // Listen for frame events
+  // Socket.IO buffered streaming: listen for frames
   useEffect(() => {
     if (!isStreaming || !agentId) return;
-
     const eventName = type === 'screen' ? 'screen_frame' : type === 'camera' ? 'camera_frame' : 'audio_frame';
-
     const handleFrame = (event: any) => {
       const data = event.detail;
-      
-      // Check if frame is for this agent
       if (data.agent_id !== agentId) return;
-
       setHasError(false);
-      
       try {
         const frame = data.frame;
-        
         if (type === 'audio') {
-          // Audio handling - decode and play
           try {
             playAudioFrame(frame);
             frameCountRef.current++;
             setFrameCount((prev: number) => prev + 1);
-          } catch (audioError) {
-            console.error('Error playing audio frame:', audioError);
-          }
+          } catch {}
         } else {
-          const canvas = canvasRef.current;
-          if (canvas) {
-            try {
-              let base64 = '';
-              if (typeof frame === 'string') {
-                base64 = frame.startsWith('data:') ? frame.split(',')[1] || '' : frame;
-              }
-              if (base64) {
-                const binary = atob(base64);
-                const bytes = new Uint8Array(binary.length);
-                for (let i = 0; i < binary.length; i++) {
-                  bytes[i] = binary.charCodeAt(i);
-                }
-                const blob = new Blob([bytes], { type: 'image/jpeg' });
-                createImageBitmap(blob).then((bitmap) => {
-                  if (!canvas) return;
-                  if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
-                    canvas.width = bitmap.width;
-                    canvas.height = bitmap.height;
-                  }
-                  const ctx = canvas.getContext('2d');
-                  if (ctx) {
-                    ctx.drawImage(bitmap, 0, 0);
-                  }
-                }).catch(() => {});
-              }
-            } finally {
-              frameCountRef.current++;
-              setFrameCount((prev: number) => prev + 1);
-              const now = Date.now();
-              if (lastFrameTime > 0) {
-                const timeDiff = now - lastFrameTime;
-                if (timeDiff > 0) {
-                  const currentFps = 1000 / timeDiff;
-                  setBandwidth(Math.round((currentFps * 50) / 1024));
-                }
-              }
-              setLastFrameTime(now);
-            }
+          const normalized = normalizeFramePayload(frame);
+          if (normalized) {
+            const queue = frameQueueRef.current;
+            queue.push({ frame: normalized, receivedAt: Date.now() });
           }
         }
-      } catch (error) {
-        console.error(`Error displaying ${type} frame:`, error);
+      } catch {
         setHasError(true);
       }
     };
     window.addEventListener(eventName, handleFrame);
-
     return () => {
       window.removeEventListener(eventName, handleFrame);
     };
-  }, [isStreaming, agentId, type, lastFrameTime]);
+  }, [isStreaming, agentId, type]);
+
+  useEffect(() => {
+    if (!isStreaming || !agentId) return;
+    if (type === 'audio') return;
+    const intervalMs = Math.max(10, Math.floor(1000 / Math.max(1, renderFpsRef.current)));
+    if (renderLoopRef.current) {
+      clearInterval(renderLoopRef.current);
+      renderLoopRef.current = null;
+    }
+    renderLoopRef.current = setInterval(() => {
+      const queue = frameQueueRef.current;
+      if (!queue.length) return;
+      const maxQueue = 6;
+      if (queue.length > maxQueue) queue.splice(0, queue.length - maxQueue);
+      const item = queue.shift();
+      if (!item) return;
+      drawFrameToCanvas(item.frame);
+      frameCountRef.current++;
+      setFrameCount((prev: number) => prev + 1);
+      const now = Date.now();
+      const prev = lastFrameTimeRef.current;
+      if (prev > 0) {
+        const timeDiff = now - prev;
+        if (timeDiff > 0) {
+          const currentFps = 1000 / timeDiff;
+          setBandwidth(Math.round((currentFps * 50) / 1024));
+        }
+      }
+      lastFrameTimeRef.current = now;
+      setLastFrameTime(now);
+    }, intervalMs);
+    return () => {
+      if (renderLoopRef.current) {
+        clearInterval(renderLoopRef.current);
+        renderLoopRef.current = null;
+      }
+      frameQueueRef.current = [];
+    };
+  }, [isStreaming, agentId, type]);
+  useEffect(() => {
+    if (!isStreaming || !agentId || type !== 'screen') return;
+    const onKeyframe = (event: any) => {
+      const data = event.detail || {};
+      if (data.agent_id !== agentId) return;
+      const fid = Number(data.frame_id || 0);
+      if (Number.isFinite(fid) && fid > 0) latestBaselineRef.current = fid;
+      try {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const w = Number(data.width || 0);
+          const h = Number(data.height || 0);
+          if (w > 0 && h > 0) {
+            canvas.width = w;
+            canvas.height = h;
+          }
+        }
+      } catch {}
+      const payload = data.frame as any;
+      drawFrameToCanvas(payload);
+      setFrameCount(prev => prev + 1);
+      const now = Date.now();
+      lastFrameTimeRef.current = now;
+      setLastFrameTime(now);
+    };
+    const onTile = (event: any) => {
+      const data = event.detail || {};
+      if (data.agent_id !== agentId) return;
+      const fid = Number(data.frame_id || 0);
+      if (!latestBaselineRef.current || (Number.isFinite(fid) && fid < latestBaselineRef.current)) return;
+      const payload = data.frame as any;
+      const x = Number(data.x || 0);
+      const y = Number(data.y || 0);
+      const w = Number(data.w || 0);
+      const h = Number(data.h || 0);
+      drawTileToCanvas(x, y, w, h, payload);
+      setFrameCount(prev => prev + 1);
+    };
+    window.addEventListener('screen_keyframe', onKeyframe);
+    window.addEventListener('screen_tile', onTile);
+    return () => {
+      window.removeEventListener('screen_keyframe', onKeyframe);
+      window.removeEventListener('screen_tile', onTile);
+    };
+  }, [isStreaming, agentId, type]);
 
   useEffect(() => {
     if (!socket || !isStreaming || !agentId) return;
@@ -678,11 +580,11 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
       }
     };
     req();
-    const timeout = window.setTimeout(() => {
+    const interval = window.setInterval(() => {
       if (frameCountRef.current === 0) req();
-    }, 1200);
+    }, 1500);
     return () => {
-      window.clearTimeout(timeout);
+      window.clearInterval(interval);
     };
   }, [socket, isStreaming, agentId, type]);
   // Also listen for audio frames when viewing screen/camera in fallback mode
@@ -702,7 +604,7 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
     };
   }, [isStreaming, agentId, type]);
 
-  const handleStartStop = () => {
+  const handleStartStop = async () => {
     if (!agentId) {
       toast.error('Please select an agent first');
       return;
@@ -711,23 +613,20 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
     if (isStreaming) {
       // Stop streaming
       let command = '';
-      if (transportMode === 'fallback') {
-        switch (type) {
-          case 'screen':
-            command = 'stop-stream';
-            break;
-          case 'camera':
-            command = 'stop-camera';
-            break;
-          case 'audio':
-            command = 'stop-audio';
-            break;
-        }
-      } else {
-        command = 'stop-webrtc';
+      switch (type) {
+        case 'screen':
+          command = 'stop-stream';
+          break;
+        case 'camera':
+          command = 'stop-camera';
+          break;
+        case 'audio':
+          command = 'stop-audio';
+          break;
       }
-      
-      sendCommand(agentId, command);
+      try {
+        await apiClient.stopStream(agentId, type as 'screen' | 'camera' | 'audio');
+      } catch {}
       setIsStreaming(false);
       try {
         const key = `stream:last:${agentId}`;
@@ -739,15 +638,10 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
       setFrameCount(0);
       setFps(0);
       setBandwidth(0);
+      setLastFrameTime(0);
+      lastFrameTimeRef.current = 0;
+      frameQueueRef.current = [];
       setHasError(false);
-      setIsWebRTCActive(false);
-      if (socket) {
-        socket.emit('webrtc_viewer_disconnect');
-      }
-      try {
-        apiClient.webrtcViewerDisconnect();
-      } catch {}
-      setWebrtcAudioBridge(false);
       try {
         const a = audioElRef.current;
         if (a) {
@@ -755,7 +649,6 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
           (a as any).srcObject = null;
         }
       } catch {}
-      
       if (imgRef.current) {
         imgRef.current.src = '';
       }
@@ -765,7 +658,6 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
           ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
         }
       }
-      
       // Cleanup audio context for audio streams
       if (type === 'audio' && audioContextRef.current) {
         audioContextRef.current.close();
@@ -778,8 +670,7 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
       } else {
         // Start streaming
         let command = '';
-        if (transportMode === 'fallback') {
-          switch (type) {
+        switch (type) {
           case 'screen':
             command = 'start-stream';
             break;
@@ -791,28 +682,28 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
             break;
         }
         if (socket && (type === 'screen' || type === 'camera')) {
-          socket.emit('set_stream_mode', { agent_id: agentId, type: type, mode: 'buffered', fps: 10, buffer_frames: 30 });
+          socket.emit('set_stream_mode', { agent_id: agentId, type: type, mode: 'buffered', fps: 20, buffer_frames: 40 });
         }
-        if (type === 'screen' || type === 'camera') {
-          sendCommand(agentId, 'start-webrtc-audio');
-          setWebrtcAudioBridge(true);
+        const res = await apiClient.startStream(
+          agentId,
+          type as 'screen' | 'camera' | 'audio',
+          quality,
+          type === 'audio' ? 'realtime' : 'buffered',
+          type === 'audio' ? 10 : 20,
+          type === 'audio' ? 30 : 40,
+        );
+        if (!res?.success) {
+          const msg = (res?.error || (res?.data as any)?.error || (res?.data as any)?.message || 'Failed to start stream');
+          toast.error(String(msg));
+          try {
+            const key = `stream:last:${agentId}`;
+            const raw = localStorage.getItem(key);
+            const prev = raw ? JSON.parse(raw) : {};
+            localStorage.setItem(key, JSON.stringify({ ...prev, [type]: false }));
+          } catch {}
+          return;
         }
-      } else {
-        switch (type) {
-          case 'screen':
-            command = 'start-webrtc-screen';
-            break;
-          case 'camera':
-            command = 'start-webrtc-camera';
-            break;
-          case 'audio':
-            command = 'start-webrtc-audio';
-            break;
-        }
-      }
-      
-      sendCommand(agentId, command);
-      setIsStreaming(true);
+        setIsStreaming(true);
       try {
         const key = `stream:last:${agentId}`;
         const raw = localStorage.getItem(key);
@@ -820,38 +711,7 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
         localStorage.setItem(key, JSON.stringify({ ...prev, [type]: true }));
       } catch {}
       try { setLastActivity(`stream:${type}`, 'started', agentId); } catch {}
-      setIsWebRTCActive(false);
       setHasError(false);
-      fallbackTriggeredRef.current = false;
-      if (transportMode === 'auto') {
-        if (webrtcTimeoutRef.current) {
-          clearTimeout(webrtcTimeoutRef.current);
-          webrtcTimeoutRef.current = null;
-        }
-        webrtcTimeoutRef.current = window.setTimeout(() => {
-          if (fallbackTriggeredRef.current) return;
-          fallbackTriggeredRef.current = true;
-          setTransportMode('fallback');
-          setIsWebRTCActive(false);
-          if (socket) {
-            socket.emit('webrtc_viewer_disconnect');
-          }
-          if (agentId) {
-            let cmd = '';
-            if (type === 'screen') cmd = 'start-stream';
-            else if (type === 'camera') cmd = 'start-camera';
-            else cmd = 'start-audio';
-            if (socket && (type === 'screen' || type === 'camera')) {
-              socket.emit('set_stream_mode', { agent_id: agentId, type: type, mode: 'buffered', fps: 10, buffer_frames: 30 });
-            }
-            sendCommand(agentId, cmd);
-            if (type === 'screen' || type === 'camera') {
-              sendCommand(agentId, 'start-webrtc-audio');
-              setWebrtcAudioBridge(true);
-            }
-          }
-        }, 8000);
-      }
       toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} stream started`);
     }
   };
@@ -860,8 +720,7 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
     setQuality(newQuality);
     
     if (agentId && isStreaming && socket) {
-      const q = newQuality === 'ultra' ? 'high' : (newQuality as 'low' | 'medium' | 'high' | 'auto');
-      socket.emit('webrtc_set_quality', { agent_id: agentId, quality: q });
+      socket.emit('set_stream_quality', { agent_id: agentId, quality: newQuality });
     }
     
     toast.info(`Quality set to ${newQuality}`);
@@ -987,24 +846,6 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
       if (imgRef.current) {
         imgRef.current.src = '';
       }
-      if (rtcPcRef.current) {
-        try {
-          rtcPcRef.current.getSenders().forEach((s: RTCRtpSender) => s.track?.stop());
-          rtcPcRef.current.getReceivers().forEach((r: RTCRtpReceiver) => r.track?.stop());
-          rtcPcRef.current.close();
-        } catch {}
-        rtcPcRef.current = null;
-      }
-      if (socket) {
-        socket.emit('webrtc_viewer_disconnect');
-      }
-      if (videoRef.current) {
-        try {
-          const ms = videoRef.current.srcObject as MediaStream | null;
-          ms?.getTracks().forEach(t => t.stop());
-        } catch {}
-        videoRef.current.srcObject = null;
-      }
     }
   }, [agentId]);
   
@@ -1016,55 +857,41 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
       const saved = raw ? JSON.parse(raw) : {};
       if (saved && saved[type]) {
         let command = '';
-        if (transportMode === 'fallback') {
-          switch (type) {
-            case 'screen': command = 'start-stream'; break;
-            case 'camera': command = 'start-camera'; break;
-            case 'audio': command = 'start-audio'; break;
-          }
-        } else {
-          switch (type) {
-            case 'screen': command = 'start-webrtc-screen'; break;
-            case 'camera': command = 'start-webrtc-camera'; break;
-            case 'audio': command = 'start-webrtc-audio'; break;
-          }
+        switch (type) {
+          case 'screen': command = 'start-stream'; break;
+          case 'camera': command = 'start-camera'; break;
+          case 'audio': command = 'start-audio'; break;
         }
         if (command) {
+          if (socket && (type === 'screen' || type === 'camera')) {
+            socket.emit('set_stream_mode', { agent_id: agentId, type: type, mode: 'buffered', fps: 20, buffer_frames: 40 });
+          }
           sendCommand(agentId, command);
           setIsStreaming(true);
         }
       }
     } catch {}
   }, [agentId]);
-
+  
   useEffect(() => {
-    if (!socket || !agentId) return;
-    if (!isStreaming || !(transportMode === 'webrtc' || (transportMode === 'auto' && isWebRTCActive))) return;
-    let t: any = null;
-    let lastUpdate = 0;
-    t = setInterval(() => {
-      const now = Date.now();
-      if (now - lastUpdate < 3000) return;
-      lastUpdate = now;
-      const stats = { fps, bandwidth };
-      if (fps < 20 && (quality === 'high' || quality === 'medium' || quality === 'ultra')) {
-        setQuality('low');
-        socket.emit('webrtc_quality_change', { agent_id: agentId, quality: 'low', bandwidth_stats: stats });
-      } else if (fps < 35 && (quality === 'high' || quality === 'ultra')) {
-        setQuality('medium');
-        socket.emit('webrtc_quality_change', { agent_id: agentId, quality: 'medium', bandwidth_stats: stats });
-      } else if (fps > 55 && quality === 'low') {
-        setQuality('medium');
-        socket.emit('webrtc_quality_change', { agent_id: agentId, quality: 'medium', bandwidth_stats: stats });
-      } else if (fps > 55 && quality === 'medium') {
-        setQuality('high');
-        socket.emit('webrtc_quality_change', { agent_id: agentId, quality: 'high', bandwidth_stats: stats });
-      }
-    }, 1500);
-    return () => {
-      if (t) clearInterval(t);
+    if (!isStreaming || !agentId) return;
+    const onCursor = (event: any) => {
+      const d = event.detail || {};
+      if (String(d.agent_id || '') !== String(agentId || '')) return;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const sw = Number(d.screen_w || 0);
+      const sh = Number(d.screen_h || 0);
+      if (!sw || !sh) return;
+      const x = Math.round((Number(d.x || 0) / sw) * canvas.width);
+      const y = Math.round((Number(d.y || 0) / sh) * canvas.height);
+      setRemoteCursor({ x, y, visible: Boolean(d.visible !== false) });
     };
-  }, [socket, agentId, isStreaming, transportMode, isWebRTCActive, fps, bandwidth, quality]);
+    window.addEventListener('cursor_update', onCursor);
+    return () => {
+      window.removeEventListener('cursor_update', onCursor);
+    };
+  }, [isStreaming, agentId]);
 
   return (
     <Card className={cn("transition-all", isFullscreen && "fixed inset-4 z-50")}>
@@ -1075,7 +902,10 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
             <CardTitle className="text-sm">{title}</CardTitle>
             {agentId && (
               <Badge variant="outline" className="text-xs">
-                {agentId.substring(0, 8)}
+                {(() => {
+                  const a = agents.find(x => x.id === agentId);
+                  return a ? a.name : agentId;
+                })()}
               </Badge>
             )}
           </div>
@@ -1091,16 +921,6 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
                 <SelectItem value="medium">Med (50 FPS)</SelectItem>
                 <SelectItem value="high">High (60 FPS)</SelectItem>
                 <SelectItem value="ultra">Ultra (60 FPS)</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={transportMode} onValueChange={(v: string) => setTransportMode(v as 'auto' | 'webrtc' | 'fallback')}>
-              <SelectTrigger className="w-28 h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">Auto</SelectItem>
-                <SelectItem value="webrtc">WebRTC</SelectItem>
-                <SelectItem value="fallback">Fallback</SelectItem>
               </SelectContent>
             </Select>
             <Popover>
@@ -1161,12 +981,8 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
               </PopoverContent>
             </Popover>
             {isStreaming && (
-              <Badge variant={isWebRTCActive ? "default" : "secondary"} className="text-xs">
-                {transportMode === 'auto'
-                  ? isWebRTCActive ? 'Auto (WebRTC)' : 'Auto (Fallback)'
-                  : transportMode === 'webrtc'
-                    ? (isWebRTCActive ? 'WebRTC' : 'WebRTC (connecting)')
-                    : 'Fallback'}
+              <Badge variant="secondary" className="text-xs">
+                Fallback
               </Badge>
             )}
             
@@ -1212,25 +1028,13 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
                     }
                   }
                 } else {
-                  if (transportMode === 'fallback' && (type === 'screen' || type === 'camera')) {
-                    const a = audioElRef.current;
-                    if (a) {
-                      if (!isMuted) {
-                        a.muted = true;
-                      } else {
-                        a.muted = false;
-                        a.play().catch(() => {});
-                      }
-                    }
-                  } else {
-                    const video = videoRef.current;
-                    if (video) {
-                      if (!isMuted) {
-                        video.muted = true;
-                      } else {
-                        video.muted = false;
-                        video.play().catch(() => {});
-                      }
+                  const a = audioElRef.current;
+                  if (a && (type === 'screen' || type === 'camera')) {
+                    if (!isMuted) {
+                      a.muted = true;
+                    } else {
+                      a.muted = false;
+                      a.play().catch(() => {});
                     }
                   }
                 }
@@ -1306,7 +1110,10 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
               <div className="text-white text-center">
                 <Mic className="h-16 w-16 mx-auto mb-4 animate-pulse" />
                 <p className="text-lg font-medium">Audio Stream Active</p>
-                <p className="text-sm opacity-80">Agent: {agentId.substring(0, 8)}</p>
+                <p className="text-sm opacity-80">Agent: {(() => {
+                  const a = agents.find(x => x.id === (agentId || ''));
+                  return a ? a.name : (agentId || '');
+                })()}</p>
                 <div className="mt-4 flex justify-center space-x-1">
                   {[...Array(10)].map((_, i) => (
                     <div 
@@ -1323,22 +1130,29 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
             </div>
           ) : (
             <>
-              {isWebRTCActive ? (
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  className="w-full h-full object-contain"
-                />
-              ) : (
-                <canvas
-                  ref={canvasRef}
-                  className="w-full h-full object-contain"
-                  style={{ display: frameCount > 0 ? 'block' : 'none' }}
+              <canvas
+                ref={canvasRef}
+                className="w-full h-full object-contain"
+                style={{ display: frameCount > 0 ? 'block' : 'none' }}
+              />
+              {remoteCursor?.visible && (
+                <div
+                  className="absolute"
+                  style={{
+                    left: `${remoteCursor.x}px`,
+                    top: `${remoteCursor.y}px`,
+                    width: '12px',
+                    height: '12px',
+                    borderRadius: '50%',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #000000',
+                    transform: 'translate(-50%, -50%)',
+                    pointerEvents: 'none'
+                  }}
                 />
               )}
               <audio ref={audioElRef} style={{ display: 'none' }} />
-              {!isWebRTCActive && frameCount === 0 && (
+              {frameCount === 0 && (
                 <div className="text-center text-muted-foreground">
                   <StreamIcon className="h-12 w-12 mx-auto mb-2 animate-pulse" />
                   <p className="text-sm">Waiting for frames...</p>
@@ -1348,7 +1162,7 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
             </>
           )}
           
-          {isStreaming && ((frameCount > 0 && !hasError) || isWebRTCActive) && (
+          {isStreaming && (frameCount > 0 && !hasError) && (
             <div className="absolute top-2 left-2 flex items-center space-x-2">
               <div className="flex items-center space-x-1 bg-black/70 text-white px-2 py-1 rounded text-xs">
                 <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
@@ -1364,10 +1178,10 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
           )}
         </div>
         
-        {isStreaming && ((frameCount > 0 && !hasError) || isWebRTCActive) && (
+        {isStreaming && (frameCount > 0 && !hasError) && (
           <div className="mt-4 text-xs text-muted-foreground">
             <div className="flex justify-between items-center">
-              <span>Status: Active • Frames: {frameCount}{isWebRTCActive ? ' • WebRTC' : ''}</span>
+              <span>Status: Active • Frames: {frameCount}</span>
               <span>Bandwidth: {bandwidth.toFixed(1)} MB/s</span>
             </div>
           </div>

