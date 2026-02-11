@@ -14,7 +14,8 @@ import {
   HelpCircle,
   Zap,
   Mic,
-  Menu
+  Menu,
+  FileCode
 } from 'lucide-react';
 
 interface MobileNavigationProps {
@@ -29,9 +30,8 @@ const sidebarItems = [
   { id: 'streaming', label: 'Streaming', icon: Monitor },
   { id: 'commands', label: 'Commands', icon: Terminal },
   { id: 'files', label: 'Files', icon: Files },
+  { id: 'update_client', label: 'Updater', icon: FileCode },
   { id: 'voice', label: 'Voice Control', icon: Mic, badge: 'AI' },
-  { id: 'monitoring', label: 'Monitoring', icon: Activity },
-  { id: 'webrtc', label: 'WebRTC Pro', icon: Zap, badge: 'NEW' },
 ];
 
 export function MobileNavigation({ activeTab, onTabChange, agentCount }: MobileNavigationProps) {

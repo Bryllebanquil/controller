@@ -186,13 +186,13 @@ export function ActivityFeed() {
                     
                     <div className="flex-1 space-y-1">
                       <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium">{activity.action}</p>
+                        <p className="text-sm font-medium truncate">{activity.action}</p>
                         <span className="text-xs text-muted-foreground">
                           {getRelativeTime(activity.timestamp)}
                         </span>
                       </div>
                       
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-muted-foreground break-words">
                         {activity.details}
                       </p>
                       

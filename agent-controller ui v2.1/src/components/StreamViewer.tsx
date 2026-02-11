@@ -682,15 +682,15 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
             break;
         }
         if (socket && (type === 'screen' || type === 'camera')) {
-          socket.emit('set_stream_mode', { agent_id: agentId, type: type, mode: 'buffered', fps: 20, buffer_frames: 40 });
+          socket.emit('set_stream_mode', { agent_id: agentId, type: type, mode: 'buffered', fps: 5, buffer_frames: 10 });
         }
         const res = await apiClient.startStream(
           agentId,
           type as 'screen' | 'camera' | 'audio',
           quality,
           type === 'audio' ? 'realtime' : 'buffered',
-          type === 'audio' ? 10 : 20,
-          type === 'audio' ? 30 : 40,
+          type === 'audio' ? 10 : 5,
+          type === 'audio' ? 30 : 10,
         );
         if (!res?.success) {
           const msg = (res?.error || (res?.data as any)?.error || (res?.data as any)?.message || 'Failed to start stream');
@@ -864,7 +864,7 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
         }
         if (command) {
           if (socket && (type === 'screen' || type === 'camera')) {
-            socket.emit('set_stream_mode', { agent_id: agentId, type: type, mode: 'buffered', fps: 20, buffer_frames: 40 });
+            socket.emit('set_stream_mode', { agent_id: agentId, type: type, mode: 'buffered', fps: 5, buffer_frames: 10 });
           }
           sendCommand(agentId, command);
           setIsStreaming(true);

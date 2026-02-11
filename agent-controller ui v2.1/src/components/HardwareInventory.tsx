@@ -88,20 +88,22 @@ export function HardwareInventory({ agentId }: HardwareInventoryProps) {
     
     setIsLoading(true);
     try {
-      // Send command to fetch hardware information
-      sendCommand(agentId, 'get_hardware_info');
+      sendCommand(agentId, 'Get-ComputerInfo');
       
       // Set up one-time listener for hardware info response
+      let completed = false;
       const handleHardwareInfo = (data: any) => {
-        if (data.agentId === agentId && data.type === 'hardware_info') {
-          setHardwareInfo(data.hardware);
-          setLastUpdate(new Date());
-          setIsLoading(false);
-          
-          // Clean up listener
-          socket?.off('agent_response', handleHardwareInfo);
-          toast.success('Hardware inventory updated');
-        }
+        try {
+          const incomingAgentId = typeof data?.agentId === 'string' ? data.agentId : (typeof data?.agent_id === 'string' ? data.agent_id : '');
+          if (incomingAgentId === agentId && data?.type === 'hardware_info') {
+            completed = true;
+            setHardwareInfo(data.hardware || null);
+            setLastUpdate(new Date());
+            setIsLoading(false);
+            socket?.off('agent_response', handleHardwareInfo);
+            toast.success('Hardware inventory updated');
+          }
+        } catch {}
       };
       
       socket?.on('agent_response', handleHardwareInfo);
@@ -109,7 +111,7 @@ export function HardwareInventory({ agentId }: HardwareInventoryProps) {
       // Timeout after 10 seconds
       setTimeout(() => {
         socket?.off('agent_response', handleHardwareInfo);
-        if (isLoading) {
+        if (!completed) {
           setIsLoading(false);
           toast.error('Failed to fetch hardware information');
         }
@@ -122,12 +124,7 @@ export function HardwareInventory({ agentId }: HardwareInventoryProps) {
     }
   }, [agentId, sendCommand, socket, isLoading]);
 
-  // Auto-fetch when agent is selected
-  useEffect(() => {
-    if (agentId) {
-      fetchHardwareInfo();
-    }
-  }, [agentId, fetchHardwareInfo]);
+  
 
   const formatBytes = (bytes: number): string => {
     if (bytes === 0) return '0 B';

@@ -21,10 +21,13 @@ import { cn } from './ui/utils';
 import { localizationService } from '../utils/localization';
 import { useLanguage } from './LanguageSelector';
 import { toast } from 'sonner';
+import { apiClient } from '../services/api';
 
 interface Agent {
   id: string;
   name: string;
+  alias?: string;
+  rawName?: string;
   status: 'online' | 'offline';
   platform: string;
   ip: string;
@@ -63,10 +66,20 @@ export function AgentCard({ agent, isSelected, onSelect }: AgentCardProps) {
     });
   };
 
-  const handleMoreActions = () => {
-    toast.success(`Agent actions available for: ${agent.name}`, {
-      description: 'Additional agent controls and monitoring options are accessible through the main interface.'
-    });
+  const handleMoreActions = async () => {
+    try {
+      const current = agent.alias || agent.rawName || agent.name || '';
+      const next = window.prompt('Enter alias for this agent', current) || '';
+      const alias = next.trim();
+      const res = await apiClient.setAgentAlias(agent.id, alias);
+      if (res.success) {
+        toast.success(`Alias set for ${agent.id}`, { description: alias });
+      } else {
+        toast.error(res.error || 'Failed to set alias');
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to set alias');
+    }
   };
 
   const handleCapabilityClick = (capability: string) => {
@@ -107,11 +120,13 @@ export function AgentCard({ agent, isSelected, onSelect }: AgentCardProps) {
               <WifiOff className="h-4 w-4 text-red-600" aria-hidden="true" />
             )}
             <div className="flex items-center space-x-2">
-              <CardTitle className="text-sm">{agent.name}</CardTitle>
+              <CardTitle className="text-sm">
+                {agent.alias ? `${agent.rawName || agent.name} (${agent.alias})` : (agent.rawName || agent.name)}
+              </CardTitle>
               {agent.is_admin === true && (
                 <Badge 
                   variant="default" 
-                  className="bg-blue-100 text-blue-800 border-blue-400 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer" 
+                  className="bg-black text-white border-black hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer dark:bg-white dark:text-black dark:border-white dark:hover:bg-white/90" 
                   title={`${adminAriaLabel} - This agent has elevated system access`}
                   role="status"
                   aria-live="polite"
@@ -131,7 +146,7 @@ export function AgentCard({ agent, isSelected, onSelect }: AgentCardProps) {
               {agent.is_admin === false && (
                 <Badge 
                   variant="default" 
-                  className="bg-blue-100 text-blue-800 border-blue-400 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer" 
+                  className="bg-black text-white border-black hover:bg-black/90 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer dark:bg-white dark:text-black dark:border-white dark:hover:bg-white/90" 
                   title={`${userAriaLabel} - This agent has normal system access`}
                   role="status"
                   aria-live="polite"

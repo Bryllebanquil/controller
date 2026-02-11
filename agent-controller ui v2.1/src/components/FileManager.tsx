@@ -74,7 +74,8 @@ const getFileIcon = (item: FileItem) => {
 };
 
 const formatFileSize = (bytes?: number) => {
-  if (!bytes) return '-';
+  if (bytes === undefined || bytes === null || Number.isNaN(Number(bytes))) return '-';
+  if (bytes === 0) return '0 B';
   const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
@@ -107,6 +108,21 @@ export function FileManager({ agentId }: FileManagerProps) {
   const [previewVideoMode, setPreviewVideoMode] = useState<'normal' | 'faststart'>('normal');
   const lastRefreshRef = useRef<number>(0);
   const [fitMode, setFitMode] = useState<'contain' | 'cover' | 'fill'>('contain');
+  const [dirSizes, setDirSizes] = useState<Record<string, number>>({});
+  const [zipInProgress, setZipInProgress] = useState<{ dest?: string; friendly?: string } | null>(null);
+  const psEncode = (s: string) => {
+    const buf = new Uint8Array(s.length * 2);
+    for (let i = 0; i < s.length; i++) {
+      const code = s.charCodeAt(i);
+      buf[i * 2] = code & 0xff;
+      buf[i * 2 + 1] = code >> 8;
+    }
+    let bin = '';
+    for (let i = 0; i < buf.length; i++) {
+      bin += String.fromCharCode(buf[i]);
+    }
+    return btoa(bin);
+  };
 
   const filteredFiles = useMemo(() => {
     const term = searchTerm.toLowerCase();
@@ -267,14 +283,49 @@ export function FileManager({ agentId }: FileManagerProps) {
   };
 
   const handleDownload = () => {
-    if (selectedFiles.length === 0) return;
+    if (!agentId || selectedFiles.length === 0) return;
+    // Determine if any selection is a directory
+    const pathTypes = new Map<string, 'file' | 'directory'>();
+    files.forEach(f => pathTypes.set(f.path, f.type));
+    const hasDir = selectedFiles.some(p => pathTypes.get(p) === 'directory');
+    if (hasDir || selectedFiles.length > 1) {
+      handleDownloadZip();
+      return;
+    }
     setDownloadProgress(0);
     setUploadProgress(null);
-    setTransferFileName(`${selectedFiles.length} files`);
-    // Request download via socket for all selected files
-    selectedFiles.forEach(filePath => {
-      downloadFile(agentId!, filePath);
-    });
+    const only = selectedFiles[0];
+    const leaf = (p: string) => {
+      const s = p.replace(/[\\\/]+$/, '');
+      const i = Math.max(s.lastIndexOf('\\'), s.lastIndexOf('/'));
+      return i >= 0 ? s.slice(i + 1) : s;
+    };
+    setTransferFileName(leaf(only));
+    downloadFile(agentId!, only);
+  };
+
+  const handleDownloadZip = () => {
+    if (!agentId || !socket) return;
+    if (selectedFiles.length === 0) return;
+    const items = selectedFiles.slice();
+    const leaf = (p: string) => {
+      const s = p.replace(/[\\\/]+$/, '');
+      const i = Math.max(s.lastIndexOf('\\'), s.lastIndexOf('/'));
+      return i >= 0 ? s.slice(i + 1) : s;
+    };
+    const friendly = items.length === 1 ? `${leaf(items[0])}.zip` : `files_${Date.now()}.zip`;
+    const esc = (p: string) => p.replace(/'/g, "''");
+    const ps = [
+      "$ErrorActionPreference='SilentlyContinue'",
+      `$items=@(${items.map(p => `'${esc(p)}'`).join(",")})`,
+      `$dest=Join-Path $env:TEMP ('nch_zip_'+[DateTime]::Now.ToString('yyyyMMdd_HHmmss')+'.zip')`,
+      "try { Compress-Archive -Path $items -DestinationPath $dest -Force -ErrorAction Stop; Write-Output ('NCH_ZIP:'+ $dest) } catch { Write-Output ('NCH_ERR:'+ $_.Exception.Message) }"
+    ].join("; ");
+    const cmd = `powershell -NoProfile -EncodedCommand ${psEncode(ps)}`;
+    setDownloadProgress(0);
+    setTransferFileName(friendly);
+    socket.emit('execute_command', { agent_id: agentId, command: cmd });
+    setZipInProgress({ friendly });
   };
 
   const handleUpload = (e?: ChangeEvent<HTMLInputElement>) => {
@@ -330,6 +381,48 @@ export function FileManager({ agentId }: FileManagerProps) {
     return () => { socket.off('file_op_result', handler); };
   }, [socket, agentId, files]);
 
+  // Compute real folder sizes on demand
+  useEffect(() => {
+    if (!socket || !agentId) return;
+    const handler = (data: any) => {
+      if (!agentId || data.agent_id !== agentId) return;
+      const out: string = String(data.output || '');
+      const lines = out.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+      if (!lines.some(l => l.startsWith('NCH_SIZE:') || l.startsWith('NCH_ZIP:') || l.startsWith('NCH_ERR:'))) return;
+      try {
+        for (const line of lines) {
+          if (line.startsWith('NCH_SIZE:')) {
+            const payload = line.slice('NCH_SIZE:'.length);
+            const idx = payload.lastIndexOf(':');
+            if (idx <= 0) continue;
+            const p = payload.slice(0, idx);
+            const szStr = payload.slice(idx + 1);
+            const sz = Number(szStr);
+            if (Number.isFinite(sz)) {
+              setDirSizes(prev => ({ ...prev, [p]: sz }));
+              setFiles(prev => prev.map(f => (f.type === 'directory' && f.path === p) ? { ...f, size: sz } : f));
+            }
+          } else if (line.startsWith('NCH_ZIP:')) {
+            const dest = line.slice('NCH_ZIP:'.length).trim();
+            if (!dest) continue;
+            const friendly = zipInProgress?.friendly || dest.replace(/^.*[\\\/]/, '');
+            setZipInProgress({ dest, friendly });
+            setDownloadProgress(0);
+            socket.emit('download_file', { agent_id: agentId, filename: dest, path: dest, download_id: `zip_${Date.now()}` });
+          } else if (line.startsWith('NCH_ERR:')) {
+            const msg = line.slice('NCH_ERR:'.length).trim();
+            if (msg) toast.error(`ZIP error: ${msg}`);
+            setDownloadProgress(null);
+            setTransferFileName(null);
+            setZipInProgress(null);
+          }
+        }
+      } catch {}
+    };
+    socket.on('command_result', handler);
+    return () => { socket.off('command_result', handler); };
+  }, [socket, agentId, zipInProgress]);
+
   // Listen for file_list updates from agent and map to UI items
   useEffect(() => {
     if (!socket) return;
@@ -357,6 +450,26 @@ export function FileManager({ agentId }: FileManagerProps) {
       }));
       setFiles(mapped);
       setIsLoading(false);
+      // Trigger background size fetch for directories missing size
+      const dirs = mapped.filter((f: any) => f.type === 'directory' && !(typeof f.size === 'number' && f.size >= 0));
+      const esc = (p: string) => p.replace(/'/g, "''");
+      let i = 0;
+      const kick = () => {
+        if (!socket || !agentId) return;
+        if (i >= dirs.length) return;
+        const p = dirs[i++].path;
+        const ps = [
+          "$ErrorActionPreference='SilentlyContinue'",
+          `$p='${esc(p)}'`,
+          "$s=(Get-ChildItem -LiteralPath $p -Recurse -File -Force | Measure-Object -Sum Length).Sum",
+          "if ($null -eq $s) { $s=0 }",
+          "Write-Output ('NCH_SIZE:'+ $p + ':' + $s)"
+        ].join("; ");
+        const cmd = `powershell -NoProfile -EncodedCommand ${psEncode(ps)}`;
+        socket.emit('execute_command', { agent_id: agentId, command: cmd });
+        setTimeout(kick, 400);
+      };
+      setTimeout(kick, 300);
     };
     socket.on('file_list', handler);
     return () => { socket.off('file_list', handler); };
@@ -523,6 +636,18 @@ export function FileManager({ agentId }: FileManagerProps) {
         setDownloadProgress(null);
         setTransferFileName(null);
         toast.success(`File downloaded successfully: ${data.filename}`);
+        try {
+          const dest = zipInProgress?.dest;
+          if (dest && String(data?.filename || '').includes(dest)) {
+            if (socket && agentId) {
+              const esc = dest.replace(/'/g, "''");
+              const ps = `$ErrorActionPreference='SilentlyContinue'; Remove-Item -LiteralPath '${esc}' -Force`;
+              const cmd = `powershell -NoProfile -Command "${ps}"`;
+              socket.emit('execute_command', { agent_id: agentId, command: cmd });
+            }
+          }
+        } catch {}
+        setZipInProgress(null);
       }, 1000);
     };
 
@@ -595,6 +720,15 @@ export function FileManager({ agentId }: FileManagerProps) {
                   <Download className="h-3 w-3 mr-1" />
                   Download ({selectedFiles.length})
                 </Button>
+                <Button 
+                  size="sm" 
+                  onClick={handleDownloadZip}
+                  disabled={selectedFiles.length === 0 || uploadProgress !== null || downloadProgress !== null}
+                  variant="outline"
+                >
+                  <Archive className="h-3 w-3 mr-1" />
+                  Download ZIP
+                </Button>
                 <label className="inline-flex items-center">
                   <input type="file" className="hidden" ref={fileInputRef} onChange={handleUpload} multiple />
                   <Button size="sm" variant="outline" disabled={uploadProgress !== null || downloadProgress !== null} asChild>
@@ -609,6 +743,24 @@ export function FileManager({ agentId }: FileManagerProps) {
                 >
                   <Video className="h-3 w-3 mr-1" />
                   Play
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="secondary"
+                  disabled={selectedFiles.length !== 1 || uploadProgress !== null || downloadProgress !== null}
+                  onClick={() => {
+                    if (!agentId || selectedFiles.length !== 1) return;
+                    const p = selectedFiles[0];
+                    try { setLastFilePath(agentId, p); } catch {}
+                    try {
+                      const evt1 = new CustomEvent('navigate_tab', { detail: { tab: 'update_client', agentId } });
+                      window.dispatchEvent(evt1);
+                      const evt2 = new CustomEvent('open_in_updater', { detail: { agentId, path: p } });
+                      window.dispatchEvent(evt2);
+                    } catch {}
+                  }}
+                >
+                  Open in Updater
                 </Button>
                 
                 <Button 
@@ -864,15 +1016,13 @@ export function FileManager({ agentId }: FileManagerProps) {
                                 onClick={(e) => { e.stopPropagation(); handleFileSelect(file.path); }}
                               />
                             ) : (
-                              <Icon 
-                                className={`h-4 w-4 ${file.type === 'directory' ? 'text-blue-500' : 'text-muted-foreground'} ${file.type === 'file' ? 'cursor-pointer' : ''}`} 
-                                onClick={(e: any) => { 
-                                  if (file.type === 'file') { 
-                                    e.stopPropagation(); 
-                                    handleFileSelect(file.path); 
-                                  } 
-                                }} 
-                              />
+                            <Icon 
+                              className={`h-4 w-4 ${file.type === 'directory' ? 'text-blue-500' : 'text-muted-foreground'} cursor-pointer`} 
+                              onClick={(e: any) => { 
+                                e.stopPropagation(); 
+                                handleFileSelect(file.path); 
+                              }} 
+                            />
                             )}
                             <div className="flex-1 min-w-0">
                               <div className="text-sm truncate">{file.name}</div>

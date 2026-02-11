@@ -197,7 +197,7 @@ export function QuickActions({ agentCount, selectedAgent }: QuickActionsProps) {
           </div>
         </CardHeader>
         
-        <CardContent className="flex-1 overflow-visible space-y-4">
+        <CardContent className="flex-1 overflow-auto space-y-4">
           {Object.entries(categorizedActions).map(([category, actions]) => {
             const CategoryIcon = categoryIcons[category as keyof typeof categoryIcons];
             
