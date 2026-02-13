@@ -16,44 +16,7 @@ type MonacoEditorProps = {
   onChange: (v?: string) => void;
   options?: Record<string, any>;
 };
-function MonacoEditor({ height, defaultLanguage, theme, value, onChange, options }: MonacoEditorProps) {
-  const [Editor, setEditor] = useState<any>(null);
-  useEffect(() => {
-    let mounted = true;
-    const allowsEval = (() => {
-      try {
-        // If CSP blocks eval/new Function, this will throw
-        // We avoid loading Monaco in that case
-        // eslint-disable-next-line no-new-func
-        const f = new Function("return 1");
-        return typeof f === "function" && f() === 1;
-      } catch {
-        return false;
-      }
-    })();
-    if (!allowsEval) {
-      setEditor(null);
-      return () => { mounted = false; };
-    }
-    import(/* @vite-ignore */ "@monaco-editor/react").then((mod) => {
-      if (mounted) setEditor(mod.default);
-    }).catch(() => {
-      setEditor(null);
-    });
-    return () => { mounted = false; };
-  }, []);
-  if (Editor) {
-    return (
-      <Editor
-        height={height}
-        defaultLanguage={defaultLanguage}
-        theme={theme}
-        value={value}
-        onChange={(v?: string) => onChange(v)}
-        options={options}
-      />
-    );
-  }
+function MonacoEditor({ height, defaultLanguage, theme, value, onChange }: MonacoEditorProps) {
   return (
     <textarea
       style={{ height, width: "100%" }}
@@ -267,9 +230,9 @@ export function AgentCodeEditor({ open, onOpenChange, defaultAgentId = null }: A
               <TabsTrigger value="debugger">Debugger</TabsTrigger>
             </TabsList>
             <TabsContent value="editor" className="flex-1 flex flex-col min-h-0 gap-2">
-              <div className="flex-1 min-h-0 border-0 rounded-none overflow-hidden">
+              <div className="h-[500px] border-0 rounded-none overflow-hidden">
                 <MonacoEditor
-                  height="100%"
+                  height="500px"
                   defaultLanguage="python"
                   theme={monacoTheme}
                   value={code}
@@ -284,10 +247,10 @@ export function AgentCodeEditor({ open, onOpenChange, defaultAgentId = null }: A
                 />
               </div>
               <div className="flex items-center gap-2 flex-wrap bg-background/80 backdrop-blur px-2 py-2 rounded-none border-0 shrink-0">
-                <Button size="sm" variant="secondary" onClick={handleDebug} disabled={!agentId || debugRunning}>
+                <Button size="sm" variant="secondary" className="w-full sm:w-auto" onClick={handleDebug} disabled={!agentId || debugRunning}>
                   Run Debugger
                 </Button>
-                <Button size="sm" onClick={handleUpdateAll} disabled={bulkUpdating || !code.trim()}>
+                <Button size="sm" className="w-full sm:w-auto" onClick={handleUpdateAll} disabled={bulkUpdating || !code.trim()}>
                   Push to All Agents
                 </Button>
               </div>

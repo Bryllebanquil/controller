@@ -18,57 +18,9 @@ type MonacoEditorProps = {
   value: string;
   onChange: (v?: string) => void;
   options?: Record<string, any>;
-  simple?: boolean;
 };
 
-function MonacoEditor({ height, defaultLanguage, theme, value, onChange, options, simple }: MonacoEditorProps) {
-  if (simple) {
-    return (
-      <textarea
-        style={{ height, width: "100%" }}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full h-full p-2 border rounded font-mono text-sm bg-background text-foreground"
-      />
-    );
-  }
-  const [Editor, setEditor] = useState<any>(null);
-  useEffect(() => {
-    let mounted = true;
-    const allowsEval = (() => {
-      try {
-        // If CSP blocks eval/new Function, this will throw
-        // We avoid loading Monaco in that case
-        // eslint-disable-next-line no-new-func
-        const f = new Function("return 1");
-        return typeof f === "function" && f() === 1;
-      } catch {
-        return false;
-      }
-    })();
-    if (!allowsEval) {
-      setEditor(null);
-      return () => { mounted = false; };
-    }
-    import(/* @vite-ignore */ "@monaco-editor/react").then((mod) => {
-      if (mounted) setEditor(mod.default);
-    }).catch(() => {
-      setEditor(null);
-    });
-    return () => { mounted = false; };
-  }, []);
-  if (Editor) {
-    return (
-      <Editor
-        height={height}
-        defaultLanguage={defaultLanguage}
-        theme={theme}
-        value={value}
-        onChange={(v?: string) => onChange(v)}
-        options={options}
-      />
-    );
-  }
+function MonacoEditor({ height, defaultLanguage, theme, value, onChange }: MonacoEditorProps) {
   return (
     <textarea
       style={{ height, width: "100%" }}
@@ -90,7 +42,6 @@ export function UpdateClientPanel() {
   const [debugRunning, setDebugRunning] = useState<boolean>(false);
   const [debugOutput, setDebugOutput] = useState<string[]>([]);
   const [latest, setLatest] = useState<{ version?: string; md5?: string; last_push?: string; download_url?: string; size?: number } | null>(null);
-  const [basicEditor, setBasicEditor] = useState<boolean>(false);
   const previewRequestRef = useRef<{ agentId: string; filePath: string } | null>(null);
   
   const selectedAgentName = agents.find(a => a.id === agentId)?.name || "Agent";
@@ -420,14 +371,14 @@ export function UpdateClientPanel() {
            <Badge variant={connected ? "default" : "secondary"} className="text-[10px] h-5">{connected ? "Connected" : "Offline"}</Badge>
         </div>
 
-        <div className="flex items-center gap-2">
-           <Button size="sm" variant="outline" className="h-8 text-xs" onClick={handleDebug} disabled={!agentId || debugRunning}>
+        <div className="flex flex-wrap items-center gap-2">
+           <Button size="sm" variant="outline" className="h-8 text-xs w-full sm:w-auto" onClick={handleDebug} disabled={!agentId || debugRunning}>
               {debugRunning ? "Running..." : "Debug"}
            </Button>
-           <Button size="sm" className="h-8 text-xs" onClick={handleUpdateSelected} disabled={loading || !agentId || !code.trim()}>
+           <Button size="sm" className="h-8 text-xs w-full sm:w-auto" onClick={handleUpdateSelected} disabled={loading || !agentId || !code.trim()}>
               Push to {selectedAgentName}
            </Button>
-           <Button size="sm" variant="secondary" className="h-8 text-xs" onClick={handlePublishUpdater} disabled={!code.trim()}>
+           <Button size="sm" variant="secondary" className="h-8 text-xs w-full sm:w-auto" onClick={handlePublishUpdater} disabled={!code.trim()}>
               Publish Updater
            </Button>
         </div>
@@ -444,14 +395,13 @@ export function UpdateClientPanel() {
              </div>
              
              <TabsContent value="editor" className="flex-1 flex flex-col min-h-0 m-0 p-0 data-[state=active]:flex relative">
-                <div className="flex-1 relative max-h-[85vh]">
+                <div className="relative h-[500px] overflow-auto">
                    <MonacoEditor
-                     height="100%"
+                     height="500px"
                      defaultLanguage="python"
                      theme={monacoTheme}
                      value={code}
                      onChange={(v?: string) => setCode(v || "")}
-                     simple={basicEditor}
                      options={{
                        fontSize: 14,
                        minimap: { enabled: true },
@@ -469,11 +419,7 @@ export function UpdateClientPanel() {
                   <span className="font-mono">{latest?.version || "—"}</span>
                   <span className="opacity-70">MD5:</span>
                   <span className="font-mono">{latest?.md5 || "—"}</span>
-                  <span className="ml-auto flex items-center gap-2">
-                    <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => setBasicEditor((v) => !v)}>
-                      {basicEditor ? "Use Advanced Editor" : "Use Basic Editor"}
-                    </Button>
-                  </span>
+                  <span className="ml-auto flex items-center gap-2" />
                 </div>
              </TabsContent>
              

@@ -616,7 +616,7 @@ function AppContent() {
                 onValueChange={setActiveTab}
                 className="space-y-6"
               >
-                <TabsList className="grid w-full h-auto grid-cols-3 sm:grid-cols-10">
+                <TabsList className="w-full h-auto flex flex-wrap gap-2 justify-start">
                   <TabsTrigger value="overview" className="text-xs sm:text-sm">
                     Overview
                   </TabsTrigger>
@@ -1334,9 +1334,10 @@ function AppContent() {
                               <span className="text-sm">Enabled Registry Actions</span>
                               <Badge variant="secondary">{actionCount}</Badge>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-col sm:flex-row items-stretch gap-2">
                               <Button
                                 disabled={!aid}
+                                className="w-full sm:w-auto"
                                 onClick={() => {
                                   if (!aid) return;
                                   sendCommand(aid, bEnabled ? "bypasses:on" : "bypasses:off");
@@ -1347,6 +1348,7 @@ function AppContent() {
                               <Button
                                 variant="outline"
                                 disabled={!aid}
+                                className="w-full sm:w-auto"
                                 onClick={() => {
                                   if (!aid) return;
                                   sendCommand(aid, rEnabled ? "registry:on" : "registry:off");

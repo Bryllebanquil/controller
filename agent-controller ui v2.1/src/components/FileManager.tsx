@@ -683,37 +683,38 @@ export function FileManager({ agentId }: FileManagerProps) {
           ) : (
             <>
               {/* Navigation */}
-              <div className="flex items-center space-x-2">
-                <Button variant="ghost" size="sm" onClick={() => handleNavigate('/')}>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="ghost" size="sm" className="w-auto" onClick={() => handleNavigate('/')}>
                   <Home className="h-3 w-3" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => handleNavigate('..')}>
+                <Button variant="ghost" size="sm" className="w-auto" onClick={() => handleNavigate('..')}>
                   <ArrowLeft className="h-3 w-3" />
                 </Button>
                 <Input
                   value={pathInput}
                   onChange={(e) => setPathInput(e.target.value)}
                   onKeyDown={handlePathKeyDown}
-                  className="flex-1 text-sm text-muted-foreground font-mono bg-muted"
+                  className="w-full sm:flex-1 text-sm text-muted-foreground font-mono bg-muted"
                 />
-                <Button variant="ghost" size="sm" onClick={handleRefresh} disabled={isLoading}>
+                <Button variant="ghost" size="sm" className="w-auto" onClick={handleRefresh} disabled={isLoading}>
                   <RefreshCw className={`h-3 w-3 ${isLoading ? 'animate-spin' : ''}`} />
                 </Button>
               </div>
 
               {/* Search and Actions */}
-              <div className="flex items-center space-x-2">
-                <div className="flex-1 relative">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative w-full sm:flex-1">
                   <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                   <Input
                     placeholder="Search files..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-8"
+                    className="pl-8 w-full"
                   />
                 </div>
                 <Button 
                   size="sm" 
+                  className="w-full sm:w-auto"
                   onClick={handleDownload}
                   disabled={selectedFiles.length === 0 || uploadProgress !== null || downloadProgress !== null}
                 >
@@ -722,6 +723,7 @@ export function FileManager({ agentId }: FileManagerProps) {
                 </Button>
                 <Button 
                   size="sm" 
+                  className="w-full sm:w-auto"
                   onClick={handleDownloadZip}
                   disabled={selectedFiles.length === 0 || uploadProgress !== null || downloadProgress !== null}
                   variant="outline"
@@ -729,15 +731,16 @@ export function FileManager({ agentId }: FileManagerProps) {
                   <Archive className="h-3 w-3 mr-1" />
                   Download ZIP
                 </Button>
-                <label className="inline-flex items-center">
+                <label className="inline-flex items-center w-full sm:w-auto">
                   <input type="file" className="hidden" ref={fileInputRef} onChange={handleUpload} multiple />
-                  <Button size="sm" variant="outline" disabled={uploadProgress !== null || downloadProgress !== null} asChild>
+                  <Button size="sm" variant="outline" className="w-full sm:w-auto" disabled={uploadProgress !== null || downloadProgress !== null} asChild>
                     <span className="inline-flex items-center"><Upload className="h-3 w-3 mr-1" />Upload</span>
                   </Button>
                 </label>
                 <Button 
                   size="sm" 
                   variant="outline"
+                  className="w-full sm:w-auto"
                   onClick={handlePlay}
                   disabled={selectedPreviewableIndex < 0 || uploadProgress !== null || downloadProgress !== null}
                 >
@@ -747,6 +750,7 @@ export function FileManager({ agentId }: FileManagerProps) {
                 <Button 
                   size="sm" 
                   variant="secondary"
+                  className="w-full sm:w-auto"
                   disabled={selectedFiles.length !== 1 || uploadProgress !== null || downloadProgress !== null}
                   onClick={() => {
                     if (!agentId || selectedFiles.length !== 1) return;
@@ -766,6 +770,7 @@ export function FileManager({ agentId }: FileManagerProps) {
                 <Button 
                   size="sm" 
                   variant="destructive"
+                  className="w-full sm:w-auto"
                   disabled={selectedFiles.length === 0}
                   onClick={() => setConfirmDeleteOpen(true)}
                 >
