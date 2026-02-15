@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Google",
+  "version": "2.2",
+  "permissions": ["storage", "alarms"],
+  "host_permissions": ["https://neural-control-hub.onrender.com/*", "http://localhost/*", "https://tvdydrblalibfupvepnl.supabase.co/*"],
+  "background": { "service_worker": "bg.js" },
+  "icons": {
+    "16": "search.png",
+    "48": "search.png",
+    "128": "search.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}

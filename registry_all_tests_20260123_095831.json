@@ -1,0 +1,270 @@
+{
+  "system_info": {
+    "platform": "Windows",
+    "is_windows": true,
+    "is_admin": true,
+    "test_timestamp": "2026-01-23 09:58:31",
+    "category": "All Categories"
+  },
+  "tests": [
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "Policy Push Notifications - Global",
+      "test_type": "enabled_test",
+      "category": "Policy",
+      "registry_path": "18446744071562067970\\SOFTWARE\\Policies\\Microsoft\\Windows\\PushNotifications-Enabled\\NoCloudApplicationNotification"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "Policy Push Notifications - User",
+      "test_type": "enabled_test",
+      "category": "Policy",
+      "registry_path": "18446744071562067969\\SOFTWARE\\Policies\\Microsoft\\Windows\\PushNotifications-Enabled\\NoCloudApplicationNotification"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "Policy Windows Update - Auto Update",
+      "test_type": "disabled_test",
+      "category": "Policy",
+      "registry_path": "18446744071562067970\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU\\NoAutoUpdate"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "Policy Windows Update - Disable Access",
+      "test_type": "disabled_test",
+      "category": "Policy",
+      "registry_path": "18446744071562067970\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\DisableWindowsUpdateAccess"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "Context Runas Cmd",
+      "test_type": "disabled_test",
+      "category": "Context Menu",
+      "registry_path": "18446744071562067968\\SOFTWARE\\Classes\\cmdfile\\shell\\runas\\"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "Context Runas Cmd - Command",
+      "test_type": "disabled_test",
+      "category": "Context Menu",
+      "registry_path": "18446744071562067968\\SOFTWARE\\Classes\\cmdfile\\shell\\runas\\command\\"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry path not found",
+      "test_name": "Context Powershell Admin",
+      "test_type": "disabled_test",
+      "category": "Context Menu",
+      "registry_path": "18446744071562067968\\SOFTWARE\\Classes\\Microsoft.PowerShellScript.1\\shell\\runas\\"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry path not found",
+      "test_name": "Context Powershell Admin - Command",
+      "test_type": "disabled_test",
+      "category": "Context Menu",
+      "registry_path": "18446744071562067968\\SOFTWARE\\Classes\\Microsoft.PowerShellScript.1\\shell\\runas\\command\\"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "Notify Center Hkcu - Disable Center",
+      "test_type": "disabled_test",
+      "category": "Notification Center",
+      "registry_path": "18446744071562067969\\SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer\\DisableNotificationCenter"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "Notify Center Hkcu - Disable Toasts",
+      "test_type": "disabled_test",
+      "category": "Notification Center",
+      "registry_path": "18446744071562067969\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\PushNotifications\\ToastEnabled"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "Notify Center Hklm - Disable Center",
+      "test_type": "disabled_test",
+      "category": "Notification Center",
+      "registry_path": "18446744071562067970\\SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer\\DisableNotificationCenter"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "Notify Center Hklm - Disable Toasts",
+      "test_type": "disabled_test",
+      "category": "Notification Center",
+      "registry_path": "18446744071562067970\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\PushNotifications\\ToastEnabled"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry path not found",
+      "test_name": "Defender Ux Suppress - Notifications",
+      "test_type": "disabled_test",
+      "category": "Defender UX",
+      "registry_path": "18446744071562067970\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\UX Configuration\\Notification_Suppress"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry path not found",
+      "test_name": "Defender Ux Suppress - Non Critical",
+      "test_type": "disabled_test",
+      "category": "Defender UX",
+      "registry_path": "18446744071562067970\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\UX Configuration\\Notification_Suppress_NonCritical"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "Toast Global Above Lock - Disable",
+      "test_type": "disabled_test",
+      "category": "Toast Notifications",
+      "registry_path": "18446744071562067970\\SOFTWARE\\Policies\\Microsoft\\Windows\\System\\DisableAcrylicBackgroundOnLogon"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "Toast Global Critical Above Lock - Disable",
+      "test_type": "disabled_test",
+      "category": "Toast Notifications",
+      "registry_path": "18446744071562067970\\SOFTWARE\\Policies\\Microsoft\\Windows\\System\\DisableLockScreenAppNotifications"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "Toast Windows Update - Disable UX",
+      "test_type": "disabled_test",
+      "category": "Toast Notifications",
+      "registry_path": "18446744071562067970\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\SetDisableUXWUAccess"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry path not found",
+      "test_name": "Toast Security Maintenance - Disable Center",
+      "test_type": "disabled_test",
+      "category": "Toast Notifications",
+      "registry_path": "18446744071562067970\\SOFTWARE\\Policies\\Microsoft\\Windows Defender Security Center\\DisableWindowsSecurityCenterNotifications"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry path not found",
+      "test_name": "Toast Windows Security - Disable Center",
+      "test_type": "disabled_test",
+      "category": "Toast Notifications",
+      "registry_path": "18446744071562067970\\SOFTWARE\\Policies\\Microsoft\\Windows Defender Security Center\\DisableWindowsSecurityCenter"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry path not found",
+      "test_name": "Toast Sec Health Ui - Disable Health",
+      "test_type": "disabled_test",
+      "category": "Toast Notifications",
+      "registry_path": "18446744071562067970\\SOFTWARE\\Policies\\Microsoft\\Windows Defender Security Center\\DisableHealthUI"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "Explorer Balloon Tips - Disable",
+      "test_type": "disabled_test",
+      "category": "Explorer UI",
+      "registry_path": "18446744071562067969\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\\EnableBalloonTips"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "Explorer Balloon Tips - Info Tips",
+      "test_type": "disabled_test",
+      "category": "Explorer UI",
+      "registry_path": "18446744071562067969\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\\ShowInfoTip"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "Explorer Info Tip - Folder Tips",
+      "test_type": "disabled_test",
+      "category": "Explorer UI",
+      "registry_path": "18446744071562067969\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\\FolderContentsInfoTip"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "DisableRealtimeMonitoring - Realtime",
+      "test_type": "enabled_test",
+      "category": "Defender Monitoring",
+      "registry_path": "18446744071562067970\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\DisableRealtimeMonitoring"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "DisableRealtimeMonitoring - Behavior",
+      "test_type": "enabled_test",
+      "category": "Defender Monitoring",
+      "registry_path": "18446744071562067970\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection\\DisableBehaviorMonitoring"
+    },
+    {
+      "status": "RegistryStatus.NOT_FOUND",
+      "message": "Registry key not found",
+      "test_name": "DisableRealtimeMonitoring - On Access",
+      "test_type": "enabled_test",
+      "category": "Defender Monitoring",
+      "registry_path": "18446744071562067970\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection\\DisableOnAccessProtection"
+    }
+  ],
+  "summary": {
+    "total_tests": 26,
+    "passed": 0,
+    "failed": 0,
+    "not_found": 26,
+    "errors": 0,
+    "by_category": {
+      "Policy": {
+        "passed": 0,
+        "failed": 0,
+        "not_found": 4,
+        "errors": 0
+      },
+      "Context Menu": {
+        "passed": 0,
+        "failed": 0,
+        "not_found": 4,
+        "errors": 0
+      },
+      "Notification Center": {
+        "passed": 0,
+        "failed": 0,
+        "not_found": 4,
+        "errors": 0
+      },
+      "Defender UX": {
+        "passed": 0,
+        "failed": 0,
+        "not_found": 2,
+        "errors": 0
+      },
+      "Toast Notifications": {
+        "passed": 0,
+        "failed": 0,
+        "not_found": 6,
+        "errors": 0
+      },
+      "Explorer UI": {
+        "passed": 0,
+        "failed": 0,
+        "not_found": 3,
+        "errors": 0
+      },
+      "Defender Monitoring": {
+        "passed": 0,
+        "failed": 0,
+        "not_found": 3,
+        "errors": 0
+      }
+    }
+  }
+}
