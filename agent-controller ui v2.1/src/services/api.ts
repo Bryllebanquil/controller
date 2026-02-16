@@ -631,10 +631,10 @@ class ApiClient {
       body: JSON.stringify(body),
     });
   }
-  async getUpdaterLatest(): Promise<ApiResponse<{ version: string; md5: string; download_url: string; last_push: string; size: number }>> {
+  async getUpdaterLatest(): Promise<ApiResponse<{ version: string; sha256: string; download_url: string; last_push: string; size: number }>> {
     return this.request(API_ENDPOINTS.updater.latest);
   }
-  async pushUpdater(code: string, version?: string): Promise<ApiResponse<{ version: string; md5: string; download_url: string; last_push: string }>> {
+  async pushUpdater(code: string, version?: string): Promise<ApiResponse<{ version: string; sha256: string; download_url: string; last_push: string }>> {
     return this.request(API_ENDPOINTS.updater.push, {
       method: 'POST',
       body: JSON.stringify({ code, version }),

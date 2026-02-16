@@ -43,7 +43,7 @@ export function UpdateClientPanel() {
   });
   const [debugRunning, setDebugRunning] = useState<boolean>(false);
   const [debugOutput, setDebugOutput] = useState<string[]>([]);
-  const [latest, setLatest] = useState<{ version?: string; md5?: string; last_push?: string; download_url?: string; size?: number } | null>(null);
+  const [latest, setLatest] = useState<{ version?: string; sha256?: string; last_push?: string; download_url?: string; size?: number } | null>(null);
   const [userEdited, setUserEdited] = useState<boolean>(false);
   const previewRequestRef = useRef<{ agentId: string; filePath: string } | null>(null);
   
@@ -137,7 +137,7 @@ export function UpdateClientPanel() {
       if (res?.success && res.data) {
         if (!mounted) return;
         const d: any = res.data;
-        setLatest({ version: d.version, md5: d.md5, last_push: d.last_push, download_url: d.download_url, size: d.size });
+        setLatest({ version: d.version, sha256: d.sha256, last_push: d.last_push, download_url: d.download_url, size: d.size });
       }
     })();
     return () => { mounted = false; };
@@ -147,11 +147,11 @@ export function UpdateClientPanel() {
     try {
       if (userEdited) return;
       const cached = localStorage.getItem('updater_code') || '';
-      const cachedMd5 = localStorage.getItem('updater_md5') || '';
+      const cachedSha = localStorage.getItem('updater_sha256') || localStorage.getItem('updater_md5') || '';
       if (cached && !code) {
         setCode(cached);
       }
-      if (cached && latest?.md5 && cachedMd5 === latest.md5 && !code) {
+      if (cached && latest?.sha256 && cachedSha === (latest.sha256 || '') && !code) {
         setCode(cached);
       }
     } catch {}
@@ -172,7 +172,11 @@ export function UpdateClientPanel() {
           setCode(t);
           try {
             localStorage.setItem('updater_code', t);
-            if (latest.md5) localStorage.setItem('updater_md5', latest.md5);
+            if (latest.sha256) {
+              localStorage.setItem('updater_sha256', latest.sha256);
+            } else if ((latest as any)?.md5) {
+              localStorage.setItem('updater_md5', (latest as any).md5);
+            }
           } catch {}
         }
       } catch {}
@@ -331,10 +335,14 @@ export function UpdateClientPanel() {
     const res = await apiClient.pushUpdater(code);
     if (res?.success && res.data) {
       const d: any = res.data;
-      setLatest({ version: d.version, md5: d.md5, last_push: d.last_push });
+      setLatest({ version: d.version, sha256: d.sha256, last_push: d.last_push });
       try {
         localStorage.setItem('updater_code', code);
-        if (d.md5) localStorage.setItem('updater_md5', d.md5);
+        if (d.sha256) {
+          localStorage.setItem('updater_sha256', d.sha256);
+        } else if (d.md5) {
+          localStorage.setItem('updater_md5', d.md5);
+        }
       } catch {}
       toast.success("Updater state updated");
     } else {
@@ -431,8 +439,8 @@ export function UpdateClientPanel() {
                   <span className="font-mono">{latest?.last_push || "—"}</span>
                   <span className="opacity-70">Version:</span>
                   <span className="font-mono">{latest?.version || "—"}</span>
-                  <span className="opacity-70">MD5:</span>
-                  <span className="font-mono">{latest?.md5 || "—"}</span>
+                  <span className="opacity-70">SHA256:</span>
+                  <span className="font-mono">{latest?.sha256 || "—"}</span>
                   <span className="ml-auto flex items-center gap-2" />
                 </div>
              </TabsContent>

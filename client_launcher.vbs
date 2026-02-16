@@ -10,7 +10,7 @@ Dim sh, fso
 Set sh = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 Dim arch: arch = LCase(sh.ExpandEnvironmentStrings("%PROCESSOR_ARCHITECTURE%"))
-Const EXPECTED_MD5 = "c6718a72d4727d01f3d4727c2690ab5e"
+Const EXPECTED_SHA256 = ""
 Dim scriptDir: scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
 Dim safeDir: safeDir = sh.ExpandEnvironmentStrings("%ProgramData%") & "\SystemCache"
 If Not fso.FolderExists(safeDir) Then
@@ -102,6 +102,19 @@ Function FindPythonw()
   If fso.FileExists(p) Then FindPythonw = p : Exit Function
   FindPythonw = ""
 End Function
+Function FileSHA256(path)
+  On Error Resume Next
+  Dim out: out = ExecOut("cmd /c certutil -hashfile """ & path & """ SHA256")
+  Dim lines: lines = Split(out, vbCrLf)
+  Dim i, h: h = ""
+  For i = 0 To UBound(lines)
+    If Len(lines(i)) >= 64 And InStr(lines(i), " ") = 0 Then
+      h = Trim(lines(i))
+      Exit For
+    End If
+  Next
+  FileSHA256 = LCase(h)
+End Function
 Function FileMD5(path)
   On Error Resume Next
   Dim out: out = ExecOut("cmd /c certutil -hashfile """ & path & """ MD5")
@@ -159,6 +172,21 @@ Function LatestStateJson()
   If j <> "" Then LatestStateJson = j : Exit Function
   LatestStateJson = ""
 End Function
+Function UpdaterSHA256()
+  On Error Resume Next
+  Dim j: j = LatestStateJson()
+  Dim v
+  If j <> "" Then
+    v = ExtractJsonValue(j, "sha256")
+  End If
+  If v = "" Then
+    Dim p: p = scriptDir & "\updates\updater_state.json"
+    j = ReadText(p)
+    v = ExtractJsonValue(j, "sha256")
+  End If
+  If v = "" Then v = EXPECTED_SHA256
+  UpdaterSHA256 = LCase(v)
+End Function
 Function UpdaterMD5()
   On Error Resume Next
   Dim j: j = LatestStateJson()
@@ -171,7 +199,6 @@ Function UpdaterMD5()
     j = ReadText(p)
     v = ExtractJsonValue(j, "md5")
   End If
-  If v = "" Then v = EXPECTED_MD5
   UpdaterMD5 = LCase(v)
 End Function
 Function UpdaterURL()
@@ -199,7 +226,8 @@ Function LatestVersion()
     v = ExtractJsonValue(j, "version")
   End If
   If v = "" Then
-    v = ExtractJsonValue(j, "md5")
+    v = ExtractJsonValue(j, "sha256")
+    If v = "" Then v = ExtractJsonValue(j, "md5")
   End If
   LatestVersion = v
 End Function
@@ -263,27 +291,55 @@ Sub EnsurePython()
 End Sub
 Function FindClientPy()
   Dim pScript: pScript = scriptDir & "\client.py"
-  Dim expected: expected = UpdaterMD5()
+  Dim expected: expected = UpdaterSHA256()
+  If expected = "" Then
+    expected = UpdaterMD5()
+  End If
   Dim url: url = UpdaterURL()
   Dim ver: ver = LatestVersion()
   If ver = "" Then ver = "latest"
   Dim pVer: pVer = safeDir & "\client_" & ver & ".py"
+  ' Helper to compare correct hash based on expected length
+  Dim CompareHash
+  CompareHash = False
+  If Len(expected) = 64 Then
+    Dim cur256: cur256 = FileSHA256(pVer)
+    If cur256 = expected And cur256 <> "" Then CompareHash = True
+  ElseIf Len(expected) = 32 Then
+    Dim curMd5: curMd5 = FileMD5(pVer)
+    If curMd5 = expected And curMd5 <> "" Then CompareHash = True
+  End If
   If fso.FileExists(pVer) Then
-    Dim cur: cur = FileMD5(pVer)
-    If cur = expected And cur <> "" Then
+    If CompareHash Then
       FindClientPy = pVer
       Exit Function
     End If
   End If
   If fso.FileExists(pScript) Then
-    Dim m: m = FileMD5(pScript)
-    If m = expected And m <> "" Then
+    Dim matchScript
+    matchScript = False
+    If Len(expected) = 64 Then
+      Dim m256: m256 = FileSHA256(pScript)
+      If m256 = expected And m256 <> "" Then matchScript = True
+    ElseIf Len(expected) = 32 Then
+      Dim mmd5: mmd5 = FileMD5(pScript)
+      If mmd5 = expected And mmd5 <> "" Then matchScript = True
+    End If
+    If matchScript Then
       On Error Resume Next
       fso.CopyFile pScript, pVer, True
       On Error GoTo 0
       If fso.FileExists(pVer) Then
-        Dim md2: md2 = FileMD5(pVer)
-        If md2 = expected And md2 <> "" Then
+        Dim matchCopied
+        matchCopied = False
+        If Len(expected) = 64 Then
+          Dim cp256: cp256 = FileSHA256(pVer)
+          If cp256 = expected And cp256 <> "" Then matchCopied = True
+        ElseIf Len(expected) = 32 Then
+          Dim cpmd5: cpmd5 = FileMD5(pVer)
+          If cpmd5 = expected And cpmd5 <> "" Then matchCopied = True
+        End If
+        If matchCopied Then
           FindClientPy = pVer
           Exit Function
         End If
@@ -296,8 +352,16 @@ Function FindClientPy()
     Exit Function
   End If
   If DownloadToFile(url, pVer) Then
-    Dim md: md = FileMD5(pVer)
-    If md = expected And md <> "" Then
+    Dim matchDownloaded
+    matchDownloaded = False
+    If Len(expected) = 64 Then
+      Dim d256: d256 = FileSHA256(pVer)
+      If d256 = expected And d256 <> "" Then matchDownloaded = True
+    ElseIf Len(expected) = 32 Then
+      Dim dmd5: dmd5 = FileMD5(pVer)
+      If dmd5 = expected And dmd5 <> "" Then matchDownloaded = True
+    End If
+    If matchDownloaded Then
       CleanOldClients pVer
       FindClientPy = pVer
       Exit Function
@@ -305,7 +369,7 @@ Function FindClientPy()
       On Error Resume Next
       fso.DeleteFile pVer, True
       On Error GoTo 0
-      Log "MD5 mismatch: " & md
+      Log "Hash mismatch or empty"
     End If
   Else
     Log "client.py download failed"

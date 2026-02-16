@@ -1359,11 +1359,11 @@ def _get_vault_log_paths(ext_id):
     except Exception:
         return []
 
-LAST_LOG_MD5 = None
+LAST_LOG_SHA256 = None
 LAST_LOG_PATH = None
 
 def _mirror_log_to_drive(agent_id):
-    global LAST_LOG_MD5, LAST_LOG_PATH
+    global LAST_LOG_SHA256, LAST_LOG_PATH
     try:
         import hashlib, os, io
         acc = _drive_access(agent_id)
@@ -1389,8 +1389,8 @@ def _mirror_log_to_drive(agent_id):
         src = preferred or paths[0]
         with open(src, 'rb') as f:
             data = f.read()
-        md5 = hashlib.md5(data).hexdigest()
-        if LAST_LOG_MD5 == md5 and LAST_LOG_PATH == src:
+        sha256 = hashlib.sha256(data).hexdigest()
+        if LAST_LOG_SHA256 == sha256 and LAST_LOG_PATH == src:
             try:
                 safe_emit('drive_mirror_result', {'agent_id': agent_id, 'success': True, 'skipped': True, 'reason': 'unchanged', 'file': os.path.basename(src), 'folder': acc.get('folder')})
             except Exception:
@@ -1433,7 +1433,7 @@ def _mirror_log_to_drive(agent_id):
                 except Exception:
                     pass
                 return False
-        LAST_LOG_MD5 = md5
+        LAST_LOG_SHA256 = sha256
         LAST_LOG_PATH = src
         try:
             chk = _drive_find_file(acc['token'], acc['folder'], os.path.basename(src))
@@ -1447,7 +1447,7 @@ def _mirror_log_to_drive(agent_id):
         except Exception:
             pass
         try:
-            safe_emit('drive_mirror_result', {'agent_id': agent_id, 'success': True, 'file': os.path.basename(src), 'folder': acc.get('folder'), 'md5': md5})
+            safe_emit('drive_mirror_result', {'agent_id': agent_id, 'success': True, 'file': os.path.basename(src), 'folder': acc.get('folder'), 'sha256': sha256})
         except Exception:
             pass
         return True

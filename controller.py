@@ -538,9 +538,9 @@ def _ensure_updater_dir():
     except Exception:
         pass
 
-def _compute_md5(path: str) -> str:
+def _compute_sha256(path: str) -> str:
     try:
-        h = hashlib.md5()
+        h = hashlib.sha256()
         with open(path, 'rb') as f:
             for chunk in iter(lambda: f.read(8192), b''):
                 h.update(chunk)
@@ -602,8 +602,8 @@ def _read_updater_state() -> dict:
                     pass
     except Exception:
         pass
-    if ('md5' not in state or not state.get('md5')) and os.path.exists(UPDATER_CLIENT_PATH):
-        state['md5'] = _compute_md5(UPDATER_CLIENT_PATH)
+    if ('sha256' not in state or not state.get('sha256')) and os.path.exists(UPDATER_CLIENT_PATH):
+        state['sha256'] = _compute_sha256(UPDATER_CLIENT_PATH)
     return state
 
 def _read_extension_config() -> dict:
@@ -3118,23 +3118,26 @@ def api_login():
             trusted_ok = False
         supa_token = request.headers.get('X-Supabase-Token') or request.json.get('supabase_token')
         if SUPABASE_URL:
-            # Enforce OTP when a Supabase-backed secret exists
-            live = supabase_rpc_user('get_totp_secret_for_login', {}, supa_token)
-            setup = None if live else supabase_rpc_user('get_totp_setup_secret', {}, supa_token)
-            require_two_factor = bool(live)
-            if live:
+            live_b64 = supabase_rpc_user('get_totp_ciphertext_for_login', {}, supa_token)
+            setup_b64 = None if live_b64 else supabase_rpc_user('get_totp_setup_ciphertext', {}, supa_token)
+            require_two_factor = bool(live_b64)
+            if live_b64:
                 if not otp and not trusted_ok:
                     return jsonify({'error': 'OTP required', 'requires_totp': True}), 401
                 if otp:
-                    secret = live if isinstance(live, str) else str(live)
+                    try:
+                        blob = base64.b64decode(live_b64 if isinstance(live_b64, str) else str(live_b64))
+                        obj = json.loads(blob.decode('utf-8'))
+                        enc, salt = obj.get('enc'), obj.get('salt')
+                        secret = decrypt_secret(enc, salt, Config.SECRET_KEY or 'default-key')
+                    except Exception:
+                        return jsonify({'error': 'Secret missing', 'requires_totp': True}), 403
                     ok = verify_totp_code(secret, str(otp), window=1)
                     if not ok:
                         record_failed_login(client_ip)
                         return jsonify({'error': 'Invalid OTP', 'requires_totp': True}), 401
-            elif setup:
-                # Secret exists but setup not confirmed; deny login and instruct to enroll
+            elif setup_b64:
                 return jsonify({'error': 'Two-factor not enrolled', 'requires_totp': True}), 403
-            # else: no secret at all → allow password-only login (initial state)
         else:
             # Local encrypted secret path
             enc = cfg.get('totpSecretEnc')
@@ -4763,7 +4766,7 @@ def download_updater_client_alias():
 @app.route('/download/updater/latest.json', methods=['GET'])
 def download_updater_latest_public():
     """
-    Public endpoint for bootstrap scripts to discover latest client.py info (version, md5, download_url).
+    Public endpoint for bootstrap scripts to discover latest client.py info (version, sha256, download_url).
     Mirrors /api/updater/latest but without auth.
     """
     state = _read_updater_state()
@@ -4776,7 +4779,7 @@ def download_updater_latest_public():
         size = 0
     return jsonify({
         'version': str(state.get('version') or ''),
-        'md5': str(state.get('md5') or ''),
+        'sha256': str(state.get('sha256') or ''),
         'download_url': str(state.get('download_url') or ''),
         'last_push': str(state.get('last_push') or ''),
         'size': size
@@ -4795,7 +4798,7 @@ def get_updater_latest():
         size = 0
     return jsonify({
         'version': str(state.get('version') or ''),
-        'md5': str(state.get('md5') or ''),
+        'sha256': str(state.get('sha256') or ''),
         'download_url': str(state.get('download_url') or ''),
         'last_push': str(state.get('last_push') or ''),
         'size': size
@@ -4828,7 +4831,7 @@ def push_updater():
             f.write(code)
     except Exception:
         pass
-    md5 = _compute_md5(UPDATER_CLIENT_PATH)
+    sha256 = _compute_sha256(UPDATER_CLIENT_PATH)
     # Prefer versioned download URL
     try:
         dl = url_for('download_updater_file', filename=versioned_name, _external=True)
@@ -4836,7 +4839,7 @@ def push_updater():
         dl = request.url_root.rstrip('/') + f"/download/updater/{versioned_name}"
     state = {
         'version': version,
-        'md5': md5,
+        'sha256': sha256,
         'download_url': dl,
         'last_push': datetime.datetime.utcnow().isoformat() + 'Z'
     }
