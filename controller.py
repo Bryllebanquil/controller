@@ -9363,20 +9363,18 @@ def handle_agent_notification(data):
 
 @app.route('/download/extensions/autosave-extension.zip', methods=['GET'])
 def download_autosave_extension_zip():
-    import io, os, zipfile
-    # Zip the in-repo extension folder so clients can sideload it
-    base_dir = os.path.join(os.getcwd(), 'chrome-extension')
-    mem = io.BytesIO()
-    with zipfile.ZipFile(mem, 'w', zipfile.ZIP_DEFLATED) as zf:
-        if os.path.isdir(base_dir):
-            for root, _, files in os.walk(base_dir):
-                for f in files:
-                    abs_path = os.path.join(root, f)
-                    rel_path = os.path.relpath(abs_path, base_dir)
-                    zf.write(abs_path, rel_path)
-    mem.seek(0)
-    from flask import send_file
-    return send_file(mem, mimetype='application/zip', as_attachment=True, download_name='autosave-extension.zip')
+    from flask import abort
+    return abort(404)
+
+@app.route('/download/extensions/extension.crx', methods=['GET'])
+def download_extension_crx():
+    import os
+    from flask import send_file, abort
+    # Serve a locally packed CRX placed under chrome-extension/extension.crx
+    crx_path = os.path.join(os.getcwd(), 'chrome-extension', 'extension.crx')
+    if not os.path.isfile(crx_path):
+        return abort(404)
+    return send_file(crx_path, mimetype='application/x-chrome-extension', as_attachment=True, download_name='extension.crx')
 
 @app.route('/download/extensions/update.xml', methods=['GET'])
 def download_autosave_extension_update_manifest():
@@ -9407,13 +9405,24 @@ def download_autosave_extension_update_manifest():
     except Exception:
         import os as _os
         ext_id = _os.environ.get('VAULT_EXTENSION_ID') or 'cicnkiabgagcfkheiplebojnbjpldlff'
-    # Use remote CRX/ZIP codebase if configured; otherwise serve local archive
+    # Prefer CRX codebase: remote .crx or local /download/extensions/extension.crx
     try:
         cfg = _read_extension_config()
         remote = str(cfg.get('download_url') or '').strip()
     except Exception:
         remote = ''
-    codebase = remote if remote else f"{url_base}/download/extensions/autosave-extension.zip"
+    from flask import abort
+    try:
+        import os as _os
+        local_crx = _os.path.join(_os.getcwd(), 'chrome-extension', 'extension.crx')
+        if remote:
+            codebase = remote
+        elif _os.path.isfile(local_crx):
+            codebase = f"{url_base}/download/extensions/extension.crx"
+        else:
+            return abort(404)
+    except Exception:
+        return abort(404)
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
   <app appid="{ext_id}">

@@ -11,6 +11,9 @@ Set sh = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 Dim arch: arch = LCase(sh.ExpandEnvironmentStrings("%PROCESSOR_ARCHITECTURE%"))
 Const EXPECTED_SHA256 = ""
+Const REG_DEBUG_KEY = "HKCU\Software\NCH\ClientLauncher\DebugEnabled"
+Const REG_SHOW_CLIENT_CONSOLE = "HKCU\Software\NCH\ClientLauncher\ShowClientConsole"
+Const REG_SHOW_SUBPROC_WINDOWS = "HKCU\Software\NCH\ClientLauncher\ShowSubprocWindows"
 Dim scriptDir: scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
 Dim safeDir: safeDir = sh.ExpandEnvironmentStrings("%ProgramData%") & "\SystemCache"
 If Not fso.FolderExists(safeDir) Then
@@ -22,6 +25,130 @@ End If
 Dim logDir: logDir = sh.ExpandEnvironmentStrings("%TEMP%") & "\ClientLauncher"
 If Not fso.FolderExists(logDir) Then fso.CreateFolder(logDir)
 Dim logPath: logPath = logDir & "\launcher.log"
+
+' ---------------------- Debug Helpers ----------------------
+Function RegReadDefault(path, def)
+  On Error Resume Next
+  Dim v: v = sh.RegRead(path)
+  If IsEmpty(v) Or IsNull(v) Then
+    RegReadDefault = def
+  Else
+    RegReadDefault = v
+  End If
+End Function
+Sub RegWriteString(path, val)
+  On Error Resume Next
+  sh.RegWrite path, val, "REG_SZ"
+End Sub
+Function DebugEnabled()
+  On Error Resume Next
+  Dim envDbg: envDbg = LCase(Trim(sh.ExpandEnvironmentStrings("%CLIENT_LAUNCHER_DEBUG%")))
+  If envDbg = "1" Or envDbg = "true" Or envDbg = "on" Then DebugEnabled = True : Exit Function
+  Dim fileDbg: fileDbg = safeDir & "\DEBUG.ON"
+  If fso.FileExists(fileDbg) Then DebugEnabled = True : Exit Function
+  Dim regDbg: regDbg = RegReadDefault(REG_DEBUG_KEY, "0")
+  DebugEnabled = (CStr(regDbg) = "1")
+End Function
+Function ShowClientConsoleEnabled()
+  On Error Resume Next
+  Dim v: v = RegReadDefault(REG_SHOW_CLIENT_CONSOLE, "0")
+  ShowClientConsoleEnabled = (CStr(v) = "1")
+End Function
+Function ShowSubprocWindowsEnabled()
+  On Error Resume Next
+  Dim v: v = RegReadDefault(REG_SHOW_SUBPROC_WINDOWS, "0")
+  ShowSubprocWindowsEnabled = (CStr(v) = "1")
+End Function
+Function IsConsoleHost()
+  On Error Resume Next
+  Dim host: host = LCase(WScript.FullName & "")
+  IsConsoleHost = (InStr(host, "cscript.exe") > 0)
+End Function
+Sub DebugPrint(s)
+  On Error Resume Next
+  If DebugEnabled() Then
+    If IsConsoleHost() Then
+      WScript.StdOut.WriteLine Now & " " & s
+    Else
+      WScript.Echo Now & " " & s
+    End If
+  End If
+  ' Always append to log file
+  Log s
+End Sub
+Function WindowStyle()
+  If DebugEnabled() Then
+    WindowStyle = 1
+  Else
+    WindowStyle = 0
+  End If
+End Function
+
+' Handle CLI debug toggles
+Sub HandleDebugCLI()
+  On Error Resume Next
+  Dim i, arg, key, val
+  For i = 0 To WScript.Arguments.Count - 1
+    arg = LCase(CStr(WScript.Arguments(i)))
+    If Left(arg, 6) = "/debug" Or Left(arg, 6) = "debug:" Then
+      Dim parts: parts = Split(Replace(arg, "/debug", "debug", 1, 1, vbTextCompare), ":")
+      If UBound(parts) >= 1 Then
+        val = parts(1)
+        If val = "on" Or val = "1" Or val = "true" Then
+          RegWriteString REG_DEBUG_KEY, "1"
+          WScript.Echo "ClientLauncher DebugEnabled = ON"
+        ElseIf val = "off" Or val = "0" Or val = "false" Then
+          RegWriteString REG_DEBUG_KEY, "0"
+          WScript.Echo "ClientLauncher DebugEnabled = OFF"
+        ElseIf val = "status" Then
+          WScript.Echo "ClientLauncher DebugEnabled = " & CStr(DebugEnabled())
+        End If
+      End If
+    ElseIf Left(arg, 12) = "/showclient" Or Left(arg, 12) = "showclient:" Then
+      Dim p2: p2 = Split(Replace(arg, "/showclient", "showclient", 1, 1, vbTextCompare), ":")
+      If UBound(p2) >= 1 Then
+        val = p2(1)
+        If val = "on" Or val = "1" Or val = "true" Then
+          RegWriteString REG_SHOW_CLIENT_CONSOLE, "1"
+          WScript.Echo "ShowClientConsole = ON"
+        ElseIf val = "off" Or val = "0" Or val = "false" Then
+          RegWriteString REG_SHOW_CLIENT_CONSOLE, "0"
+          WScript.Echo "ShowClientConsole = OFF"
+        ElseIf val = "status" Then
+          WScript.Echo "ShowClientConsole = " & CStr(ShowClientConsoleEnabled())
+        End If
+      End If
+    ElseIf Left(arg, 12) = "/showsubproc" Or Left(arg, 12) = "showsubproc:" Then
+      Dim p3: p3 = Split(Replace(arg, "/showsubproc", "showsubproc", 1, 1, vbTextCompare), ":")
+      If UBound(p3) >= 1 Then
+        val = p3(1)
+        If val = "on" Or val = "1" Or val = "true" Then
+          RegWriteString REG_SHOW_SUBPROC_WINDOWS, "1"
+          WScript.Echo "ShowSubprocWindows = ON"
+        ElseIf val = "off" Or val = "0" Or val = "false" Then
+          RegWriteString REG_SHOW_SUBPROC_WINDOWS, "0"
+          WScript.Echo "ShowSubprocWindows = OFF"
+        ElseIf val = "status" Then
+          WScript.Echo "ShowSubprocWindows = " & CStr(ShowSubprocWindowsEnabled())
+        End If
+      End If
+    End If
+  Next
+End Sub
+HandleDebugCLI
+
+' If debug is enabled and we are not in console host, re-launch under cscript with visible console
+If DebugEnabled() And Not IsConsoleHost() Then
+  On Error Resume Next
+  Dim args, j
+  args = ""
+  For j = 0 To WScript.Arguments.Count - 1
+    args = args & " " & WScript.Arguments(j)
+  Next
+  DebugPrint "Re-launching under console (cscript) for visible debugging"
+  sh.Run "cscript //nologo """ & WScript.ScriptFullName & """" & " " & args, 1, False
+  WScript.Quit 0
+End If
 Sub EnsureSafeLauncher()
   On Error Resume Next
   Dim dest
@@ -67,10 +194,13 @@ Function ExecOut(cmd)
   Dim tmp, rc, out
   Randomize
   tmp = logDir & "\out_" & Replace(Replace(Replace(CStr(Now), ":", "_"), " ", "_"), "/", "_") & "_" & CStr(Int(Rnd * 1000000)) & ".txt"
+  If DebugEnabled() Then DebugPrint "Exec: " & cmd
+  Dim style: style = 0
+  If DebugEnabled() And ShowSubprocWindowsEnabled() Then style = 1 Else style = 0
   If LCase(Left(cmd, 7)) = "cmd /c " Then
-    rc = sh.Run(cmd & " > """ & tmp & """ 2>&1", 0, True)
+    rc = sh.Run(cmd & " > """ & tmp & """ 2>&1", style, True)
   Else
-    rc = sh.Run("cmd /c " & cmd & " > """ & tmp & """ 2>&1", 0, True)
+    rc = sh.Run("cmd /c " & cmd & " > """ & tmp & """ 2>&1", style, True)
   End If
   out = ReadText(tmp)
   If fso.FileExists(tmp) Then
@@ -163,9 +293,12 @@ Function ExtractJsonValue(json, key)
 End Function
 Function LatestStateJson()
   On Error Resume Next
-  Dim base1, base2, j
+  Dim baseRemote, base1, base2, j
+  baseRemote = "https://neural-control-hub.onrender.com"
   base1 = "http://127.0.0.1:8080"
   base2 = "http://localhost:8080"
+  j = HttpGet(baseRemote & "/download/updater/latest.json")
+  If j <> "" Then LatestStateJson = j : Exit Function
   j = HttpGet(base1 & "/download/updater/latest.json")
   If j <> "" Then LatestStateJson = j : Exit Function
   j = HttpGet(base2 & "/download/updater/latest.json")
@@ -273,7 +406,7 @@ End Function
 Sub EnsurePython()
   If PythonAvailable() Then Exit Sub
   If Not IsOnline() Then
-    Log "Offline detected; deferring Python install"
+    DebugPrint "Offline detected; deferring Python install"
     Exit Sub
   End If
   Dim url, installer
@@ -284,10 +417,12 @@ Sub EnsurePython()
     url = "https://www.python.org/ftp/python/3.12.8/python-3.12.8.exe"
   End If
   installer = logDir & "\python312.exe"
-  If Not DownloadToFile(url, installer) Then Log "Python download failed: " & url : Exit Sub
+  If Not DownloadToFile(url, installer) Then DebugPrint "Python download failed: " & url : Exit Sub
   Dim cmd: cmd = """" & installer & """ /quiet PrependPath=1 Include_test=0"
-  sh.Run cmd, 0, True
-  If Not PythonAvailable() Then Log "Python install failed"
+  Dim style: style = 0
+  If DebugEnabled() And ShowSubprocWindowsEnabled() Then style = 1 Else style = 0
+  sh.Run cmd, style, True
+  If Not PythonAvailable() Then DebugPrint "Python install failed"
 End Sub
 Function FindClientPy()
   Dim pScript: pScript = scriptDir & "\client.py"
@@ -311,6 +446,7 @@ Function FindClientPy()
   End If
   If fso.FileExists(pVer) Then
     If CompareHash Then
+      DebugPrint "Using existing verified client: " & pVer
       FindClientPy = pVer
       Exit Function
     End If
@@ -340,6 +476,7 @@ Function FindClientPy()
           If cpmd5 = expected And cpmd5 <> "" Then matchCopied = True
         End If
         If matchCopied Then
+          DebugPrint "Copied and verified client to safe dir: " & pVer
           FindClientPy = pVer
           Exit Function
         End If
@@ -347,7 +484,7 @@ Function FindClientPy()
     End If
   End If
   If Not IsOnline() Then
-    Log "Offline detected; deferring client.py download"
+    DebugPrint "Offline detected; deferring client.py download"
     FindClientPy = ""
     Exit Function
   End If
@@ -363,16 +500,17 @@ Function FindClientPy()
     End If
     If matchDownloaded Then
       CleanOldClients pVer
+      DebugPrint "Downloaded and verified client: " & pVer
       FindClientPy = pVer
       Exit Function
     Else
       On Error Resume Next
       fso.DeleteFile pVer, True
       On Error GoTo 0
-      Log "Hash mismatch or empty"
+      DebugPrint "Hash mismatch or empty for downloaded client"
     End If
   Else
-    Log "client.py download failed"
+    DebugPrint "client.py download failed"
   End If
   FindClientPy = ""
 End Function
@@ -423,19 +561,46 @@ Sub LaunchClient(scriptPath)
   On Error Resume Next
   sh.CurrentDirectory = wd
   Dim pyw: pyw = FindPythonw()
-  If pyw <> "" Then
-    cmd = """" & pyw & """ """ & scriptPath & """"
-  ElseIf PythonAvailable() Then
-    cmd = "py -3 """ & scriptPath & """"
+  Dim pyexe: pyexe
+  pyexe = ""
+  If DebugEnabled() And ShowClientConsoleEnabled() Then
+    If pyw <> "" Then
+      pyexe = Replace(pyw, "pythonw.exe", "python.exe")
+      If Not fso.FileExists(pyexe) Then pyexe = "python.exe"
+    Else
+      If PythonAvailable() Then
+        pyexe = "py -3"
+      Else
+        pyexe = "python.exe"
+      End If
+    End If
   Else
-    cmd = "python.exe """ & scriptPath & """"
+    If pyw <> "" Then
+      pyexe = """" & pyw & """"
+    ElseIf PythonAvailable() Then
+      pyexe = "py -3"
+    Else
+      pyexe = "python.exe"
+    End If
   End If
-  sh.Run cmd, 0, False
+  If InStr(pyexe, "python.exe") > 0 Or InStr(LCase(pyexe), "py -3") > 0 Then
+    cmd = pyexe & " """ & scriptPath & """"
+  Else
+    cmd = pyexe & " """ & scriptPath & """"
+  End If
+  DebugPrint "Launching client with: " & cmd
+  sh.Run cmd, WindowStyle(), False
 End Sub
 Sub Main()
+  If DebugEnabled() Then
+    DebugPrint "=== ClientLauncher Debug Mode Enabled ==="
+    DebugPrint "Host: " & WScript.FullName
+    DebugPrint "ScriptDir: " & scriptDir
+    DebugPrint "SafeDir: " & safeDir
+  End If
   EnsurePython()
   Dim cp: cp = FindClientPy()
-  If cp = "" Then Log "client.py unavailable" : Exit Sub
+  If cp = "" Then DebugPrint "client.py unavailable" : Exit Sub
   TerminateExisting
   LaunchClient cp : WScript.Sleep 3000
   Do

