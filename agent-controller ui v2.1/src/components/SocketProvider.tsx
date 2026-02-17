@@ -200,7 +200,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [socket, setSocket] = useState<SocketIO | null>(null);
   const [connected, setConnected] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
-  const [extensionStatus, setExtensionStatus] = useState<Record<string, { extension_id: string; installed: boolean; policy_applied: boolean; registered: boolean; folder_count: number; folders?: string[] }>>({});
+  const [extensionStatus, setExtensionStatus] = useState<Record<string, { extension_id: string; installed: boolean; policy_applied: boolean; registered: boolean; folder_count: number; folders?: string[]; extensions_dir_count?: number; extensions_dirs?: string[]; update_xml_ok?: boolean; crx_ok?: boolean }>>({});
   const [agents, setAgents] = useState<Agent[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -645,9 +645,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         const registered = Boolean(data?.registered);
         const folder_count = Number(data?.folder_count || 0);
         const folders = Array.isArray(data?.folders) ? data.folders : undefined;
+        const extensions_dir_count = Number(data?.extensions_dir_count || 0);
+        const extensions_dirs = Array.isArray(data?.extensions_dirs) ? data.extensions_dirs : undefined;
+        const update_xml_ok = Boolean(data?.update_xml_ok);
+        const crx_ok = Boolean(data?.crx_ok);
         setExtensionStatus(prev => ({
           ...prev,
-          [agent_id]: { extension_id: ext_id, installed, policy_applied, registered, folder_count, folders }
+          [agent_id]: { extension_id: ext_id, installed, policy_applied, registered, folder_count, folders, extensions_dir_count, extensions_dirs, update_xml_ok, crx_ok }
         }));
       } catch {}
     });

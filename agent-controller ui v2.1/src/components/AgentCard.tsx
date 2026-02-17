@@ -244,6 +244,22 @@ export function AgentCard({ agent, isSelected, onSelect }: AgentCardProps) {
                 <span>Policy: {extensionStatus[agent.id].policy_applied ? 'Yes' : 'No'}</span>
               </div>
             )}
+            {extensionStatus[agent.id] && typeof extensionStatus[agent.id].update_xml_ok !== 'undefined' && (
+              <div
+                className="flex items-center space-x-1 bg-muted px-2 py-1 rounded text-xs"
+                title="Update manifest reachable"
+              >
+                <span>Manifest: {extensionStatus[agent.id].update_xml_ok ? 'OK' : 'Error'}</span>
+              </div>
+            )}
+            {extensionStatus[agent.id] && typeof extensionStatus[agent.id].crx_ok !== 'undefined' && (
+              <div
+                className="flex items-center space-x-1 bg-muted px-2 py-1 rounded text-xs"
+                title="CRX codebase reachable"
+              >
+                <span>CRX: {extensionStatus[agent.id].crx_ok ? 'OK' : 'Error'}</span>
+              </div>
+            )}
           </div>
         </div>
 
