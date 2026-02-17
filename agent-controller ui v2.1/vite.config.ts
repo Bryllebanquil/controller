@@ -52,6 +52,7 @@
     build: {
       target: 'esnext',
       outDir: 'build',
+      sourcemap: true,
       rollupOptions: {
         output: {
           manualChunks: {
