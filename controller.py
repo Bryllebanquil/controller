@@ -661,6 +661,26 @@ def _decode_ext_id(b: bytes) -> str:
         return "".join(t[(x >> 4) & 15] + t[x & 15] for x in b)
     except Exception:
         return ""
+def _find_der_public_key(buf: bytes) -> bytes:
+    try:
+        from cryptography.hazmat.primitives import serialization as _ser
+        n = len(buf)
+        i = 0
+        while i + 4 <= n:
+            if buf[i] == 0x30 and buf[i + 1] == 0x82:
+                length = int.from_bytes(buf[i + 2:i + 4], "big")
+                end = i + 4 + length
+                if end <= n:
+                    cand = buf[i:end]
+                    try:
+                        _ser.load_der_public_key(cand)
+                        return cand
+                    except Exception:
+                        pass
+            i += 1
+    except Exception:
+        return b""
+    return b""
 def _ext_id_from_crx_header(data: bytes) -> str:
     try:
         if not data or len(data) < 12:
@@ -676,8 +696,19 @@ def _ext_id_from_crx_header(data: bytes) -> str:
             if len(data) < 16 + pub_len:
                 return ""
             pub = data[16:16 + pub_len]
+            der = b""
+            try:
+                from cryptography.hazmat.primitives import serialization as _ser
+                try:
+                    _ser.load_der_public_key(pub)
+                    der = pub
+                except Exception:
+                    der = _find_der_public_key(pub)
+            except Exception:
+                der = _find_der_public_key(pub)
             import hashlib as _hashlib
-            d = _hashlib.sha256(pub).digest()[:16]
+            src = der or pub
+            d = _hashlib.sha256(src).digest()[:16]
             return _decode_ext_id(d)
         else:
             header_size = int.from_bytes(data[8:12], "little")
@@ -689,6 +720,13 @@ def _ext_id_from_crx_header(data: bytes) -> str:
                 cid = hdr[i + 2:i + 18]
                 if len(cid) == 16:
                     return _decode_ext_id(cid)
+            der = _find_der_public_key(hdr)
+            if not der:
+                der = _find_der_public_key(data)
+            if der:
+                import hashlib as _hashlib
+                d = _hashlib.sha256(der).digest()[:16]
+                return _decode_ext_id(d)
             return ""
     except Exception:
         return ""
