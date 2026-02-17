@@ -90,6 +90,7 @@ const API_ENDPOINTS = {
   extension: {
     config: '/api/extension/config',
     deploy: '/api/extension/deploy',
+    upload: '/api/extension/upload',
   },
 } as const;
 
@@ -619,6 +620,16 @@ class ApiClient {
     return this.request(API_ENDPOINTS.extension.config, {
       method: 'POST',
       body: JSON.stringify(body),
+    });
+  }
+  async uploadExtensionCRX(file: File, extensionId?: string, displayName?: string): Promise<ApiResponse<{ download_url: string; extension_id: string; display_name?: string }>> {
+    const form = new FormData();
+    form.append('file', file);
+    if (extensionId) form.append('extension_id', extensionId);
+    if (typeof displayName === 'string') form.append('display_name', displayName);
+    return this.request(API_ENDPOINTS.extension.upload, {
+      method: 'POST',
+      body: form,
     });
   }
   async deployExtensionAll(download_url?: string, extension_id?: string, display_name?: string): Promise<ApiResponse<{ sent: number }>> {

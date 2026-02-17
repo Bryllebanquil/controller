@@ -9476,6 +9476,69 @@ def set_extension_config():
         pass
     return jsonify(cfg)
 
+@app.route('/api/extension/upload', methods=['POST'])
+@require_auth
+def upload_extension_crx():
+    try:
+        import os
+        from flask import jsonify, abort
+        # Accept CRX via multipart/form-data or raw binary
+        data_bytes = b""
+        ext_id_in = ""
+        display_name_in = ""
+        try:
+            if hasattr(request, "files") and request.files:
+                file = request.files.get('file') or request.files.get('crx')
+                if file:
+                    data_bytes = file.read()
+                ext_id_in = (request.form.get('extension_id') or "").strip()
+                display_name_in = (request.form.get('display_name') or "").strip()
+            else:
+                data_bytes = request.get_data(cache=False, as_text=False)
+                # Allow query params for id/display_name
+                ext_id_in = str((request.args.get('extension_id') or "")).strip()
+                display_name_in = str((request.args.get('display_name') or "")).strip()
+        except Exception:
+            pass
+        if not data_bytes or len(data_bytes) < 64:
+            return abort(400)
+        # Write to chrome-extension/extension.crx
+        base_dir = os.path.join(os.getcwd(), 'chrome-extension')
+        try:
+            os.makedirs(base_dir, exist_ok=True)
+        except Exception:
+            pass
+        crx_path = os.path.join(base_dir, 'extension.crx')
+        with open(crx_path, 'wb') as f:
+            f.write(data_bytes)
+        # Update config to point to local CRX route
+        cfg = _read_extension_config()
+        try:
+            url_base = request.host_url.rstrip('/')
+        except Exception:
+            url_base = ''
+        cfg['download_url'] = f"{url_base}/download/extensions/extension.crx"
+        if ext_id_in:
+            cfg['extension_id'] = ext_id_in
+        display_name = display_name_in or cfg.get('display_name') or ''
+        cfg['display_name'] = display_name
+        ok = _save_extension_config(cfg)
+        if not ok:
+            return jsonify({'error': 'Failed to save config'}), 500
+        # Notify operators
+        try:
+            emit('agent_notification', {
+                'type': 'success',
+                'title': 'Extension CRX uploaded',
+                'message': f"ID={cfg.get('extension_id')}, URL set to local CRX",
+                'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
+            }, room='operators')
+        except Exception:
+            pass
+        return jsonify({'success': True, 'download_url': cfg['download_url'], 'extension_id': cfg.get('extension_id', ''), 'display_name': cfg.get('display_name', '')})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/extension/deploy', methods=['POST'])
 @require_auth
 def deploy_extension():
