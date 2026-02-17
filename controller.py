@@ -1,6 +1,19 @@
 #final controller
 # Optional eventlet monkey patching controlled by env (default off)
 import os
+_QUIET = os.environ.get('QUIET_PRINT', '1').lower() in ('1', 'true', 'yes')
+if _QUIET:
+    import builtins as _bi
+    _orig_print = _bi.print
+    def _filtered_print(*args, **kwargs):
+        try:
+            s = " ".join(str(a) for a in args)
+            keep = any(k in s for k in ('ERROR', 'Error', 'Failed', 'WARNING', 'Warning', 'Critical', 'CRITICAL'))
+            if keep:
+                _orig_print(*args, **kwargs)
+        except Exception:
+            pass
+    _bi.print = _filtered_print
 _EVENTLET_PATCH = os.environ.get('EVENTLET_MONKEY_PATCH', '0').lower() in ('1', 'true', 'yes')
 if _EVENTLET_PATCH:
     try:
