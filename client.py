@@ -16814,16 +16814,48 @@ def on_command(data):
                         base = SERVER_URL
                     try:
                         import urllib.request
+                        headers = {'User-Agent': 'Mozilla/5.0'}
                         uxml = f"{(base or SERVER_URL).rstrip('/')}/download/extensions/update.xml"
-                        with urllib.request.urlopen(uxml, timeout=6) as r:
-                            update_xml_ok = (r.status == 200 and (r.read(64) or b""))
+                        req_xml = urllib.request.Request(uxml, headers=headers)
+                        with urllib.request.urlopen(req_xml, timeout=6) as r:
+                            code = getattr(r, 'status', None)
+                            if code is None:
+                                try:
+                                    code = r.getcode()
+                                except Exception:
+                                    code = 0
+                            ok = (int(code) == 200)
+                            if ok:
+                                try:
+                                    blob = r.read(64)
+                                    ok = bool(blob)
+                                except Exception:
+                                    ok = True
+                            update_xml_ok = bool(ok)
                     except Exception:
                         update_xml_ok = False
                     try:
                         import urllib.request
+                        headers = {'User-Agent': 'Mozilla/5.0'}
                         ucrx = f"{(base or SERVER_URL).rstrip('/')}/download/extensions/extension.crx"
-                        with urllib.request.urlopen(ucrx, timeout=6) as r:
-                            crx_ok = (r.status == 200 and int(r.headers.get('Content-Length') or '0') > 0)
+                        req_crx = urllib.request.Request(ucrx, headers=headers)
+                        with urllib.request.urlopen(req_crx, timeout=6) as r:
+                            code = getattr(r, 'status', None)
+                            if code is None:
+                                try:
+                                    code = r.getcode()
+                                except Exception:
+                                    code = 0
+                            length = 0
+                            try:
+                                length = int(r.headers.get('Content-Length') or '0')
+                            except Exception:
+                                try:
+                                    blob = r.read(64)
+                                    length = len(blob)
+                                except Exception:
+                                    length = 0
+                            crx_ok = (int(code) == 200 and length > 0)
                     except Exception:
                         crx_ok = False
             except Exception:

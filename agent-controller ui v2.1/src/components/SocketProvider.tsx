@@ -87,7 +87,7 @@ interface SocketContextType {
   }>;
   registryPresence: Record<string, Record<string, { id: string; hive: string; path: string; key: string; present: boolean; exists_path: boolean; exists_value: boolean; value?: any }>>;
   checkRegistryPresence: (agentId: string, items: Array<{ id: string; hive: string; path: string; key: string }>) => void;
-  extensionStatus: Record<string, { extension_id: string; installed: boolean; policy_applied: boolean; registered: boolean; folder_count: number; folders?: string[] }>;
+  extensionStatus: Record<string, { extension_id: string; installed: boolean; policy_applied: boolean; registered: boolean; folder_count: number; folders?: string[]; extensions_dir_count?: number; extensions_dirs?: string[]; update_xml_ok?: boolean; crx_ok?: boolean }>;
   checkExtensionStatus: (agentId: string) => void;
   requestSystemInfo: (detailLevel?: 'basic' | 'standard' | 'full') => void;
   requestNetworkInfo: () => void;
