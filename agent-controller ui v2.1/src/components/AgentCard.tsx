@@ -22,6 +22,7 @@ import { localizationService } from '../utils/localization';
 import { useLanguage } from './LanguageSelector';
 import { toast } from 'sonner';
 import { apiClient } from '../services/api';
+import { useSocket } from './SocketProvider';
 
 interface Agent {
   id: string;
@@ -58,6 +59,7 @@ const capabilityIcons = {
 export function AgentCard({ agent, isSelected, onSelect }: AgentCardProps) {
   const isOnline = agent.status === 'online';
   const { language } = useLanguage(); // Listen for language changes
+  const { extensionStatus, checkExtensionStatus } = useSocket();
 
   const handleSelect = () => {
     onSelect();
@@ -92,6 +94,10 @@ export function AgentCard({ agent, isSelected, onSelect }: AgentCardProps) {
     toast.info(`${agent.name} ${metric}: ${value}${metric === 'network' ? ' MB/s' : '%'}`, {
       description: `Current ${metric} usage for this agent.`
     });
+  };
+  const handleExtensionClick = () => {
+    checkExtensionStatus(agent.id);
+    toast.info(`Checking extension status for ${agent.name}`);
   };
   
   // Get localized text for badges (will re-render when language changes)
@@ -211,6 +217,33 @@ export function AgentCard({ agent, isSelected, onSelect }: AgentCardProps) {
                 </div>
               ) : null;
             })}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-muted-foreground mb-2">Extension</div>
+          <div className="flex flex-wrap gap-1">
+            <div
+              className="flex items-center space-x-1 bg-muted px-2 py-1 rounded text-xs cursor-pointer hover:bg-muted/80 transition-colors"
+              onClick={(e) => { e.stopPropagation(); handleExtensionClick(); }}
+              title="Click to refresh extension status"
+            >
+              <Shield className="h-3 w-3" />
+              <span>
+                {extensionStatus[agent.id]?.installed
+                  ? 'Installed'
+                  : extensionStatus[agent.id]
+                  ? 'Not Installed'
+                  : 'Check'}
+              </span>
+            </div>
+            {extensionStatus[agent.id] && (
+              <div
+                className="flex items-center space-x-1 bg-muted px-2 py-1 rounded text-xs"
+                title="Policy applied"
+              >
+                <span>Policy: {extensionStatus[agent.id].policy_applied ? 'Yes' : 'No'}</span>
+              </div>
+            )}
           </div>
         </div>
 

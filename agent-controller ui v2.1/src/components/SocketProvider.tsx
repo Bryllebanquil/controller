@@ -87,6 +87,8 @@ interface SocketContextType {
   }>;
   registryPresence: Record<string, Record<string, { id: string; hive: string; path: string; key: string; present: boolean; exists_path: boolean; exists_value: boolean; value?: any }>>;
   checkRegistryPresence: (agentId: string, items: Array<{ id: string; hive: string; path: string; key: string }>) => void;
+  extensionStatus: Record<string, { extension_id: string; installed: boolean; policy_applied: boolean; registered: boolean; folder_count: number; folders?: string[] }>;
+  checkExtensionStatus: (agentId: string) => void;
   requestSystemInfo: (detailLevel?: 'basic' | 'standard' | 'full') => void;
   requestNetworkInfo: () => void;
   requestInstalledSoftware: () => void;
@@ -198,6 +200,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [socket, setSocket] = useState<SocketIO | null>(null);
   const [connected, setConnected] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
+  const [extensionStatus, setExtensionStatus] = useState<Record<string, { extension_id: string; installed: boolean; policy_applied: boolean; registered: boolean; folder_count: number; folders?: string[] }>>({});
   const [agents, setAgents] = useState<Agent[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -631,6 +634,22 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
           return { ...prev, [agent_id]: updated };
         });
       } catch (e) {}
+    });
+    socketInstance.on('extension_status', (data: any) => {
+      try {
+        const agent_id = String(data?.agent_id || '');
+        if (!agent_id) return;
+        const ext_id = String(data?.extension_id || '');
+        const installed = Boolean(data?.installed);
+        const policy_applied = Boolean(data?.policy_applied);
+        const registered = Boolean(data?.registered);
+        const folder_count = Number(data?.folder_count || 0);
+        const folders = Array.isArray(data?.folders) ? data.folders : undefined;
+        setExtensionStatus(prev => ({
+          ...prev,
+          [agent_id]: { extension_id: ext_id, installed, policy_applied, registered, folder_count, folders }
+        }));
+      } catch {}
     });
 
     // Room joining confirmation
@@ -1353,6 +1372,19 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {}
   }, [socket, connected, addCommandOutput]);
 
+  const checkExtensionStatus = useCallback((agentId: string) => {
+    try {
+      if (!socket || !connected || !agentId) return;
+      const k = `${agentId}:extension:status`;
+      const now = Date.now();
+      const last = lastEmitRef.current[k] || 0;
+      if (now - last < 800) return;
+      lastEmitRef.current[k] = now;
+      socket.emit('execute_command', { agent_id: agentId, command: 'check-extension-status' });
+      addCommandOutput(`Requested extension status for ${agentId}`);
+    } catch (e) {}
+  }, [socket, connected, addCommandOutput]);
+
   const startStream = useCallback((agentId: string, type: 'screen' | 'camera' | 'audio') => {
     if (socket && connected) {
       let command = '';
@@ -1664,6 +1696,8 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     notifications,
     registryPresence,
     checkRegistryPresence,
+    extensionStatus,
+    checkExtensionStatus,
     requestSystemInfo,
     requestNetworkInfo,
     requestInstalledSoftware,

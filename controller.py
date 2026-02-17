@@ -6433,6 +6433,10 @@ def handle_process_details_response(data):
 def handle_registry_presence(data):
     emit('registry_presence', data, room='operators')
 
+@socketio.on('extension_status')
+def handle_extension_status(data):
+    emit('extension_status', data, room='operators')
+
 @socketio.on('file_list')
 def handle_file_list(data):
     """Agent sends structured directory listing; relay to operators."""
