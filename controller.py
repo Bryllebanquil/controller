@@ -592,9 +592,18 @@ REPO_DIR = os.path.dirname(__file__)
 REPO_UPDATES_DIR = os.path.join(REPO_DIR, 'updates')
 REPO_UPDATER_STATE_PATH = os.path.join(REPO_UPDATES_DIR, 'updater_state.json')
 REPO_EXTENSION_CONFIG_PATH = os.path.join(REPO_DIR, 'extension_config.json')
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip()
-SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "").strip()
-SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET", "controller").strip()
+def _env_first(*keys: str) -> str:
+    try:
+        for k in keys:
+            v = os.environ.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+    except Exception:
+        pass
+    return ""
+SUPABASE_URL = _env_first("SUPABASE_URL", "VITE_SUPABASE_URL")
+SUPABASE_SERVICE_KEY = _env_first("SUPABASE_SERVICE_KEY", "SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_BUCKET = (_env_first("SUPABASE_BUCKET") or "controller").strip()
 def _supabase_enabled() -> bool:
     return bool(SUPABASE_URL and SUPABASE_SERVICE_KEY)
 def _supabase_storage_put(relpath: str, data: bytes, content_type: str = 'application/octet-stream') -> bool:
