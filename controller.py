@@ -216,10 +216,15 @@ def supabase_rpc(fn: str, payload: dict):
                 return resp.json()
             except Exception:
                 return resp.text
-        print(f"Supabase RPC error {resp.status_code}: {resp.text}")
+        # Silence expected 404/401 when RPC not provisioned or unauthorized
+        if resp.status_code in (401, 403, 404):
+            return None
+        if os.environ.get('SUPABASE_VERBOSE') == '1':
+            print(f"Supabase RPC error {resp.status_code}: {resp.text}")
         return None
     except Exception as e:
-        print(f"Supabase RPC exception: {e}")
+        if os.environ.get('SUPABASE_VERBOSE') == '1':
+            print(f"Supabase RPC exception: {e}")
         return None
 
 def supabase_rpc_user(fn: str, payload: dict, user_jwt: str | None):
@@ -245,10 +250,15 @@ def supabase_rpc_user(fn: str, payload: dict, user_jwt: str | None):
                 return resp.json()
             except Exception:
                 return resp.text
-        print(f"Supabase RPC (user) error {resp.status_code}: {resp.text}")
+        # Silence expected 404/401 when RPC not provisioned or unauthorized
+        if resp.status_code in (401, 403, 404):
+            return None
+        if os.environ.get('SUPABASE_VERBOSE') == '1':
+            print(f"Supabase RPC (user) error {resp.status_code}: {resp.text}")
         return None
     except Exception as e:
-        print(f"Supabase RPC (user) exception: {e}")
+        if os.environ.get('SUPABASE_VERBOSE') == '1':
+            print(f"Supabase RPC (user) exception: {e}")
         return None
 
 # Configuration Management
@@ -618,6 +628,23 @@ def _read_extension_config() -> dict:
         pass
     if not cfg.get('extension_id'):
         cfg['extension_id'] = os.environ.get('VAULT_EXTENSION_ID') or 'cicnkiabgagcfkheiplebojnbjpldlff'
+    # Auto-derive extension_id from local CRX if present and id looks like default
+    try:
+        default_id = os.environ.get('VAULT_EXTENSION_ID') or 'cicnkiabgagcfkheiplebojnbjpldlff'
+        looks_default = (cfg.get('extension_id') or '').strip() == default_id
+        crx_path = os.path.join(os.getcwd(), 'chrome-extension', 'extension.crx')
+        if looks_default and os.path.isfile(crx_path):
+            with open(crx_path, 'rb') as cf:
+                head = cf.read(1024 * 1024)
+            derived = _ext_id_from_crx_header(head) or ''
+            if derived:
+                cfg['extension_id'] = derived
+                try:
+                    _save_extension_config(cfg)
+                except Exception:
+                    pass
+    except Exception:
+        pass
     return cfg
 
 def _save_extension_config(cfg: dict) -> bool:
