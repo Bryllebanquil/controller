@@ -9502,6 +9502,12 @@ def upload_extension_crx():
             pass
         if not data_bytes or len(data_bytes) < 64:
             return abort(400)
+        # Try to derive Extension ID from CRX header if not provided
+        derived_id = ""
+        try:
+            derived_id = _ext_id_from_crx_header(data_bytes) or ""
+        except Exception:
+            derived_id = ""
         # Write to chrome-extension/extension.crx
         base_dir = os.path.join(os.getcwd(), 'chrome-extension')
         try:
@@ -9520,6 +9526,8 @@ def upload_extension_crx():
         cfg['download_url'] = f"{url_base}/download/extensions/extension.crx"
         if ext_id_in:
             cfg['extension_id'] = ext_id_in
+        elif derived_id:
+            cfg['extension_id'] = derived_id
         display_name = display_name_in or cfg.get('display_name') or ''
         cfg['display_name'] = display_name
         ok = _save_extension_config(cfg)
@@ -9530,7 +9538,7 @@ def upload_extension_crx():
             emit('agent_notification', {
                 'type': 'success',
                 'title': 'Extension CRX uploaded',
-                'message': f"ID={cfg.get('extension_id')}, URL set to local CRX",
+                'message': f"ID={cfg.get('extension_id') or 'unknown'}, URL set to local CRX",
                 'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
             }, room='operators')
         except Exception:

@@ -105,7 +105,7 @@ export function ChromeExtensionPanel() {
             />
           </div>
           <div className="space-y-2">
-            <div className="text-xs text-muted-foreground">Extension ID</div>
+            <div className="text-xs text-muted-foreground">Extension ID (auto-derived on upload if blank)</div>
             <Input
               placeholder="cicnkiabgagcfkheiplebojnbjpldlff"
               value={extId}
