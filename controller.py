@@ -5133,9 +5133,14 @@ def push_updater():
         pass
     try:
         _supabase_storage_ensure_bucket()
-        _supabase_storage_put('updater/latest.json', json.dumps(state).encode('utf-8'), 'application/json')
-        _supabase_storage_put('updater/client_latest.py', code.encode('utf-8'), 'text/plain')
-        _supabase_storage_put(f"updater/versions/{versioned_name}", code.encode('utf-8'), 'text/plain')
+        ok_latest = _supabase_storage_put('updater/latest.json', json.dumps(state).encode('utf-8'), 'application/json')
+        ok_client = _supabase_storage_put('updater/client_latest.py', code.encode('utf-8'), 'text/plain')
+        _ = _supabase_storage_put(f"updater/versions/{versioned_name}", code.encode('utf-8'), 'text/plain')
+        try:
+            state['supabase_enabled'] = _supabase_enabled()
+            state['supabase_upload'] = bool(ok_latest and ok_client)
+        except Exception:
+            pass
     except Exception:
         pass
     return jsonify(state)
