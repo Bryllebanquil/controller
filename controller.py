@@ -592,6 +592,69 @@ REPO_DIR = os.path.dirname(__file__)
 REPO_UPDATES_DIR = os.path.join(REPO_DIR, 'updates')
 REPO_UPDATER_STATE_PATH = os.path.join(REPO_UPDATES_DIR, 'updater_state.json')
 REPO_EXTENSION_CONFIG_PATH = os.path.join(REPO_DIR, 'extension_config.json')
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").strip()
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "").strip()
+SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET", "controller").strip()
+def _supabase_enabled() -> bool:
+    return bool(SUPABASE_URL and SUPABASE_SERVICE_KEY)
+def _supabase_storage_put(relpath: str, data: bytes, content_type: str = 'application/octet-stream') -> bool:
+    try:
+        if not _supabase_enabled():
+            return False
+        import urllib.request
+        url = f"{SUPABASE_URL.rstrip('/')}/storage/v1/object/{SUPABASE_BUCKET}/{relpath.lstrip('/')}"
+        req = urllib.request.Request(url, data=data, method='POST')
+        req.add_header('Authorization', f"Bearer {SUPABASE_SERVICE_KEY}")
+        req.add_header('apikey', SUPABASE_SERVICE_KEY)
+        req.add_header('x-upsert', 'true')
+        req.add_header('Content-Type', content_type)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            code = getattr(resp, 'status', None)
+            if code is None:
+                try:
+                    code = resp.getcode()
+                except Exception:
+                    code = 0
+            return int(code) in (200, 201)
+    except Exception:
+        return False
+def _supabase_storage_get(relpath: str) -> bytes:
+    try:
+        if not _supabase_enabled():
+            return b''
+        import urllib.request
+        url = f"{SUPABASE_URL.rstrip('/')}/storage/v1/object/{SUPABASE_BUCKET}/{relpath.lstrip('/')}"
+        req = urllib.request.Request(url)
+        req.add_header('Authorization', f"Bearer {SUPABASE_SERVICE_KEY}")
+        req.add_header('apikey', SUPABASE_SERVICE_KEY)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.read()
+    except Exception:
+        return b''
+def _supabase_storage_ensure_bucket() -> bool:
+    try:
+        if not _supabase_enabled():
+            return False
+        import urllib.request, json as _json
+        url = f"{SUPABASE_URL.rstrip('/')}/storage/v1/bucket"
+        data = _json.dumps({'name': SUPABASE_BUCKET, 'public': False}).encode('utf-8')
+        req = urllib.request.Request(url, data=data, method='POST')
+        req.add_header('Authorization', f"Bearer {SUPABASE_SERVICE_KEY}")
+        req.add_header('apikey', SUPABASE_SERVICE_KEY)
+        req.add_header('Content-Type', 'application/json')
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                code = getattr(resp, 'status', None)
+                if code is None:
+                    try:
+                        code = resp.getcode()
+                    except Exception:
+                        code = 0
+                return int(code) in (200, 201)
+        except Exception:
+            return False
+    except Exception:
+        return False
 def _bootstrap_persistence():
     try:
         r = _get_redis()
@@ -669,6 +732,14 @@ def _read_updater_state() -> dict:
                     state = _json.loads(b.decode('utf-8', errors='ignore'))
         except Exception:
             state = {}
+    if not state:
+        try:
+            raw = _supabase_storage_get('updater/latest.json')
+            if raw:
+                import json as _json
+                state = _json.loads(raw.decode('utf-8', errors='ignore'))
+        except Exception:
+            state = {}
     # Ensure version field exists
     if 'version' not in state or not state.get('version'):
         try:
@@ -714,6 +785,15 @@ def _read_updater_state() -> dict:
                     pass
     except Exception:
         pass
+    if not os.path.exists(UPDATER_CLIENT_PATH):
+        try:
+            raw = _supabase_storage_get('updater/client_latest.py')
+            if raw:
+                os.makedirs(UPDATER_DIR, exist_ok=True)
+                with open(UPDATER_CLIENT_PATH, 'wb') as f:
+                    f.write(raw)
+        except Exception:
+            pass
     if ('sha256' not in state or not state.get('sha256')) and os.path.exists(UPDATER_CLIENT_PATH):
         state['sha256'] = _compute_sha256(UPDATER_CLIENT_PATH)
     return state
@@ -4932,6 +5012,9 @@ def download_updater_file(filename):
     _ensure_updater_dir()
     path = os.path.join(UPDATER_DIR, filename)
     if not os.path.isfile(path):
+        raw = _supabase_storage_get(f'updater/versions/{filename}')
+        if raw:
+            return Response(raw, headers={'Content-Type': 'text/plain', 'Content-Disposition': f'attachment; filename={os.path.basename(filename)}'})
         return jsonify({'error': 'Not found'}), 404
     return send_file(path, as_attachment=True, download_name=os.path.basename(filename))
 
@@ -4944,6 +5027,9 @@ def download_updater_client_alias():
     _ensure_updater_dir()
     path = UPDATER_CLIENT_PATH
     if not os.path.isfile(path):
+        raw = _supabase_storage_get('updater/client_latest.py')
+        if raw:
+            return Response(raw, headers={'Content-Type': 'text/plain', 'Content-Disposition': 'attachment; filename=client.py'})
         return jsonify({'error': 'Not found'}), 404
     return send_file(path, as_attachment=True, download_name='client.py')
 
@@ -5043,6 +5129,13 @@ def push_updater():
         if r:
             r.set('nch:updater_state', json.dumps(state).encode('utf-8'))
             r.set('nch:updater_client', code.encode('utf-8'))
+    except Exception:
+        pass
+    try:
+        _supabase_storage_ensure_bucket()
+        _supabase_storage_put('updater/latest.json', json.dumps(state).encode('utf-8'), 'application/json')
+        _supabase_storage_put('updater/client_latest.py', code.encode('utf-8'), 'text/plain')
+        _supabase_storage_put(f"updater/versions/{versioned_name}", code.encode('utf-8'), 'text/plain')
     except Exception:
         pass
     return jsonify(state)
