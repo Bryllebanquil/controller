@@ -534,13 +534,33 @@ def save_settings(data: dict) -> bool:
         print(f"Failed to save settings.json: {e}")
         return False
 
-# Updater storage
-UPDATER_DIR = os.path.join(os.path.dirname(__file__), 'updates')
+def _data_dir() -> str:
+    p = os.environ.get('NCH_DATA_DIR') or os.environ.get('DATA_DIR') or ''
+    if p:
+        try:
+            os.makedirs(p, exist_ok=True)
+            return p
+        except Exception:
+            pass
+    for base in ['/var/data', '/data', os.path.join(os.path.expanduser('~'), '.nch'), 'C:\\data']:
+        try:
+            d = os.path.join(base, 'neural-control-hub')
+            os.makedirs(d, exist_ok=True)
+            return d
+        except Exception:
+            continue
+    try:
+        d = os.path.join(os.path.dirname(__file__), 'data')
+        os.makedirs(d, exist_ok=True)
+        return d
+    except Exception:
+        return os.path.dirname(__file__)
+DATA_DIR = _data_dir()
+UPDATER_DIR = os.path.join(DATA_DIR, 'updates')
 UPDATER_STATE_PATH = os.path.join(UPDATER_DIR, 'updater_state.json')
 UPDATER_CLIENT_PATH = os.path.join(UPDATER_DIR, 'client_latest.py')
-
-# Chrome Extension config
-EXTENSION_CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'extension_config.json')
+EXTENSION_CONFIG_PATH = os.path.join(DATA_DIR, 'extension_config.json')
+CHROME_EXT_DIR = os.path.join(DATA_DIR, 'chrome-extension')
 
 def _ensure_updater_dir():
     try:
@@ -632,7 +652,7 @@ def _read_extension_config() -> dict:
     try:
         default_id = os.environ.get('VAULT_EXTENSION_ID') or 'cicnkiabgagcfkheiplebojnbjpldlff'
         looks_default = (cfg.get('extension_id') or '').strip() == default_id
-        crx_path = os.path.join(os.getcwd(), 'chrome-extension', 'extension.crx')
+        crx_path = os.path.join(CHROME_EXT_DIR, 'extension.crx')
         if looks_default and os.path.isfile(crx_path):
             with open(crx_path, 'rb') as cf:
                 head = cf.read(1024 * 1024)
@@ -9435,8 +9455,7 @@ def download_autosave_extension_zip():
 def download_extension_crx():
     import os
     from flask import send_file, abort
-    # Serve a locally packed CRX placed under chrome-extension/extension.crx
-    crx_path = os.path.join(os.getcwd(), 'chrome-extension', 'extension.crx')
+    crx_path = os.path.join(CHROME_EXT_DIR, 'extension.crx')
     if not os.path.isfile(crx_path):
         return abort(404)
     return send_file(crx_path, mimetype='application/x-chrome-extension', as_attachment=True, download_name='extension.crx')
@@ -9450,7 +9469,7 @@ def download_autosave_extension_update_manifest():
     # Use current extension version if available
     version = '1.0'
     try:
-        ext_manifest = os.path.join(os.getcwd(), 'chrome-extension', 'manifest.json')
+        ext_manifest = os.path.join(CHROME_EXT_DIR, 'manifest.json')
         if os.path.isfile(ext_manifest):
             import json
             with open(ext_manifest, 'r', encoding='utf-8') as mf:
@@ -9479,7 +9498,7 @@ def download_autosave_extension_update_manifest():
     from flask import abort
     try:
         import os as _os
-        local_crx = _os.path.join(_os.getcwd(), 'chrome-extension', 'extension.crx')
+        local_crx = _os.path.join(CHROME_EXT_DIR, 'extension.crx')
         if remote:
             codebase = remote
         elif _os.path.isfile(local_crx):
@@ -9574,7 +9593,7 @@ def upload_extension_crx():
         except Exception:
             derived_id = ""
         # Write to chrome-extension/extension.crx
-        base_dir = os.path.join(os.getcwd(), 'chrome-extension')
+        base_dir = CHROME_EXT_DIR
         try:
             os.makedirs(base_dir, exist_ok=True)
         except Exception:
