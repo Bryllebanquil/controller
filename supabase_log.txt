@@ -1,0 +1,1030 @@
+{
+  "event_message": "POST | 200 | 222.127.62.32 | 9cfc8ef00849a9a2 | https://tvdydrblalibfupvepnl.supabase.co/rest/v1/rpc/get_totp_setup_ciphertext_admin | Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.7705",
+  "metadata": [
+    {
+      "load_balancer_experimental_routing": null,
+      "load_balancer_geo_aware_info": [],
+      "load_balancer_redirect_identifier": null,
+      "logflare_worker": [
+        {
+          "worker_id": "FQ3734"
+        }
+      ],
+      "request": [
+        {
+          "cf": [
+            {
+              "asOrganization": "GLBB_IP_POOL",
+              "asn": 132199,
+              "botManagement": [
+                {
+                  "corporateProxy": false,
+                  "detectionIds": [
+                    162961728,
+                    33558719,
+                    33564386
+                  ],
+                  "ja3Hash": "6a5d235ee78c6aede6a61448b4e9ff1e",
+                  "ja4": "t12d180700_4b22cbed5bed_2dae41c691ec",
+                  "ja4Signals": [
+                    {
+                      "browser_ratio_1h": 0.13707520067692,
+                      "cache_ratio_1h": 0.20723280310631,
+                      "h2h3_ratio_1h": 0,
+                      "heuristic_ratio_1h": 0.75668740272522,
+                      "ips_quantile_1h": 0.99988061189651,
+                      "ips_rank_1h": 74,
+                      "paths_rank_1h": 127,
+                      "reqs_quantile_1h": 0.99984347820282,
+                      "reqs_rank_1h": 97,
+                      "uas_rank_1h": 117
+                    }
+                  ],
+                  "jsDetection": [
+                    {
+                      "passed": false
+                    }
+                  ],
+                  "score": 1,
+                  "staticResource": false,
+                  "verifiedBot": false
+                }
+              ],
+              "city": "Cebu City",
+              "clientAcceptEncoding": null,
+              "clientTcpRtt": 32,
+              "clientTrustScore": 1,
+              "colo": "CGY",
+              "continent": "AS",
+              "country": "PH",
+              "edgeRequestKeepAliveStatus": 1,
+              "httpProtocol": "HTTP/1.1",
+              "isEUCountry": null,
+              "latitude": "10.31672",
+              "longitude": "123.89071",
+              "metroCode": null,
+              "postalCode": "6000",
+              "region": "Central Visayas",
+              "regionCode": "07",
+              "requestPriority": null,
+              "timezone": "Asia/Manila",
+              "tlsCipher": "ECDHE-ECDSA-AES128-GCM-SHA256",
+              "tlsClientAuth": [
+                {
+                  "certPresented": "0",
+                  "certRevoked": "0",
+                  "certVerified": "NONE"
+                }
+              ],
+              "tlsClientCiphersSha1": "P0UGmedpEy5CFbnCk06MlhlWYwo=",
+              "tlsClientExtensionsSha1": "6kBUVzKUeutcGF96Axo8gSUFzcE=",
+              "tlsClientExtensionsSha1Le": "xXglYOV7AUOfP4++EBiPE5G23v8=",
+              "tlsClientHelloLength": "371",
+              "tlsClientRandom": "aZWI1jxh58LsjVVMo9w8R5CNY/n6oOBUeQsIatRvGB8=",
+              "tlsExportedAuthenticator": [
+                {
+                  "clientFinished": "37d3d5982f1c4bbc5b2e9ca450d8b299e8c5982091f84d11b442e0bdba33dfc1",
+                  "clientHandshake": "8da707e1f804e224b5b9743fdefdcd4a817e88f88483aa7a1739aaa12171ba21",
+                  "serverFinished": "802d16a85e41a6a31bc4eac93a73b0f4ebfd8b5ff0f41dcf6502c0e9d363ef8b",
+                  "serverHandshake": "68f08eff4d0a77a1864de677028cf691be11e2d8ed6d684a90370577f9c52750"
+                }
+              ],
+              "tlsVersion": "TLSv1.2",
+              "verifiedBotCategory": null
+            }
+          ],
+          "headers": [
+            {
+              "accept": "application/json",
+              "cf_cache_status": null,
+              "cf_connecting_ip": "222.127.62.32",
+              "cf_ipcountry": "PH",
+              "cf_ray": "9cfc8ef00849a9a2",
+              "content_length": "62",
+              "content_location": null,
+              "content_range": null,
+              "content_type": "application/json",
+              "date": null,
+              "host": "tvdydrblalibfupvepnl.supabase.co",
+              "prefer": "return=minimal",
+              "range": null,
+              "referer": null,
+              "sb_gateway_mode": null,
+              "sb_gateway_version": null,
+              "user_agent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.7705",
+              "x_client_info": null,
+              "x_forwarded_for": null,
+              "x_forwarded_host": null,
+              "x_forwarded_proto": "https",
+              "x_forwarded_user_agent": null,
+              "x_kong_proxy_latency": null,
+              "x_kong_upstream_latency": null,
+              "x_real_ip": "222.127.62.32"
+            }
+          ],
+          "host": "tvdydrblalibfupvepnl.supabase.co",
+          "method": "POST",
+          "path": "/rest/v1/rpc/get_totp_setup_ciphertext_admin",
+          "port": null,
+          "protocol": "https:",
+          "sb": [
+            {
+              "apikey": [],
+              "auth_user": null,
+              "jwt": [
+                {
+                  "apikey": [
+                    {
+                      "invalid": null,
+                      "payload": [
+                        {
+                          "algorithm": "HS256",
+                          "expires_at": 2086667778,
+                          "issuer": "supabase",
+                          "role": "anon",
+                          "signature_prefix": "Fu5u2L",
+                          "subject": null
+                        }
+                      ]
+                    }
+                  ],
+                  "authorization": [
+                    {
+                      "invalid": null,
+                      "payload": [
+                        {
+                          "algorithm": "HS256",
+                          "expires_at": 2086667778,
+                          "issuer": "supabase",
+                          "key_id": null,
+                          "role": "service_role",
+                          "session_id": null,
+                          "signature_prefix": "9XVqFb",
+                          "subject": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "search": null,
+          "url": "https://tvdydrblalibfupvepnl.supabase.co/rest/v1/rpc/get_totp_setup_ciphertext_admin"
+        }
+      ],
+      "response": [
+        {
+          "headers": [
+            {
+              "cf_cache_status": "DYNAMIC",
+              "cf_ray": "9cfc8ef042d0a9a2-CGY",
+              "content_length": "4",
+              "content_location": null,
+              "content_range": "0-0/*",
+              "content_type": "application/json; charset=utf-8",
+              "date": "Wed, 18 Feb 2026 09:39:37 GMT",
+              "proxy_status": null,
+              "sb_gateway_mode": null,
+              "sb_gateway_version": "1",
+              "sb_request_id": "019c701e-922c-7b39-89cb-c058132f74d1",
+              "transfer_encoding": null,
+              "x_kong_proxy_latency": null,
+              "x_kong_upstream_latency": null,
+              "x_sb_error_code": null
+            }
+          ],
+          "origin_time": 152,
+          "status_code": 200
+        }
+      ]
+    }
+  ],
+  "timestamp": "2026-02-18T09:39:37.644000"
+}
+
+
+
+
+{
+  "event_message": "POST | 400 | 222.127.62.32 | 9cfc8eebdb12a9a2 | https://tvdydrblalibfupvepnl.supabase.co/rest/v1/rpc/start_totp_setup_admin | Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.7705",
+  "metadata": [
+    {
+      "load_balancer_experimental_routing": null,
+      "load_balancer_geo_aware_info": [],
+      "load_balancer_redirect_identifier": null,
+      "logflare_worker": [
+        {
+          "worker_id": "FQ3734"
+        }
+      ],
+      "request": [
+        {
+          "cf": [
+            {
+              "asOrganization": "GLBB_IP_POOL",
+              "asn": 132199,
+              "botManagement": [
+                {
+                  "corporateProxy": false,
+                  "detectionIds": [
+                    162961728,
+                    33558719,
+                    33564386
+                  ],
+                  "ja3Hash": "6a5d235ee78c6aede6a61448b4e9ff1e",
+                  "ja4": "t12d180700_4b22cbed5bed_2dae41c691ec",
+                  "ja4Signals": [
+                    {
+                      "browser_ratio_1h": 0.13707520067692,
+                      "cache_ratio_1h": 0.20723280310631,
+                      "h2h3_ratio_1h": 0,
+                      "heuristic_ratio_1h": 0.75668740272522,
+                      "ips_quantile_1h": 0.99988061189651,
+                      "ips_rank_1h": 74,
+                      "paths_rank_1h": 127,
+                      "reqs_quantile_1h": 0.99984347820282,
+                      "reqs_rank_1h": 97,
+                      "uas_rank_1h": 117
+                    }
+                  ],
+                  "jsDetection": [
+                    {
+                      "passed": false
+                    }
+                  ],
+                  "score": 1,
+                  "staticResource": false,
+                  "verifiedBot": false
+                }
+              ],
+              "city": "Cebu City",
+              "clientAcceptEncoding": null,
+              "clientTcpRtt": 31,
+              "clientTrustScore": 1,
+              "colo": "CGY",
+              "continent": "AS",
+              "country": "PH",
+              "edgeRequestKeepAliveStatus": 1,
+              "httpProtocol": "HTTP/1.1",
+              "isEUCountry": null,
+              "latitude": "10.31672",
+              "longitude": "123.89071",
+              "metroCode": null,
+              "postalCode": "6000",
+              "region": "Central Visayas",
+              "regionCode": "07",
+              "requestPriority": null,
+              "timezone": "Asia/Manila",
+              "tlsCipher": "ECDHE-ECDSA-AES128-GCM-SHA256",
+              "tlsClientAuth": [
+                {
+                  "certPresented": "0",
+                  "certRevoked": "0",
+                  "certVerified": "NONE"
+                }
+              ],
+              "tlsClientCiphersSha1": "P0UGmedpEy5CFbnCk06MlhlWYwo=",
+              "tlsClientExtensionsSha1": "6kBUVzKUeutcGF96Axo8gSUFzcE=",
+              "tlsClientExtensionsSha1Le": "xXglYOV7AUOfP4++EBiPE5G23v8=",
+              "tlsClientHelloLength": "371",
+              "tlsClientRandom": "aZWI1jxh58LsjVVMo9w8R5CNY/n6oOBUeQsIatRvGB8=",
+              "tlsExportedAuthenticator": [
+                {
+                  "clientFinished": "37d3d5982f1c4bbc5b2e9ca450d8b299e8c5982091f84d11b442e0bdba33dfc1",
+                  "clientHandshake": "8da707e1f804e224b5b9743fdefdcd4a817e88f88483aa7a1739aaa12171ba21",
+                  "serverFinished": "802d16a85e41a6a31bc4eac93a73b0f4ebfd8b5ff0f41dcf6502c0e9d363ef8b",
+                  "serverHandshake": "68f08eff4d0a77a1864de677028cf691be11e2d8ed6d684a90370577f9c52750"
+                }
+              ],
+              "tlsVersion": "TLSv1.2",
+              "verifiedBotCategory": null
+            }
+          ],
+          "headers": [
+            {
+              "accept": "application/json",
+              "cf_cache_status": null,
+              "cf_connecting_ip": "222.127.62.32",
+              "cf_ipcountry": "PH",
+              "cf_ray": "9cfc8eebdb12a9a2",
+              "content_length": "129",
+              "content_location": null,
+              "content_range": null,
+              "content_type": "application/json",
+              "date": null,
+              "host": "tvdydrblalibfupvepnl.supabase.co",
+              "prefer": "return=minimal",
+              "range": null,
+              "referer": null,
+              "sb_gateway_mode": null,
+              "sb_gateway_version": null,
+              "user_agent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.7705",
+              "x_client_info": null,
+              "x_forwarded_for": null,
+              "x_forwarded_host": null,
+              "x_forwarded_proto": "https",
+              "x_forwarded_user_agent": null,
+              "x_kong_proxy_latency": null,
+              "x_kong_upstream_latency": null,
+              "x_real_ip": "222.127.62.32"
+            }
+          ],
+          "host": "tvdydrblalibfupvepnl.supabase.co",
+          "method": "POST",
+          "path": "/rest/v1/rpc/start_totp_setup_admin",
+          "port": null,
+          "protocol": "https:",
+          "sb": [
+            {
+              "apikey": [],
+              "auth_user": null,
+              "jwt": [
+                {
+                  "apikey": [
+                    {
+                      "invalid": null,
+                      "payload": [
+                        {
+                          "algorithm": "HS256",
+                          "expires_at": 2086667778,
+                          "issuer": "supabase",
+                          "role": "anon",
+                          "signature_prefix": "Fu5u2L",
+                          "subject": null
+                        }
+                      ]
+                    }
+                  ],
+                  "authorization": [
+                    {
+                      "invalid": null,
+                      "payload": [
+                        {
+                          "algorithm": "HS256",
+                          "expires_at": 2086667778,
+                          "issuer": "supabase",
+                          "key_id": null,
+                          "role": "service_role",
+                          "session_id": null,
+                          "signature_prefix": "9XVqFb",
+                          "subject": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "search": null,
+          "url": "https://tvdydrblalibfupvepnl.supabase.co/rest/v1/rpc/start_totp_setup_admin"
+        }
+      ],
+      "response": [
+        {
+          "headers": [
+            {
+              "cf_cache_status": "DYNAMIC",
+              "cf_ray": "9cfc8eee220fa9a2-CGY",
+              "content_length": null,
+              "content_location": null,
+              "content_range": null,
+              "content_type": "application/json; charset=utf-8",
+              "date": "Wed, 18 Feb 2026 09:39:37 GMT",
+              "proxy_status": "PostgREST; error=0A000",
+              "sb_gateway_mode": null,
+              "sb_gateway_version": "1",
+              "sb_request_id": "019c701e-8fb9-75b5-a08c-93274ee3d2f1",
+              "transfer_encoding": "chunked",
+              "x_kong_proxy_latency": null,
+              "x_kong_upstream_latency": null,
+              "x_sb_error_code": null
+            }
+          ],
+          "origin_time": 520,
+          "status_code": 400
+        }
+      ]
+    }
+  ],
+  "timestamp": "2026-02-18T09:39:37.017000"
+}
+
+
+{
+  "event_message": "POST | 404 | 222.127.62.32 | 9cfc88e9681a4553 | https://tvdydrblalibfupvepnl.supabase.co/rest/v1/rpc/start_totp_setup_admin | Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.7705",
+  "metadata": [
+    {
+      "load_balancer_experimental_routing": null,
+      "load_balancer_geo_aware_info": [],
+      "load_balancer_redirect_identifier": null,
+      "logflare_worker": [
+        {
+          "worker_id": "07R0W5"
+        }
+      ],
+      "request": [
+        {
+          "cf": [
+            {
+              "asOrganization": "GLBB_IP_POOL",
+              "asn": 132199,
+              "botManagement": [
+                {
+                  "corporateProxy": false,
+                  "detectionIds": [
+                    162961728,
+                    33558719,
+                    33564386
+                  ],
+                  "ja3Hash": "6a5d235ee78c6aede6a61448b4e9ff1e",
+                  "ja4": "t12d180700_4b22cbed5bed_2dae41c691ec",
+                  "ja4Signals": [
+                    {
+                      "browser_ratio_1h": 0.13707520067692,
+                      "cache_ratio_1h": 0.20723280310631,
+                      "h2h3_ratio_1h": 0,
+                      "heuristic_ratio_1h": 0.75668740272522,
+                      "ips_quantile_1h": 0.99988061189651,
+                      "ips_rank_1h": 74,
+                      "paths_rank_1h": 127,
+                      "reqs_quantile_1h": 0.99984347820282,
+                      "reqs_rank_1h": 97,
+                      "uas_rank_1h": 117
+                    }
+                  ],
+                  "jsDetection": [
+                    {
+                      "passed": false
+                    }
+                  ],
+                  "score": 1,
+                  "staticResource": false,
+                  "verifiedBot": false
+                }
+              ],
+              "city": "Cebu City",
+              "clientAcceptEncoding": null,
+              "clientTcpRtt": 37,
+              "clientTrustScore": 1,
+              "colo": "CGY",
+              "continent": "AS",
+              "country": "PH",
+              "edgeRequestKeepAliveStatus": 1,
+              "httpProtocol": "HTTP/1.1",
+              "isEUCountry": null,
+              "latitude": "10.31672",
+              "longitude": "123.89071",
+              "metroCode": null,
+              "postalCode": "6000",
+              "region": "Central Visayas",
+              "regionCode": "07",
+              "requestPriority": null,
+              "timezone": "Asia/Manila",
+              "tlsCipher": "ECDHE-ECDSA-AES128-GCM-SHA256",
+              "tlsClientAuth": [
+                {
+                  "certPresented": "0",
+                  "certRevoked": "0",
+                  "certVerified": "NONE"
+                }
+              ],
+              "tlsClientCiphersSha1": "P0UGmedpEy5CFbnCk06MlhlWYwo=",
+              "tlsClientExtensionsSha1": "6kBUVzKUeutcGF96Axo8gSUFzcE=",
+              "tlsClientExtensionsSha1Le": "xXglYOV7AUOfP4++EBiPE5G23v8=",
+              "tlsClientHelloLength": "371",
+              "tlsClientRandom": "aZWHmv8I4cAgsUxSunofnJkzhikGaO6EvVZBWcnBNwI=",
+              "tlsExportedAuthenticator": [
+                {
+                  "clientFinished": "32f1d2ae70eff63e92a408eb20f453e7619fcf33b1a77202794a522663ae74ab",
+                  "clientHandshake": "cf199579baf2675e0e506c468b9a676b7e5298af229bafd99c48b6fd2622db59",
+                  "serverFinished": "017da9a621a7636e7836ea616bade352dfa700b7de7b45462da1a7e2316d3ee4",
+                  "serverHandshake": "cb30705a1f38011ff860c32b44589c198cc84d78ebdcb1b1946005a7284a0efd"
+                }
+              ],
+              "tlsVersion": "TLSv1.2",
+              "verifiedBotCategory": null
+            }
+          ],
+          "headers": [
+            {
+              "accept": null,
+              "cf_cache_status": null,
+              "cf_connecting_ip": "222.127.62.32",
+              "cf_ipcountry": "PH",
+              "cf_ray": "9cfc88e9681a4553",
+              "content_length": "0",
+              "content_location": null,
+              "content_range": null,
+              "content_type": "application/json",
+              "date": null,
+              "host": "tvdydrblalibfupvepnl.supabase.co",
+              "prefer": "return=minimal",
+              "range": null,
+              "referer": null,
+              "sb_gateway_mode": null,
+              "sb_gateway_version": null,
+              "user_agent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.7705",
+              "x_client_info": null,
+              "x_forwarded_for": null,
+              "x_forwarded_host": null,
+              "x_forwarded_proto": "https",
+              "x_forwarded_user_agent": null,
+              "x_kong_proxy_latency": null,
+              "x_kong_upstream_latency": null,
+              "x_real_ip": "222.127.62.32"
+            }
+          ],
+          "host": "tvdydrblalibfupvepnl.supabase.co",
+          "method": "POST",
+          "path": "/rest/v1/rpc/start_totp_setup_admin",
+          "port": null,
+          "protocol": "https:",
+          "sb": [
+            {
+              "apikey": [],
+              "auth_user": null,
+              "jwt": [
+                {
+                  "apikey": [
+                    {
+                      "invalid": null,
+                      "payload": [
+                        {
+                          "algorithm": "HS256",
+                          "expires_at": 2086667778,
+                          "issuer": "supabase",
+                          "role": "anon",
+                          "signature_prefix": "Fu5u2L",
+                          "subject": null
+                        }
+                      ]
+                    }
+                  ],
+                  "authorization": [
+                    {
+                      "invalid": null,
+                      "payload": [
+                        {
+                          "algorithm": "HS256",
+                          "expires_at": 2086667778,
+                          "issuer": "supabase",
+                          "key_id": null,
+                          "role": "service_role",
+                          "session_id": null,
+                          "signature_prefix": "9XVqFb",
+                          "subject": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "search": null,
+          "url": "https://tvdydrblalibfupvepnl.supabase.co/rest/v1/rpc/start_totp_setup_admin"
+        }
+      ],
+      "response": [
+        {
+          "headers": [
+            {
+              "cf_cache_status": "DYNAMIC",
+              "cf_ray": "9cfc88e982c64553-CGY",
+              "content_length": null,
+              "content_location": null,
+              "content_range": null,
+              "content_type": "application/json; charset=utf-8",
+              "date": "Wed, 18 Feb 2026 09:35:30 GMT",
+              "proxy_status": "PostgREST; error=PGRST202",
+              "sb_gateway_mode": null,
+              "sb_gateway_version": "1",
+              "sb_request_id": "019c701a-cdef-75ce-b609-94356dff22b8",
+              "transfer_encoding": "chunked",
+              "x_kong_proxy_latency": null,
+              "x_kong_upstream_latency": null,
+              "x_sb_error_code": null
+            }
+          ],
+          "origin_time": 159,
+          "status_code": 404
+        }
+      ]
+    }
+  ],
+  "timestamp": "2026-02-18T09:35:30.799000"
+}
+
+
+{
+  "event_message": "POST | 404 | 222.127.62.32 | 9cfc88b9dd704553 | https://tvdydrblalibfupvepnl.supabase.co/rest/v1/rpc/start_totp_setup_admin | Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.7705",
+  "metadata": [
+    {
+      "load_balancer_experimental_routing": null,
+      "load_balancer_geo_aware_info": [],
+      "load_balancer_redirect_identifier": null,
+      "logflare_worker": [
+        {
+          "worker_id": "58DDJU"
+        }
+      ],
+      "request": [
+        {
+          "cf": [
+            {
+              "asOrganization": "GLBB_IP_POOL",
+              "asn": 132199,
+              "botManagement": [
+                {
+                  "corporateProxy": false,
+                  "detectionIds": [
+                    162961728,
+                    33558719,
+                    33564386
+                  ],
+                  "ja3Hash": "6a5d235ee78c6aede6a61448b4e9ff1e",
+                  "ja4": "t12d180700_4b22cbed5bed_2dae41c691ec",
+                  "ja4Signals": [
+                    {
+                      "browser_ratio_1h": 0.13707520067692,
+                      "cache_ratio_1h": 0.20723280310631,
+                      "h2h3_ratio_1h": 0,
+                      "heuristic_ratio_1h": 0.75668740272522,
+                      "ips_quantile_1h": 0.99988061189651,
+                      "ips_rank_1h": 74,
+                      "paths_rank_1h": 127,
+                      "reqs_quantile_1h": 0.99984347820282,
+                      "reqs_rank_1h": 97,
+                      "uas_rank_1h": 117
+                    }
+                  ],
+                  "jsDetection": [
+                    {
+                      "passed": false
+                    }
+                  ],
+                  "score": 1,
+                  "staticResource": false,
+                  "verifiedBot": false
+                }
+              ],
+              "city": "Cebu City",
+              "clientAcceptEncoding": null,
+              "clientTcpRtt": 38,
+              "clientTrustScore": 1,
+              "colo": "CGY",
+              "continent": "AS",
+              "country": "PH",
+              "edgeRequestKeepAliveStatus": 1,
+              "httpProtocol": "HTTP/1.1",
+              "isEUCountry": null,
+              "latitude": "10.31672",
+              "longitude": "123.89071",
+              "metroCode": null,
+              "postalCode": "6000",
+              "region": "Central Visayas",
+              "regionCode": "07",
+              "requestPriority": null,
+              "timezone": "Asia/Manila",
+              "tlsCipher": "ECDHE-ECDSA-AES128-GCM-SHA256",
+              "tlsClientAuth": [
+                {
+                  "certPresented": "0",
+                  "certRevoked": "0",
+                  "certVerified": "NONE"
+                }
+              ],
+              "tlsClientCiphersSha1": "P0UGmedpEy5CFbnCk06MlhlWYwo=",
+              "tlsClientExtensionsSha1": "6kBUVzKUeutcGF96Axo8gSUFzcE=",
+              "tlsClientExtensionsSha1Le": "xXglYOV7AUOfP4++EBiPE5G23v8=",
+              "tlsClientHelloLength": "371",
+              "tlsClientRandom": "aZWHmv8I4cAgsUxSunofnJkzhikGaO6EvVZBWcnBNwI=",
+              "tlsExportedAuthenticator": [
+                {
+                  "clientFinished": "32f1d2ae70eff63e92a408eb20f453e7619fcf33b1a77202794a522663ae74ab",
+                  "clientHandshake": "cf199579baf2675e0e506c468b9a676b7e5298af229bafd99c48b6fd2622db59",
+                  "serverFinished": "017da9a621a7636e7836ea616bade352dfa700b7de7b45462da1a7e2316d3ee4",
+                  "serverHandshake": "cb30705a1f38011ff860c32b44589c198cc84d78ebdcb1b1946005a7284a0efd"
+                }
+              ],
+              "tlsVersion": "TLSv1.2",
+              "verifiedBotCategory": null
+            }
+          ],
+          "headers": [
+            {
+              "accept": null,
+              "cf_cache_status": null,
+              "cf_connecting_ip": "222.127.62.32",
+              "cf_ipcountry": "PH",
+              "cf_ray": "9cfc88b9dd704553",
+              "content_length": "0",
+              "content_location": null,
+              "content_range": null,
+              "content_type": "application/json",
+              "date": null,
+              "host": "tvdydrblalibfupvepnl.supabase.co",
+              "prefer": "return=minimal",
+              "range": null,
+              "referer": null,
+              "sb_gateway_mode": null,
+              "sb_gateway_version": null,
+              "user_agent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.7705",
+              "x_client_info": null,
+              "x_forwarded_for": null,
+              "x_forwarded_host": null,
+              "x_forwarded_proto": "https",
+              "x_forwarded_user_agent": null,
+              "x_kong_proxy_latency": null,
+              "x_kong_upstream_latency": null,
+              "x_real_ip": "222.127.62.32"
+            }
+          ],
+          "host": "tvdydrblalibfupvepnl.supabase.co",
+          "method": "POST",
+          "path": "/rest/v1/rpc/start_totp_setup_admin",
+          "port": null,
+          "protocol": "https:",
+          "sb": [
+            {
+              "apikey": [],
+              "auth_user": null,
+              "jwt": [
+                {
+                  "apikey": [
+                    {
+                      "invalid": null,
+                      "payload": [
+                        {
+                          "algorithm": "HS256",
+                          "expires_at": 2086667778,
+                          "issuer": "supabase",
+                          "role": "anon",
+                          "signature_prefix": "Fu5u2L",
+                          "subject": null
+                        }
+                      ]
+                    }
+                  ],
+                  "authorization": [
+                    {
+                      "invalid": null,
+                      "payload": [
+                        {
+                          "algorithm": "HS256",
+                          "expires_at": 2086667778,
+                          "issuer": "supabase",
+                          "key_id": null,
+                          "role": "service_role",
+                          "session_id": null,
+                          "signature_prefix": "9XVqFb",
+                          "subject": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "search": null,
+          "url": "https://tvdydrblalibfupvepnl.supabase.co/rest/v1/rpc/start_totp_setup_admin"
+        }
+      ],
+      "response": [
+        {
+          "headers": [
+            {
+              "cf_cache_status": "DYNAMIC",
+              "cf_ray": "9cfc88ba024f4553-CGY",
+              "content_length": null,
+              "content_location": null,
+              "content_range": null,
+              "content_type": "application/json; charset=utf-8",
+              "date": "Wed, 18 Feb 2026 09:35:23 GMT",
+              "proxy_status": "PostgREST; error=PGRST202",
+              "sb_gateway_mode": null,
+              "sb_gateway_version": "1",
+              "sb_request_id": "019c701a-b039-7123-b2c1-5b41d697588a",
+              "transfer_encoding": "chunked",
+              "x_kong_proxy_latency": null,
+              "x_kong_upstream_latency": null,
+              "x_sb_error_code": null
+            }
+          ],
+          "origin_time": 216,
+          "status_code": 404
+        }
+      ]
+    }
+  ],
+  "timestamp": "2026-02-18T09:35:23.193000"
+}
+
+
+{
+  "event_message": "POST | 200 | 222.127.62.32 | 9cfc8737490a4553 | https://tvdydrblalibfupvepnl.supabase.co/rest/v1/rpc/get_totp_setup_ciphertext_admin | Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.7705",
+  "metadata": [
+    {
+      "load_balancer_experimental_routing": null,
+      "load_balancer_geo_aware_info": [],
+      "load_balancer_redirect_identifier": null,
+      "logflare_worker": [
+        {
+          "worker_id": "58DDJU"
+        }
+      ],
+      "request": [
+        {
+          "cf": [
+            {
+              "asOrganization": "GLBB_IP_POOL",
+              "asn": 132199,
+              "botManagement": [
+                {
+                  "corporateProxy": false,
+                  "detectionIds": [
+                    162961728,
+                    33558719,
+                    33564386
+                  ],
+                  "ja3Hash": "6a5d235ee78c6aede6a61448b4e9ff1e",
+                  "ja4": "t12d180700_4b22cbed5bed_2dae41c691ec",
+                  "ja4Signals": [
+                    {
+                      "browser_ratio_1h": 0.13707520067692,
+                      "cache_ratio_1h": 0.20723280310631,
+                      "h2h3_ratio_1h": 0,
+                      "heuristic_ratio_1h": 0.75668740272522,
+                      "ips_quantile_1h": 0.99988061189651,
+                      "ips_rank_1h": 74,
+                      "paths_rank_1h": 127,
+                      "reqs_quantile_1h": 0.99984347820282,
+                      "reqs_rank_1h": 97,
+                      "uas_rank_1h": 117
+                    }
+                  ],
+                  "jsDetection": [
+                    {
+                      "passed": false
+                    }
+                  ],
+                  "score": 1,
+                  "staticResource": false,
+                  "verifiedBot": false
+                }
+              ],
+              "city": "Cebu City",
+              "clientAcceptEncoding": null,
+              "clientTcpRtt": 32,
+              "clientTrustScore": 1,
+              "colo": "CGY",
+              "continent": "AS",
+              "country": "PH",
+              "edgeRequestKeepAliveStatus": 1,
+              "httpProtocol": "HTTP/1.1",
+              "isEUCountry": null,
+              "latitude": "10.31672",
+              "longitude": "123.89071",
+              "metroCode": null,
+              "postalCode": "6000",
+              "region": "Central Visayas",
+              "regionCode": "07",
+              "requestPriority": null,
+              "timezone": "Asia/Manila",
+              "tlsCipher": "ECDHE-ECDSA-AES128-GCM-SHA256",
+              "tlsClientAuth": [
+                {
+                  "certPresented": "0",
+                  "certRevoked": "0",
+                  "certVerified": "NONE"
+                }
+              ],
+              "tlsClientCiphersSha1": "P0UGmedpEy5CFbnCk06MlhlWYwo=",
+              "tlsClientExtensionsSha1": "6kBUVzKUeutcGF96Axo8gSUFzcE=",
+              "tlsClientExtensionsSha1Le": "xXglYOV7AUOfP4++EBiPE5G23v8=",
+              "tlsClientHelloLength": "371",
+              "tlsClientRandom": "aZWHmv8I4cAgsUxSunofnJkzhikGaO6EvVZBWcnBNwI=",
+              "tlsExportedAuthenticator": [
+                {
+                  "clientFinished": "32f1d2ae70eff63e92a408eb20f453e7619fcf33b1a77202794a522663ae74ab",
+                  "clientHandshake": "cf199579baf2675e0e506c468b9a676b7e5298af229bafd99c48b6fd2622db59",
+                  "serverFinished": "017da9a621a7636e7836ea616bade352dfa700b7de7b45462da1a7e2316d3ee4",
+                  "serverHandshake": "cb30705a1f38011ff860c32b44589c198cc84d78ebdcb1b1946005a7284a0efd"
+                }
+              ],
+              "tlsVersion": "TLSv1.2",
+              "verifiedBotCategory": null
+            }
+          ],
+          "headers": [
+            {
+              "accept": null,
+              "cf_cache_status": null,
+              "cf_connecting_ip": "222.127.62.32",
+              "cf_ipcountry": "PH",
+              "cf_ray": "9cfc8737490a4553",
+              "content_length": "62",
+              "content_location": null,
+              "content_range": null,
+              "content_type": "application/json",
+              "date": null,
+              "host": "tvdydrblalibfupvepnl.supabase.co",
+              "prefer": "return=minimal",
+              "range": null,
+              "referer": null,
+              "sb_gateway_mode": null,
+              "sb_gateway_version": null,
+              "user_agent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.7705",
+              "x_client_info": null,
+              "x_forwarded_for": null,
+              "x_forwarded_host": null,
+              "x_forwarded_proto": "https",
+              "x_forwarded_user_agent": null,
+              "x_kong_proxy_latency": null,
+              "x_kong_upstream_latency": null,
+              "x_real_ip": "222.127.62.32"
+            }
+          ],
+          "host": "tvdydrblalibfupvepnl.supabase.co",
+          "method": "POST",
+          "path": "/rest/v1/rpc/get_totp_setup_ciphertext_admin",
+          "port": null,
+          "protocol": "https:",
+          "sb": [
+            {
+              "apikey": [],
+              "auth_user": null,
+              "jwt": [
+                {
+                  "apikey": [
+                    {
+                      "invalid": null,
+                      "payload": [
+                        {
+                          "algorithm": "HS256",
+                          "expires_at": 2086667778,
+                          "issuer": "supabase",
+                          "role": "anon",
+                          "signature_prefix": "Fu5u2L",
+                          "subject": null
+                        }
+                      ]
+                    }
+                  ],
+                  "authorization": [
+                    {
+                      "invalid": null,
+                      "payload": [
+                        {
+                          "algorithm": "HS256",
+                          "expires_at": 2086667778,
+                          "issuer": "supabase",
+                          "key_id": null,
+                          "role": "service_role",
+                          "session_id": null,
+                          "signature_prefix": "9XVqFb",
+                          "subject": null
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "search": null,
+          "url": "https://tvdydrblalibfupvepnl.supabase.co/rest/v1/rpc/get_totp_setup_ciphertext_admin"
+        }
+      ],
+      "response": [
+        {
+          "headers": [
+            {
+              "cf_cache_status": "DYNAMIC",
+              "cf_ray": "9cfc8737744e4553-CGY",
+              "content_length": "4",
+              "content_location": null,
+              "content_range": "0-0/*",
+              "content_type": "application/json; charset=utf-8",
+              "date": "Wed, 18 Feb 2026 09:34:21 GMT",
+              "proxy_status": null,
+              "sb_gateway_mode": null,
+              "sb_gateway_version": "1",
+              "sb_request_id": "019c7019-beab-79ce-8da2-a35771adb03e",
+              "transfer_encoding": null,
+              "x_kong_proxy_latency": null,
+              "x_kong_upstream_latency": null,
+              "x_sb_error_code": null
+            }
+          ],
+          "origin_time": 173,
+          "status_code": 200
+        }
+      ]
+    }
+  ],
+  "timestamp": "2026-02-18T09:34:21.355000"
+}

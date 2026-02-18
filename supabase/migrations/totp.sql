@@ -1,6 +1,6 @@
 create or replace function start_totp_setup(secret_cipher text)
 returns void
-language sql stable
+language sql volatile
 security definer
 set search_path = public
 as $$
@@ -23,7 +23,7 @@ $$;
 
 create or replace function confirm_totp_setup()
 returns void
-language sql stable
+language sql volatile
 security definer
 set search_path = public
 as $$
@@ -47,7 +47,7 @@ $$;
 -- Admin parameterized variants (service-role calls)
 create or replace function start_totp_setup_admin(user_uuid uuid, secret_cipher text)
 returns void
-language sql stable
+language sql volatile
 security definer
 set search_path = public
 as $$
@@ -73,7 +73,7 @@ $$;
 
 create or replace function confirm_totp_setup_admin(user_uuid uuid)
 returns void
-language sql stable
+language sql volatile
 security definer
 set search_path = public
 as $$
