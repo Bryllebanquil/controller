@@ -210,6 +210,11 @@ WEBRTC_CONFIG = {
 # Supabase Vault integration (optional)
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
+SUPABASE_ANON_KEY = (
+    os.environ.get('SUPABASE_ANON_KEY')
+    or os.environ.get('VITE_SUPABASE_ANON_KEY')
+    or ''
+)
 ADMIN_USER_ID = os.environ.get('ADMIN_USER_ID', '00000000-0000-0000-0000-000000000001')
 
 def supabase_rpc(fn: str, payload: dict):
@@ -218,7 +223,7 @@ def supabase_rpc(fn: str, payload: dict):
     try:
         url = SUPABASE_URL.rstrip('/') + f"/rest/v1/rpc/{fn}"
         headers = {
-            'apikey': SUPABASE_SERVICE_ROLE_KEY,
+            'apikey': SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY,
             'Authorization': f'Bearer {SUPABASE_SERVICE_ROLE_KEY}',
             'Content-Type': 'application/json',
             'Accept': 'application/json'
@@ -251,10 +256,10 @@ def supabase_rpc_user(fn: str, payload: dict, user_jwt: str | None):
         }
         if user_jwt:
             headers['Authorization'] = f'Bearer {user_jwt}'
-            headers['apikey'] = SUPABASE_SERVICE_ROLE_KEY or ''
+            headers['apikey'] = SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY or ''
         elif SUPABASE_SERVICE_ROLE_KEY:
             headers['Authorization'] = f'Bearer {SUPABASE_SERVICE_ROLE_KEY}'
-            headers['apikey'] = SUPABASE_SERVICE_ROLE_KEY
+            headers['apikey'] = SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY
         else:
             return None
         resp = requests.post(url, json=payload, headers=headers, timeout=10)
