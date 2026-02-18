@@ -5,13 +5,14 @@ import { Input } from './ui/input';
 import { Alert, AlertDescription } from './ui/alert';
 import { Shield, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useSocket } from './SocketProvider';
+import apiClient from '../services/api';
+import { toast } from 'sonner';
 
 export function Login() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  
   
   const { login } = useSocket();
 
@@ -27,9 +28,26 @@ export function Login() {
       if (resp?.success) {
         return;
       }
-      setError(resp?.error || 'Login failed. Check password.');
+      const d: any = (resp as any)?.data || {};
+      if (d?.totp_required) {
+        try { sessionStorage.setItem('nch:pending_login_password', password); } catch {}
+        try { sessionStorage.setItem('nch:pending_login_password_ts', String(Date.now())); } catch {}
+        try { sessionStorage.setItem('nch:pending_totp', JSON.stringify({
+          issuer: d?.issuer || 'Neural Control Hub',
+          digits: d?.digits || 6,
+          show_qr: !!d?.show_qr,
+          qr_png_b64: d?.qr_png_b64 || null
+        })); } catch {}
+        try { window.location.assign('/2fa'); } catch {}
+        return;
+      } else {
+        const msg = resp?.error || d?.error || 'Login failed. Check password.';
+        setError(msg);
+        toast.error(msg);
+      }
     } catch (error) {
       setError('Login failed. Please check your connection and try again.');
+      toast.error('Login failed. Please check your connection and try again.');
     } finally {
       setIsLoading(false);
     }
@@ -38,6 +56,13 @@ export function Login() {
   useEffect(() => {
     (async () => {
       try {
+        try {
+          const url = new URL(window.location.href);
+          if (url.searchParams.has('tab')) {
+            url.searchParams.delete('tab');
+            window.history.replaceState({}, '', url.toString());
+          }
+        } catch {}
         const p = new URLSearchParams(window.location.search);
         let t = p.get('supabase_token') || '';
         if (!t && typeof window !== 'undefined') {
@@ -61,11 +86,6 @@ export function Login() {
     })();
   }, []);
   
-  // Removed auto-enroll to prevent repeated unauthorized calls while typing.
-  // Enrollment is triggered explicitly via button or after login indicates not enrolled.
-
-  
-
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
@@ -121,8 +141,6 @@ export function Login() {
               </div>
             </div>
             
-           
-            
             <Button 
               type="submit" 
               className="w-full" 
@@ -140,6 +158,7 @@ export function Login() {
             
             
           </form>
+          
           
           <div className="mt-6 pt-6 border-t text-center text-xs text-muted-foreground">
             <p>Secure authentication required</p>

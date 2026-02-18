@@ -154,6 +154,57 @@ SUPABASE_ANON_KEY = (
     or ''
 )
 ADMIN_USER_ID = os.environ.get('ADMIN_USER_ID', '00000000-0000-0000-0000-000000000001')
+def _parse_allowed_ids_env() -> list:
+    raw = os.environ.get('ADMIN_ALLOWED_USER_IDS', '')
+    ids = []
+    for part in (raw or '').replace(';', ',').split(','):
+        p = part.strip()
+        if not p:
+            continue
+        try:
+            _ = uuid.UUID(p)
+            ids.append(p)
+        except Exception:
+            continue
+    return ids
+def _supabase_list_user_ids(limit: int = 200) -> list:
+    if not SUPABASE_URL:
+        return []
+    try:
+        url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/{TOTP_TABLE}"
+        params = {
+            'select': 'user_id,updated_at,created_at',
+            'order': 'updated_at.desc,created_at.desc',
+            'limit': max(1, min(limit, 1000)),
+        }
+        resp = requests.get(url, headers=_sb_headers_json(), params=params, timeout=10)
+        if resp.status_code == 200:
+            arr = resp.json()
+            if isinstance(arr, list):
+                seen = []
+                for r in arr:
+                    uid = str((r or {}).get('user_id') or '').strip()
+                    try:
+                        _ = uuid.UUID(uid)
+                        if uid and uid not in seen:
+                            seen.append(uid)
+                    except Exception:
+                        continue
+                return seen
+        return []
+    except Exception:
+        return []
+def _get_allowed_user_ids() -> list:
+    ids = _parse_allowed_ids_env()
+    if ids:
+        if ADMIN_USER_ID and ADMIN_USER_ID not in ids:
+            ids.append(ADMIN_USER_ID)
+        return ids
+    # Fallback: include all user_ids present in TOTP table (admin-controlled), plus ADMIN_USER_ID
+    ids = _supabase_list_user_ids()
+    if ADMIN_USER_ID and ADMIN_USER_ID not in ids:
+        ids.append(ADMIN_USER_ID)
+    return ids
 ADMIN_USER_VALID = None
 ADMIN_USER_VALID_TS = 0
 
@@ -308,6 +359,35 @@ def _supabase_get_secret(user_uuid: str):
     except Exception:
         return None
 
+def _supabase_get_secrets(user_uuid: str):
+    if not SUPABASE_URL:
+        return []
+    try:
+        url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/{TOTP_TABLE}"
+        params = {
+            'user_id': f"eq.{user_uuid}",
+            'select': 'user_id,secret_base32,issuer,created_at,updated_at',
+            'order': 'updated_at.desc,created_at.desc',
+        }
+        resp = requests.get(url, headers=_sb_headers_json(), params=params, timeout=10)
+        if resp.status_code == 200:
+            arr = resp.json()
+            if isinstance(arr, list):
+                return arr
+            return []
+        if resp.status_code in (404,):
+            return []
+        return []
+    except Exception:
+        return []
+def _supabase_get_secrets_multi(user_ids: list):
+    secrets = []
+    for uid in (user_ids or []):
+        recs = _supabase_get_secrets(uid)
+        if isinstance(recs, list) and recs:
+            secrets.extend(recs)
+    return secrets
+
 def _supabase_upsert_secret(user_uuid: str, secret_base32: str, issuer: str):
     if not SUPABASE_URL:
         return None
@@ -334,31 +414,7 @@ def _supabase_upsert_secret(user_uuid: str, secret_base32: str, issuer: str):
         return None
     except Exception:
         return None
-
-@app.route('/api/totp/check', methods=['GET'])
-def api_totp_check():
-    try:
-        user_uuid = request.args.get('user_id') or ADMIN_USER_ID
-        issuer = (load_settings().get('authentication', {}) or {}).get('issuer') or 'Neural Control Hub'
-        rec = _supabase_get_secret(user_uuid)
-        if rec and str(rec.get('secret_base32') or '').strip():
-            return jsonify({'present': True, 'placeholder': '______', 'digits': 6, 'issuer': rec.get('issuer') or issuer})
-        try:
-            import pyotp  # type: ignore
-            import qrcode  # type: ignore
-        except Exception as e:
-            return jsonify({'present': False, 'error': f'Missing dependency: {e}', 'install': 'pip install pyotp qrcode'}), 500
-        secret = pyotp.random_base32()
-        _supabase_upsert_secret(user_uuid, secret, issuer)
-        uri = pyotp.TOTP(secret, digits=6, interval=30).provisioning_uri(name='operator', issuer_name=issuer)
-        import io, base64
-        img = qrcode.make(uri)
-        buf = io.BytesIO()
-        img.save(buf, format='PNG')
-        qr_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-        return jsonify({'present': False, 'show_qr': True, 'uri': uri, 'qr_png_b64': qr_b64, 'issuer': issuer})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+ 
 
 # Configuration Management
 class Config:
@@ -445,6 +501,45 @@ def _get_redis():
 
 # Staged uploads for PowerShell curl mechanism
 STAGED_UPLOADS = {}
+
+@app.route('/api/totp/check', methods=['GET'])
+def api_totp_check():
+    try:
+        import uuid as _uuid
+        user_uuid_arg = request.args.get('user_id')
+        issuer = (load_settings().get('authentication', {}) or {}).get('issuer') or 'Neural Control Hub'
+        allowed_ids = []
+        if user_uuid_arg:
+            try:
+                _ = _uuid.UUID(str(user_uuid_arg))
+                allowed_ids = [user_uuid_arg]
+            except Exception:
+                return jsonify({'present': False, 'error': 'Invalid user_id (must be UUID)'}), 400
+        else:
+            allowed_ids = _get_allowed_user_ids()
+        recs = _supabase_get_secrets_multi(allowed_ids)
+        if isinstance(recs, list) and any(str(r.get('secret_base32') or '').strip() for r in recs):
+            first = recs[0] if recs else {}
+            return jsonify({'present': True, 'placeholder': '______', 'digits': 6, 'issuer': first.get('issuer') or issuer})
+        try:
+            import pyotp  # type: ignore
+            import qrcode  # type: ignore
+        except Exception as e:
+            return jsonify({'present': False, 'error': f'Missing dependency: {e}', 'install': 'pip install pyotp qrcode'}), 500
+        secret = pyotp.random_base32()
+        # Generate into primary admin user
+        saved = _supabase_upsert_secret(ADMIN_USER_ID, secret, issuer)
+        if not saved:
+            return jsonify({'present': False, 'error': 'Failed to persist secret in Supabase'}), 500
+        uri = pyotp.TOTP(secret, digits=6, interval=30).provisioning_uri(name='operator', issuer_name=issuer)
+        import io, base64
+        img = qrcode.make(uri)
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        qr_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+        return jsonify({'present': False, 'show_qr': True, 'uri': uri, 'qr_png_b64': qr_b64, 'issuer': issuer})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 def _stage_register(upload_id, path, filename):
     STAGED_UPLOADS[upload_id] = {'path': path, 'filename': filename, 'ts': time.time()}
 def _stage_get(upload_id):
@@ -2102,6 +2197,47 @@ def login():
     # Legacy controller-rendered login form is intentionally disabled.
     # The React app at /agent-controller ui v2.1/ handles the login UI now.
     # You can re-enable the server-side form by moving or removing the early returns above.
+
+# Two-Factor route (served by React app)
+@app.route('/2fa', methods=['GET'])
+@app.route('/2fa/', methods=['GET'])
+@app.route('/two-factor', methods=['GET'])
+def two_factor():
+    try:
+        base_dir = os.path.dirname(__file__)
+        candidate_builds = [
+            os.path.join(base_dir, 'agent-controller ui v2.1', 'build'),
+        ]
+        index_path = None
+        for b in candidate_builds:
+            p = os.path.join(b, 'index.html')
+            if os.path.exists(p):
+                index_path = p
+                break
+        if index_path:
+            with open(index_path, 'r', encoding='utf-8', errors='replace') as f:
+                index_html = f.read()
+            runtime_overrides = (
+                "<script>"
+                "window.__SOCKET_URL__ = window.location.protocol + '//' + window.location.host;"
+                "window.__API_URL__ = window.__SOCKET_URL__;"
+                "</script>"
+            )
+            fav_png = '<link rel="icon" href="/favicon.png" type="image/png" sizes="64x64" />'
+            fav_ico = '<link rel="shortcut icon" href="/neural.ico" type="image/x-icon" />'
+            fav_tags = fav_png + fav_ico
+            if "</head>" in index_html:
+                if fav_png not in index_html and fav_ico not in index_html:
+                    index_html = index_html.replace("<head>", "<head>" + fav_tags)
+                modified = index_html.replace("</head>", runtime_overrides + "</head>")
+            else:
+                modified = fav_tags + runtime_overrides + index_html
+            return Response(modified, mimetype='text/html')
+        else:
+            return redirect(url_for('login'))
+    except Exception as e:
+        print(f"Failed to serve React 2FA page: {e}")
+        return redirect(url_for('login'))
     
     # Check if IP is blocked
     if is_ip_blocked(client_ip):
@@ -3379,6 +3515,7 @@ def api_login():
     if not request.is_json:
         return jsonify({'error': 'JSON payload required'}), 400
     password = request.json.get('password')
+    code = str(request.json.get('code') or '').strip()
     if not password:
         return jsonify({'error': 'Password is required'}), 400
     client_ip = get_client_ip()
@@ -3394,13 +3531,53 @@ def api_login():
             pass
         return jsonify({'error': 'Too many failed attempts. Try again later.'}), 429
     if verify_admin_or_operator(password):
-        clear_login_attempts(client_ip)
-        session.permanent = True
-        session['authenticated'] = True
-        session['otp_verified'] = False
-        session['login_time'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        session['ip'] = client_ip
-        return jsonify({'success': True, 'message': 'Login successful', 'session_timeout': Config.SESSION_TIMEOUT})
+        allowed_ids = _get_allowed_user_ids()
+        recs = _supabase_get_secrets_multi(allowed_ids)
+        if isinstance(recs, list) and any(str(r.get('secret_base32') or '').strip() for r in recs):
+            try:
+                import pyotp  # type: ignore
+            except Exception:
+                return jsonify({'totp_required': True, 'error': 'TOTP required but backend missing pyotp'}), 500
+            if not code:
+                return jsonify({'totp_required': True, 'digits': 6}), 401
+            ok = False
+            for rec in recs:
+                secret = str(rec.get('secret_base32') or '').strip()
+                if not secret:
+                    continue
+                try:
+                    if pyotp.TOTP(secret, digits=6, interval=30).verify(code, valid_window=1):
+                        ok = True
+                        break
+                except Exception:
+                    continue
+            if not ok:
+                return jsonify({'totp_required': True, 'error': 'Invalid code'}), 401
+            clear_login_attempts(client_ip)
+            session.permanent = True
+            session['authenticated'] = True
+            session['otp_verified'] = True
+            session['login_time'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            session['ip'] = client_ip
+            return jsonify({'success': True, 'message': 'Login successful', 'session_timeout': Config.SESSION_TIMEOUT})
+        else:
+            try:
+                import pyotp  # type: ignore
+                import qrcode  # type: ignore
+            except Exception as e:
+                return jsonify({'totp_required': True, 'error': f'Missing dependency: {e}', 'install': 'pip install pyotp qrcode'}), 500
+            issuer = (load_settings().get('authentication', {}) or {}).get('issuer') or 'Neural Control Hub'
+            secret = pyotp.random_base32()
+            saved = _supabase_upsert_secret(ADMIN_USER_ID, secret, issuer)
+            if not saved:
+                return jsonify({'totp_required': True, 'error': 'Failed to persist secret in Supabase'}), 500
+            uri = pyotp.TOTP(secret, digits=6, interval=30).provisioning_uri(name='operator', issuer_name=issuer)
+            import io, base64
+            img = qrcode.make(uri)
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            qr_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+            return jsonify({'totp_required': True, 'show_qr': True, 'uri': uri, 'qr_png_b64': qr_b64, 'issuer': issuer}), 401
     record_failed_login(client_ip)
     return jsonify({'error': 'Invalid password'}), 401
 

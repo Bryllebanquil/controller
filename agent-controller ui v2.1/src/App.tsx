@@ -28,6 +28,7 @@ import { PasswordManager } from "./components/PasswordManager";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Login } from "./components/Login";
+import { TwoFactor } from "./components/TwoFactor";
 import { Toaster, toast } from "./components/ui/sonner";
 import {
   Tabs,
@@ -363,6 +364,19 @@ function AppContent() {
 
   useEffect(() => {
     try {
+      const path = typeof window !== 'undefined' ? window.location.pathname : '';
+      const inAuth = path.startsWith('/login') || path.startsWith('/2fa');
+      if (inAuth) {
+        setActiveTab('overview');
+        try {
+          const url = new URL(window.location.href);
+          if (url.searchParams.has('tab')) {
+            url.searchParams.delete('tab');
+            window.history.replaceState({}, '', url.toString());
+          }
+        } catch {}
+        return;
+      }
       const url = new URL(window.location.href);
       const qsTab = url.searchParams.get('tab');
       if (qsTab) {
@@ -376,6 +390,9 @@ function AppContent() {
 
   useEffect(() => {
     try {
+      const path = typeof window !== 'undefined' ? window.location.pathname : '';
+      const inAuth = path.startsWith('/login') || path.startsWith('/2fa');
+      if (inAuth) return;
       localStorage.setItem('nch:tab:main', activeTab);
       const url = new URL(window.location.href);
       url.searchParams.set('tab', activeTab);
@@ -417,8 +434,14 @@ function AppContent() {
     }
   }, [agents, selectedAgent]);
 
-  // Show login screen if not authenticated
+  // Show login or 2FA screen if not authenticated
   if (!authenticated) {
+    try {
+      const path = typeof window !== 'undefined' ? window.location.pathname : '/login';
+      if (path.startsWith('/2fa')) {
+        return <TwoFactor />;
+      }
+    } catch {}
     return <Login />;
   }
 

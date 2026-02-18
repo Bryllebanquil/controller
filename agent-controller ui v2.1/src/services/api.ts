@@ -415,10 +415,12 @@ class ApiClient {
   }
 
   // Authentication Methods
-  async login(password: string): Promise<ApiResponse> {
+  async login(password: string, code?: string): Promise<ApiResponse> {
+    const payload: Record<string, any> = { password };
+    if (code) payload.code = code;
     return this.request(API_ENDPOINTS.auth.login, {
       method: 'POST',
-      body: JSON.stringify({ password }),
+      body: JSON.stringify(payload),
     });
   }
 
@@ -432,6 +434,10 @@ class ApiClient {
     return this.request(API_ENDPOINTS.auth.status);
   }
 
+  async totpCheck(userId?: string): Promise<ApiResponse> {
+    const url = userId ? `${API_ENDPOINTS.auth.status.replace('/api/auth/status', '')}/api/totp/check?user_id=${encodeURIComponent(userId)}` : '/api/totp/check';
+    return this.request(url);
+  }
   
 
   // Agent Methods

@@ -1621,13 +1621,21 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     }
   }, [socket, connected, addCommandOutput]);
 
-  const login = useCallback(async (password: string): Promise<{ success?: boolean; data?: any; error?: string }> => {
+  const login = useCallback(async (password: string, otp?: string): Promise<{ success?: boolean; data?: any; error?: string }> => {
     try {
-      const response = await apiClient.login(password);
+      const response = await apiClient.login(password, otp);
       if (response.success) {
         setAuthenticated(true);
+        try { localStorage.setItem('nch:tab:main', 'overview'); } catch {}
+        try {
+          const clean = new URL(window.location.href);
+          if (clean.searchParams.has('tab')) {
+            clean.searchParams.delete('tab');
+            window.history.replaceState({}, '', clean.toString());
+          }
+        } catch {}
         try { (window as any).__NCH_SUPPRESS_AUTH_REDIRECT__ = Date.now(); } catch {}
-        try { window.location.replace('/dashboard'); } catch {}
+        try { window.location.replace('/dashboard?tab=overview'); } catch {}
         return response;
       }
       setAuthenticated(false);
