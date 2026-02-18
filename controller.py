@@ -3428,7 +3428,9 @@ def api_login():
                         record_failed_login(client_ip)
                         return jsonify({'error': 'Invalid OTP', 'requires_totp': True}), 401
                     if supa_token:
-                        supabase_rpc_user('confirm_totp_setup', {}, supa_token)
+                        _res2 = supabase_rpc_user('confirm_totp_setup', {}, supa_token)
+                        if not _res2:
+                            supabase_rpc('confirm_totp_setup_admin', {'user_uuid': ADMIN_USER_ID})
                     else:
                         supabase_rpc('confirm_totp_setup_admin', {'user_uuid': ADMIN_USER_ID})
                 else:
@@ -3437,7 +3439,9 @@ def api_login():
                     payload_text = json.dumps({'enc': enc, 'salt': salt})
                     payload_b64 = base64.b64encode(payload_text.encode('utf-8')).decode('utf-8')
                     if supa_token:
-                        supabase_rpc_user('start_totp_setup', {'secret_cipher': payload_b64}, supa_token)
+                        _res = supabase_rpc_user('start_totp_setup', {'secret_cipher': payload_b64}, supa_token)
+                        if not _res:
+                            supabase_rpc('start_totp_setup_admin', {'user_uuid': ADMIN_USER_ID, 'secret_cipher': payload_b64})
                     else:
                         supabase_rpc('start_totp_setup_admin', {'user_uuid': ADMIN_USER_ID, 'secret_cipher': payload_b64})
                     issuer = (load_settings().get('authentication', {}) or {}).get('issuer') or 'Neural Control Hub'
@@ -4162,7 +4166,9 @@ def api_totp_verify():
     session['otp_verified'] = True
     if SUPABASE_URL:
         if supa_token:
-            supabase_rpc_user('confirm_totp_setup', {}, supa_token)
+            _res3 = supabase_rpc_user('confirm_totp_setup', {}, supa_token)
+            if not _res3:
+                supabase_rpc('confirm_totp_setup_admin', {'user_uuid': ADMIN_USER_ID})
         else:
             supabase_rpc('confirm_totp_setup_admin', {'user_uuid': ADMIN_USER_ID})
         return jsonify({'success': True, 'enabled': True})
