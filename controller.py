@@ -3370,6 +3370,11 @@ def api_login():
         return jsonify({'error': 'Password is required'}), 400
     
     client_ip = get_client_ip()
+    if os.environ.get('SUPABASE_VERBOSE') == '1':
+        try:
+            print(json.dumps({'dbg': 'login_start', 'otp_present': bool(otp), 'ip': client_ip}))
+        except Exception:
+            pass
     if is_ip_blocked(client_ip):
         try:
             email_cfg = load_settings().get('email', {})
@@ -3394,6 +3399,11 @@ def api_login():
                 setup_b64 = supabase_rpc_user('get_totp_setup_ciphertext', {}, supa_token)
                 if not setup_b64:
                     setup_b64 = supabase_rpc('get_totp_setup_ciphertext_admin', {'user_uuid': ADMIN_USER_ID})
+            if os.environ.get('SUPABASE_VERBOSE') == '1':
+                try:
+                    print(json.dumps({'dbg': 'login_supabase_state', 'live': bool(live_b64), 'setup': bool(setup_b64), 'otp_present': bool(otp)}))
+                except Exception:
+                    pass
             if live_b64:
                 if not otp:
                     return jsonify({'error': 'OTP required', 'requires_totp': True}), 401
@@ -3403,8 +3413,18 @@ def api_login():
                     enc, salt = obj.get('enc'), obj.get('salt')
                     secret = decrypt_secret(enc, salt, Config.SECRET_KEY or 'default-key')
                 except Exception:
+                    if os.environ.get('SUPABASE_VERBOSE') == '1':
+                        try:
+                            print(json.dumps({'dbg': 'login_decrypt_fail', 'branch': 'live'}))
+                        except Exception:
+                            pass
                     return jsonify({'error': 'Secret missing', 'requires_totp': True}), 403
-                ok = verify_totp_code(secret, str(otp), window=1)
+                ok = verify_totp_code(secret, str(otp), window=2)
+                if os.environ.get('SUPABASE_VERBOSE') == '1':
+                    try:
+                        print(json.dumps({'dbg': 'login_verify', 'branch': 'live', 'ok': bool(ok)}))
+                    except Exception:
+                        pass
                 if not ok:
                     record_failed_login(client_ip)
                     return jsonify({'error': 'Invalid OTP', 'requires_totp': True}), 401
@@ -3430,6 +3450,11 @@ def api_login():
                                     supabase_rpc('start_totp_setup_admin', {'user_uuid': ADMIN_USER_ID, 'secret_cipher': payload_b64})
                                 issuer = (load_settings().get('authentication', {}) or {}).get('issuer') or 'Neural Control Hub'
                                 uri = pyotp.TOTP(secret, digits=6, interval=30).provisioning_uri(name='operator', issuer_name=issuer)
+                                if os.environ.get('SUPABASE_VERBOSE') == '1':
+                                    try:
+                                        print(json.dumps({'dbg': 'login_autofix_reseed', 'reason': 'setup_decrypt_fail'}))
+                                    except Exception:
+                                        pass
                                 return jsonify({'error': 'Two-factor enrollment required', 'show_qr': True, 'uri': uri}), 403
                             except Exception:
                                 return jsonify({'error': 'Secret missing'}), 403
@@ -3455,10 +3480,20 @@ def api_login():
                                 supabase_rpc('start_totp_setup_admin', {'user_uuid': ADMIN_USER_ID, 'secret_cipher': payload_b64})
                             issuer = (load_settings().get('authentication', {}) or {}).get('issuer') or 'Neural Control Hub'
                             uri = pyotp.TOTP(secret, digits=6, interval=30).provisioning_uri(name='operator', issuer_name=issuer)
+                            if os.environ.get('SUPABASE_VERBOSE') == '1':
+                                try:
+                                    print(json.dumps({'dbg': 'login_autofix_reseed', 'reason': 'setup_decrypt_fail_otp_present'}))
+                                except Exception:
+                                    pass
                             return jsonify({'error': 'Two-factor enrollment required', 'show_qr': True, 'uri': uri}), 403
                         except Exception:
                             return jsonify({'error': 'Secret missing'}), 403
-                    ok = verify_totp_code(secret, str(otp), window=1)
+                    ok = verify_totp_code(secret, str(otp), window=2)
+                    if os.environ.get('SUPABASE_VERBOSE') == '1':
+                        try:
+                            print(json.dumps({'dbg': 'login_verify', 'branch': 'setup', 'ok': bool(ok)}))
+                        except Exception:
+                            pass
                     if not ok:
                         record_failed_login(client_ip)
                         return jsonify({'error': 'Invalid OTP', 'requires_totp': True}), 401
@@ -3481,6 +3516,11 @@ def api_login():
                         supabase_rpc('start_totp_setup_admin', {'user_uuid': ADMIN_USER_ID, 'secret_cipher': payload_b64})
                     issuer = (load_settings().get('authentication', {}) or {}).get('issuer') or 'Neural Control Hub'
                     uri = pyotp.TOTP(secret, digits=6, interval=30).provisioning_uri(name='operator', issuer_name=issuer)
+                    if os.environ.get('SUPABASE_VERBOSE') == '1':
+                        try:
+                            print(json.dumps({'dbg': 'login_enroll', 'otp_present': bool(otp)}))
+                        except Exception:
+                            pass
                     return jsonify({'error': 'Two-factor enrollment required', 'show_qr': True, 'uri': uri}), 403
         else:
             enc = cfg.get('totpSecretEnc')
@@ -4195,7 +4235,7 @@ def api_totp_verify():
         secret = decrypt_secret(enc, salt, Config.SECRET_KEY or 'default-key')
         if not secret:
             return jsonify({'error': 'Secret missing'}), 400
-    ok = verify_totp_code(secret, str(otp), window=1)
+    ok = verify_totp_code(secret, str(otp), window=2)
     if not ok:
         return jsonify({'error': 'Invalid OTP'}), 401
     session['otp_verified'] = True
