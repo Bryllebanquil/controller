@@ -59,7 +59,20 @@ export function Login() {
     (async () => {
       try {
         const p = new URLSearchParams(window.location.search);
-        const t = p.get('supabase_token');
+        let t = p.get('supabase_token') || '';
+        if (!t && typeof window !== 'undefined') {
+          const hash = (window.location.hash || '').replace(/^#/, '');
+          if (hash) {
+            const hp = new URLSearchParams(hash);
+            t = hp.get('access_token') || hp.get('token') || '';
+            if (t) {
+              try {
+                const newUrl = window.location.origin + window.location.pathname + window.location.search;
+                window.history.replaceState({}, document.title, newUrl);
+              } catch {}
+            }
+          }
+        }
         if (t) {
           try { (globalThis as any).__SUPABASE_JWT__ = t; } catch {}
           try { localStorage.setItem('supabase_token', t); } catch {}

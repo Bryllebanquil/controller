@@ -216,6 +216,62 @@ SUPABASE_ANON_KEY = (
     or ''
 )
 ADMIN_USER_ID = os.environ.get('ADMIN_USER_ID', '00000000-0000-0000-0000-000000000001')
+ADMIN_USER_VALID = None
+ADMIN_USER_VALID_TS = 0
+
+def _check_admin_user_exists():
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY or not ADMIN_USER_ID:
+        return None
+    try:
+        url = SUPABASE_URL.rstrip('/') + f"/auth/v1/admin/users/{ADMIN_USER_ID}"
+        headers = {
+            'apikey': SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY,
+            'Authorization': f'Bearer {SUPABASE_SERVICE_ROLE_KEY}',
+            'Accept': 'application/json'
+        }
+        r = requests.get(url, headers=headers, timeout=10)
+        exists = False
+        status = r.status_code
+        if status == 200:
+            try:
+                j = r.json()
+                exists = bool(j)
+            except Exception:
+                exists = True
+        elif status == 404:
+            exists = False
+        else:
+            url2 = SUPABASE_URL.rstrip('/') + "/auth/v1/admin/users"
+            r2 = requests.get(url2, headers=headers, params={'id': ADMIN_USER_ID}, timeout=10)
+            if r2.status_code == 200:
+                try:
+                    j2 = r2.json()
+                    exists = bool(j2)
+                except Exception:
+                    exists = True
+            else:
+                exists = False
+        globals()['ADMIN_USER_VALID'] = bool(exists)
+        globals()['ADMIN_USER_VALID_TS'] = time.time()
+        if os.environ.get('SUPABASE_VERBOSE') == '1' or not exists:
+            try:
+                print(json.dumps({'dbg': 'admin_user_check', 'id': ADMIN_USER_ID, 'exists': bool(exists), 'status': status}))
+            except Exception:
+                pass
+        return exists
+    except Exception as e:
+        globals()['ADMIN_USER_VALID'] = None
+        if os.environ.get('SUPABASE_VERBOSE') == '1':
+            try:
+                print(json.dumps({'dbg': 'admin_user_check_err', 'error': str(e)}))
+            except Exception:
+                pass
+        return None
+
+try:
+    _check_admin_user_exists()
+except Exception:
+    pass
 
 def supabase_rpc(fn: str, payload: dict):
     if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
