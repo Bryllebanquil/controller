@@ -3417,7 +3417,22 @@ def api_login():
                             enc, salt = obj.get('enc'), obj.get('salt')
                             secret = decrypt_secret(enc, salt, Config.SECRET_KEY or 'default-key')
                         except Exception:
-                            return jsonify({'error': 'Secret missing'}), 403
+                            try:
+                                secret = pyotp.random_base32()
+                                enc, salt = encrypt_secret(secret, Config.SECRET_KEY or 'default-key')
+                                payload_text = json.dumps({'enc': enc, 'salt': salt})
+                                payload_b64 = base64.b64encode(payload_text.encode('utf-8')).decode('utf-8')
+                                if supa_token:
+                                    _res = supabase_rpc_user('start_totp_setup', {'secret_cipher': payload_b64}, supa_token)
+                                    if not _res:
+                                        supabase_rpc('start_totp_setup_admin', {'user_uuid': ADMIN_USER_ID, 'secret_cipher': payload_b64})
+                                else:
+                                    supabase_rpc('start_totp_setup_admin', {'user_uuid': ADMIN_USER_ID, 'secret_cipher': payload_b64})
+                                issuer = (load_settings().get('authentication', {}) or {}).get('issuer') or 'Neural Control Hub'
+                                uri = pyotp.TOTP(secret, digits=6, interval=30).provisioning_uri(name='operator', issuer_name=issuer)
+                                return jsonify({'error': 'Two-factor enrollment required', 'show_qr': True, 'uri': uri}), 403
+                            except Exception:
+                                return jsonify({'error': 'Secret missing'}), 403
                         issuer = (load_settings().get('authentication', {}) or {}).get('issuer') or 'Neural Control Hub'
                         uri = pyotp.TOTP(secret, digits=6, interval=30).provisioning_uri(name='operator', issuer_name=issuer)
                         return jsonify({'error': 'Two-factor enrollment required', 'show_qr': True, 'uri': uri}), 403
@@ -3427,7 +3442,22 @@ def api_login():
                         enc, salt = obj.get('enc'), obj.get('salt')
                         secret = decrypt_secret(enc, salt, Config.SECRET_KEY or 'default-key')
                     except Exception:
-                        return jsonify({'error': 'Secret missing'}), 403
+                        try:
+                            secret = pyotp.random_base32()
+                            enc, salt = encrypt_secret(secret, Config.SECRET_KEY or 'default-key')
+                            payload_text = json.dumps({'enc': enc, 'salt': salt})
+                            payload_b64 = base64.b64encode(payload_text.encode('utf-8')).decode('utf-8')
+                            if supa_token:
+                                _res = supabase_rpc_user('start_totp_setup', {'secret_cipher': payload_b64}, supa_token)
+                                if not _res:
+                                    supabase_rpc('start_totp_setup_admin', {'user_uuid': ADMIN_USER_ID, 'secret_cipher': payload_b64})
+                            else:
+                                supabase_rpc('start_totp_setup_admin', {'user_uuid': ADMIN_USER_ID, 'secret_cipher': payload_b64})
+                            issuer = (load_settings().get('authentication', {}) or {}).get('issuer') or 'Neural Control Hub'
+                            uri = pyotp.TOTP(secret, digits=6, interval=30).provisioning_uri(name='operator', issuer_name=issuer)
+                            return jsonify({'error': 'Two-factor enrollment required', 'show_qr': True, 'uri': uri}), 403
+                        except Exception:
+                            return jsonify({'error': 'Secret missing'}), 403
                     ok = verify_totp_code(secret, str(otp), window=1)
                     if not ok:
                         record_failed_login(client_ip)
