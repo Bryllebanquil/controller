@@ -1621,9 +1621,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     }
   }, [socket, connected, addCommandOutput]);
 
-  const login = useCallback(async (password: string, otp?: string): Promise<{ success?: boolean; data?: any; error?: string }> => {
+  const login = useCallback(async (password: string): Promise<{ success?: boolean; data?: any; error?: string }> => {
     try {
-      const response = await apiClient.login(password, otp);
+      const response = await apiClient.login(password);
       if (response.success) {
         setAuthenticated(true);
         try { (window as any).__NCH_SUPPRESS_AUTH_REDIRECT__ = Date.now(); } catch {}

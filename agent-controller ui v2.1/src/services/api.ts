@@ -24,9 +24,6 @@ const API_ENDPOINTS = {
     login: '/api/auth/login',
     logout: '/api/auth/logout',
     status: '/api/auth/status',
-    totpStatus: '/api/auth/totp/status',
-    totpEnroll: '/api/auth/totp/enroll',
-    totpVerify: '/api/auth/totp/verify',
   },
   // Agents
   agents: {
@@ -418,10 +415,10 @@ class ApiClient {
   }
 
   // Authentication Methods
-  async login(password: string, otp?: string): Promise<ApiResponse> {
+  async login(password: string): Promise<ApiResponse> {
     return this.request(API_ENDPOINTS.auth.login, {
       method: 'POST',
-      body: JSON.stringify({ password, otp }),
+      body: JSON.stringify({ password }),
     });
   }
 
@@ -435,23 +432,7 @@ class ApiClient {
     return this.request(API_ENDPOINTS.auth.status);
   }
 
-  async getTotpStatus(): Promise<ApiResponse<{ enabled: boolean; enrolled: boolean; issuer?: string }>> {
-    return this.request(API_ENDPOINTS.auth.totpStatus);
-  }
-
-  async enrollTotp(password: string): Promise<ApiResponse<{ secret: string; uri: string; qr: string }>> {
-    return this.request(API_ENDPOINTS.auth.totpEnroll, {
-      method: 'POST',
-      body: JSON.stringify({ password }),
-    });
-  }
-
-  async verifyTotp(otp: string): Promise<ApiResponse<{ success: boolean }>> {
-    return this.request(API_ENDPOINTS.auth.totpVerify, {
-      method: 'POST',
-      body: JSON.stringify({ otp }),
-    });
-  }
+  
 
   // Agent Methods
   async getAgents(): Promise<ApiResponse<{ agents: Agent[]; total_count: number; online_count: number }>> {

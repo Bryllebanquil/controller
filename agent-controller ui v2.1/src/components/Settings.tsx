@@ -246,11 +246,7 @@ export function Settings() {
   const [currentAdminPassword, setCurrentAdminPassword] = useState('');
   const [newAdminPassword, setNewAdminPassword] = useState('');
   const [confirmAdminPassword, setConfirmAdminPassword] = useState('');
-  const [totpStatus, setTotpStatus] = useState<{ enabled: boolean; enrolled: boolean; issuer: string }>({
-    enabled: false,
-    enrolled: false,
-    issuer: ''
-  });
+  
 
   const registryActionList: Array<{ id: string; actionKey: keyof NonNullable<NonNullable<C2Settings['registry']>['actions']>; label: string; hive: string; path: string; key: string }> = [
     { id: 'policy_push_notifications', actionKey: 'policy_push_notifications', label: 'Policy Push Notifications', hive: 'HKLM', path: 'SOFTWARE\\Policies\\Microsoft\\Windows\\PushNotifications', key: 'NoCloudApplicationNotification' },
@@ -475,17 +471,7 @@ export function Settings() {
             setTrustedDevice(Boolean(tData?.trusted));
           }
         } catch (_e) {}
-        try {
-          const tfRes = await fetch('/api/auth/totp/status');
-          const tfData = await tfRes.json();
-          if (tfRes.ok) {
-            setTotpStatus({
-              enabled: Boolean(tfData?.enabled),
-              enrolled: Boolean(tfData?.enrolled),
-              issuer: tfData?.issuer ?? ''
-            });
-          }
-        } catch (_e) {}
+        
       } catch (e: any) {
         toast.error(e.message || 'Failed to load settings');
       }
@@ -895,22 +881,7 @@ export function Settings() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="two-factor">Two-Factor Authentication</Label>
-                  <Switch
-                    id="two-factor"
-                    checked={settings.authentication.requireTwoFactor}
-                    onCheckedChange={(checked) => updateSetting('authentication', 'requireTwoFactor', checked)}   
-                  />
-                </div>
-                {totpStatus.enabled && (
-                  <div className="flex items-center justify-between">
-                    <Label>Enrollment Status</Label>
-                    <Badge>
-                      {totpStatus.enrolled ? 'Enrolled' : 'Not enrolled'}
-                    </Badge>
-                  </div>
-                )}
+                
                 <div className="flex items-center justify-between">
                   <Label htmlFor="api-key-enabled">Enable API Key Access</Label>
                   <Switch

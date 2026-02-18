@@ -59,8 +59,6 @@ import mimetypes
 from typing import Optional
 import io
 import uuid
-import pyotp
-import qrcode
 import requests
 import json
 import re
@@ -83,71 +81,11 @@ AGENT_OVERRIDES = {
 }
 SUPABASE_CFG = {}
 
-def verify_totp_code(secret: str, otp: str, window: int = 2) -> bool:
-    try:
-        totp = pyotp.TOTP(secret)
-        now = time.time()
-        if totp.verify(str(otp), valid_window=window):
-            return True
-        for k in range(1, window + 1):
-            if totp.verify(str(otp), for_time=now + k * totp.interval):
-                return True
-            if totp.verify(str(otp), for_time=now - k * totp.interval):
-                return True
-        return False
-    except Exception as _e:
-        print(f"TOTP verify error: {_e}")
-        return False
-
-def get_or_create_totp_secret() -> str:
-    s = load_settings()
-    auth = s.get('authentication', {})
-    secret = auth.get('totpSecret')
-    if not secret:
-        secret = pyotp.random_base32()
-        issuer = auth.get('issuer') or 'Neural Control Hub'
-        auth['totpSecret'] = secret
-        auth['requireTwoFactor'] = True
-        auth['issuer'] = issuer
-        s['authentication'] = auth
-        save_settings(s)
-    return secret
-
 def _derive_key(secret_key: str, salt: bytes, length: int) -> bytes:
     return hashlib.pbkdf2_hmac('sha256', secret_key.encode('utf-8'), salt, 100_000, dklen=length)
 
-def encrypt_secret(plaintext: str, secret_key: str):
-    raw = plaintext.encode('utf-8')
-    salt = os.urandom(16)
-    keystream = _derive_key(secret_key, salt, len(raw))
-    cipher = bytes(a ^ b for a, b in zip(raw, keystream))
-    return base64.urlsafe_b64encode(cipher).decode('utf-8'), base64.urlsafe_b64encode(salt).decode('utf-8')
+ 
 
-def decrypt_secret(cipher_b64: str, salt_b64: str, secret_key: str) -> Optional[str]:
-    try:
-        cipher = base64.urlsafe_b64decode(cipher_b64.encode('utf-8'))
-        salt = base64.urlsafe_b64decode(salt_b64.encode('utf-8'))
-        keystream = _derive_key(secret_key, salt, len(cipher))
-        raw = bytes(a ^ b for a, b in zip(cipher, keystream))
-        return raw.decode('utf-8')
-    except Exception:
-        return None
-
-def verify_totp_code(secret: str, otp: str, window: int = 2) -> bool:
-    try:
-        totp = pyotp.TOTP(secret)
-        now = time.time()
-        if totp.verify(str(otp), valid_window=window):
-            return True
-        for k in range(1, window + 1):
-            if totp.verify(str(otp), for_time=now + k * totp.interval):
-                return True
-            if totp.verify(str(otp), for_time=now - k * totp.interval):
-                return True
-        return False
-    except Exception as _e:
-        print(f"TOTP verify error: {_e}")
-        return False
 
 # WebRTC imports for SFU functionality
 try:
@@ -335,6 +273,93 @@ def supabase_rpc_user(fn: str, payload: dict, user_jwt: str | None):
             print(f"Supabase RPC (user) exception: {e}")
         return None
 
+TOTP_TABLE = "totp_base32_secrets"
+
+def _sb_headers_json():
+    h = {
+        'Accept': 'application/json'
+    }
+    key = os.environ.get('SUPABASE_SERVICE_ROLE_KEY') or os.environ.get('SUPABASE_SERVICE_KEY') or SUPABASE_ANON_KEY
+    if key:
+        h['Authorization'] = f"Bearer {key}"
+        h['apikey'] = key
+    h['Content-Type'] = 'application/json'
+    return h
+
+def _supabase_get_secret(user_uuid: str):
+    if not SUPABASE_URL:
+        return None
+    try:
+        url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/{TOTP_TABLE}"
+        params = {
+            'user_id': f"eq.{user_uuid}",
+            'select': 'user_id,secret_base32,issuer,created_at,updated_at',
+            'limit': 1
+        }
+        resp = requests.get(url, headers=_sb_headers_json(), params=params, timeout=10)
+        if resp.status_code == 200:
+            arr = resp.json()
+            if isinstance(arr, list) and arr:
+                return arr[0]
+            return None
+        if resp.status_code in (404,):
+            return None
+        return None
+    except Exception:
+        return None
+
+def _supabase_upsert_secret(user_uuid: str, secret_base32: str, issuer: str):
+    if not SUPABASE_URL:
+        return None
+    try:
+        url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/{TOTP_TABLE}"
+        payload = {
+            'user_id': user_uuid,
+            'secret_base32': secret_base32,
+            'issuer': issuer
+        }
+        headers = _sb_headers_json()
+        headers['Prefer'] = 'resolution=merge-duplicates,return=representation'
+        params = {'on_conflict': 'user_id'}
+        resp = requests.post(url, headers=headers, json=payload, params=params, timeout=10)
+        if 200 <= resp.status_code < 300:
+            try:
+                arr = resp.json()
+                if isinstance(arr, list) and arr:
+                    return arr[0]
+                if isinstance(arr, dict):
+                    return arr
+            except Exception:
+                return {'ok': True}
+        return None
+    except Exception:
+        return None
+
+@app.route('/api/totp/check', methods=['GET'])
+def api_totp_check():
+    try:
+        user_uuid = request.args.get('user_id') or ADMIN_USER_ID
+        issuer = (load_settings().get('authentication', {}) or {}).get('issuer') or 'Neural Control Hub'
+        rec = _supabase_get_secret(user_uuid)
+        if rec and str(rec.get('secret_base32') or '').strip():
+            return jsonify({'present': True, 'placeholder': '______', 'digits': 6, 'issuer': rec.get('issuer') or issuer})
+        try:
+            import pyotp  # type: ignore
+            import qrcode  # type: ignore
+        except Exception as e:
+            return jsonify({'present': False, 'error': f'Missing dependency: {e}', 'install': 'pip install pyotp qrcode'}), 500
+        secret = pyotp.random_base32()
+        _supabase_upsert_secret(user_uuid, secret, issuer)
+        uri = pyotp.TOTP(secret, digits=6, interval=30).provisioning_uri(name='operator', issuer_name=issuer)
+        import io, base64
+        img = qrcode.make(uri)
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        qr_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+        return jsonify({'present': False, 'show_qr': True, 'uri': uri, 'qr_png_b64': qr_b64, 'issuer': issuer})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # Configuration Management
 class Config:
     """Configuration class for Advance RAT Controller"""
@@ -497,8 +522,6 @@ DEFAULT_SETTINGS = {
         'apiKeyEnabled': True,
         'apiKey': '',
         'trustedDevices': []
-        ,
-        'totpEnrolled': False
     },
     'email': {
         'enabled': False,
@@ -1980,28 +2003,7 @@ def is_authenticated():
         print("DEBUG: Not authenticated in session")
         return False
     
-    # Enforce TOTP when required
-    try:
-        cfg = load_settings().get('authentication', {})
-        secret = cfg.get('totpSecret')
-        require_two_factor = bool(cfg.get('requireTwoFactor'))
-        trusted_ok = False
-        try:
-            token = request.cookies.get('trusted_device')
-            if token:
-                h = hashlib.sha256(token.encode()).hexdigest()
-                lst = cfg.get('trustedDevices') or []
-                trusted_ok = h in lst
-        except Exception:
-            trusted_ok = False
-        if require_two_factor:
-            if not secret:
-                return False
-            if not session.get('otp_verified', False) and not trusted_ok:
-                return False
-    except Exception as _e:
-        print(f"TOTP check error: {_e}")
-        return False
+    
     
     # Check session timeout
     login_time = session.get('login_time')
@@ -2217,58 +2219,17 @@ def login():
     
     if request.method == 'POST':
         password = request.form.get('password', '')
-        otp_raw = request.form.get('otp', '') or request.form.get('totp', '')
-        otp = re.sub(r'\D', '', str(otp_raw or ''))[:6]
-        
+        client_ip = get_client_ip()
         if verify_admin_or_operator(password):
-            s = load_settings()
-            auth = s.get('authentication', {})
-            secret = auth.get('totpSecret')
-            issuer = auth.get('issuer', 'Neural Control Hub')
-            require_two_factor = bool(auth.get('requireTwoFactor'))
-            if require_two_factor and (not secret or not auth.get('totpEnrolled')):
-                secret = get_or_create_totp_secret()
-                uri = pyotp.TOTP(secret).provisioning_uri(name='Authentication', issuer_name=issuer)
-                img = qrcode.make(uri)
-                buf = io.BytesIO()
-                img.save(buf, format='PNG')
-                qr_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-                flash('Two-factor authentication setup required. Scan the QR and enter OTP.', 'error')
-                return render_template_string(login_template, qr_b64=qr_b64, secret=secret, require_totp=True, enrolled=False, issuer=issuer)
-            if require_two_factor:
-                if not otp:
-                    flash('OTP required. Please enter the 6-digit code.', 'error')
-                    return render_template_string(login_template, qr_b64=None, secret=None, require_totp=True, enrolled=True, issuer=issuer)
-                if not verify_totp_code(secret, str(otp), window=2):
-                    record_failed_login(client_ip)
-                    flash('Invalid OTP. Please try again.', 'error')
-                    return render_template_string(login_template, qr_b64=None, secret=None, require_totp=True, enrolled=True, issuer=issuer)
-            # Successful password + OTP
             clear_login_attempts(client_ip)
             session['authenticated'] = True
-            session['otp_verified'] = True if require_two_factor else False
+            session['otp_verified'] = False
             session['login_time'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
             session['login_ip'] = client_ip
-            try:
-                if require_two_factor:
-                    auth['totpEnrolled'] = True
-                s['authentication'] = auth
-                save_settings(s)
-            except Exception:
-                pass
             return redirect(url_for('dashboard'))
-        else:
-            # Failed login
-            record_failed_login(client_ip)
-            attempts = LOGIN_ATTEMPTS.get(client_ip, (0, None))[0]
-            remaining_attempts = Config.MAX_LOGIN_ATTEMPTS - attempts
-            
-            if remaining_attempts > 0:
-                flash(f'Invalid password. {remaining_attempts} attempts remaining.', 'error')
-            else:
-                flash(f'Too many failed attempts. Please wait {Config.LOGIN_TIMEOUT} seconds.', 'error')
-    
-    return render_template_string(login_template, qr_b64=None, secret=None, require_totp=require_totp, enrolled=enrolled, issuer=issuer)
+        record_failed_login(client_ip)
+        flash('Invalid password.', 'error')
+    return redirect(url_for('dashboard'))
 
 # Serve React index for dashboard and root paths
 def _serve_react_index():
@@ -3415,22 +3376,12 @@ def serve_favicon():
 # Authentication API for frontend
 @app.route('/api/auth/login', methods=['POST'])
 def api_login():
-    """API endpoint for frontend authentication"""
     if not request.is_json:
         return jsonify({'error': 'JSON payload required'}), 400
-    
     password = request.json.get('password')
-    otp_raw = request.json.get('otp')
-    otp = re.sub(r'\D', '', str(otp_raw or ''))[:6]
     if not password:
         return jsonify({'error': 'Password is required'}), 400
-    
     client_ip = get_client_ip()
-    if os.environ.get('SUPABASE_VERBOSE') == '1':
-        try:
-            print(json.dumps({'dbg': 'login_start', 'otp_present': bool(otp), 'ip': client_ip}))
-        except Exception:
-            pass
     if is_ip_blocked(client_ip):
         try:
             email_cfg = load_settings().get('email', {})
@@ -3442,199 +3393,16 @@ def api_login():
         except Exception:
             pass
         return jsonify({'error': 'Too many failed attempts. Try again later.'}), 429
-    
     if verify_admin_or_operator(password):
-        cfg = load_settings().get('authentication', {})
-        supa_token = request.headers.get('X-Supabase-Token') or request.json.get('supabase_token')
-        if SUPABASE_URL:
-            live_b64 = supabase_rpc_user('get_totp_ciphertext_for_login', {}, supa_token)
-            if not live_b64:
-                live_b64 = supabase_rpc('get_totp_ciphertext_for_login_admin', {'user_uuid': ADMIN_USER_ID})
-            setup_b64 = None
-            if not live_b64:
-                setup_b64 = supabase_rpc_user('get_totp_setup_ciphertext', {}, supa_token)
-                if not setup_b64:
-                    setup_b64 = supabase_rpc('get_totp_setup_ciphertext_admin', {'user_uuid': ADMIN_USER_ID})
-            if os.environ.get('SUPABASE_VERBOSE') == '1':
-                try:
-                    print(json.dumps({'dbg': 'login_supabase_state', 'live': bool(live_b64), 'setup': bool(setup_b64), 'otp_present': bool(otp)}))
-                except Exception:
-                    pass
-            if live_b64:
-                if not otp:
-                    return jsonify({'error': 'OTP required', 'requires_totp': True}), 401
-                try:
-                    blob = base64.b64decode(live_b64 if isinstance(live_b64, str) else str(live_b64))
-                    obj = json.loads(blob.decode('utf-8'))
-                    enc, salt = obj.get('enc'), obj.get('salt')
-                    secret = decrypt_secret(enc, salt, Config.SECRET_KEY or 'default-key')
-                except Exception:
-                    if os.environ.get('SUPABASE_VERBOSE') == '1':
-                        try:
-                            print(json.dumps({'dbg': 'login_decrypt_fail', 'branch': 'live'}))
-                        except Exception:
-                            pass
-                    return jsonify({'error': 'Secret missing', 'requires_totp': True}), 403
-                ok = verify_totp_code(secret, str(otp), window=2)
-                if os.environ.get('SUPABASE_VERBOSE') == '1':
-                    try:
-                        print(json.dumps({'dbg': 'login_verify', 'branch': 'live', 'ok': bool(ok)}))
-                    except Exception:
-                        pass
-                if not ok:
-                    record_failed_login(client_ip)
-                    return jsonify({'error': 'Invalid OTP', 'requires_totp': True}), 401
-            else:
-                if setup_b64:
-                    if not otp:
-                        try:
-                            blob = base64.b64decode(setup_b64 if isinstance(setup_b64, str) else str(setup_b64))
-                            obj = json.loads(blob.decode('utf-8'))
-                            enc, salt = obj.get('enc'), obj.get('salt')
-                            secret = decrypt_secret(enc, salt, Config.SECRET_KEY or 'default-key')
-                        except Exception:
-                            try:
-                                secret = pyotp.random_base32()
-                                enc, salt = encrypt_secret(secret, Config.SECRET_KEY or 'default-key')
-                                payload_text = json.dumps({'enc': enc, 'salt': salt})
-                                payload_b64 = base64.b64encode(payload_text.encode('utf-8')).decode('utf-8')
-                                if supa_token:
-                                    _res = supabase_rpc_user('start_totp_setup', {'secret_cipher': payload_b64}, supa_token)
-                                    if not _res:
-                                        supabase_rpc('start_totp_setup_admin', {'user_uuid': ADMIN_USER_ID, 'secret_cipher': payload_b64})
-                                else:
-                                    supabase_rpc('start_totp_setup_admin', {'user_uuid': ADMIN_USER_ID, 'secret_cipher': payload_b64})
-                                issuer = (load_settings().get('authentication', {}) or {}).get('issuer') or 'Neural Control Hub'
-                                uri = pyotp.TOTP(secret, digits=6, interval=30).provisioning_uri(name='operator', issuer_name=issuer)
-                                if os.environ.get('SUPABASE_VERBOSE') == '1':
-                                    try:
-                                        print(json.dumps({'dbg': 'login_autofix_reseed', 'reason': 'setup_decrypt_fail'}))
-                                    except Exception:
-                                        pass
-                                return jsonify({'error': 'Two-factor enrollment required', 'show_qr': True, 'uri': uri}), 403
-                            except Exception:
-                                return jsonify({'error': 'Secret missing'}), 403
-                        issuer = (load_settings().get('authentication', {}) or {}).get('issuer') or 'Neural Control Hub'
-                        uri = pyotp.TOTP(secret, digits=6, interval=30).provisioning_uri(name='operator', issuer_name=issuer)
-                        return jsonify({'error': 'Two-factor enrollment required', 'show_qr': True, 'uri': uri}), 403
-                    try:
-                        blob = base64.b64decode(setup_b64 if isinstance(setup_b64, str) else str(setup_b64))
-                        obj = json.loads(blob.decode('utf-8'))
-                        enc, salt = obj.get('enc'), obj.get('salt')
-                        secret = decrypt_secret(enc, salt, Config.SECRET_KEY or 'default-key')
-                    except Exception:
-                        try:
-                            secret = pyotp.random_base32()
-                            enc, salt = encrypt_secret(secret, Config.SECRET_KEY or 'default-key')
-                            payload_text = json.dumps({'enc': enc, 'salt': salt})
-                            payload_b64 = base64.b64encode(payload_text.encode('utf-8')).decode('utf-8')
-                            if supa_token:
-                                _res = supabase_rpc_user('start_totp_setup', {'secret_cipher': payload_b64}, supa_token)
-                                if not _res:
-                                    supabase_rpc('start_totp_setup_admin', {'user_uuid': ADMIN_USER_ID, 'secret_cipher': payload_b64})
-                            else:
-                                supabase_rpc('start_totp_setup_admin', {'user_uuid': ADMIN_USER_ID, 'secret_cipher': payload_b64})
-                            issuer = (load_settings().get('authentication', {}) or {}).get('issuer') or 'Neural Control Hub'
-                            uri = pyotp.TOTP(secret, digits=6, interval=30).provisioning_uri(name='operator', issuer_name=issuer)
-                            if os.environ.get('SUPABASE_VERBOSE') == '1':
-                                try:
-                                    print(json.dumps({'dbg': 'login_autofix_reseed', 'reason': 'setup_decrypt_fail_otp_present'}))
-                                except Exception:
-                                    pass
-                            return jsonify({'error': 'Two-factor enrollment required', 'show_qr': True, 'uri': uri}), 403
-                        except Exception:
-                            return jsonify({'error': 'Secret missing'}), 403
-                    ok = verify_totp_code(secret, str(otp), window=2)
-                    if os.environ.get('SUPABASE_VERBOSE') == '1':
-                        try:
-                            print(json.dumps({'dbg': 'login_verify', 'branch': 'setup', 'ok': bool(ok)}))
-                        except Exception:
-                            pass
-                    if not ok:
-                        record_failed_login(client_ip)
-                        return jsonify({'error': 'Invalid OTP', 'requires_totp': True}), 401
-                    if supa_token:
-                        _res2 = supabase_rpc_user('confirm_totp_setup', {}, supa_token)
-                        if not _res2:
-                            supabase_rpc('confirm_totp_setup_admin', {'user_uuid': ADMIN_USER_ID})
-                    else:
-                        supabase_rpc('confirm_totp_setup_admin', {'user_uuid': ADMIN_USER_ID})
-                else:
-                    secret = pyotp.random_base32()
-                    enc, salt = encrypt_secret(secret, Config.SECRET_KEY or 'default-key')
-                    payload_text = json.dumps({'enc': enc, 'salt': salt})
-                    payload_b64 = base64.b64encode(payload_text.encode('utf-8')).decode('utf-8')
-                    if supa_token:
-                        _res = supabase_rpc_user('start_totp_setup', {'secret_cipher': payload_b64}, supa_token)
-                        if not _res:
-                            supabase_rpc('start_totp_setup_admin', {'user_uuid': ADMIN_USER_ID, 'secret_cipher': payload_b64})
-                    else:
-                        supabase_rpc('start_totp_setup_admin', {'user_uuid': ADMIN_USER_ID, 'secret_cipher': payload_b64})
-                    issuer = (load_settings().get('authentication', {}) or {}).get('issuer') or 'Neural Control Hub'
-                    uri = pyotp.TOTP(secret, digits=6, interval=30).provisioning_uri(name='operator', issuer_name=issuer)
-                    if os.environ.get('SUPABASE_VERBOSE') == '1':
-                        try:
-                            print(json.dumps({'dbg': 'login_enroll', 'otp_present': bool(otp)}))
-                        except Exception:
-                            pass
-                    return jsonify({'error': 'Two-factor enrollment required', 'show_qr': True, 'uri': uri}), 403
-        else:
-            enc = cfg.get('totpSecretEnc')
-            salt = cfg.get('totpSalt')
-            enabled = bool(cfg.get('totpEnabled'))
-            if enabled and enc and salt:
-                if not otp:
-                    return jsonify({'error': 'OTP required', 'requires_totp': True}), 401
-                secret = decrypt_secret(enc, salt, Config.SECRET_KEY or 'default-key')
-                if not secret:
-                    return jsonify({'error': 'TOTP secret missing', 'requires_totp': True}), 403
-                ok = verify_totp_code(secret, str(otp), window=1)
-                if not ok:
-                    record_failed_login(client_ip)
-                    return jsonify({'error': 'Invalid OTP', 'requires_totp': True}), 401
-            else:
-                if not enc or not salt:
-                    secret = pyotp.random_base32()
-                    enc, salt = encrypt_secret(secret, Config.SECRET_KEY or 'default-key')
-                    cfg['totpSecretEnc'] = enc
-                    cfg['totpSalt'] = salt
-                    cfg['totpCreatedAt'] = datetime.datetime.now().isoformat()
-                    cfg['totpFailedAttempts'] = 0
-                    cfg['totpEnabled'] = False
-                    s_all = load_settings()
-                    s_all['authentication'] = cfg
-                    save_settings(s_all)
-                else:
-                    secret = decrypt_secret(enc, salt, Config.SECRET_KEY or 'default-key')
-                if not otp:
-                    issuer = (load_settings().get('authentication', {}) or {}).get('issuer') or 'Neural Control Hub'
-                    uri = pyotp.TOTP(secret, digits=6, interval=30).provisioning_uri(name='operator', issuer_name=issuer)
-                    return jsonify({'error': 'Two-factor enrollment required', 'show_qr': True, 'uri': uri}), 403
-                ok = verify_totp_code(secret, str(otp), window=1)
-                if not ok:
-                    record_failed_login(client_ip)
-                    return jsonify({'error': 'Invalid OTP', 'requires_totp': True}), 401
-                cfg['totpEnabled'] = True
-                s_all = load_settings()
-                s_all['authentication'] = cfg
-                save_settings(s_all)
         clear_login_attempts(client_ip)
-        
         session.permanent = True
         session['authenticated'] = True
-        session['otp_verified'] = True
+        session['otp_verified'] = False
         session['login_time'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         session['ip'] = client_ip
-        
-        return jsonify({
-            'success': True,
-            'message': 'Login successful',
-            'session_timeout': Config.SESSION_TIMEOUT
-        })
-    else:
-        # Record failed attempt
-        record_failed_login(client_ip)
-        return jsonify({'error': 'Invalid password'}), 401
+        return jsonify({'success': True, 'message': 'Login successful', 'session_timeout': Config.SESSION_TIMEOUT})
+    record_failed_login(client_ip)
+    return jsonify({'error': 'Invalid password'}), 401
 
 @app.route('/api/auth/logout', methods=['POST'])
 @require_auth
@@ -3656,33 +3424,7 @@ def api_auth_status():
     else:
         return jsonify({'authenticated': False})
 
-@app.route('/api/auth/totp/status', methods=['GET'])
-def api_totp_status():
-    cfg = load_settings().get('authentication', {})
-    issuer = cfg.get('issuer', 'Neural Control Hub')
-    supa_token = request.headers.get('X-Supabase-Token') or request.args.get('supabase_token')
-    enabled = False
-    verified_once = False
-    enrolled = False
-    if SUPABASE_URL:
-      s1 = supa_token and supabase_rpc_user('get_totp_ciphertext_for_login', {}, supa_token)
-      if not s1:
-        s1 = supabase_rpc('get_totp_ciphertext_for_login_admin', {'user_uuid': ADMIN_USER_ID})
-      s2 = None
-      if not s1:
-        s2 = supa_token and supabase_rpc_user('get_totp_setup_ciphertext', {}, supa_token)
-        if not s2:
-          s2 = supabase_rpc('get_totp_setup_ciphertext_admin', {'user_uuid': ADMIN_USER_ID})
-      enabled = bool(s1)
-      verified_once = bool(s1)
-      enrolled = bool(s1 or s2)
-    else:
-      enabled = bool(cfg.get('totpEnabled'))
-      verified_once = bool(cfg.get('totpVerifiedOnce'))
-      enrolled = verified_once or bool(cfg.get('totpEnrolled'))
-    failed = int(cfg.get('totpFailedAttempts') or 0)
-    created = cfg.get('totpCreatedAt')
-    return jsonify({'enabled': enabled, 'enrolled': enrolled, 'verified_once': verified_once, 'failed_attempts': failed, 'created_at': created, 'issuer': issuer})
+ 
 
 def _parse_dict_from_client(var_name: str):
     try:
@@ -4188,162 +3930,7 @@ def api_system_agent_admin():
         logger.error(f"Error in api_system_agent_admin: {str(e)}", exc_info=True)
         return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
-@app.route('/api/auth/totp/enroll', methods=['POST'])
-def api_totp_enroll():
-    if not request.is_json:
-        return jsonify({'error': 'JSON payload required'}), 400
-    password = request.json.get('password')
-    if not password:
-        return jsonify({'error': 'Password is required'}), 400
-    if not verify_admin_or_operator(password):
-        return jsonify({'error': 'Invalid password'}), 401
-    s = load_settings()
-    auth = s.get('authentication', {})
-    issuer = auth.get('issuer') or 'Neural Control Hub'
-    supa_token = request.headers.get('X-Supabase-Token') or (request.json.get('supabase_token') if request.is_json else None)
-    secret = None
-    if SUPABASE_URL:
-        already = supa_token and supabase_rpc_user('get_totp_ciphertext_for_login', {}, supa_token)
-        if not already:
-            # Fallback to admin user when JWT is missing
-            already = supabase_rpc('get_totp_ciphertext_for_login_admin', {'user_uuid': ADMIN_USER_ID})
-        if already:
-            return jsonify({'error': 'Already enrolled'}), 403
-        pre = supa_token and supabase_rpc_user('get_totp_setup_ciphertext', {}, supa_token)
-        if not pre:
-            pre = supabase_rpc('get_totp_setup_ciphertext_admin', {'user_uuid': ADMIN_USER_ID})
-        if pre:
-            return jsonify({'error': 'Enrollment already started'}), 403
-        else:
-            secret = pyotp.random_base32()
-            enc, salt = encrypt_secret(secret, Config.SECRET_KEY or 'default-key')
-            payload_text = json.dumps({'enc': enc, 'salt': salt})
-            payload_b64 = base64.b64encode(payload_text.encode('utf-8')).decode('utf-8')
-            if supa_token:
-                res = supabase_rpc_user('start_totp_setup', {'secret_cipher': payload_b64}, supa_token)
-            else:
-                res = supabase_rpc('start_totp_setup_admin', {'user_uuid': ADMIN_USER_ID, 'secret_cipher': payload_b64})
-            if not res and res is not None:
-                return jsonify({'error': 'Failed to start TOTP setup'}), 500
-    else:
-        enc = auth.get('totpSecretEnc')
-        salt = auth.get('totpSalt')
-        if not enc or not salt:
-            secret = pyotp.random_base32()
-            enc, salt = encrypt_secret(secret, Config.SECRET_KEY or 'default-key')
-            auth['totpSecretEnc'] = enc
-            auth['totpSalt'] = salt
-            auth['totpCreatedAt'] = datetime.datetime.now().isoformat()
-            auth['totpFailedAttempts'] = 0
-            s['authentication'] = auth
-            save_settings(s)
-        else:
-            secret = decrypt_secret(enc, salt, Config.SECRET_KEY or 'default-key')
-            if not secret:
-                return jsonify({'error': 'Secret corrupted'}), 500
-    uri = pyotp.TOTP(secret, digits=6, interval=30).provisioning_uri(name='operator', issuer_name=issuer)
-    return jsonify({'success': True, 'secret': secret, 'uri': uri})
-
-@app.route('/api/auth/totp/verify', methods=['POST'])
-def api_totp_verify():
-    if not request.is_json:
-        return jsonify({'error': 'JSON payload required'}), 400
-    otp_raw = request.json.get('otp')
-    otp = re.sub(r'\D', '', str(otp_raw or ''))[:6]
-    if not otp:
-        return jsonify({'error': 'OTP is required'}), 400
-    all_settings = load_settings()
-    cfg = all_settings.get('authentication', {})
-    supa_token = request.headers.get('X-Supabase-Token') or (request.json.get('supabase_token') if request.is_json else None)
-    secret = None
-    if SUPABASE_URL:
-        live = supa_token and supabase_rpc_user('get_totp_ciphertext_for_login', {}, supa_token)
-        if not live:
-            live = supabase_rpc('get_totp_ciphertext_for_login_admin', {'user_uuid': ADMIN_USER_ID})
-        if live:
-            try:
-                b64 = live if isinstance(live, str) else str(live)
-                blob = base64.b64decode(b64)
-                obj = json.loads(blob.decode('utf-8'))
-                enc, salt = obj.get('enc'), obj.get('salt')
-                secret = decrypt_secret(enc, salt, Config.SECRET_KEY or 'default-key')
-            except Exception:
-                return jsonify({'error': 'Secret missing'}), 400
-        else:
-            setup = supa_token and supabase_rpc_user('get_totp_setup_ciphertext', {}, supa_token)
-            if not setup:
-                setup = supabase_rpc('get_totp_setup_ciphertext_admin', {'user_uuid': ADMIN_USER_ID})
-            if not setup:
-                return jsonify({'error': 'Two-factor not enrolled'}), 400
-            try:
-                b64 = setup if isinstance(setup, str) else str(setup)
-                blob = base64.b64decode(b64)
-                obj = json.loads(blob.decode('utf-8'))
-                enc, salt = obj.get('enc'), obj.get('salt')
-                secret = decrypt_secret(enc, salt, Config.SECRET_KEY or 'default-key')
-            except Exception:
-                return jsonify({'error': 'Secret missing'}), 400
-    else:
-        enc = cfg.get('totpSecretEnc')
-        salt = cfg.get('totpSalt')
-        if not enc or not salt:
-            return jsonify({'error': 'Two-factor not enrolled'}), 400
-        secret = decrypt_secret(enc, salt, Config.SECRET_KEY or 'default-key')
-        if not secret:
-            return jsonify({'error': 'Secret missing'}), 400
-    ok = verify_totp_code(secret, str(otp), window=2)
-    if not ok:
-        return jsonify({'error': 'Invalid OTP'}), 401
-    session['otp_verified'] = True
-    if SUPABASE_URL:
-        if supa_token:
-            _res3 = supabase_rpc_user('confirm_totp_setup', {}, supa_token)
-            if not _res3:
-                supabase_rpc('confirm_totp_setup_admin', {'user_uuid': ADMIN_USER_ID})
-        else:
-            supabase_rpc('confirm_totp_setup_admin', {'user_uuid': ADMIN_USER_ID})
-        return jsonify({'success': True, 'enabled': True})
-    else:
-        cfg['totpEnabled'] = True
-        cfg['totpVerifiedOnce'] = True
-        cfg['totpFailedAttempts'] = 0
-        all_settings['authentication'] = cfg
-        save_settings(all_settings)
-        return jsonify({'success': True, 'enabled': True})
-
-@app.route('/api/auth/totp/unlock', methods=['POST'])
-def api_totp_unlock():
-    if not request.is_json:
-        return jsonify({'error': 'JSON payload required'}), 400
-    password = request.json.get('password')
-    if not password or not verify_admin_or_operator(password):
-        return jsonify({'error': 'Invalid password'}), 401
-    all_settings = load_settings()
-    cfg = all_settings.get('authentication', {})
-    cfg['totpFailedAttempts'] = 0
-    cfg['totpLastAttemptAt'] = None
-    all_settings['authentication'] = cfg
-    save_settings(all_settings)
-    return jsonify({'success': True})
-
-@app.route('/api/auth/totp/reset', methods=['POST'])
-def api_totp_reset():
-    if not request.is_json:
-        return jsonify({'error': 'JSON payload required'}), 400
-    password = request.json.get('password')
-    if not password or not verify_admin_or_operator(password):
-        return jsonify({'error': 'Invalid password'}), 401
-    all_settings = load_settings()
-    cfg = all_settings.get('authentication', {})
-    cfg.pop('totpSecretEnc', None)
-    cfg.pop('totpSalt', None)
-    cfg['totpEnabled'] = False
-    cfg['totpVerifiedOnce'] = False
-    cfg['totpFailedAttempts'] = 0
-    cfg['totpCreatedAt'] = None
-    all_settings['authentication'] = cfg
-    save_settings(all_settings)
-    return jsonify({'success': True})
+ 
 
 @app.route('/api/auth/device/trust-status', methods=['GET'])
 @require_auth

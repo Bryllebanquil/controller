@@ -3,19 +3,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Alert, AlertDescription } from './ui/alert';
-import { Badge } from './ui/badge';
 import { Shield, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useSocket } from './SocketProvider';
-import apiClient from '../services/api';
 
 export function Login() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [otp, setOtp] = useState('');
-  const [qrUri, setQrUri] = useState('');
-  const [totpInfo, setTotpInfo] = useState<{ enabled: boolean; enrolled: boolean; verified_once?: boolean; issuer?: string } | null>(null);
+  
   
   const { login } = useSocket();
 
@@ -27,27 +23,11 @@ export function Login() {
     setError('');
 
     try {
-      if (totpInfo?.enrolled && (otp.trim().length !== 6)) {
-        setError('Enter the 6-digit OTP from your Auth-App.');
-        setIsLoading(false);
-        return;
-      }
-      const resp = await login(password, otp.trim() || undefined);
+      const resp = await login(password);
       if (resp?.success) {
         return;
       }
-      const requiresTotp = !!(resp?.data && (resp.data as any).requires_totp);
-      const showQr = !!(resp?.data && (resp.data as any).show_qr);
-      if (showQr) {
-        const uri = (resp?.data as any).uri || '';
-        if (uri) setQrUri(uri);
-        setTotpInfo({ enabled: false, enrolled: true, verified_once: false, issuer: (totpInfo?.issuer || 'Neural Control Hub') });
-        setError('Scan the QR and enter the OTP to sign in.');
-      } else if (requiresTotp) {
-        setError('Enter the 6-digit OTP from your Auth-App.');
-      } else {
-        setError(resp?.error || 'Login failed. Check password or OTP.');
-      }
+      setError(resp?.error || 'Login failed. Check password.');
     } catch (error) {
       setError('Login failed. Please check your connection and try again.');
     } finally {
@@ -78,10 +58,6 @@ export function Login() {
           try { localStorage.setItem('supabase_token', t); } catch {}
         }
       } catch {}
-      const res = await apiClient.getTotpStatus();
-      if (res.success && res.data) {
-        setTotpInfo(res.data);
-      }
     })();
   }, []);
   
@@ -145,36 +121,12 @@ export function Login() {
               </div>
             </div>
             
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label htmlFor="otp" className="text-sm font-medium">
-                  Auth-App OTP
-                </label>
-                {totpInfo ? (
-                  <Badge variant={totpInfo.verified_once ? 'default' : 'secondary'} className="text-xs">
-                    {totpInfo.verified_once ? 'Enrolled' : 'Not enrolled'}
-                  </Badge>
-                ) : null}
-              </div>
-              <Input
-                id="otp"
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="6-digit code"
-                disabled={isLoading}
-              />
-              <div className="text-xs text-muted-foreground">
-                {totpInfo?.enrolled ? 'Two-factor authentication is required' : 'Two-factor authentication is optional'}
-              </div>
-            </div>
+           
             
             <Button 
               type="submit" 
               className="w-full" 
-              disabled={!password.trim() || isLoading || (totpInfo?.enrolled ? otp.trim().length !== 6 : false)}
+              disabled={!password.trim() || isLoading}
             >
               {isLoading ? (
                 <>
@@ -186,21 +138,7 @@ export function Login() {
               )}
             </Button>
             
-            {qrUri ? (
-              <div className="space-y-2">
-                <div className="text-sm font-medium">Set up Auth-App (Google Authenticator)</div>
-                <div className="text-xs text-muted-foreground">
-                  Scan the QR and enter OTP to sign in
-                </div>
-                <div className="mt-2 flex justify-center">
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(qrUri)}&size=220x220`}
-                    alt="Scan with Authenticator"
-                    className="border rounded p-2"
-                  />
-                </div>
-              </div>
-            ) : null}
+            
           </form>
           
           <div className="mt-6 pt-6 border-t text-center text-xs text-muted-foreground">
