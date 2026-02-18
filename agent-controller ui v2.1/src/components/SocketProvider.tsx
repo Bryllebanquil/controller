@@ -1267,6 +1267,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     const onAuthRequired = (e: CustomEvent<any> | Event) => {
       try {
         const detail: any = (e as any).detail || {};
+        try {
+          const w: any = window as any;
+          const supTs = Number(w.__NCH_SUPPRESS_AUTH_REDIRECT__ || 0);
+          if (supTs && (Date.now() - supTs) < 3000) {
+            return;
+          }
+        } catch {}
         const n: Notification = {
           id: `auth_${Date.now()}`,
           type: 'warning',
@@ -1278,7 +1285,16 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         };
         setNotifications(prev => [...prev.slice(-99), n]);
         setAuthenticated(false);
-        try { toast.error('Authentication required. Please log in.'); } catch {}
+        try { toast.error('Authentication required. Please log in.', { duration: 7000 }); } catch {}
+        try {
+          const w: any = window as any;
+          if (window.location.pathname !== '/login' && !w.__NCH_REDIRECTING__) {
+            w.__NCH_REDIRECTING__ = true;
+            setTimeout(() => {
+              try { window.location.replace('/login'); } catch {}
+            }, 10);
+          }
+        } catch {}
       } catch (err) {
       }
     };
@@ -1293,6 +1309,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     const onApiError = (e: CustomEvent<any> | Event) => {
       try {
         const detail: any = (e as any).detail || {};
+        const endpoint = String(detail?.endpoint || '');
+        if (endpoint === '/api/auth/login') {
+          return;
+        }
         const msg = detail?.message || detail?.error || 'Request failed';
         toast.error(typeof msg === 'string' ? msg : 'Request failed', { duration: 5000 });
       } catch {}
@@ -1606,6 +1626,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       const response = await apiClient.login(password, otp);
       if (response.success) {
         setAuthenticated(true);
+        try { (window as any).__NCH_SUPPRESS_AUTH_REDIRECT__ = Date.now(); } catch {}
         try { window.location.replace('/dashboard'); } catch {}
         return response;
       }

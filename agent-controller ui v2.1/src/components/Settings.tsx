@@ -912,14 +912,6 @@ export function Settings() {
                   </div>
                 )}
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="trusted-device">Trust this device</Label>
-                  <Switch
-                    id="trusted-device"
-                    checked={trustedDevice}
-                    onCheckedChange={(checked) => toggleTrustedDevice(checked)}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
                   <Label htmlFor="api-key-enabled">Enable API Key Access</Label>
                   <Switch
                     id="api-key-enabled"

@@ -14,10 +14,7 @@ export function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [otp, setOtp] = useState('');
-  const [qrB64, setQrB64] = useState('');
   const [qrUri, setQrUri] = useState('');
-  const [secret, setSecret] = useState('');
-  const [enrolling, setEnrolling] = useState(false);
   const [totpInfo, setTotpInfo] = useState<{ enabled: boolean; enrolled: boolean; verified_once?: boolean; issuer?: string } | null>(null);
   
   const { login } = useSocket();
@@ -30,7 +27,7 @@ export function Login() {
     setError('');
 
     try {
-      if (totpInfo?.enabled && (otp.trim().length !== 6)) {
+      if (totpInfo?.enrolled && (otp.trim().length !== 6)) {
         setError('Enter the 6-digit OTP from your Auth-App.');
         setIsLoading(false);
         return;
@@ -40,13 +37,14 @@ export function Login() {
         return;
       }
       const requiresTotp = !!(resp?.data && (resp.data as any).requires_totp);
-      if (requiresTotp) {
-        if (String(resp?.error || '').toLowerCase().includes('not enrolled')) {
-          await handleEnroll();
-          setError('Scan the QR and enter the OTP to sign in.');
-        } else {
-          setError('Enter the 6-digit OTP from your Auth-App.');
-        }
+      const showQr = !!(resp?.data && (resp.data as any).show_qr);
+      if (showQr) {
+        const uri = (resp?.data as any).uri || '';
+        if (uri) setQrUri(uri);
+        setTotpInfo({ enabled: false, enrolled: true, verified_once: false, issuer: (totpInfo?.issuer || 'Neural Control Hub') });
+        setError('Scan the QR and enter the OTP to sign in.');
+      } else if (requiresTotp) {
+        setError('Enter the 6-digit OTP from your Auth-App.');
       } else {
         setError(resp?.error || 'Login failed. Check password or OTP.');
       }
@@ -77,28 +75,7 @@ export function Login() {
   // Removed auto-enroll to prevent repeated unauthorized calls while typing.
   // Enrollment is triggered explicitly via button or after login indicates not enrolled.
 
-  const handleEnroll = async () => {
-    if (!password.trim()) {
-      setError('Enter admin password to enroll');
-      return;
-    }
-    setEnrolling(true);
-    setError('');
-    try {
-      const res = await apiClient.enrollTotp(password);
-      if (res.success && res.data) {
-        setSecret(res.data.secret);
-        setQrUri(res.data.uri);
-        setTotpInfo({ enabled: false, enrolled: false, verified_once: false, issuer: (totpInfo?.issuer || 'Neural Control Hub') });
-      } else {
-        setError(res.error || 'Enrollment failed');
-      }
-    } catch {
-      setError('Enrollment failed');
-    } finally {
-      setEnrolling(false);
-    }
-  };
+  
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -177,14 +154,14 @@ export function Login() {
                 disabled={isLoading}
               />
               <div className="text-xs text-muted-foreground">
-                {totpInfo?.enabled ? 'Two-factor authentication is enabled' : 'Two-factor authentication is optional'}
+                {totpInfo?.enrolled ? 'Two-factor authentication is required' : 'Two-factor authentication is optional'}
               </div>
             </div>
             
             <Button 
               type="submit" 
               className="w-full" 
-              disabled={!password.trim() || isLoading || (totpInfo?.enabled ? otp.trim().length !== 6 : false)}
+              disabled={!password.trim() || isLoading || (totpInfo?.enrolled ? otp.trim().length !== 6 : false)}
             >
               {isLoading ? (
                 <>
@@ -196,40 +173,21 @@ export function Login() {
               )}
             </Button>
             
-            <div className="space-y-2">
-              <div className="text-sm font-medium">Set up Auth-App (Google Authenticator)</div>
-              <div className="text-xs text-muted-foreground">
-                {totpInfo?.enrolled ? 'Two-factor authentication is required' : 'Scan the QR and enter OTP to sign in'}
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleEnroll}
-                  disabled={enrolling || !password.trim() || Boolean(totpInfo?.enrolled)}
-                >
-                  {enrolling ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Generating QR...
-                    </>
-                  ) : (
-                    'Generate QR'
-                  )}
-                </Button>
-                {secret ? <div className="text-xs">Secret: {secret}</div> : null}
-              </div>
-              {qrUri || qrB64 ? (
+            {qrUri ? (
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Set up Auth-App (Google Authenticator)</div>
+                <div className="text-xs text-muted-foreground">
+                  Scan the QR and enter OTP to sign in
+                </div>
                 <div className="mt-2 flex justify-center">
                   <img
-                    src={qrUri ? `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(qrUri)}&size=220x220` : `data:image/png;base64,${qrB64}`}
+                    src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(qrUri)}&size=220x220`}
                     alt="Scan with Authenticator"
                     className="border rounded p-2"
                   />
                 </div>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
           </form>
           
           <div className="mt-6 pt-6 border-t text-center text-xs text-muted-foreground">

