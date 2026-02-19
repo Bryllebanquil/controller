@@ -604,6 +604,15 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
     };
   }, [isStreaming, agentId, type]);
 
+  const getFpsForQuality = (q: string, t: 'screen' | 'camera' | 'audio'): number => {
+    if (t === 'audio') return 10;
+    const qq = String(q || '').toLowerCase();
+    if (qq === 'low') return 15;
+    if (qq === 'medium') return 20;
+    if (qq === 'high') return 25;
+    return 30;
+  };
+
   const handleStartStop = async () => {
     if (!agentId) {
       toast.error('Please select an agent first');
@@ -681,19 +690,17 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
             command = 'start-audio';
             break;
         }
+        const fps = getFpsForQuality(quality, type as 'screen' | 'camera' | 'audio');
         if (socket && (type === 'screen' || type === 'camera')) {
-          socket.emit('set_stream_mode', { agent_id: agentId, type: type, mode: 'buffered', fps: 15, buffer_frames: 6 });
-          if (type === 'screen') {
-            socket.emit('set_stream_params', { agent_id: agentId, type: 'screen', delta: true, tile_size: 64, diff_threshold: 24 });
-          }
+          socket.emit('set_stream_mode', { agent_id: agentId, type: type, mode: 'realtime', fps, buffer_frames: 10 });
         }
         const res = await apiClient.startStream(
           agentId,
           type as 'screen' | 'camera' | 'audio',
           quality,
-          type === 'audio' ? 'realtime' : 'buffered',
-          type === 'audio' ? 10 : 15,
-          type === 'audio' ? 30 : 6,
+          'realtime',
+          fps,
+          10,
         );
         if (!res?.success) {
           const msg = (res?.error || (res?.data as any)?.error || (res?.data as any)?.message || 'Failed to start stream');
@@ -866,11 +873,9 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
           case 'audio': command = 'start-audio'; break;
         }
         if (command) {
+          const fps = getFpsForQuality(quality, type as 'screen' | 'camera' | 'audio');
           if (socket && (type === 'screen' || type === 'camera')) {
-            socket.emit('set_stream_mode', { agent_id: agentId, type: type, mode: 'buffered', fps: 15, buffer_frames: 6 });
-            if (type === 'screen') {
-              socket.emit('set_stream_params', { agent_id: agentId, type: 'screen', delta: true, tile_size: 64, diff_threshold: 24 });
-            }
+            socket.emit('set_stream_mode', { agent_id: agentId, type: type, mode: 'realtime', fps, buffer_frames: 10 });
           }
           sendCommand(agentId, command);
           setIsStreaming(true);

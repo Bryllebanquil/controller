@@ -211,9 +211,8 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
   }, [socket, isStreaming, agentId]);
   const startStream = async () => {
     if (!socket) return;
-    socket.emit('set_stream_mode', { agent_id: agentId, type: 'screen', mode: 'buffered', fps: 15, buffer_frames: 6 });
-    socket.emit('set_stream_params', { agent_id: agentId, type: 'screen', delta: true, tile_size: 64, diff_threshold: 24 });
-    const res = await apiClient.startStream(agentId, 'screen', quality, 'buffered', 15, 6);
+    socket.emit('set_stream_mode', { agent_id: agentId, type: 'screen', mode: 'buffered', fps: 5, buffer_frames: 10 });
+    const res = await apiClient.startStream(agentId, 'screen', quality, 'buffered', 5, 10);
     if (!res?.success) {
       const msg = (res?.error || (res?.data as any)?.error || (res?.data as any)?.message || 'Failed to start stream');
       try { (window as any).toast?.error?.(String(msg)); } catch {}
