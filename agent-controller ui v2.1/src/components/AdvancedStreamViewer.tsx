@@ -8,6 +8,8 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [remoteCursor, setRemoteCursor] = useState<{ x: number; y: number; visible: boolean } | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [showRemoteCursor, setShowRemoteCursor] = useState(true);
+  const [agentCursorEmit, setAgentCursorEmit] = useState(true);
   const [quality, setQuality] = useState('high');
   const [stats, setStats] = useState<StreamStats | null>(null);
   const [monitors, setMonitors] = useState<Monitor[]>([]);
@@ -55,6 +57,10 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
   const renderLoopRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const renderFpsRef = useRef(20);
   const latestBaselineRef = useRef<number>(0);
+  const applyCursorEmit = (enabled: boolean) => {
+    if (!socket) return;
+    socket.emit('set_stream_params', { type: 'screen', cursor_emit: enabled });
+  };
   const normalizeFramePayload = (payload: any): string | Uint8Array | null => {
     if (typeof payload === 'string') {
       const s = payload.startsWith('data:') ? payload.split(',')[1] || '' : payload;
@@ -220,6 +226,8 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
     }
     setIsStreaming(true);
     socket.emit('get_monitors', { agent_id: agentId });
+    // Apply current cursor emission preference after stream starts
+    applyCursorEmit(agentCursorEmit);
   };
   const stopStream = async () => {
     if (!socket) return;
@@ -301,7 +309,7 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
       </div>
       <div className="stream-display">
         <canvas ref={canvasRef} className="stream-canvas" />
-        {remoteCursor?.visible && (
+        {showRemoteCursor && remoteCursor?.visible && (
           <div
             className="absolute"
             style={{
@@ -317,6 +325,26 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
             }}
           />
         )}
+      </div>
+      <div className="control-group mt-2">
+        <label style={{ marginRight: 8 }}>
+          <input
+            type="checkbox"
+            checked={showRemoteCursor}
+            onChange={(e) => setShowRemoteCursor(e.target.checked)}
+          /> Show remote cursor overlay
+        </label>
+        <label style={{ marginLeft: 12 }}>
+          <input
+            type="checkbox"
+            checked={agentCursorEmit}
+            onChange={(e) => {
+              const v = e.target.checked;
+              setAgentCursorEmit(v);
+              applyCursorEmit(v);
+            }}
+          /> Agent cursor events
+        </label>
       </div>
       {stats && (
         <div className="stream-stats">

