@@ -337,9 +337,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         forceNew: true,
         timeout: 20000,
         reconnection: true,
-        reconnectionAttempts: 20,
+        reconnectionAttempts: 100,
         reconnectionDelay: 1000,
-        reconnectionDelayMax: 10000,
+        reconnectionDelayMax: 20000,
         randomizationFactor: 0.5,
         autoConnect: true,
       });
@@ -411,6 +411,11 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       console.log('Reconnected after', attemptNumber, 'attempts');
       setConnectionInfo({ state: 'connected', attempt: 0, lastEventTs: Date.now() });
       addCommandOutput(`Reconnected after ${attemptNumber} attempts`);
+      try {
+        socketInstance.emit('operator_connect');
+        socketInstance.emit('join_room', 'operators');
+        socketInstance.emit('request_agent_list');
+      } catch {}
     });
 
     socketInstance.on('reconnect_error', (error: any) => {
