@@ -1235,6 +1235,26 @@ socketio = SocketIO(
 )
 print(f"Socket.IO CORS origins: {all_socketio_origins}")
 
+def _runtime_overrides_script() -> str:
+    try:
+        backend_url = os.environ.get('SOCKET_URL') or os.environ.get('BACKEND_URL') or os.environ.get('CONTROLLER_BACKEND_URL') or ''
+        backend_url = (backend_url or '').strip()
+    except Exception:
+        backend_url = ''
+    # Only set same-origin if no explicit override and no prior value
+    js = (
+        "<script>(function(){"
+        "var u=%r;"
+        "try{if(typeof window!=='undefined'){"
+        "if(u && u.trim()){window.__SOCKET_URL__=u;window.__API_URL__=u;}"
+        "else{if(!window.__SOCKET_URL__||String(window.__SOCKET_URL__).trim()===''){"
+        "window.__SOCKET_URL__=window.location.protocol+'//'+window.location.host;"
+        "window.__API_URL__=window.__SOCKET_URL__;"
+        "}}}}catch(e){}"
+        "})();</script>"
+    ) % backend_url
+    return js
+
 def require_socket_auth(f):
     from functools import wraps
     @wraps(f)
@@ -2171,12 +2191,7 @@ def login():
         if index_path:
             with open(index_path, 'r', encoding='utf-8', errors='replace') as f:
                 index_html = f.read()
-            runtime_overrides = (
-                "<script>"
-                "window.__SOCKET_URL__ = window.location.protocol + '//' + window.location.host;"
-                "window.__API_URL__ = window.__SOCKET_URL__;"
-                "</script>"
-            )
+            runtime_overrides = _runtime_overrides_script()
             fav_png = '<link rel="icon" href="/favicon.png" type="image/png" sizes="64x64" />'
             fav_ico = '<link rel="shortcut icon" href="/neural.ico" type="image/x-icon" />'
             fav_tags = fav_png + fav_ico
@@ -2217,12 +2232,7 @@ def two_factor():
         if index_path:
             with open(index_path, 'r', encoding='utf-8', errors='replace') as f:
                 index_html = f.read()
-            runtime_overrides = (
-                "<script>"
-                "window.__SOCKET_URL__ = window.location.protocol + '//' + window.location.host;"
-                "window.__API_URL__ = window.__SOCKET_URL__;"
-                "</script>"
-            )
+            runtime_overrides = _runtime_overrides_script()
             fav_png = '<link rel="icon" href="/favicon.png" type="image/png" sizes="64x64" />'
             fav_ico = '<link rel="shortcut icon" href="/neural.ico" type="image/x-icon" />'
             fav_tags = fav_png + fav_ico
@@ -2383,12 +2393,7 @@ def _serve_react_index():
         if index_path:
             with open(index_path, 'r', encoding='utf-8', errors='replace') as f:
                 index_html = f.read()
-            runtime_overrides = (
-                "<script>"
-                "window.__SOCKET_URL__ = window.location.protocol + '//' + window.location.host;"
-                "window.__API_URL__ = window.__SOCKET_URL__;"
-                "</script>"
-            )
+            runtime_overrides = _runtime_overrides_script()
             if "</head>" in index_html:
                 modified = index_html.replace("</head>", runtime_overrides + "</head>")
             else:
@@ -3255,12 +3260,7 @@ def dashboard():
                 css_inline = f.read()
             with open(js_path, 'r', encoding='utf-8', errors='replace') as f:
                 js_bundle = f.read()
-            runtime_overrides = """
-            <script>
-            window.__SOCKET_URL__ = window.location.protocol + '//' + window.location.host;
-            window.__API_URL__ = window.__SOCKET_URL__;
-            </script>
-            """
+            runtime_overrides = _runtime_overrides_script()
             html = f"""
             <!DOCTYPE html>
             <html lang=\"en\">
