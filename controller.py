@@ -1227,6 +1227,7 @@ socketio = SocketIO(
     async_mode=ASYNC_MODE,
     cors_allowed_origins=all_socketio_origins,
     allow_upgrades=ALLOW_UPGRADES,
+    manage_session=False,
     max_http_buffer_size=50 * 1024 * 1024,
     ping_interval=25,
     ping_timeout=60,

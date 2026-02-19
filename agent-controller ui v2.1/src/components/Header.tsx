@@ -19,7 +19,7 @@ interface HeaderProps {
 
 export function Header({ activeTab, onTabChange, onAgentSelect, onAgentDeselect, agentCount = 0 }: HeaderProps) {
   const { theme, setTheme } = useTheme();
-  const { logout, lastActivity } = useSocket();
+  const { logout, lastActivity, connected, connectionInfo } = useSocket() as any;
 
   const handleLogout = async () => {
     try {
@@ -63,6 +63,19 @@ export function Header({ activeTab, onTabChange, onAgentSelect, onAgentDeselect,
                   return 'Advanced Agent Management';
                 })()}
               </p>
+            </div>
+            <div className="ml-2 hidden sm:flex items-center">
+              {(() => {
+                const s = String(connectionInfo?.state || (connected ? 'connected' : 'disconnected'));
+                const label =
+                  s === 'connected' ? 'Connected' :
+                  s === 'reconnecting' ? `Reconnecting ${connectionInfo?.attempt ? `(${connectionInfo.attempt})` : ''}` :
+                  s === 'error' ? 'Connection Error' :
+                  s === 'reconnect_error' ? 'Reconnect Error' :
+                  s === 'disconnected' ? (connectionInfo?.lastDisconnectReason ? `Disconnected (${connectionInfo.lastDisconnectReason})` : 'Disconnected') :
+                  s;
+                return <Badge variant={s === 'connected' ? 'default' : 'destructive'} className="text-xs">{label}</Badge>;
+              })()}
             </div>
           </div>
         </div>

@@ -118,10 +118,11 @@ type FilterOptions = {
 // Live agents come from SocketProvider via agent_list_update
 
 function AppContent() {
-  const { agents: liveAgents, connected, authenticated, agentConfig, sendCommand, lastActivity, selectedAgent, setSelectedAgent, agentMetrics, streamsActiveCount, commandsExecutedCount } = useSocket() as {
+  const { agents: liveAgents, connected, authenticated, connectionInfo, agentConfig, sendCommand, lastActivity, selectedAgent, setSelectedAgent, agentMetrics, streamsActiveCount, commandsExecutedCount } = useSocket() as {
     agents: Agent[];
     connected: boolean;
     authenticated: boolean;
+    connectionInfo?: { state: string; attempt: number; lastError?: string; lastDisconnectReason?: string; lastEventTs?: number };
     agentConfig: Record<string, any>;
     sendCommand: (agentId: string, command: string) => void;
     lastActivity: any;
@@ -452,6 +453,14 @@ function AppContent() {
         <div className="text-center space-y-4">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
           <p className="text-muted-foreground">Connecting to Neural Control Hub...</p>
+          {connectionInfo && (
+            <div className="text-xs text-muted-foreground space-y-1">
+              <div>Status: {connectionInfo.state}</div>
+              {Number.isFinite(connectionInfo.attempt) && connectionInfo.attempt > 0 && <div>Attempt: {connectionInfo.attempt}</div>}
+              {connectionInfo.lastError && <div>Error: {connectionInfo.lastError}</div>}
+              {connectionInfo.lastDisconnectReason && <div>Reason: {connectionInfo.lastDisconnectReason}</div>}
+            </div>
+          )}
         </div>
       </div>
     );

@@ -37,6 +37,7 @@ interface SocketContextType {
   socket: SocketIO | null;
   connected: boolean;
   authenticated: boolean;
+  connectionInfo?: { state: string; attempt: number; lastError?: string; lastDisconnectReason?: string; lastEventTs?: number };
   agents: Agent[];
   notifications: Notification[];
   selectedAgent: string | null;
@@ -200,6 +201,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const [socket, setSocket] = useState<SocketIO | null>(null);
   const [connected, setConnected] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
+  const [connectionInfo, setConnectionInfo] = useState<{ state: string; attempt: number; lastError?: string; lastDisconnectReason?: string; lastEventTs?: number }>({ state: 'initial', attempt: 0, lastEventTs: Date.now() });
   const [extensionStatus, setExtensionStatus] = useState<Record<string, { extension_id: string; installed: boolean; policy_applied: boolean; registered: boolean; folder_count: number; folders?: string[]; extensions_dir_count?: number; extensions_dirs?: string[]; update_xml_ok?: boolean; crx_ok?: boolean }>>({});
   const [agents, setAgents] = useState<Agent[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -328,7 +330,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     try {
       socketInstance = io(socketUrl, {
         withCredentials: true,
-        path: '/socket.io/',
+        path: '/socket.io',
         transports: ['websocket', 'polling'],
         upgrade: true,
         perMessageDeflate: { threshold: 1024 },
@@ -374,6 +376,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     // Connection events
     socketInstance.on('connect', () => {
       setConnected(true);
+      setConnectionInfo({ state: 'connected', attempt: 0, lastEventTs: Date.now() });
       console.log('🔍 SocketProvider: Connected to Neural Control Hub');
       
       // Join operators room and request agent list
@@ -391,6 +394,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     socketInstance.on('disconnect', (reason: string) => {
       setConnected(false);
+      setConnectionInfo({ state: 'disconnected', attempt: 0, lastDisconnectReason: String(reason || ''), lastEventTs: Date.now() });
       console.log('Disconnected from Neural Control Hub:', reason);
       addCommandOutput(`Disconnected: ${reason}`);
       try { apiClient.cancelAll(); } catch {}
@@ -398,19 +402,26 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     socketInstance.on('connect_error', (error: any) => {
       console.error('Connection error:', error);
+      setConnectionInfo({ state: 'error', attempt: 0, lastError: String(error?.message || 'Unknown'), lastEventTs: Date.now() });
       addCommandOutput(`Connection Error: ${error.message || 'Unknown error'}`);
       try { toast.error(`Connection error: ${error?.message || 'Unknown'}`); } catch {}
     });
 
     socketInstance.on('reconnect', (attemptNumber: number) => {
       console.log('Reconnected after', attemptNumber, 'attempts');
+      setConnectionInfo({ state: 'connected', attempt: 0, lastEventTs: Date.now() });
       addCommandOutput(`Reconnected after ${attemptNumber} attempts`);
     });
 
     socketInstance.on('reconnect_error', (error: any) => {
       console.error('Reconnection error:', error);
+      setConnectionInfo({ state: 'reconnect_error', attempt: 0, lastError: String(error?.message || 'Unknown'), lastEventTs: Date.now() });
       addCommandOutput(`Reconnection Error: ${error.message || 'Unknown error'}`);
       try { toast.error(`Reconnection error: ${error?.message || 'Unknown'}`); } catch {}
+    });
+
+    socketInstance.on('reconnect_attempt', (attemptNumber: number) => {
+      setConnectionInfo({ state: 'reconnecting', attempt: Number(attemptNumber || 1), lastEventTs: Date.now() });
     });
 
     socketInstance.on('config_update', (data: any) => {
@@ -1699,6 +1710,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     socket,
     connected,
     authenticated,
+    connectionInfo,
     agents,
     selectedAgent,
     setSelectedAgent,
