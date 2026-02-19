@@ -780,17 +780,16 @@ USE_FIXED_SERVER_URL = True
 def _resolve_controller_url():
     v1 = (os.environ.get('FIXED_SERVER_URL', '') or '').strip()
     v2 = (os.environ.get('CONTROLLER_URL', '') or '').strip()
-    # Prefer explicit env, then deployed Render domain, then local dev
     candidates = [
         v1,
         v2,
-        'http://127.0.0.1:8080',
-        'http://localhost:3000'
+        'https://neural-control-hub.onrender.com',
+        'http://127.0.0.1:8080'
     ]
     for u in candidates:
         if u and u.lower() not in ('none', 'null'):
             return u
-    return 'http://127.0.0.1:8080'
+    return 'https://neural-control-hub.onrender.com'
 FIXED_SERVER_URL = _resolve_controller_url()
 DISABLE_SLUI_BYPASS = True
 UAC_BYPASS_DEBUG_MODE = False

@@ -313,12 +313,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
     // Otherwise use environment variable or localhost for development
     let socketUrl: string;
     
-    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      // Production: use same origin as the current page
+    const runtimeUrl = (window as any)?.__SOCKET_URL__;
+    if (typeof runtimeUrl === 'string' && runtimeUrl.trim().length > 0) {
+      socketUrl = runtimeUrl.trim();
+    } else if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
       socketUrl = `${window.location.protocol}//${window.location.host}`;
     } else {
-      // Development: use environment variable or default to localhost
-      socketUrl = (import.meta as any)?.env?.VITE_SOCKET_URL || (window as any)?.__SOCKET_URL__ || 'http://localhost:8080';
+      socketUrl = (import.meta as any)?.env?.VITE_SOCKET_URL || 'http://localhost:8080';
     }
     
     console.log('Connecting to Socket.IO server:', socketUrl);
@@ -329,10 +330,10 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       socketInstance = io(socketUrl, {
         withCredentials: true,
         path: '/socket.io',
-        transports: ['polling'],
-        upgrade: false,
+        transports: ['websocket', 'polling'],
+        upgrade: true,
         perMessageDeflate: { threshold: 1024 },
-        forceNew: true,
+        forceNew: false,
         timeout: 20000,
         reconnection: true,
         reconnectionAttempts: 20,
@@ -513,12 +514,13 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
                   const raw = localStorage.getItem(`stream:last:${sel}`);
                   const saved = raw ? JSON.parse(raw) : {};
                   if (socket && saved?.screen) {
-                    socket.emit('set_stream_mode', { agent_id: sel, type: 'screen', mode: 'buffered', fps: 5, buffer_frames: 10 });
-                    apiClient.startStream(sel, 'screen', 'medium', 'buffered', 5, 10);
+                    socket.emit('set_stream_mode', { agent_id: sel, type: 'screen', mode: 'buffered', fps: 15, buffer_frames: 6 });
+                    socket.emit('set_stream_params', { agent_id: sel, type: 'screen', delta: true, tile_size: 64, diff_threshold: 24 });
+                    apiClient.startStream(sel, 'screen', 'medium', 'buffered', 15, 6);
                   }
                   if (socket && saved?.camera) {
-                    socket.emit('set_stream_mode', { agent_id: sel, type: 'camera', mode: 'buffered', fps: 5, buffer_frames: 10 });
-                    apiClient.startStream(sel, 'camera', 'medium', 'buffered', 5, 10);
+                    socket.emit('set_stream_mode', { agent_id: sel, type: 'camera', mode: 'buffered', fps: 15, buffer_frames: 6 });
+                    apiClient.startStream(sel, 'camera', 'medium', 'buffered', 15, 6);
                   }
                 } catch {}
               } else {

