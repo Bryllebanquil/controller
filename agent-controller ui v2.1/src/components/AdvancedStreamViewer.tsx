@@ -319,7 +319,7 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
       const queue = frameQueueRef.current;
       if (!queue.length) return;
       const cap = Math.max(30, Math.floor((preRollMsRef.current / 1000) * renderFpsRef.current) * 2);
-      if (queue.length > cap) queue.splice(0, queue.length - cap);
+      if (queue.length > cap) queue.splice(cap);
       const now = Date.now();
       if (preRollActive) {
         const oldest = queue[0];
@@ -338,7 +338,7 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
         }
       }
       if (!item) {
-        item = queue.shift() as any;
+        item = queue.pop() as any;
         if (!item) return;
       }
       drawFrameToCanvas(item.frame);
@@ -390,7 +390,7 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
     applyCursorEmit(agentCursorEmit);
     try { socket.emit('set_stream_params', { type: 'screen', fps }); } catch {}
     try { renderFpsRef.current = Math.min(fps, 60); } catch {}
-    preRollMsRef.current = (quality === 'low' ? 300 : quality === 'medium' ? 500 : quality === 'high' ? 700 : 1000);
+    preRollMsRef.current = (quality === 'low' ? 7000 : quality === 'medium' ? 9000 : quality === 'high' ? 11000 : 12000);
     preRollStartRef.current = Date.now();
     setPreRollActive(true);
     frameQueueRef.current = [];
@@ -406,7 +406,7 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
     const fps = (q === 'low' ? 30 : q === 'medium' ? 50 : q === 'high' ? 60 : 60);
     try { if (socket) socket.emit('set_stream_params', { type: 'screen', fps }); } catch {}
     try { renderFpsRef.current = Math.min(fps, 60); } catch {}
-    preRollMsRef.current = (q === 'low' ? 300 : q === 'medium' ? 500 : q === 'high' ? 700 : 1000);
+    preRollMsRef.current = (q === 'low' ? 7000 : q === 'medium' ? 9000 : q === 'high' ? 11000 : 12000);
   };
   const switchMonitor = (m: number) => {
     setCurrentMonitor(m);

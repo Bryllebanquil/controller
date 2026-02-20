@@ -501,7 +501,7 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
       const queue = frameQueueRef.current;
       if (!queue.length) return;
       const cap = Math.max(30, Math.floor((preRollMsRef.current / 1000) * renderFpsRef.current) * 2);
-      if (queue.length > cap) queue.splice(0, queue.length - cap);
+      if (queue.length > cap) queue.splice(cap); // keep oldest frames, drop newest overflow
       const nowTs = Date.now();
       if (preRollActive) {
         const oldest = queue[0];
@@ -520,7 +520,7 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
         }
       }
       if (!item) {
-        item = queue.shift() as any;
+        item = queue.pop() as any; // fallback to latest available to avoid pauses
         if (!item) return;
       }
       drawFrameToCanvas(item.frame);
@@ -648,11 +648,11 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
   const getPreRollMs = (q: string, t: 'screen' | 'camera' | 'audio'): number => {
     if (t === 'audio') return 0;
     const qq = String(q || '').toLowerCase();
-    if (qq === 'poor') return 200;
-    if (qq === 'low') return 300;
-    if (qq === 'medium') return 500;
-    if (qq === 'high') return 700;
-    return 1000;
+    if (qq === 'poor') return 5000;
+    if (qq === 'low') return 7000;
+    if (qq === 'medium') return 9000;
+    if (qq === 'high') return 11000;
+    return 12000;
   };
 
   const handleStartStop = async () => {

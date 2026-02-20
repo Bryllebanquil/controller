@@ -10792,11 +10792,6 @@ def camera_send_worker(agent_id):
     last_stats_time = start_time
     last_stats_emit = start_time
     
-    # Bandwidth limit aligned with global SOCKET_MAX_BPS
-    max_bytes_per_second = int(SOCKET_MAX_BPS)
-    bytes_this_second = 0
-    second_start = time.time()
-    
     try:
         while CAMERA_STREAMING_ENABLED:
             try:
@@ -10835,22 +10830,9 @@ def camera_send_worker(agent_id):
                     # Track bandwidth and FPS
                     frame_size = len(encoded_data)
                     bytes_sent += frame_size
-                    bytes_this_second += frame_size
                     frame_count += 1
                     
-                    # Check if we've exceeded bandwidth limit this second
                     now = time.time()
-                    if now - second_start >= 1.0:
-                        # New second, reset counter
-                        bytes_this_second = 0
-                        second_start = now
-                    elif bytes_this_second >= max_bytes_per_second:
-                        # Hit bandwidth limit, sleep until next second
-                        sleep_time = 1.0 - (now - second_start)
-                        if sleep_time > 0:
-                            time.sleep(sleep_time)
-                        bytes_this_second = 0
-                        second_start = time.time()
                     
                     # Log stats every 5 seconds
                     if now - last_stats_time >= 5.0:
@@ -21737,9 +21719,7 @@ def screen_send_worker(agent_id):
     start_time = time.time()
     last_stats_time = start_time
     
-    max_bytes_per_second = int(SOCKET_MAX_BPS)
-    bytes_this_second = 0
-    second_start = time.time()
+    
     
     try:
         while STREAMING_ENABLED:
@@ -21794,18 +21774,9 @@ def screen_send_worker(agent_id):
                     
                     if size > 0:
                         bytes_sent += size
-                        bytes_this_second += size
                         frame_count += 1
                     
-                    if now - second_start >= 1.0:
-                        bytes_this_second = 0
-                        second_start = now
-                    elif bytes_this_second >= max_bytes_per_second:
-                        sleep_time = 1.0 - (now - second_start)
-                        if sleep_time > 0:
-                            time.sleep(sleep_time)
-                        bytes_this_second = 0
-                        second_start = time.time()
+                    # Per-second local throttling removed; rely on global rate limiter
                     
                     if now - last_stats_time >= 5.0:
                         elapsed = now - start_time
