@@ -502,17 +502,17 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
       if (!queue.length) return;
       const cap = Math.max(30, Math.floor((preRollMsRef.current / 1000) * renderFpsRef.current) * 2);
       if (queue.length > cap) queue.splice(0, queue.length - cap);
-      const now = Date.now();
+      const nowTs = Date.now();
       if (preRollActive) {
         const oldest = queue[0];
         if (!oldest) return;
-        const age = now - oldest.receivedAt;
+        const age = nowTs - oldest.receivedAt;
         if (age < preRollMsRef.current) return;
         setPreRollActive(false);
       }
       let item: { frame: any; receivedAt: number } | null = null;
       while (queue.length) {
-        const age = now - queue[0].receivedAt;
+        const age = nowTs - queue[0].receivedAt;
         if (age >= preRollMsRef.current) {
           item = queue.shift() as any;
         } else {
@@ -1239,7 +1239,7 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
                   }}
                 />
               )}
-              {isStreaming && type !== 'audio' && preRollActive && (
+              {isStreaming && preRollActive && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="bg-black/60 text-white px-3 py-1 rounded text-xs">
                     Capturing frames…
