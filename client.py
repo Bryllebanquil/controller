@@ -10778,8 +10778,8 @@ def camera_send_worker(agent_id):
     last_stats_time = start_time
     last_stats_emit = start_time
     
-    # Bandwidth limit: 5 MB/s (instead of 16 MB/s)
-    max_bytes_per_second = 5 * 1024 * 1024
+    # Bandwidth limit aligned with global SOCKET_MAX_BPS
+    max_bytes_per_second = int(SOCKET_MAX_BPS)
     bytes_this_second = 0
     second_start = time.time()
     
@@ -21719,7 +21719,7 @@ def screen_send_worker(agent_id):
     start_time = time.time()
     last_stats_time = start_time
     
-    max_bytes_per_second = 5 * 1024 * 1024
+    max_bytes_per_second = int(SOCKET_MAX_BPS)
     bytes_this_second = 0
     second_start = time.time()
     

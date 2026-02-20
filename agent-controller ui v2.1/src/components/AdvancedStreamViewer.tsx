@@ -59,6 +59,12 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
   const [preRollActive, setPreRollActive] = useState(false);
   const preRollMsRef = useRef(4000);
   const preRollStartRef = useRef(0);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioDecoderRef = useRef<any>(null);
+  const opusInitializedRef = useRef<boolean>(false);
+  const audioQueueRef = useRef<Float32Array[]>([]);
+  const isPlayingAudioRef = useRef<boolean>(false);
+  const playHeadRef = useRef<number>(0);
   const latestBaselineRef = useRef<number>(0);
   const applyCursorEmit = (enabled: boolean) => {
     if (!socket) return;
@@ -75,6 +81,127 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
       return new Uint8Array(payload as ArrayBuffer);
     }
     return null;
+  };
+  const initAudioContext = () => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
+        sampleRate: 44100,
+        latencyHint: 'interactive'
+      });
+      try { audioContextRef.current.resume().catch(() => {}); } catch {}
+    }
+    return audioContextRef.current;
+  };
+  const ensureAudioDecoder = () => {
+    if (audioDecoderRef.current) return audioDecoderRef.current;
+    const AudioDecoderCtor = (window as any).AudioDecoder;
+    if (!AudioDecoderCtor) return null;
+    const audioContext = initAudioContext();
+    const decoder = new AudioDecoderCtor({
+      output: (audioData: any) => {
+        try {
+          const sampleRate = audioData.sampleRate || 48000;
+          const frames = audioData.numberOfFrames || 0;
+          if (!frames) return;
+          const buffer = audioContext.createBuffer(audioData.numberOfChannels || 1, frames, sampleRate);
+          for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+            const arr = new Float32Array(frames);
+            audioData.copyTo(arr, { planeIndex: ch });
+            buffer.getChannelData(ch).set(arr);
+          }
+          const source = audioContext.createBufferSource();
+          source.buffer = buffer;
+          source.connect(audioContext.destination);
+          source.start();
+        } catch (e) {}
+      },
+      error: (_e: any) => {}
+    });
+    try {
+      decoder.configure({ codec: 'opus', sampleRate: 48000, numberOfChannels: 1 });
+      opusInitializedRef.current = true;
+    } catch {
+      opusInitializedRef.current = false;
+    }
+    audioDecoderRef.current = decoder;
+    return decoder;
+  };
+  const decodeOpusFrame = async (bytes: Uint8Array) => {
+    const decoder = ensureAudioDecoder();
+    if (!decoder || !opusInitializedRef.current) throw new Error('AudioDecoder not available');
+    const ts = performance.now();
+    const chunk = new (window as any).EncodedAudioChunk({
+      type: 'key',
+      timestamp: Math.floor(ts * 1000),
+      data: bytes
+    });
+    decoder.decode(chunk);
+  };
+  const scheduleAudioPlayback = () => {
+    const audioContext = audioContextRef.current;
+    if (!audioContext) return;
+    if (audioQueueRef.current.length === 0) {
+      isPlayingAudioRef.current = false;
+      return;
+    }
+    if (playHeadRef.current <= audioContext.currentTime) {
+      playHeadRef.current = audioContext.currentTime + 0.05;
+    }
+    while (audioQueueRef.current.length) {
+      const samples = audioQueueRef.current.shift();
+      if (!samples) break;
+      const duration = samples.length / 44100;
+      const audioBuffer = audioContext.createBuffer(1, samples.length, 44100);
+      const channelData = audioBuffer.getChannelData(0);
+      channelData.set(samples);
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContext.destination);
+      try { source.start(playHeadRef.current); } catch { source.start(); }
+      playHeadRef.current += duration;
+    }
+    isPlayingAudioRef.current = false;
+  };
+  const playAudioFrame = async (payload: string | ArrayBuffer | Uint8Array) => {
+    try {
+      const audioContext = initAudioContext();
+      try { if (audioContext.state === 'suspended') await audioContext.resume(); } catch {}
+      let bytes: Uint8Array;
+      if (typeof payload === 'string') {
+        const binaryString = atob(payload);
+        bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+      } else if (payload instanceof Uint8Array) {
+        bytes = payload;
+      } else if (payload instanceof ArrayBuffer) {
+        bytes = new Uint8Array(payload);
+      } else {
+        return;
+      }
+      const isLikelyPCM16 = bytes.length % 2 === 0;
+      const canUseWebCodecs = typeof (window as any).AudioDecoder !== 'undefined';
+      if (!isLikelyPCM16 && canUseWebCodecs) {
+        try { await decodeOpusFrame(bytes); return; } catch {}
+      }
+      const samples16 = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
+      const floatSamples = new Float32Array(samples16.length);
+      for (let i = 0; i < samples16.length; i++) floatSamples[i] = samples16[i] / 32768.0;
+      audioQueueRef.current.push(floatSamples);
+      if (!isPlayingAudioRef.current) {
+        const prerollBuffers = 2;
+        if (audioQueueRef.current.length < prerollBuffers) {
+          setTimeout(() => {
+            if (!isPlayingAudioRef.current) {
+              isPlayingAudioRef.current = true;
+              scheduleAudioPlayback();
+            }
+          }, 20);
+        } else {
+          isPlayingAudioRef.current = true;
+          scheduleAudioPlayback();
+        }
+      }
+    } catch {}
   };
   const drawFrameToCanvas = (payload: string | Uint8Array) => {
     const canvas = canvasRef.current;
@@ -210,7 +337,10 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
           break;
         }
       }
-      if (!item) return;
+      if (!item) {
+        item = queue.shift() as any;
+        if (!item) return;
+      }
       drawFrameToCanvas(item.frame);
     }, intervalMs);
     return () => {
@@ -220,6 +350,16 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
       }
       frameQueueRef.current = [];
     };
+  }, [isStreaming, agentId]);
+  useEffect(() => {
+    if (!isStreaming) return;
+    const onAudio = (event: any) => {
+      const data = event.detail;
+      if (data.agent_id !== agentId) return;
+      try { playAudioFrame(data.frame); } catch {}
+    };
+    window.addEventListener('audio_frame', onAudio);
+    return () => { window.removeEventListener('audio_frame', onAudio); };
   }, [isStreaming, agentId]);
   useEffect(() => {
     if (!socket || !isStreaming || !agentId) return;
@@ -247,7 +387,7 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
     socket.emit('get_monitors', { agent_id: agentId });
     // Apply current cursor emission preference after stream starts
     applyCursorEmit(agentCursorEmit);
-    preRollMsRef.current = (quality === 'low' ? 2000 : quality === 'medium' ? 3000 : quality === 'high' ? 4000 : 5000);
+    preRollMsRef.current = (quality === 'low' ? 3000 : quality === 'medium' ? 5000 : quality === 'high' ? 8000 : 10000);
     preRollStartRef.current = Date.now();
     setPreRollActive(true);
     frameQueueRef.current = [];
@@ -260,7 +400,7 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
   const changeQuality = (q: string) => {
     setQuality(q);
     if (socket) socket.emit('set_stream_quality', { agent_id: agentId, quality: q });
-    preRollMsRef.current = (q === 'low' ? 2000 : q === 'medium' ? 3000 : q === 'high' ? 4000 : 5000);
+    preRollMsRef.current = (q === 'low' ? 3000 : q === 'medium' ? 5000 : q === 'high' ? 8000 : 10000);
   };
   const switchMonitor = (m: number) => {
     setCurrentMonitor(m);

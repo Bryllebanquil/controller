@@ -519,7 +519,10 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
           break;
         }
       }
-      if (!item) return;
+      if (!item) {
+        item = queue.shift() as any;
+        if (!item) return;
+      }
       drawFrameToCanvas(item.frame);
       frameCountRef.current++;
       setFrameCount((prev: number) => prev + 1);
@@ -636,10 +639,10 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
   const getPreRollMs = (q: string, t: 'screen' | 'camera' | 'audio'): number => {
     if (t === 'audio') return 0;
     const qq = String(q || '').toLowerCase();
-    if (qq === 'low') return 2000;
-    if (qq === 'medium') return 3000;
-    if (qq === 'high') return 4000;
-    return 5000;
+    if (qq === 'low') return 3000;
+    if (qq === 'medium') return 5000;
+    if (qq === 'high') return 8000;
+    return 10000;
   };
 
   const handleStartStop = async () => {
