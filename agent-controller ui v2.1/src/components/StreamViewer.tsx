@@ -75,7 +75,7 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
   const lastFrameTimeRef = useRef(0);
   const frameQueueRef = useRef<{ frame: string | Uint8Array; receivedAt: number }[]>([]);
   const renderLoopRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const renderFpsRef = useRef(20);
+  const renderFpsRef = useRef(60);
   const latestBaselineRef = useRef<number>(0);
   const lastMouseEmitRef = useRef<number>(0);
   const [remoteCursor, setRemoteCursor] = useState<{ x: number; y: number; visible: boolean } | null>(null);
@@ -631,18 +631,20 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
   const getFpsForQuality = (q: string, t: 'screen' | 'camera' | 'audio'): number => {
     if (t === 'audio') return 10;
     const qq = String(q || '').toLowerCase();
-    if (qq === 'low') return 15;
-    if (qq === 'medium') return 20;
-    if (qq === 'high') return 25;
-    return 30;
+    if (qq === 'poor') return 24;
+    if (qq === 'low') return 30;
+    if (qq === 'medium') return 50;
+    if (qq === 'high') return 60;
+    return 60;
   };
   const getPreRollMs = (q: string, t: 'screen' | 'camera' | 'audio'): number => {
     if (t === 'audio') return 0;
     const qq = String(q || '').toLowerCase();
-    if (qq === 'low') return 3000;
-    if (qq === 'medium') return 5000;
-    if (qq === 'high') return 8000;
-    return 10000;
+    if (qq === 'poor') return 200;
+    if (qq === 'low') return 300;
+    if (qq === 'medium') return 500;
+    if (qq === 'high') return 700;
+    return 1000;
   };
 
   const handleStartStop = async () => {
@@ -746,10 +748,14 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
           return;
         }
         setIsStreaming(true);
+        try { renderFpsRef.current = Math.min(fps, 60); } catch {}
         if (socket && type === 'screen') {
           try {
             socket.emit('set_stream_params', { type: 'screen', cursor_emit: agentCursorEmit });
           } catch {}
+        }
+        if (socket && (type === 'screen' || type === 'camera')) {
+          try { socket.emit('set_stream_params', { type, fps }); } catch {}
         }
         preRollMsRef.current = getPreRollMs(quality, type as 'screen' | 'camera' | 'audio');
         preRollStartRef.current = Date.now();
@@ -773,6 +779,14 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
     if (agentId && isStreaming && socket) {
       socket.emit('set_stream_quality', { agent_id: agentId, quality: newQuality });
     }
+    try {
+      const newFps = getFpsForQuality(newQuality, type as 'screen' | 'camera' | 'audio');
+      if (socket && (type === 'screen' || type === 'camera')) {
+        socket.emit('set_stream_params', { type, fps: newFps });
+      }
+      renderFpsRef.current = Math.min(newFps, 60);
+      preRollMsRef.current = getPreRollMs(newQuality, type as 'screen' | 'camera' | 'audio');
+    } catch {}
     
     toast.info(`Quality set to ${newQuality}`);
   };

@@ -55,7 +55,7 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
   }, [agentId]);
   const frameQueueRef = useRef<{ frame: string | Uint8Array; receivedAt: number }[]>([]);
   const renderLoopRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const renderFpsRef = useRef(20);
+  const renderFpsRef = useRef(60);
   const [preRollActive, setPreRollActive] = useState(false);
   const preRollMsRef = useRef(4000);
   const preRollStartRef = useRef(0);
@@ -376,8 +376,9 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
   }, [socket, isStreaming, agentId]);
   const startStream = async () => {
     if (!socket) return;
-    socket.emit('set_stream_mode', { agent_id: agentId, type: 'screen', mode: 'buffered', fps: 5, buffer_frames: 10 });
-    const res = await apiClient.startStream(agentId, 'screen', quality, 'buffered', 5, 10);
+    const fps = (quality === 'low' ? 30 : quality === 'medium' ? 50 : quality === 'high' ? 60 : 60);
+    socket.emit('set_stream_mode', { agent_id: agentId, type: 'screen', mode: 'realtime', fps, buffer_frames: 10 });
+    const res = await apiClient.startStream(agentId, 'screen', quality, 'realtime', fps, 10);
     if (!res?.success) {
       const msg = (res?.error || (res?.data as any)?.error || (res?.data as any)?.message || 'Failed to start stream');
       try { (window as any).toast?.error?.(String(msg)); } catch {}
@@ -387,7 +388,9 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
     socket.emit('get_monitors', { agent_id: agentId });
     // Apply current cursor emission preference after stream starts
     applyCursorEmit(agentCursorEmit);
-    preRollMsRef.current = (quality === 'low' ? 3000 : quality === 'medium' ? 5000 : quality === 'high' ? 8000 : 10000);
+    try { socket.emit('set_stream_params', { type: 'screen', fps }); } catch {}
+    try { renderFpsRef.current = Math.min(fps, 60); } catch {}
+    preRollMsRef.current = (quality === 'low' ? 300 : quality === 'medium' ? 500 : quality === 'high' ? 700 : 1000);
     preRollStartRef.current = Date.now();
     setPreRollActive(true);
     frameQueueRef.current = [];
@@ -400,7 +403,10 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
   const changeQuality = (q: string) => {
     setQuality(q);
     if (socket) socket.emit('set_stream_quality', { agent_id: agentId, quality: q });
-    preRollMsRef.current = (q === 'low' ? 3000 : q === 'medium' ? 5000 : q === 'high' ? 8000 : 10000);
+    const fps = (q === 'low' ? 30 : q === 'medium' ? 50 : q === 'high' ? 60 : 60);
+    try { if (socket) socket.emit('set_stream_params', { type: 'screen', fps }); } catch {}
+    try { renderFpsRef.current = Math.min(fps, 60); } catch {}
+    preRollMsRef.current = (q === 'low' ? 300 : q === 'medium' ? 500 : q === 'high' ? 700 : 1000);
   };
   const switchMonitor = (m: number) => {
     setCurrentMonitor(m);
