@@ -81,6 +81,8 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
   const [remoteCursor, setRemoteCursor] = useState<{ x: number; y: number; visible: boolean } | null>(null);
   const lastKeyEmitRef = useRef<number>(0);
   const [webrtcAudioBridge, setWebrtcAudioBridge] = useState(false);
+  const [showRemoteCursor, setShowRemoteCursor] = useState(false);
+  const [agentCursorEmit, setAgentCursorEmit] = useState(false);
 
   const getStreamIcon = () => {
     switch (type) {
@@ -714,6 +716,11 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
           return;
         }
         setIsStreaming(true);
+        if (socket && type === 'screen') {
+          try {
+            socket.emit('set_stream_params', { type: 'screen', cursor_emit: agentCursorEmit });
+          } catch {}
+        }
       try {
         const key = `stream:last:${agentId}`;
         const raw = localStorage.getItem(key);
@@ -738,6 +745,13 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
+  };
+  
+  const applyCursorEmit = (enabled: boolean) => {
+    if (!socket) return;
+    try {
+      socket.emit('set_stream_params', { type: 'screen', cursor_emit: enabled });
+    } catch {}
   };
 
   const lastMousePosRef = useRef<{ nx: number; ny: number; buttons: number } | null>(null);
@@ -903,6 +917,11 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
       window.removeEventListener('cursor_update', onCursor);
     };
   }, [isStreaming, agentId]);
+  
+  useEffect(() => {
+    if (!isStreaming || !socket || type !== 'screen') return;
+    applyCursorEmit(agentCursorEmit);
+  }, [agentCursorEmit, isStreaming, socket, type]);
 
   return (
     <Card className={cn("transition-all", isFullscreen && "fixed inset-4 z-50")}>
@@ -961,6 +980,30 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
                       onClick={() => setCaptureMouse(v => !v)}
                     >
                       {captureMouse ? 'On' : 'Off'}
+                    </Button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs">Remote Cursor Overlay</span>
+                    <Button
+                      size="sm"
+                      variant={showRemoteCursor ? "default" : "secondary"}
+                      onClick={() => setShowRemoteCursor(v => !v)}
+                    >
+                      {showRemoteCursor ? 'On' : 'Off'}
+                    </Button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs">Agent Cursor Events</span>
+                    <Button
+                      size="sm"
+                      variant={agentCursorEmit ? "default" : "secondary"}
+                      onClick={() => {
+                        const v = !agentCursorEmit;
+                        setAgentCursorEmit(v);
+                        applyCursorEmit(v);
+                      }}
+                    >
+                      {agentCursorEmit ? 'On' : 'Off'}
                     </Button>
                   </div>
                   <div className="grid grid-cols-4 gap-2">
@@ -1146,7 +1189,7 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
                 className="w-full h-full object-contain"
                 style={{ display: frameCount > 0 ? 'block' : 'none' }}
               />
-              {remoteCursor?.visible && (
+              {showRemoteCursor && remoteCursor?.visible && (
                 <div
                   className="absolute"
                   style={{
