@@ -2692,8 +2692,8 @@ CAMERA_STREAMING_ENABLED = False
 CAMERA_STREAM_THREADS = []
 camera_capture_queue = None
 camera_encode_queue = None
-CAMERA_CAPTURE_QUEUE_SIZE = 10
-CAMERA_ENCODE_QUEUE_SIZE = 10
+CAMERA_CAPTURE_QUEUE_SIZE = 120
+CAMERA_ENCODE_QUEUE_SIZE = 120
 TARGET_CAMERA_FPS = 15
 CAMERA_MAX_WIDTH = 640
 CAMERA_JPEG_QUALITY = 65
@@ -10587,13 +10587,7 @@ def camera_capture_worker(agent_id):
             backends = []
         opened = False
         for camera_index in indices:
-            # Try default first
-            cap = cv2.VideoCapture(camera_index)
-            if cap.isOpened():
-                log_message(f"Camera {camera_index} opened successfully (default backend)")
-                opened = True
-                break
-            # Try OS-specific backends
+            # Prefer explicit OS-specific backends first
             for api_pref in backends:
                 try:
                     cap = cv2.VideoCapture(camera_index, api_pref)
@@ -10603,6 +10597,14 @@ def camera_capture_worker(agent_id):
                         break
                 except Exception:
                     pass
+            if opened:
+                break
+            # Fallback to default backend
+            cap = cv2.VideoCapture(camera_index)
+            if cap.isOpened():
+                log_message(f"Camera {camera_index} opened successfully (default backend)")
+                opened = True
+                break
             if opened:
                 break
             try:
@@ -10621,6 +10623,11 @@ def camera_capture_worker(agent_id):
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
             cap.set(cv2.CAP_PROP_FPS, TARGET_CAMERA_FPS)
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize buffer for lower latency
+            try:
+                fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+                cap.set(cv2.CAP_PROP_FOURCC, fourcc)
+            except Exception:
+                pass
         
         frame_time = 1.0 / TARGET_CAMERA_FPS
         log_message(f"Camera capture started (Synthetic: {synthetic_mode})")
@@ -10674,14 +10681,9 @@ def camera_capture_worker(agent_id):
                 
                 # Put in queue, skip frame if queue is too full (adaptive frame dropping)
                 queue_size = camera_capture_queue.qsize()
-                if queue_size < CAMERA_CAPTURE_QUEUE_SIZE:
-                    # Queue has space, add frame
-                    try:
-                        camera_capture_queue.put_nowait(frame)
-                    except queue.Full:
-                        pass  # Skip this frame if queue filled up
-                else:
-                    # Queue is full, skip this frame to prevent backlog
+                try:
+                    camera_capture_queue.put(frame, timeout=0.5)
+                except queue.Full:
                     pass
                 
                 # Frame rate limiting
@@ -10749,13 +10751,9 @@ def camera_encode_worker(agent_id):
                         
                         # Put in encode queue, drop oldest if full
                         try:
-                            camera_encode_queue.put_nowait(encoded_data)
+                            camera_encode_queue.put(encoded_data, timeout=0.5)
                         except queue.Full:
-                            try:
-                                camera_encode_queue.get_nowait()  # Remove oldest
-                                camera_encode_queue.put_nowait(encoded_data)  # Add new
-                            except queue.Empty:
-                                pass
+                            pass
                     else:
                         log_message("Failed to encode camera frame", "warning")
                         
