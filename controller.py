@@ -8147,11 +8147,18 @@ def _ensure_buffered_emitter(agent_id: str, stream_type: str):
             fps = max(1, int(STREAM_PLAYBACK_FPS_SCREEN[agent_id] or 10))
             buf_frames = max(1, int(STREAM_BUFFER_FRAMES_SCREEN[agent_id] or 30))
             def _run():
-                started = True
+                started = False
                 interval = 1.0 / float(fps)
                 next_tick = time.perf_counter()
                 while STREAM_PLAYBACK_MODE_SCREEN[agent_id] == 'buffered':
                     buf = STREAM_FRAME_BUFFER_SCREEN[agent_id]
+                    if not started:
+                        if len(buf) >= buf_frames:
+                            started = True
+                            next_tick = time.perf_counter()
+                        else:
+                            time.sleep(0.05)
+                            continue
                     if len(buf) > buf_frames * 2:
                         while len(buf) > buf_frames:
                             buf.popleft()

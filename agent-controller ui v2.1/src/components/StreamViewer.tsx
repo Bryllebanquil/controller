@@ -661,6 +661,14 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
     if (qq === 'high') return 11000;
     return 12000;
   };
+  const getBufferFramesForQuality = (q: string): number => {
+    const qq = String(q || '').toLowerCase();
+    if (qq === 'poor') return 120;
+    if (qq === 'low') return 200;
+    if (qq === 'medium') return 260;
+    if (qq === 'high') return 300;
+    return 360;
+  };
 
   const handleStartStop = async () => {
     if (!agentId) {
@@ -741,15 +749,16 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
         }
         const fps = getFpsForQuality(quality, type as 'screen' | 'camera' | 'audio');
         if (socket && (type === 'screen' || type === 'camera')) {
-          socket.emit('set_stream_mode', { agent_id: agentId, type: type, mode: 'realtime', fps, buffer_frames: 10 });
+          const buf = getBufferFramesForQuality(quality);
+          socket.emit('set_stream_mode', { agent_id: agentId, type: type, mode: 'buffered', fps, buffer_frames: buf });
         }
         const res = await apiClient.startStream(
           agentId,
           type as 'screen' | 'camera' | 'audio',
           quality,
-          'realtime',
+          'buffered',
           fps,
-          10,
+          getBufferFramesForQuality(quality),
         );
         if (!res?.success) {
           const msg = (res?.error || (res?.data as any)?.error || (res?.data as any)?.message || 'Failed to start stream');
@@ -802,9 +811,9 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
       if (isStreaming) {
         try { await apiClient.stopStream(agentId, type as 'screen' | 'camera' | 'audio'); } catch {}
         setIsStreaming(false);
-        try { socket.emit('set_stream_mode', { agent_id: agentId, type, mode: 'realtime', fps: newFps, buffer_frames: 10 }); } catch {}
+        try { socket.emit('set_stream_mode', { agent_id: agentId, type, mode: 'buffered', fps: newFps, buffer_frames: getBufferFramesForQuality(newQuality) }); } catch {}
         try {
-          const res = await apiClient.startStream(agentId, type as 'screen' | 'camera' | 'audio', newQuality, 'realtime', newFps, 10);
+          const res = await apiClient.startStream(agentId, type as 'screen' | 'camera' | 'audio', newQuality, 'buffered', newFps, getBufferFramesForQuality(newQuality));
           if (!res?.success) {
             const msg = (res?.error || (res?.data as any)?.error || (res?.data as any)?.message || 'Failed to restart stream');
             toast.error(String(msg));

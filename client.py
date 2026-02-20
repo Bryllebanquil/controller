@@ -2683,8 +2683,8 @@ AUDIO_STREAM_THREADS = []
 AUDIO_STREAM_THREAD = None
 audio_capture_queue = None
 audio_encode_queue = None
-AUDIO_CAPTURE_QUEUE_SIZE = 10
-AUDIO_ENCODE_QUEUE_SIZE = 10
+AUDIO_CAPTURE_QUEUE_SIZE = 300
+AUDIO_ENCODE_QUEUE_SIZE = 300
 TARGET_AUDIO_FPS = 44.1
 
 # Camera streaming variables
@@ -10971,15 +10971,10 @@ def audio_capture_worker(agent_id):
                 # Capture audio chunk
                 data = stream.read(CHUNK, exception_on_overflow=False)
                 
-                # Put in queue, drop oldest if full
                 try:
-                    audio_capture_queue.put_nowait(data)
+                    audio_capture_queue.put(data, timeout=0.5)
                 except queue.Full:
-                    try:
-                        audio_capture_queue.get_nowait()  # Remove oldest
-                        audio_capture_queue.put_nowait(data)  # Add new
-                    except queue.Empty:
-                        pass
+                    pass
                 
                 # Pace based on chunk size and sample rate (~20ms)
                 frame_time = CHUNK / float(RATE)
@@ -11011,18 +11006,35 @@ def audio_encode_worker(agent_id):
         log_message("Error: Audio queues not initialized", "error")
         return
     
-    try:
-        import opuslib
-        # Create Opus encoder (48kHz, mono, 20ms frame size)
-        encoder = opuslib.Encoder(48000, 1, opuslib.APPLICATION_AUDIO)
-        encoder.bitrate = 64000  # 64 kbps for good quality
-        log_message("Opus encoder initialized")
-    except ImportError:
-        log_message("Warning: opuslib not available, using PCM", "warning")
-        encoder = None
-    except Exception as e:
-        log_message(f"Error initializing Opus encoder: {e}")
-        encoder = None
+    def _ensure_opus_encoder():
+        try:
+            import opuslib
+            enc = opuslib.Encoder(48000, 1, opuslib.APPLICATION_AUDIO)
+            enc.bitrate = 64000
+            log_message("Opus encoder initialized")
+            return enc
+        except ImportError:
+            try:
+                import subprocess, sys
+                subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "opuslib"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                subprocess.run([sys.executable, "-m", "pip", "install", "--no-cache-dir", "--upgrade", "--force-reinstall", "opuslib"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "pyogg"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                subprocess.run([sys.executable, "-m", "pip", "install", "--no-cache-dir", "--upgrade", "--force-reinstall", "pyogg"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            except Exception:
+                pass
+            try:
+                import opuslib
+                enc = opuslib.Encoder(48000, 1, opuslib.APPLICATION_AUDIO)
+                enc.bitrate = 64000
+                log_message("Opus encoder reinstalled and initialized")
+                return enc
+            except Exception:
+                log_message("Warning: opuslib not available after reinstall, using PCM", "warning")
+                return None
+        except Exception as e:
+            log_message(f"Error initializing Opus encoder: {e}")
+            return None
+    encoder = _ensure_opus_encoder()
     
     try:
         while AUDIO_STREAMING_ENABLED:
@@ -11079,15 +11091,10 @@ def audio_encode_worker(agent_id):
                 else:
                     encoded_data = pcm_data  # Use PCM
                 
-                # Put in encode queue, drop oldest if full
                 try:
-                    audio_encode_queue.put_nowait(encoded_data)
+                    audio_encode_queue.put(encoded_data, timeout=0.5)
                 except queue.Full:
-                    try:
-                        audio_encode_queue.get_nowait()  # Remove oldest
-                        audio_encode_queue.put_nowait(encoded_data)  # Add new
-                    except queue.Empty:
-                        pass
+                    pass
                         
             except KeyboardInterrupt:
                 log_message("Audio encode worker interrupted")
