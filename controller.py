@@ -1216,11 +1216,16 @@ env_async = os.environ.get('SOCKET_ASYNC_MODE', '').strip().lower()
 if env_async in ('threading', 'eventlet', 'gevent', 'gevent_uwsgi', 'asgi'):
     ASYNC_MODE = env_async
 else:
+    # Prefer gevent if available, then eventlet, otherwise threading
     try:
-        import eventlet  # noqa: F401
-        ASYNC_MODE = 'eventlet'
+        import gevent  # noqa: F401
+        ASYNC_MODE = 'gevent'
     except Exception:
-        ASYNC_MODE = 'threading'
+        try:
+            import eventlet  # noqa: F401
+            ASYNC_MODE = 'eventlet'
+        except Exception:
+            ASYNC_MODE = 'threading'
 ALLOW_UPGRADES = ASYNC_MODE not in ('threading', 'asgi')
 socketio = SocketIO(
     app,
@@ -1229,8 +1234,8 @@ socketio = SocketIO(
     allow_upgrades=ALLOW_UPGRADES,
     manage_session=False,
     max_http_buffer_size=50 * 1024 * 1024,
-    ping_interval=25,
-    ping_timeout=60,
+    ping_interval=30,
+    ping_timeout=120,
     logger=False,
     engineio_logger=False
 )
