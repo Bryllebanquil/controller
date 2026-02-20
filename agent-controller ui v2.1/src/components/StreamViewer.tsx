@@ -38,7 +38,7 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
   const { sendCommand, socket, setLastActivity, agents } = useSocket();
   const [isStreaming, setIsStreaming] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [quality, setQuality] = useState('high');
+  const [quality, setQuality] = useState('medium');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [frameCount, setFrameCount] = useState(0);
   const [lastFrameTime, setLastFrameTime] = useState<number>(0);
@@ -97,6 +97,13 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
   };
 
   const StreamIcon = getStreamIcon();
+
+  useEffect(() => {
+    try {
+      const q = localStorage.getItem(`stream:quality:${type}`);
+      if (q) setQuality(q);
+    } catch {}
+  }, [type]);
 
   // Screenshot capture function
   const handleScreenshot = async () => {
@@ -785,25 +792,49 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
     }
   };
 
-  const handleQualityChange = (newQuality: string) => {
+  const handleQualityChange = async (newQuality: string) => {
     setQuality(newQuality);
-    
-    if (agentId && isStreaming && socket) {
-      socket.emit('set_stream_quality', { agent_id: agentId, quality: newQuality });
-    }
-    try {
-      const newFps = getFpsForQuality(newQuality, type as 'screen' | 'camera' | 'audio');
-      if (socket && (type === 'screen' || type === 'camera')) {
-        socket.emit('set_stream_params', { type, fps: newFps });
+    try { localStorage.setItem(`stream:quality:${type}`, newQuality); } catch {}
+    const newFps = getFpsForQuality(newQuality, type as 'screen' | 'camera' | 'audio');
+    renderFpsRef.current = Math.min(newFps, 60);
+    preRollMsRef.current = getPreRollMs(newQuality, type as 'screen' | 'camera' | 'audio');
+    if (agentId && socket && (type === 'screen' || type === 'camera')) {
+      if (isStreaming) {
+        try { await apiClient.stopStream(agentId, type as 'screen' | 'camera' | 'audio'); } catch {}
+        setIsStreaming(false);
+        try { socket.emit('set_stream_mode', { agent_id: agentId, type, mode: 'realtime', fps: newFps, buffer_frames: 10 }); } catch {}
+        try {
+          const res = await apiClient.startStream(agentId, type as 'screen' | 'camera' | 'audio', newQuality, 'realtime', newFps, 10);
+          if (!res?.success) {
+            const msg = (res?.error || (res?.data as any)?.error || (res?.data as any)?.message || 'Failed to restart stream');
+            toast.error(String(msg));
+            return;
+          }
+        } catch (e: any) {
+          toast.error(String(e?.message || e || 'Failed to restart stream'));
+          return;
+        }
+        setIsStreaming(true);
+        if (type === 'screen') {
+          try { socket.emit('set_stream_params', { type: 'screen', cursor_emit: agentCursorEmit }); } catch {}
+        }
+        try { socket.emit('set_stream_params', { type, fps: newFps }); } catch {}
         if (type === 'camera') {
           const { maxWidth, jpegQuality } = getCameraParamsForQuality(newQuality);
-          socket.emit('set_stream_params', { type: 'camera', max_width: maxWidth, jpeg_quality: jpegQuality });
+          try { socket.emit('set_stream_params', { type: 'camera', max_width: maxWidth, jpeg_quality: jpegQuality }); } catch {}
+        }
+        preRollMsRef.current = getPreRollMs(newQuality, type as 'screen' | 'camera' | 'audio');
+        preRollStartRef.current = Date.now();
+        setPreRollActive(true);
+        frameQueueRef.current = [];
+      } else {
+        try { socket.emit('set_stream_params', { type, fps: newFps }); } catch {}
+        if (type === 'camera') {
+          const { maxWidth, jpegQuality } = getCameraParamsForQuality(newQuality);
+          try { socket.emit('set_stream_params', { type: 'camera', max_width: maxWidth, jpeg_quality: jpegQuality }); } catch {}
         }
       }
-      renderFpsRef.current = Math.min(newFps, 60);
-      preRollMsRef.current = getPreRollMs(newQuality, type as 'screen' | 'camera' | 'audio');
-    } catch {}
-    
+    }
     toast.info(`Quality set to ${newQuality}`);
   };
 

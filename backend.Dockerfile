@@ -36,4 +36,4 @@ EXPOSE 8080
 ENV HOST=0.0.0.0 \
     PORT=8080
 
-CMD ["gunicorn", "-k", "eventlet", "-w", "1", "--bind", "0.0.0.0:8080", "controller:app"]
+CMD ["gunicorn", "-k", "geventwebsocket.gunicorn.workers.GeventWebSocketWorker", "-w", "1", "--bind", "0.0.0.0:8080", "controller:app"]

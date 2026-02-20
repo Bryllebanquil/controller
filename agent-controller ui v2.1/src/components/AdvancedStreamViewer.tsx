@@ -10,7 +10,7 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [showRemoteCursor, setShowRemoteCursor] = useState(true);
   const [agentCursorEmit, setAgentCursorEmit] = useState(true);
-  const [quality, setQuality] = useState('high');
+  const [quality, setQuality] = useState('medium');
   const [stats, setStats] = useState<StreamStats | null>(null);
   const [monitors, setMonitors] = useState<Monitor[]>([]);
   const [currentMonitor, setCurrentMonitor] = useState(1);
@@ -35,6 +35,12 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
       socket.off('stream_stats_update', onStats);
     };
   }, [socket, agentId]);
+  useEffect(() => {
+    try {
+      const q = localStorage.getItem('stream:quality:screen');
+      if (q) setQuality(q);
+    } catch {}
+  }, []);
   useEffect(() => {
     const onCursor = (event: any) => {
       const d = event.detail || {};
@@ -400,13 +406,17 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
     try { await apiClient.stopStream(agentId, 'screen'); } catch {}
     setIsStreaming(false);
   };
-  const changeQuality = (q: string) => {
+  const changeQuality = async (q: string) => {
     setQuality(q);
-    if (socket) socket.emit('set_stream_quality', { agent_id: agentId, quality: q });
+    try { localStorage.setItem('stream:quality:screen', q); } catch {}
     const fps = (q === 'low' ? 30 : q === 'medium' ? 50 : q === 'high' ? 60 : 60);
     try { if (socket) socket.emit('set_stream_params', { type: 'screen', fps }); } catch {}
     try { renderFpsRef.current = Math.min(fps, 60); } catch {}
     preRollMsRef.current = (q === 'low' ? 7000 : q === 'medium' ? 9000 : q === 'high' ? 11000 : 12000);
+    if (isStreaming) {
+      await stopStream();
+      await startStream();
+    }
   };
   const switchMonitor = (m: number) => {
     setCurrentMonitor(m);
