@@ -56,6 +56,9 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
   const frameQueueRef = useRef<{ frame: string | Uint8Array; receivedAt: number }[]>([]);
   const renderLoopRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const renderFpsRef = useRef(20);
+  const [preRollActive, setPreRollActive] = useState(false);
+  const preRollMsRef = useRef(4000);
+  const preRollStartRef = useRef(0);
   const latestBaselineRef = useRef<number>(0);
   const applyCursorEmit = (enabled: boolean) => {
     if (!socket) return;
@@ -188,9 +191,25 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
     renderLoopRef.current = setInterval(() => {
       const queue = frameQueueRef.current;
       if (!queue.length) return;
-      const maxQueue = 6;
-      if (queue.length > maxQueue) queue.splice(0, queue.length - maxQueue);
-      const item = queue.shift();
+      const cap = Math.max(30, Math.floor((preRollMsRef.current / 1000) * renderFpsRef.current) * 2);
+      if (queue.length > cap) queue.splice(0, queue.length - cap);
+      const now = Date.now();
+      if (preRollActive) {
+        const oldest = queue[0];
+        if (!oldest) return;
+        const age = now - oldest.receivedAt;
+        if (age < preRollMsRef.current) return;
+        setPreRollActive(false);
+      }
+      let item: { frame: any; receivedAt: number } | null = null;
+      while (queue.length) {
+        const age = now - queue[0].receivedAt;
+        if (age >= preRollMsRef.current) {
+          item = queue.shift() as any;
+        } else {
+          break;
+        }
+      }
       if (!item) return;
       drawFrameToCanvas(item.frame);
     }, intervalMs);
@@ -228,6 +247,10 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
     socket.emit('get_monitors', { agent_id: agentId });
     // Apply current cursor emission preference after stream starts
     applyCursorEmit(agentCursorEmit);
+    preRollMsRef.current = (quality === 'low' ? 2000 : quality === 'medium' ? 3000 : quality === 'high' ? 4000 : 5000);
+    preRollStartRef.current = Date.now();
+    setPreRollActive(true);
+    frameQueueRef.current = [];
   };
   const stopStream = async () => {
     if (!socket) return;
@@ -237,6 +260,7 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
   const changeQuality = (q: string) => {
     setQuality(q);
     if (socket) socket.emit('set_stream_quality', { agent_id: agentId, quality: q });
+    preRollMsRef.current = (q === 'low' ? 2000 : q === 'medium' ? 3000 : q === 'high' ? 4000 : 5000);
   };
   const switchMonitor = (m: number) => {
     setCurrentMonitor(m);
@@ -324,6 +348,11 @@ export function AdvancedStreamViewer({ agentId }: { agentId: string }) {
               pointerEvents: 'none'
             }}
           />
+        )}
+        {isStreaming && preRollActive && (
+          <div className="stream-overlay">
+            Capturing frames…
+          </div>
         )}
       </div>
       <div className="control-group mt-2">

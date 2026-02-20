@@ -83,6 +83,9 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
   const [webrtcAudioBridge, setWebrtcAudioBridge] = useState(false);
   const [showRemoteCursor, setShowRemoteCursor] = useState(false);
   const [agentCursorEmit, setAgentCursorEmit] = useState(false);
+  const [preRollActive, setPreRollActive] = useState(false);
+  const preRollMsRef = useRef(3000);
+  const preRollStartRef = useRef(0);
 
   const getStreamIcon = () => {
     switch (type) {
@@ -497,9 +500,25 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
     renderLoopRef.current = setInterval(() => {
       const queue = frameQueueRef.current;
       if (!queue.length) return;
-      const maxQueue = 6;
-      if (queue.length > maxQueue) queue.splice(0, queue.length - maxQueue);
-      const item = queue.shift();
+      const cap = Math.max(30, Math.floor((preRollMsRef.current / 1000) * renderFpsRef.current) * 2);
+      if (queue.length > cap) queue.splice(0, queue.length - cap);
+      const now = Date.now();
+      if (preRollActive) {
+        const oldest = queue[0];
+        if (!oldest) return;
+        const age = now - oldest.receivedAt;
+        if (age < preRollMsRef.current) return;
+        setPreRollActive(false);
+      }
+      let item: { frame: any; receivedAt: number } | null = null;
+      while (queue.length) {
+        const age = now - queue[0].receivedAt;
+        if (age >= preRollMsRef.current) {
+          item = queue.shift() as any;
+        } else {
+          break;
+        }
+      }
       if (!item) return;
       drawFrameToCanvas(item.frame);
       frameCountRef.current++;
@@ -583,7 +602,7 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
     };
     req();
     const interval = window.setInterval(() => {
-      if (frameCountRef.current === 0) req();
+      if (frameCountRef.current === 0 && (!frameQueueRef.current || frameQueueRef.current.length === 0)) req();
     }, 1500);
     return () => {
       window.clearInterval(interval);
@@ -613,6 +632,14 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
     if (qq === 'medium') return 20;
     if (qq === 'high') return 25;
     return 30;
+  };
+  const getPreRollMs = (q: string, t: 'screen' | 'camera' | 'audio'): number => {
+    if (t === 'audio') return 0;
+    const qq = String(q || '').toLowerCase();
+    if (qq === 'low') return 2000;
+    if (qq === 'medium') return 3000;
+    if (qq === 'high') return 4000;
+    return 5000;
   };
 
   const handleStartStop = async () => {
@@ -721,6 +748,10 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
             socket.emit('set_stream_params', { type: 'screen', cursor_emit: agentCursorEmit });
           } catch {}
         }
+        preRollMsRef.current = getPreRollMs(quality, type as 'screen' | 'camera' | 'audio');
+        preRollStartRef.current = Date.now();
+        setPreRollActive(true);
+        frameQueueRef.current = [];
       try {
         const key = `stream:last:${agentId}`;
         const raw = localStorage.getItem(key);
@@ -1204,6 +1235,13 @@ export function StreamViewer({ agentId, type, title, defaultCaptureMouse, defaul
                     pointerEvents: 'none'
                   }}
                 />
+              )}
+              {isStreaming && type !== 'audio' && preRollActive && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="bg-black/60 text-white px-3 py-1 rounded text-xs">
+                    Capturing frames…
+                  </div>
+                </div>
               )}
               <audio ref={audioElRef} style={{ display: 'none' }} />
               {frameCount === 0 && (
