@@ -1,0 +1,12 @@
+{
+    "search.exclude": {
+        "": true,
+        "**/*.code-search": false,
+        "**/bower_components": false
+    },
+    "files.exclude": {
+        "**/.hg": false,
+        "**/.svn": false
+    },
+    "search.useIgnoreFiles": true
+}

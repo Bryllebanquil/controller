@@ -1,0 +1,83 @@
+{
+  "uac_policy": {
+    "EnableLUA": 1,
+    "ConsentPromptBehaviorAdmin": 2,
+    "PromptOnSecureDesktop": 1
+  },
+  "notifications": {
+    "ToastEnabled": null,
+    "DisableNotificationCenter_HKCU": null,
+    "DisableNotificationCenter_HKLM": null,
+    "DefenderSecurityCenter_DisableNotifications": null,
+    "DefenderSecurityCenter_HideSystray": null,
+    "UX_Notification_Suppress": null
+  },
+  "uac_bypass_keys": {
+    "ms_settings": true,
+    "mscfile": true,
+    "exefile": false,
+    "folder_shell": false,
+    "appx_wsreset": false
+  },
+  "ifeo_svchost": {
+    "HKLM": false,
+    "WOW6432": false
+  },
+  "com_hijacks": {
+    "ICMLuaUtil": false,
+    "IColorDataProxy": false,
+    "BCDE0395": false
+  },
+  "env_windir": {
+    "HKCU_Environment": null,
+    "HKCU_Volatile": null
+  },
+  "scheduled_tasks": {
+    "WindowsSecurityUpdate": false,
+    "WindowsSecurityUpdateTask": false,
+    "MicrosoftEdgeUpdateTaskUser": false,
+    "SystemUpdateTask": false,
+    "\\Microsoft\\Windows\\DiskCleanup\\SilentCleanup": true
+  },
+  "services": {
+    "WindowsSecurityService": false,
+    "WindowsSecurityUpdate": false,
+    "SystemUpdateService": false
+  },
+  "startup_run": {
+    "HKCU_Run_svchost32": "\"C:\\Users\\Brylle\\AppData\\Local\\Programs\\Python\\Python314\\python.exe\" \"C:\\Users\\Brylle\\testing\\client.py\"",
+    "HKCU_RunOnce_svchost32": null,
+    "HKCU_Run_WindowsSecurityUpdate": "python.exe \"C:\\Users\\Brylle\\testing\\client.py\"",
+    "HKCU_RunOnce_WindowsSecurityUpdate": null
+  },
+  "files": {
+    "C:\\Users\\Brylle\\AppData\\Local\\Microsoft\\Windows\\svchost32.exe": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Microsoft\\Windows\\svchost32.bat": true,
+    "C:\\Users\\Brylle\\AppData\\Local\\Microsoft\\Windows\\svchost32.py": false,
+    "C:\\Users\\Brylle\\AppData\\Roaming\\Microsoft\\Windows\\svchost32.exe": false,
+    "C:\\Users\\Brylle\\AppData\\Roaming\\Microsoft\\Windows\\svchost32.bat": false,
+    "C:\\Users\\Brylle\\AppData\\Roaming\\Microsoft\\Windows\\svchost32.py": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Temp\\svchost32.py": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Temp\\svchost32.bat": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Temp\\svchost32.exe": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Temp\\watchdog.py": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Temp\\watchdog.bat": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Temp\\deploy.ps1": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Temp\\tamper_protection.py": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Temp\\tamper_protection.exe": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Temp\\uac_bypass.reg": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Temp\\Windows": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Temp\\System32": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Temp\\junction_target": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Temp\\fake_system32": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Temp\\profiler.dll": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Temp\\DismCore.dll": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Temp\\wow64log.dll": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Temp\\mock_system32": false,
+    "C:\\Users\\Brylle\\AppData\\Local\\Temp\\fake.msc": false,
+    "C:\\Windows\\System32\\svchost32.exe": false,
+    "C:\\Windows\\SysWOW64\\svchost32.exe": false,
+    "C:\\Windows\\System32\\drivers\\svchost32.exe": false
+  },
+  "source_scan": {}
+}

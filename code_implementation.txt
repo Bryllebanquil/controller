@@ -1,0 +1,358 @@
+1. Optimize File Streaming in controller.py
+Replace the file streaming implementation with better caching and timeout handling:
+python# In controller.py, update the stream endpoint (around line 2800)
+
+@app.route('/api/agents/<agent_id>/files/stream', methods=['GET'])
+@require_auth
+def stream_agent_file(agent_id):
+    if agent_id not in AGENTS_DATA:
+        return jsonify({'error': 'Agent not found'}), 404
+    agent_sid = AGENTS_DATA[agent_id].get('sid')
+    if not agent_sid:
+        return jsonify({'error': 'Agent not connected'}), 400
+
+    file_path = request.args.get('path', '')
+    if not file_path:
+        return jsonify({'error': 'File path is required'}), 400
+
+    mime = _guess_mime(file_path)
+    range_header = request.headers.get('Range')
+
+    # Reduce timeout for faster response
+    timeout_s = 10.0  # Reduced from 30s to 10s
+    
+    # Increase initial chunk size for faster loading
+    initial_chunk_size = 256 * 1024  # 256KB instead of dynamic calculation
+
+    if range_header:
+        m = _RANGE_RE.match(range_header.strip())
+        if not m:
+            return Response(status=416)
+        start_s, end_s = m.group(1), m.group(2)
+        start = int(start_s) if start_s != '' else None
+        end = int(end_s) if end_s != '' else None
+
+        if start is None and end is not None:
+            meta = _request_agent_file_range(agent_id, agent_sid, file_path, 0, 0, timeout_s)
+            if not meta or meta.get('error'):
+                return jsonify({'error': meta.get('error') if meta else 'Timeout'}), 504
+            total_size = int(meta.get('total_size') or 0)
+            suffix_len = end
+            if total_size <= 0 or suffix_len <= 0:
+                return Response(status=416)
+            start = max(0, total_size - suffix_len)
+            end = total_size - 1
+        elif end is None:
+            meta = _request_agent_file_range(agent_id, agent_sid, file_path, 0, 0, timeout_s)
+            if not meta or meta.get('error'):
+                return jsonify({'error': meta.get('error') if meta else 'Timeout'}), 504
+            total_size = int(meta.get('total_size') or 0)
+            if total_size <= 0:
+                return Response(status=416)
+            chunk_len = initial_chunk_size  # Use fixed larger chunk
+            s = int(start or 0)
+            e = min(s + chunk_len - 1, total_size - 1)
+            start = s
+            end = e
+
+        _t0 = time.time()
+        data = _request_agent_file_range(agent_id, agent_sid, file_path, start, end if end is not None else -1, timeout_s)
+        _elapsed = time.time() - _t0
+        if not data:
+            return jsonify({'error': 'Timeout'}), 504
+        if data.get('error'):
+            return jsonify({'error': data.get('error')}), 404
+
+        total_size = int(data.get('total_size') or 0)
+        b64 = _extract_b64(data.get('data') or data.get('chunk'))
+        if not b64:
+            return jsonify({'error': 'Empty response'}), 502
+        try:
+            raw = base64.b64decode(b64)
+        except Exception:
+            return jsonify({'error': 'Invalid data'}), 502
+
+        actual_start = int(data.get('start') if data.get('start') is not None else (start or 0))
+        actual_end = int(data.get('end') if data.get('end') is not None else (actual_start + len(raw) - 1))
+        if total_size > 0:
+            actual_end = min(actual_end, total_size - 1)
+
+        resp = Response(raw, status=206, mimetype=mime)
+        resp.headers['Accept-Ranges'] = 'bytes'
+        resp.headers['Content-Length'] = str(len(raw))
+        if total_size > 0:
+            resp.headers['Content-Range'] = f'bytes {actual_start}-{actual_end}/{total_size}'
+        resp.headers['Content-Disposition'] = 'inline'
+        # Add aggressive caching for faster subsequent loads
+        resp.headers['Cache-Control'] = 'private, max-age=3600'  # Cache for 1 hour
+        resp.headers['X-Accel-Buffering'] = 'no'
+        return resp
+
+    # No Range header: serve initial chunk with better caching
+    meta = _request_agent_file_range(agent_id, agent_sid, file_path, 0, 0, timeout_s)
+    if not meta or meta.get('error'):
+        return jsonify({'error': meta.get('error') if meta else 'Timeout'}), 504
+    total_size = int(meta.get('total_size') or 0)
+    if total_size <= 0:
+        return jsonify({'error': 'Empty file'}), 404
+    chunk_len = initial_chunk_size
+    end = min(chunk_len - 1, total_size - 1)
+    _t0 = time.time()
+    data = _request_agent_file_range(agent_id, agent_sid, file_path, 0, end, timeout_s)
+    _elapsed = time.time() - _t0
+    if not data:
+        return jsonify({'error': 'Timeout'}), 504
+    if data.get('error'):
+        return jsonify({'error': data.get('error')}), 404
+    b64 = _extract_b64(data.get('data') or data.get('chunk'))
+    if not b64:
+        return jsonify({'error': 'Empty response'}), 502
+    try:
+        raw = base64.b64decode(b64)
+    except Exception:
+        return jsonify({'error': 'Invalid data'}), 502
+    actual_start = 0
+    actual_end = int(data.get('end') if data.get('end') is not None else end)
+    resp = Response(raw, status=206, mimetype=mime)
+    resp.headers['Accept-Ranges'] = 'bytes'
+    resp.headers['Content-Length'] = str(len(raw))
+    resp.headers['Content-Range'] = f'bytes {actual_start}-{actual_end}/{total_size}'
+    resp.headers['Content-Disposition'] = 'inline'
+    # Add aggressive caching
+    resp.headers['Cache-Control'] = 'private, max-age=3600'
+    resp.headers['X-Accel-Buffering'] = 'no'
+    return resp
+2. Optimize Thumbnail Generation
+Update the thumbnail endpoint with smaller sizes and faster timeouts:
+python# In controller.py, update the thumbnail endpoint (around line 3000)
+
+@app.route('/api/agents/<agent_id>/files/thumbnail', methods=['GET'])
+@require_auth
+def thumbnail_agent_file(agent_id):
+    if agent_id not in AGENTS_DATA:
+        return jsonify({'error': 'Agent not found'}), 404
+    agent_sid = AGENTS_DATA[agent_id].get('sid')
+    if not agent_sid:
+        return jsonify({'error': 'Agent not connected'}), 400
+
+    file_path = request.args.get('path', '')
+    if not file_path:
+        return jsonify({'error': 'File path is required'}), 400
+
+    try:
+        size = int(request.args.get('size', '128'))  # Reduced default from 256
+    except Exception:
+        size = 128
+    size = max(16, min(size, 256))  # Reduced max from 512 to 256
+
+    # Reduced timeout for faster response
+    timeout_s = 5.0  # Reduced from 20s to 5s
+    
+    data = _request_agent_thumbnail(agent_id, agent_sid, file_path, size, timeout_s)
+    if not data:
+        return jsonify({'error': 'Timeout'}), 504
+    if data.get('error'):
+        return jsonify({'error': data.get('error')}), 404
+
+    mime = str(data.get('mime') or 'image/jpeg')
+    b64 = _extract_b64(data.get('data') or data.get('thumb') or data.get('chunk'))
+    if not b64:
+        return jsonify({'error': 'Empty response'}), 502
+    try:
+        raw = base64.b64decode(b64)
+    except Exception:
+        return jsonify({'error': 'Invalid data'}), 502
+
+    resp = Response(raw, status=200, mimetype=mime)
+    # Aggressive caching for thumbnails
+    resp.headers['Cache-Control'] = 'public, max-age=7200, immutable'  # 2 hours
+    resp.headers['Content-Length'] = str(len(raw))
+    resp.headers['Content-Disposition'] = 'inline'
+    return resp
+3. Add In-Memory Caching Layer
+Add a simple cache to avoid repeated requests:
+python# Add at the top of controller.py after imports
+
+from functools import lru_cache
+from threading import Lock
+
+# Simple in-memory cache for file metadata and thumbnails
+FILE_METADATA_CACHE = {}
+FILE_METADATA_CACHE_LOCK = Lock()
+CACHE_TTL = 300  # 5 minutes
+
+def get_cached_metadata(agent_id: str, file_path: str):
+    """Get cached file metadata if available and not expired"""
+    key = f"{agent_id}:{file_path}"
+    with FILE_METADATA_CACHE_LOCK:
+        entry = FILE_METADATA_CACHE.get(key)
+        if entry and (time.time() - entry['timestamp']) < CACHE_TTL:
+            return entry['data']
+    return None
+
+def set_cached_metadata(agent_id: str, file_path: str, data: dict):
+    """Cache file metadata"""
+    key = f"{agent_id}:{file_path}"
+    with FILE_METADATA_CACHE_LOCK:
+        FILE_METADATA_CACHE[key] = {
+            'data': data,
+            'timestamp': time.time()
+        }
+
+# Then modify _request_agent_file_range to use cache
+def _request_agent_file_range(agent_id: str, agent_sid: str, file_path: str, start: Optional[int], end: Optional[int], timeout_s: float = 30.0):
+    # Check cache for metadata requests (start=0, end=0)
+    if start == 0 and end == 0:
+        cached = get_cached_metadata(agent_id, file_path)
+        if cached:
+            return cached
+    
+    request_id = f"range_{int(time.time() * 1000)}_{secrets.token_hex(6)}"
+    ev = threading.Event()
+    with FILE_WAITERS_LOCK:
+        FILE_RANGE_WAITERS[request_id] = {'event': ev, 'data': None}
+    socketio.emit('request_file_range', {
+        'agent_id': agent_id,
+        'request_id': request_id,
+        'path': file_path,
+        'start': start,
+        'end': end
+    }, room=agent_sid)
+    ev.wait(timeout_s)
+    with FILE_WAITERS_LOCK:
+        waiter = FILE_RANGE_WAITERS.pop(request_id, None)
+    if not waiter:
+        return None
+    
+    result = waiter.get('data')
+    
+    # Cache metadata requests
+    if result and start == 0 and end == 0 and not result.get('error'):
+        set_cached_metadata(agent_id, file_path, result)
+    
+    return result
+4. Frontend Optimization
+Create a new component for file browsing that's optimized for file lists instead of using StreamViewer:
+typescript// Create a new file: agent-controller ui v2.1/src/components/FileBrowser.tsx
+
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent } from './ui/card';
+import { Button } from './ui/button';
+import { Badge } from './ui/badge';
+import apiClient from '../services/api';
+
+interface FileItem {
+  name: string;
+  type: 'file' | 'directory';
+  size?: number;
+  path: string;
+  extension?: string;
+}
+
+interface FileBrowserProps {
+  agentId: string | null;
+}
+
+export function FileBrowser({ agentId }: FileBrowserProps) {
+  const [files, setFiles] = useState<FileItem[]>([]);
+  const [currentPath, setCurrentPath] = useState('/');
+  const [loading, setLoading] = useState(false);
+  const [thumbnailCache, setThumbnailCache] = useState<Record<string, string>>({});
+
+  const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
+  const videoExtensions = ['mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm'];
+
+  const isMediaFile = (file: FileItem) => {
+    const ext = file.extension?.toLowerCase() || '';
+    return imageExtensions.includes(ext) || videoExtensions.includes(ext);
+  };
+
+  const loadThumbnail = async (file: FileItem) => {
+    if (!agentId || !isMediaFile(file)) return;
+    
+    const cacheKey = `${agentId}:${file.path}`;
+    if (thumbnailCache[cacheKey]) return;
+
+    try {
+      // Use smaller thumbnail size for faster loading
+      const url = `/api/agents/${agentId}/files/thumbnail?path=${encodeURIComponent(file.path)}&size=128`;
+      const response = await fetch(url);
+      if (response.ok) {
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        setThumbnailCache(prev => ({ ...prev, [cacheKey]: objectUrl }));
+      }
+    } catch (error) {
+      console.error('Failed to load thumbnail:', error);
+    }
+  };
+
+  const loadFiles = async (path: string) => {
+    if (!agentId) return;
+    
+    setLoading(true);
+    try {
+      const response = await apiClient.get(`/api/agents/${agentId}/files?path=${encodeURIComponent(path)}`);
+      if (response.data && response.data.files) {
+        setFiles(response.data.files);
+        setCurrentPath(path);
+        
+        // Load thumbnails for media files (but don't wait)
+        response.data.files.forEach((file: FileItem) => {
+          if (isMediaFile(file)) {
+            loadThumbnail(file);
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load files:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (agentId) {
+      loadFiles(currentPath);
+    }
+  }, [agentId]);
+
+  const getThumbnail = (file: FileItem) => {
+    const cacheKey = `${agentId}:${file.path}`;
+    return thumbnailCache[cacheKey];
+  };
+
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4">
+          {files.map((file, index) => (
+            <div key={index} className="flex flex-col items-center space-y-2">
+              <div className="w-20 h-20 rounded border flex items-center justify-center bg-muted overflow-hidden">
+                {isMediaFile(file) && getThumbnail(file) ? (
+                  <img
+                    src={getThumbnail(file)}
+                    alt={file.name}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="text-2xl">
+                    {file.type === 'directory' ? '📁' : '📄'}
+                  </div>
+                )}
+              </div>
+              <div className="text-xs text-center truncate w-full">{file.name}</div>
+              {file.size && (
+                <Badge variant="secondary" className="text-xs">
+                  {(file.size / 1024 / 1024).toFixed(2)} MB
+                </Badge>
+              )}
+            </div>
+          ))}
+        </div>
+        {loading && <div className="text-center text-muted-foreground mt-4">Loading...</div>}
+      </CardContent>
+    </Card>
+  );
+}

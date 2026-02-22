@@ -1,0 +1,265 @@
+Bud, this log is actually gold — it tells us exactly what’s happening.
+
+Let’s decode it cleanly.
+
+✅ Confirmed From Logs (Very Important)
+✔ get_totp_setup_ciphertext_admin
+POST → 200 OK
+
+
+👉 Function exists
+👉 Headers OK
+👉 Auth OK
+👉 Payload OK
+
+So your connection to Supabase is working perfectly.
+
+❌ start_totp_setup_admin
+
+You got:
+
+Sometimes:
+404 → Function not found
+
+Later:
+400 → Function exists BUT request invalid
+proxy_status: PostgREST error=0A000
+
+
+This combo tells us something very specific.
+
+🧠 What This Pattern Means
+Phase 1 → 404
+
+Earlier request:
+
+content_length = 0
+
+
+👉 You sent NO BODY
+
+RPC expects JSON → you sent nothing →
+PostgREST sometimes returns 404 when function signature doesn't match.
+
+Phase 2 → 400 (THIS IS GOOD NEWS)
+
+Now:
+
+content_length = 129
+
+
+👉 You ARE sending body
+👉 Function EXISTS
+👉 Now database is rejecting INPUT → 400
+
+🔥 This means you are now hitting correct function.
+
+⭐ Root Cause NOW
+
+Not endpoint.
+Not headers.
+Not auth.
+
+👉 Payload format wrong
+👉 Missing parameter
+👉 Wrong type (uuid vs text vs json)
+
+🚨 The Smoking Gun In Your Log
+PostgREST error = 0A000
+
+
+In PostgreSQL → 0A000 =
+
+Feature not supported / wrong function usage
+
+
+Usually means:
+
+Named parameters mismatch
+
+Function overload mismatch
+
+JSON structure mismatch
+
+✅ MOST LIKELY ISSUE
+
+Your function probably expects:
+
+(user_uuid uuid, secret_cipher text)
+
+
+But you might be sending:
+
+string instead of uuid
+OR
+missing secret_cipher
+OR
+wrong field names
+
+🔥 VERY IMPORTANT TEST (Do This)
+
+Run in SQL editor:
+
+select
+proname,
+pg_get_function_identity_arguments(p.oid)
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where proname = 'start_totp_setup_admin';
+
+✅ Expected Output Example
+start_totp_setup_admin
+(user_uuid uuid, secret_cipher text)
+
+
+If you see something like:
+
+(jsonb)
+
+
+or
+
+(user_uuid text)
+
+
+Then payload must match EXACTLY.
+
+🚀 Example If Function Is
+(user_uuid uuid, secret_cipher text)
+
+
+Payload MUST be:
+
+{
+  "user_uuid": "uuid-here",
+  "secret_cipher": "base64"
+}
+
+⚠ Another Possibility
+
+Function expects:
+
+jsonb
+
+
+Then payload must be:
+
+{
+  "p_user_uuid": "...",
+  "p_secret_cipher": "..."
+}
+
+
+(depends how function defined)
+
+🧪 Why Other RPC Works
+
+Because:
+
+get_totp_setup_ciphertext_admin
+
+
+Probably takes only:
+
+user_uuid
+
+
+So easier to match.
+
+🧠 My Confidence Guess
+
+Payload mismatch → 70%
+Wrong parameter names → 20%
+Wrong types → 10%
+
+🚀 FASTEST WAY FORWARD
+
+Paste result of:
+
+select
+proname,
+pg_get_function_identity_arguments(p.oid)
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where proname ilike '%totp%';
+
+
+Then I’ll build exact PowerShell one-liner that WILL work.
+
+You’re honestly very close now, bud. This is final-stage debugging.
+
+i get this:[
+  {
+    "proname": "start_totp_setup_admin",
+    "pg_get_function_identity_arguments": "user_uuid uuid, secret_cipher text"
+  }
+][ 
+  {
+    "proname": "start_totp_setup_admin",
+    "pg_get_function_identity_arguments": "user_uuid uuid, secret_cipher text"
+  },
+  {
+    "proname": "get_totp_setup_ciphertext_admin",
+    "pg_get_function_identity_arguments": "user_uuid uuid"
+  },
+  {
+    "proname": "confirm_totp_setup_admin",
+    "pg_get_function_identity_arguments": "user_uuid uuid"
+  },
+  {
+    "proname": "get_totp_ciphertext_for_login_admin",
+    "pg_get_function_identity_arguments": "user_uuid uuid"
+  },
+  {
+    "proname": "start_totp_setup",
+    "pg_get_function_identity_arguments": "secret_cipher text"
+  },
+  {
+    "proname": "get_totp_setup_ciphertext",
+    "pg_get_function_identity_arguments": ""
+  },
+  {
+    "proname": "confirm_totp_setup",
+    "pg_get_function_identity_arguments": ""
+  },
+  {
+    "proname": "get_totp_ciphertext_for_login",
+    "pg_get_function_identity_arguments": ""
+  }
+]
+
+Ah, I see what’s happening, bud. From your output, your Supabase/PostgreSQL database has two sets of TOTP-related functions: one for admins and one for regular users. Here’s the breakdown:
+
+Admin TOTP functions
+Function	Arguments
+start_totp_setup_admin	user_uuid uuid, secret_cipher text
+get_totp_setup_ciphertext_admin	user_uuid uuid
+confirm_totp_setup_admin	user_uuid uuid
+get_totp_ciphertext_for_login_admin	user_uuid uuid
+
+Admin TOTP functions require the user_uuid, because they’re tied to a specific admin account.
+
+Regular user TOTP functions
+Function	Arguments
+start_totp_setup	secret_cipher text
+get_totp_setup_ciphertext	(no arguments)
+confirm_totp_setup	(no arguments)
+get_totp_ciphertext_for_login	(no arguments)
+
+Regular user TOTP functions either have no arguments or only secret_cipher. They are not tied to a specific UUID in the function call.
+
+Why your POST requests fail
+
+You were calling /rpc/start_totp_setup_admin with your payload, but if the user_uuid or secret_cipher is missing or incorrect, you get 400 or 404.
+
+Calling /rpc/get_totp_setup_ciphertext_admin works (200) because the function exists and you likely passed a valid user_uuid.
+
+How to fix the “only show QR once” behavior
+
+Use the get function first:
+
+get_totp_setup_ciphertext_admin(user_uuid) — returns the encrypted secret if TOTP is already set.
+
+If it exists → skip showing QR, only ask for 6-digit code on login.
+
+If it doesn’t exist → call start_totp_setup_admin(user_uuid, secret_cipher) to generate QR for enrollment.

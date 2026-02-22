@@ -1,0 +1,127 @@
+{
+  "total": 15,
+  "verified": 0,
+  "failed": 15,
+  "details": [
+    {
+      "name": "policy_push_notifications",
+      "path": "HKCU\\SOFTWARE\\Policies\\Microsoft\\Windows\\CurrentVersion\\PushNotifications",
+      "value_name": "NoToastApplicationNotification",
+      "status": "missing",
+      "current_value": null,
+      "message": "Key or value not found"
+    },
+    {
+      "name": "policy_windows_update",
+      "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate",
+      "value_name": "DisableWindowsUpdateAccess",
+      "status": "missing",
+      "current_value": null,
+      "message": "Key or value not found"
+    },
+    {
+      "name": "context_runas_cmd",
+      "path": "HKCR\\Directory\\Background\\shell\\runas\\command",
+      "value_name": "",
+      "status": "missing",
+      "current_value": null,
+      "message": "Key or value not found"
+    },
+    {
+      "name": "context_powershell_admin",
+      "path": "HKCR\\Directory\\Background\\shell\\PowershellAdmin\\command",
+      "value_name": "",
+      "status": "missing",
+      "current_value": null,
+      "message": "Key or value not found"
+    },
+    {
+      "name": "notify_center_hkcu",
+      "path": "HKCU\\Software\\Policies\\Microsoft\\Windows\\Explorer",
+      "value_name": "DisableNotificationCenter",
+      "status": "missing",
+      "current_value": null,
+      "message": "Key or value not found"
+    },
+    {
+      "name": "notify_center_hklm",
+      "path": "HKLM\\Software\\Policies\\Microsoft\\Windows\\Explorer",
+      "value_name": "DisableNotificationCenter",
+      "status": "missing",
+      "current_value": null,
+      "message": "Key or value not found"
+    },
+    {
+      "name": "defender_ux_suppress",
+      "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\UX Configuration",
+      "value_name": "Notification_Suppress",
+      "status": "missing",
+      "current_value": null,
+      "message": "Key or value not found"
+    },
+    {
+      "name": "toast_global_above_lock",
+      "path": "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings",
+      "value_name": "NOC_GLOBAL_SETTING_ALLOW_TOASTS_ABOVE_LOCK",
+      "status": "missing",
+      "current_value": null,
+      "message": "Key or value not found"
+    },
+    {
+      "name": "toast_global_critical_above_lock",
+      "path": "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings",
+      "value_name": "NOC_GLOBAL_SETTING_ALLOW_CRITICAL_TOASTS_ABOVE_LOCK",
+      "status": "missing",
+      "current_value": null,
+      "message": "Key or value not found"
+    },
+    {
+      "name": "toast_windows_update",
+      "path": "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings\\Windows.SystemToast.WindowsUpdate.Notification",
+      "value_name": "Enabled",
+      "status": "missing",
+      "current_value": null,
+      "message": "Key or value not found"
+    },
+    {
+      "name": "toast_security_maintenance",
+      "path": "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings\\Windows.SystemToast.SecurityAndMaintenance",
+      "value_name": "Enabled",
+      "status": "missing",
+      "current_value": null,
+      "message": "Key or value not found"
+    },
+    {
+      "name": "toast_windows_security",
+      "path": "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings\\Windows.SystemToast.WindowsDefender",
+      "value_name": "Enabled",
+      "status": "missing",
+      "current_value": null,
+      "message": "Key or value not found"
+    },
+    {
+      "name": "toast_sec_health_ui",
+      "path": "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Notifications\\Settings\\Microsoft.Windows.SecHealthUI_cw5n1h2txyewy!SecHealthUI",
+      "value_name": "Enabled",
+      "status": "missing",
+      "current_value": null,
+      "message": "Key or value not found"
+    },
+    {
+      "name": "explorer_balloon_tips",
+      "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+      "value_name": "EnableBalloonTips",
+      "status": "missing",
+      "current_value": null,
+      "message": "Key or value not found"
+    },
+    {
+      "name": "explorer_info_tip",
+      "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+      "value_name": "ShowInfoTip",
+      "status": "missing",
+      "current_value": null,
+      "message": "Key or value not found"
+    }
+  ]
+}

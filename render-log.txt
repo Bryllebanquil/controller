@@ -1,0 +1,100 @@
+2026-02-19T12:58:32.760932157Z message handler error
+2026-02-19T12:58:32.760957158Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T12:58:32.761749278Z {"asctime": "2026-02-19 12:58:32,759", "levelname": "ERROR", "name": "engineio.server", "message": "message handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T12:58:33.770808549Z server=neural-control-hub.onrender.com//socket.io/ client=127.0.0.1:49904 socket shutdown error: [Errno 9] Bad file descriptordisconnect handler error
+2026-02-19T12:58:33.770854731Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T12:58:33.771806525Z {"asctime": "2026-02-19 12:58:33,769", "levelname": "ERROR", "name": "engineio.server", "message": "disconnect handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T12:58:40.962156722Z message handler error
+2026-02-19T12:58:40.962188113Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T12:58:40.963014864Z {"asctime": "2026-02-19 12:58:40,960", "levelname": "ERROR", "name": "engineio.server", "message": "message handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T12:58:42.019619342Z server=neural-control-hub.onrender.com//socket.io/ client=127.0.0.1:46698 socket shutdown error: [Errno 9] Bad file descriptordisconnect handler error
+2026-02-19T12:58:42.019646453Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T12:58:42.020408312Z {"asctime": "2026-02-19 12:58:42,018", "levelname": "ERROR", "name": "engineio.server", "message": "disconnect handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T12:58:48.592175277Z message handler error
+2026-02-19T12:58:48.592209478Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T12:58:48.593227404Z {"asctime": "2026-02-19 12:58:48,590", "levelname": "ERROR", "name": "engineio.server", "message": "message handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T12:58:50.208002244Z server=neural-control-hub.onrender.com//socket.io/ client=127.0.0.1:53584 socket shutdown error: [Errno 9] Bad file descriptordisconnect handler error
+2026-02-19T12:58:50.208041245Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T12:58:50.20905875Z {"asctime": "2026-02-19 12:58:50,206", "levelname": "ERROR", "name": "engineio.server", "message": "disconnect handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T12:58:59.711508441Z message handler error
+2026-02-19T12:58:59.711530931Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T12:58:59.71229312Z {"asctime": "2026-02-19 12:58:59,710", "levelname": "ERROR", "name": "engineio.server", "message": "message handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T12:59:01.254273287Z server=neural-control-hub.onrender.com//socket.io/ client=127.0.0.1:37262 socket shutdown error: [Errno 9] Bad file descriptordisconnect handler error
+2026-02-19T12:59:01.254299468Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T12:59:01.255005776Z {"asctime": "2026-02-19 12:59:01,253", "levelname": "ERROR", "name": "engineio.server", "message": "disconnect handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T12:59:09.410500127Z message handler error
+2026-02-19T12:59:09.410518428Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T12:59:09.411287457Z {"asctime": "2026-02-19 12:59:09,409", "levelname": "ERROR", "name": "engineio.server", "message": "message handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T12:59:10.419528168Z server=neural-control-hub.onrender.com//socket.io/ client=127.0.0.1:43034 socket shutdown error: [Errno 9] Bad file descriptordisconnect handler error
+2026-02-19T12:59:10.419558448Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T12:59:10.420520023Z {"asctime": "2026-02-19 12:59:10,418", "levelname": "ERROR", "name": "engineio.server", "message": "disconnect handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T12:59:20.014022824Z message handler error
+2026-02-19T12:59:20.014060745Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T12:59:20.014787903Z {"asctime": "2026-02-19 12:59:20,012", "levelname": "ERROR", "name": "engineio.server", "message": "message handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T12:59:20.943472001Z server=neural-control-hub.onrender.com//socket.io/ client=127.0.0.1:43368 socket shutdown error: [Errno 9] Bad file descriptordisconnect handler error
+2026-02-19T12:59:20.943508852Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T12:59:20.944307742Z {"asctime": "2026-02-19 12:59:20,941", "levelname": "ERROR", "name": "engineio.server", "message": "disconnect handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T12:59:29.315278817Z message handler error
+2026-02-19T12:59:29.315306888Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T12:59:29.316218811Z {"asctime": "2026-02-19 12:59:29,313", "levelname": "ERROR", "name": "engineio.server", "message": "message handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T12:59:30.254065379Z server=neural-control-hub.onrender.com//socket.io/ client=127.0.0.1:39682 socket shutdown error: [Errno 9] Bad file descriptordisconnect handler error
+2026-02-19T12:59:30.25409062Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T12:59:30.255002853Z {"asctime": "2026-02-19 12:59:30,252", "levelname": "ERROR", "name": "engineio.server", "message": "disconnect handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T12:59:52.301714209Z message handler error
+2026-02-19T12:59:52.301738049Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T12:59:52.302429227Z {"asctime": "2026-02-19 12:59:52,300", "levelname": "ERROR", "name": "engineio.server", "message": "message handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T12:59:52.303732519Z server=neural-control-hub.onrender.com//socket.io/ client=127.0.0.1:42114 socket shutdown error: [Errno 9] Bad file descriptordisconnect handler error
+2026-02-19T12:59:52.3037429Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T12:59:52.30456358Z {"asctime": "2026-02-19 12:59:52,302", "levelname": "ERROR", "name": "engineio.server", "message": "disconnect handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T13:00:01.102593574Z message handler error
+2026-02-19T13:00:01.102624144Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T13:00:01.103502206Z {"asctime": "2026-02-19 13:00:01,101", "levelname": "ERROR", "name": "engineio.server", "message": "message handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T13:00:02.086983723Z server=neural-control-hub.onrender.com//socket.io/ client=127.0.0.1:56914 socket shutdown error: [Errno 9] Bad file descriptordisconnect handler error
+2026-02-19T13:00:02.087015064Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T13:00:02.087984599Z {"asctime": "2026-02-19 13:00:02,085", "levelname": "ERROR", "name": "engineio.server", "message": "disconnect handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T13:00:11.435011351Z message handler error
+2026-02-19T13:00:11.435093753Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T13:00:11.435914974Z {"asctime": "2026-02-19 13:00:11,433", "levelname": "ERROR", "name": "engineio.server", "message": "message handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T13:00:11.437608746Z server=neural-control-hub.onrender.com//socket.io/ client=127.0.0.1:39314 socket shutdown error: [Errno 9] Bad file descriptordisconnect handler error
+2026-02-19T13:00:11.437620757Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T13:00:11.43854604Z {"asctime": "2026-02-19 13:00:11,436", "levelname": "ERROR", "name": "engineio.server", "message": "disconnect handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T13:00:33.464269101Z message handler error
+2026-02-19T13:00:33.464297621Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T13:00:33.465239815Z {"asctime": "2026-02-19 13:00:33,462", "levelname": "ERROR", "name": "engineio.server", "message": "message handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T13:00:33.593006101Z server=neural-control-hub.onrender.com//socket.io/ client=127.0.0.1:45684 socket shutdown error: [Errno 9] Bad file descriptordisconnect handler error
+2026-02-19T13:00:33.593032062Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T13:00:33.594173511Z {"asctime": "2026-02-19 13:00:33,591", "levelname": "ERROR", "name": "engineio.server", "message": "disconnect handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T13:00:54.353067818Z message handler error
+2026-02-19T13:00:54.353685173Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T13:00:54.354095783Z {"asctime": "2026-02-19 13:00:54,351", "levelname": "ERROR", "name": "engineio.server", "message": "message handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T13:00:55.270905562Z server=neural-control-hub.onrender.com//socket.io/ client=127.0.0.1:49666 socket shutdown error: [Errno 9] Bad file descriptordisconnect handler error
+2026-02-19T13:00:55.270932192Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T13:00:55.271798654Z {"asctime": "2026-02-19 13:00:55,269", "levelname": "ERROR", "name": "engineio.server", "message": "disconnect handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T13:01:04.562525175Z 127.0.0.1 - - [19/Feb/2026:13:01:04 +0000] "GET /dashboard?tab=overview HTTP/1.1" 200 850 "https://neural-control-hub.onrender.com/2fa" "Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Mobile Safari/537.36"
+2026-02-19T13:01:04.888803709Z message handler error
+2026-02-19T13:01:04.88886755Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T13:01:04.890081611Z {"asctime": "2026-02-19 13:01:04,887", "levelname": "ERROR", "name": "engineio.server", "message": "message handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T13:01:05.616126137Z server=neural-control-hub.onrender.com//socket.io/ client=127.0.0.1:51800 socket shutdown error: [Errno 9] Bad file descriptordisconnect handler error
+2026-02-19T13:01:05.616150008Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T13:01:05.617184244Z {"asctime": "2026-02-19 13:01:05,614", "levelname": "ERROR", "name": "engineio.server", "message": "disconnect handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T13:01:05.740863327Z server=neural-control-hub.onrender.com//socket.io/ client=127.0.0.1:42626 socket shutdown error: [Errno 9] Bad file descriptordisconnect handler error
+2026-02-19T13:01:05.740886518Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T13:01:05.741613996Z {"asctime": "2026-02-19 13:01:05,739", "levelname": "ERROR", "name": "engineio.server", "message": "disconnect handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T13:01:05.777554571Z 127.0.0.1 - - [19/Feb/2026:13:01:05 +0000] "GET /assets/index-DI-vD4PB.js HTTP/1.1" 200 477031 "https://neural-control-hub.onrender.com/dashboard?tab=overview" "Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Mobile Safari/537.36"
+2026-02-19T13:01:06.283685741Z 127.0.0.1 - - [19/Feb/2026:13:01:06 +0000] "GET /assets/ui-CgAviX0U.js HTTP/1.1" 200 286308 "https://neural-control-hub.onrender.com/dashboard?tab=overview" "Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Mobile Safari/537.36"
+2026-02-19T13:01:06.339308151Z 127.0.0.1 - - [19/Feb/2026:13:01:06 +0000] "GET /assets/socket-Ba-X_5Ya.js HTTP/1.1" 200 41250 "https://neural-control-hub.onrender.com/dashboard?tab=overview" "Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Mobile Safari/537.36"
+2026-02-19T13:01:06.383538505Z 127.0.0.1 - - [19/Feb/2026:13:01:06 +0000] "GET /assets/index-D_uEUR0V.css HTTP/1.1" 200 101275 "https://neural-control-hub.onrender.com/dashboard?tab=overview" "Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Mobile Safari/537.36"
+2026-02-19T13:01:08.471312779Z 127.0.0.1 - - [19/Feb/2026:13:01:08 +0000] "GET /assets/index-DI-vD4PB.js.map HTTP/1.1" 200 1845844 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
+2026-02-19T13:01:08.474425028Z 127.0.0.1 - - [19/Feb/2026:13:01:08 +0000] "GET /assets/socket-Ba-X_5Ya.js.map HTTP/1.1" 200 186166 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
+2026-02-19T13:01:08.513211774Z 127.0.0.1 - - [19/Feb/2026:13:01:08 +0000] "GET /assets/ui-CgAviX0U.js.map HTTP/1.1" 200 999932 "-" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
+2026-02-19T13:01:09.344664214Z 127.0.0.1 - - [19/Feb/2026:13:01:09 +0000] "GET /api/auth/status HTTP/1.1" 200 94 "https://neural-control-hub.onrender.com/dashboard?tab=overview" "Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Mobile Safari/537.36"
+2026-02-19T13:01:09.427000146Z 127.0.0.1 - - [19/Feb/2026:13:01:09 +0000] "GET /neural.ico HTTP/1.1" 304 0 "https://neural-control-hub.onrender.com/dashboard?tab=overview" "Mozilla/5.0 (Linux; Android 8.0.0; SM-G955U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Mobile Safari/537.36"
+2026-02-19T13:01:11.772907868Z message handler error
+2026-02-19T13:01:11.772936839Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T13:01:11.774067518Z {"asctime": "2026-02-19 13:01:11,771", "levelname": "ERROR", "name": "engineio.server", "message": "message handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T13:01:18.791624376Z message handler error
+2026-02-19T13:01:18.792299043Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T13:01:18.79254156Z {"asctime": "2026-02-19 13:01:18,790", "levelname": "ERROR", "name": "engineio.server", "message": "message handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
+2026-02-19T13:01:19.793458585Z server=neural-control-hub.onrender.com//socket.io/ client=127.0.0.1:50780 socket shutdown error: [Errno 9] Bad file descriptordisconnect handler error
+2026-02-19T13:01:19.793483316Z AttributeError: property 'session' of 'RequestContext' object has no setter
+2026-02-19T13:01:19.794530162Z {"asctime": "2026-02-19 13:01:19,792", "levelname": "ERROR", "name": "engineio.server", "message": "disconnect handler error", "exc_info": "AttributeError: property 'session' of 'RequestContext' object has no setter"}
