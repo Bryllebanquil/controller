@@ -21,3 +21,12 @@ Thumbs.db
  
 # Secrets
 neural-control-hub-*.json
+
+
+
+node_modules/
+*.db
+__pycache__/
+.env
+dist/
+build/
