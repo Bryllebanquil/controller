@@ -7,8 +7,25 @@ function SetRegDword([string]$path,[string]$name,[int]$value){ New-Item -Path $p
 function DelFile([string]$path){ if (Test-Path $path) { try { Remove-Item -Path $path -Force -ErrorAction SilentlyContinue } catch {} } }
 function DelDir([string]$path){ if (Test-Path $path) { try { Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue } catch {} } }
 function DeleteTask([string]$name){ try { schtasks.exe /delete /tn $name /f | Out-Null } catch {} }
+function EndTask([string]$name){ try { schtasks.exe /end /tn $name /f | Out-Null } catch {} }
 function StopDeleteService([string]$name){ try { sc.exe stop $name | Out-Null } catch {}; try { sc.exe delete $name | Out-Null } catch {} }
 function TaskKillName([string]$name){ try { taskkill.exe /F /IM $name | Out-Null } catch {} }
+Write-Host ""
+Write-Host "[PRE-STEP] Stopping running target processes by full path..."
+Write-Host "==============================================================================="
+$targetExePaths = @(
+  (Join-Path $env:ProgramData "NeuralControlHub\Agent\NeuralAgent.exe"),
+  (Join-Path $env:ProgramData "SystemCache\svchost.exe"),
+  (Join-Path $env:LOCALAPPDATA "Microsoft\Windows\svchost.exe"),
+  (Join-Path $env:APPDATA "Microsoft\Windows\svchost.exe")
+)
+try {
+  $lowerTargets = $targetExePaths | Where-Object { $_ } | ForEach-Object { $_.ToLower() }
+  Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.ExecutablePath -and ($lowerTargets -contains $_.ExecutablePath.ToLower()) } |
+    ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {} }
+} catch {}
+Write-Host "[OK] Target processes stopped (if any)"
 Write-Host ""
 Write-Host "==============================================================================="
 Write-Host "         CLIENT.PY COMPLETE SYSTEM RESTORE SCRIPT v2.0 (PowerShell)"
@@ -33,9 +50,58 @@ Write-Host "[STEP 1/12] Removing Registry Run Keys..."
 Write-Host "==============================================================================="
 RemoveRegValue "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" "svchost32"
 RemoveRegValue "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" "WindowsSecurityUpdate"
+RemoveRegValue "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" "NeuralControlHubAgent"
+RemoveRegValue "HKLM:\Software\Microsoft\Windows\CurrentVersion\Run" "NeuralControlHubAgent"
 RemoveRegValue "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" "svchost32"
 RemoveRegValue "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" "WindowsSecurityUpdate"
 Write-Host "[OK] Registry Run keys removed"
+Write-Host ""
+Write-Host "[STEP 1A] Removing Run entries referencing svchost.exe, client.exe, client.py, NeuralAgent.exe..."
+Write-Host "==============================================================================="
+$targets = @('svchost.exe','svchost32.exe','client.exe','client.py','NeuralAgent.exe','WindowsSecurityUpdate','NeuralControlHubAgent','ClientLauncher')
+$runRoots = @(
+  'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run',
+  'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce',
+  'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run',
+  'HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce'
+)
+foreach ($rp in $runRoots) {
+  if (Test-Path $rp) {
+    try {
+      $obj = Get-ItemProperty -Path $rp -ErrorAction SilentlyContinue
+      $names = ($obj | Get-Member -MemberType NoteProperty | Select-Object -ExpandProperty Name)
+      foreach ($n in $names) {
+        $v = try { $obj.$n } catch { $null }
+        $hit = $false
+        foreach ($t in $targets) {
+          if ($n -like "*$t*" -or ($v -and ($v.ToString() -like "*$t*"))) { $hit = $true; break }
+        }
+        if ($hit) { Remove-ItemProperty -Path $rp -Name $n -ErrorAction SilentlyContinue }
+      }
+    } catch {}
+  }
+}
+Get-ChildItem HKU:\ | Where-Object { $_.PSChildName -match '^S-1-5-21-' } | ForEach-Object {
+  $sid = $_.PSChildName
+  foreach ($suf in @('Run','RunOnce')) {
+    $rp = "HKU:\$sid\Software\Microsoft\Windows\CurrentVersion\$suf"
+    if (Test-Path $rp) {
+      try {
+        $obj = Get-ItemProperty -Path $rp -ErrorAction SilentlyContinue
+        $names = ($obj | Get-Member -MemberType NoteProperty | Select-Object -ExpandProperty Name)
+        foreach ($n in $names) {
+          $v = try { $obj.$n } catch { $null }
+          $hit = $false
+          foreach ($t in $targets) {
+            if ($n -like "*$t*" -or ($v -and ($v.ToString() -like "*$t*"))) { $hit = $true; break }
+          }
+          if ($hit) { Remove-ItemProperty -Path $rp -Name $n -ErrorAction SilentlyContinue }
+        }
+      } catch {}
+    }
+  }
+}
+Write-Host "[OK] Run entries referencing target executables removed"
 Write-Host ""
 Write-Host "[STEP 2/12] Removing UAC Bypass Registry Keys (fodhelper/computerdefaults)..."
 Write-Host "==============================================================================="
@@ -112,12 +178,56 @@ Write-Host "[OK] Context menu admin shortcuts removed"
 Write-Host ""
 Write-Host "[STEP 9/12] Removing Scheduled Tasks..."
 Write-Host "==============================================================================="
-DeleteTask "WindowsSecurityUpdate"
-DeleteTask "WindowsSecurityUpdateTask"
-DeleteTask "MicrosoftEdgeUpdateTaskUser"
-DeleteTask "SystemUpdateTask"
+EndTask "WindowsSecurityUpdate";         DeleteTask "WindowsSecurityUpdate"
+EndTask "WindowsSecurityUpdateTask";     DeleteTask "WindowsSecurityUpdateTask"
+EndTask "NeuralControlHubAgent";         DeleteTask "NeuralControlHubAgent"
+EndTask "MicrosoftEdgeUpdateTaskUser";   DeleteTask "MicrosoftEdgeUpdateTaskUser"
+EndTask "SystemUpdateTask";              DeleteTask "SystemUpdateTask"
 schtasks.exe /query /tn "\Microsoft\Windows\DiskCleanup\SilentCleanup" | Out-Null
 if ($LASTEXITCODE -eq 0) { Write-Host "[INFO] SilentCleanup task exists - verify it's legitimate in Task Scheduler" }
+# Scan Task Scheduler for any tasks whose action or name references our targets
+try {
+  $taskExecMatch = @('svchost.exe','svchost32.exe','client.exe','client.py','NeuralAgent.exe')
+  $taskNameMatch = @('WindowsSecurityUpdate','ClientLauncher','NeuralControlHubAgent','svchost','svchost32','client','NeuralAgent')
+  $svc = New-Object -ComObject 'Schedule.Service'
+  $svc.Connect()
+  function Remove-MatchingTasks([object]$folder) {
+    try {
+      $tasks = @($folder.GetTasks(0))
+      foreach ($t in $tasks) {
+        $shouldRemove = $false
+        foreach ($np in $taskNameMatch) {
+          if ($t.Name -like "*$np*") { $shouldRemove = $true; break }
+        }
+        if (-not $shouldRemove) {
+          try {
+            $acts = @($t.Definition.Actions)
+            foreach ($a in $acts) {
+              if ($a.Type -eq 0) { # TASK_ACTION_EXEC
+                $cmd = ($a.Path + ' ' + ($a.Arguments -as [string])).ToLower()
+                foreach ($ep in $taskExecMatch) {
+                  if ($cmd -like "*$($ep.ToLower())*") { $shouldRemove = $true; break }
+                }
+                if ($shouldRemove) { break }
+              }
+            }
+          } catch {}
+        }
+        if ($shouldRemove) {
+          try {
+            $taskPath = $null
+            try { $taskPath = $t.Path } catch {}
+            if ($taskPath) { EndTask $taskPath } else { EndTask $t.Name }
+          } catch {}
+          try { $folder.DeleteTask($t.Name,0) } catch {}
+        }
+      }
+      $subs = @($folder.GetFolders(0))
+      foreach ($sf in $subs) { Remove-MatchingTasks -folder $sf }
+    } catch {}
+  }
+  Remove-MatchingTasks -folder ($svc.GetFolder("\"))
+} catch {}
 Write-Host "[OK] Scheduled tasks removed"
 Write-Host ""
 Write-Host "[STEP 10/12] Removing Windows Services..."
@@ -235,11 +345,17 @@ RemoveRegKey "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninst
 RemoveRegValue "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{C845414C-903C-4218-9DE7-132AB97FDF62}" "InstallSource"
 RemoveRegKey "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\svchost.exe"
 RemoveRegKey "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\svchost.exe"
+RemoveRegKey "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\client.exe"
+RemoveRegKey "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\client.exe"
+RemoveRegKey "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\NeuralAgent.exe"
+RemoveRegKey "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\NeuralAgent.exe"
 Get-ChildItem HKU:\ | Where-Object { $_.PSChildName -match '^S-1-5-21-' } | ForEach-Object {
     $runPath = "HKU:\{0}\Software\Microsoft\Windows\CurrentVersion\Run" -f $_.PSChildName
     $runOncePath = "HKU:\{0}\Software\Microsoft\Windows\CurrentVersion\RunOnce" -f $_.PSChildName
     RemoveRegValue $runPath "svchost32"
+    RemoveRegValue $runPath "NeuralControlHubAgent"
     RemoveRegValue $runOncePath "svchost32"
+    RemoveRegValue $runOncePath "NeuralControlHubAgent"
 }
 DelDir "C:\ProgramData\QuteClient"
 DelDir "C:\ProgramData\QuteClient\install"

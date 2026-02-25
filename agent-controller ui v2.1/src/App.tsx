@@ -1381,7 +1381,7 @@ function AppContent() {
                                   checked={bEnabled}
                                   onCheckedChange={(checked) => {
                                     if (!aid) return;
-                                    sendCommand(aid, checked ? "bypasses:on" : "bypasses:off");
+                                    api.setAgentGlobal(aid, checked, undefined);
                                   }}
                                 />
                               </div>
@@ -1392,7 +1392,7 @@ function AppContent() {
                                   checked={rEnabled}
                                   onCheckedChange={(checked) => {
                                     if (!aid) return;
-                                    sendCommand(aid, checked ? "registry:on" : "registry:off");
+                                    api.setAgentGlobal(aid, undefined, checked);
                                   }}
                                 />
                               </div>
@@ -1411,7 +1411,7 @@ function AppContent() {
                                 className="w-full sm:w-auto"
                                 onClick={() => {
                                   if (!aid) return;
-                                  sendCommand(aid, bEnabled ? "bypasses:on" : "bypasses:off");
+                                  api.setAgentGlobal(aid, bEnabled, undefined);
                                 }}
                               >
                                 Apply Bypasses To Selected
@@ -1422,7 +1422,7 @@ function AppContent() {
                                 className="w-full sm:w-auto"
                                 onClick={() => {
                                   if (!aid) return;
-                                  sendCommand(aid, rEnabled ? "registry:on" : "registry:off");
+                                  api.setAgentGlobal(aid, undefined, rEnabled);
                                 }}
                               >
                                 Apply Registry To Selected
